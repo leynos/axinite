@@ -92,7 +92,11 @@ def _catch_all(**extra: object) -> dict[str, object]:
             id="catch-all-excludes-a-family",
         ),
         pytest.param(
-            {"minor-and-patch": _catch_all(**{"applies-to": "security-updates"})},
+            {
+                "minor-and-patch": _catch_all(
+                    **{"applies-to": "security-updates"}
+                )
+            },
             id="catch-all-applies-to-security-updates",
         ),
         pytest.param(
@@ -105,7 +109,12 @@ def _catch_all(**extra: object) -> dict[str, object]:
             id="catch-all-narrowed",
         ),
         pytest.param(
-            {"minor-and-patch": {"patterns": ["*"], "update-types": ["minor"]}},
+            {
+                "minor-and-patch": {
+                    "patterns": ["*"],
+                    "update-types": ["minor"],
+                }
+            },
             id="catch-all-drops-patch",
         ),
         pytest.param(
@@ -118,7 +127,10 @@ def _catch_all(**extra: object) -> dict[str, object]:
             id="catch-all-takes-majors",
         ),
         pytest.param(
-            {"everything": {"patterns": ["*"]}, "minor-and-patch": _catch_all()},
+            {
+                "everything": {"patterns": ["*"]},
+                "minor-and-patch": _catch_all(),
+            },
             id="bare-wildcard-before-the-catch-all",
         ),
         pytest.param(

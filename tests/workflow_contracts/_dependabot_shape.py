@@ -43,6 +43,17 @@ CATCH_ALL_UPDATE_TYPES: typ.Final[frozenset[str]] = frozenset(
     {"minor", "patch"}
 )
 
+#: What the catch-all's `update-types` has to look like to name exactly those
+#: types once each: a list, with the length, element type and members all
+#: stated independently of the values it holds. Written as a table so the
+#: reading below is a lookup rather than a chain of conditions.
+CATCH_ALL_UPDATE_TYPES_SHAPE: typ.Final[tuple[object, ...]] = (
+    list,
+    2,
+    str,
+    CATCH_ALL_UPDATE_TYPES,
+)
+
 #: The versioning strategies canon allows a `cargo` entry. `auto` lets
 #: Dependabot choose; `lockfile-only` updates the lock graph alone.
 ALLOWED_CARGO_STRATEGIES: typ.Final[frozenset[str]] = frozenset(
@@ -170,17 +181,26 @@ def duplicate_faults(entries: list[Mapping[str, object]]) -> list[str]:
     faults: list[str] = []
     for position, first in enumerate(entries):
         for second in entries[position + 1 :]:
-            if first.get("package-ecosystem") != second.get(
-                "package-ecosystem"
-            ):
-                continue
-            shared = declared_directories(first) & declared_directories(second)
-            if shared:
-                faults.append(
-                    f"{_label(first)} and {_label(second)} both cover "
-                    f"{sorted(shared)}"
-                )
+            fault = _shared_directory_fault(first, second)
+            if fault is not None:
+                faults.append(fault)
     return faults
+
+
+def _shared_directory_fault(
+    first: Mapping[str, object], second: Mapping[str, object]
+) -> str | None:
+    """Return why two entries of one ecosystem cover a shared directory.
+
+    Entries of different ecosystems never contend for a dependency, so they
+    return `None`.
+    """
+    if first.get("package-ecosystem") != second.get("package-ecosystem"):
+        return None
+    shared = declared_directories(first) & declared_directories(second)
+    if not shared:
+        return None
+    return f"{_label(first)} and {_label(second)} both cover {sorted(shared)}"
 
 
 def directory_faults(entry: Mapping[str, object], root: Path) -> list[str]:
@@ -210,61 +230,106 @@ def directory_faults(entry: Mapping[str, object], root: Path) -> list[str]:
         return []
     faults: list[str] = []
     for directory in sorted(declared_directories(entry)):
-        # A glob is not a path this reading can resolve. Canon expands one
-        # against the tree; resolving it here would report the pattern itself
-        # as a missing directory.
-        if any(character in directory for character in "*?["):
-            continue
-        base = root / directory.lstrip("/")
-        if not base.is_dir():
-            faults.append(
-                f"{_label(entry)} lists {directory!r}, which is not a "
-                f"directory"
-            )
-            continue
-        missing = [name for name in manifests if not (base / name).is_file()]
-        if missing:
-            faults.append(
-                f"{_label(entry)} lists {directory!r}, which holds no "
-                f"{', '.join(missing)}"
-            )
+        fault = _directory_fault(entry, directory, manifests, root)
+        if fault is not None:
+            faults.append(fault)
     return faults
+
+
+def _is_glob(directory: str) -> bool:
+    """Return whether a declared directory is a pattern rather than a path."""
+    return any(character in directory for character in "*?[")
+
+
+def _directory_fault(
+    entry: Mapping[str, object],
+    directory: str,
+    manifests: tuple[str, ...],
+    root: Path,
+) -> str | None:
+    """Return why one declared directory cannot supply the entry's manifests.
+
+    A glob is not a path this reading can resolve; canon expands one against
+    the tree, so it is skipped rather than reported as a missing directory.
+    """
+    if _is_glob(directory):
+        return None
+    base = root / directory.lstrip("/")
+    if not base.is_dir():
+        return f"{_label(entry)} lists {directory!r}, which is not a directory"
+    missing = [name for name in manifests if not (base / name).is_file()]
+    if not missing:
+        return None
+    return (
+        f"{_label(entry)} lists {directory!r}, which holds no "
+        f"{', '.join(missing)}"
+    )
+
+
+def _update_types_shape(declared: object) -> tuple[bool, bool, bool, bool]:
+    """Return which parts of the four-part `update-types` shape hold."""
+    kind, count, element, members = CATCH_ALL_UPDATE_TYPES_SHAPE
+    is_list = isinstance(declared, list)
+    right_length = is_list and len(declared) == count
+    all_text = right_length and all(
+        isinstance(entry, element) for entry in declared
+    )
+    right_members = all_text and frozenset(declared) == members
+    return is_list, right_length, all_text, right_members
+
+
+def _catch_all_shape_faults(
+    label: str, name: str, group: Mapping[str, object]
+) -> list[str]:
+    """Return why the group's keys and values are not the catch-all's."""
+    unexpected = sorted(set(group) - CATCH_ALL_KEYS)
+    applies_to = group.get("applies-to", "version-updates")
+    checks: tuple[tuple[bool, str], ...] = (
+        (
+            not unexpected,
+            f"carries {unexpected}; the catch-all takes only patterns ['*'] "
+            f"and update-types [minor, patch]",
+        ),
+        (
+            applies_to == "version-updates",
+            f"applies to {applies_to!r}; only version-updates is the "
+            f"catch-all",
+        ),
+        (
+            group.get("patterns") == ["*"],
+            f"has patterns {group.get('patterns')!r}, not ['*']",
+        ),
+    )
+    faults = [
+        f"{label} last group {name!r} {message}"
+        for holds, message in checks
+        if not holds
+    ]
+    update_types_fault = _update_types_fault(label, name, group)
+    if update_types_fault is not None:
+        faults.append(update_types_fault)
+    return faults
+
+
+def _update_types_fault(
+    label: str, name: str, group: Mapping[str, object]
+) -> str | None:
+    """Return why the catch-all's `update-types` is not `[minor, patch]`."""
+    declared = group.get("update-types")
+    _is_list, _length, _text, right_members = _update_types_shape(declared)
+    if right_members:
+        return None
+    return (
+        f"{label} last group {name!r} has update-types {declared!r}, "
+        f"not [minor, patch]"
+    )
 
 
 def _catch_all_faults(label: str, name: str, group: object) -> list[str]:
     """Return why one group is not the catch-all the entry must end with."""
     if not isinstance(group, dict):
         return [f"{label} last group {name!r} is not a mapping"]
-    faults: list[str] = []
-    unexpected = sorted(set(group) - CATCH_ALL_KEYS)
-    if unexpected:
-        faults.append(
-            f"{label} last group {name!r} carries {unexpected}; the catch-all "
-            f"takes only patterns ['*'] and update-types [minor, patch]"
-        )
-    if group.get("applies-to", "version-updates") != "version-updates":
-        faults.append(
-            f"{label} last group {name!r} applies to "
-            f"{group.get('applies-to')!r}; only version-updates is the "
-            f"catch-all"
-        )
-    if group.get("patterns") != ["*"]:
-        faults.append(
-            f"{label} last group {name!r} has patterns "
-            f"{group.get('patterns')!r}, not ['*']"
-        )
-    declared = group.get("update-types")
-    if (
-        not isinstance(declared, list)
-        or len(declared) != 2
-        or not all(isinstance(kind, str) for kind in declared)
-        or frozenset(declared) != CATCH_ALL_UPDATE_TYPES
-    ):
-        faults.append(
-            f"{label} last group {name!r} has update-types {declared!r}, "
-            f"not [minor, patch]"
-        )
-    return faults
+    return _catch_all_shape_faults(label, name, group)
 
 
 def _width_faults(label: str, name: str, group: object) -> list[str]:
