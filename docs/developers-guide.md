@@ -3560,17 +3560,24 @@ at its ordinary 300-second bound while a `trybuild` test survives its
 The figure comes from a cold cache, which is the state every branch starts in.
 `trybuild` compiles the whole generated project's dependency tree inside the
 test process, so that build spends a nextest per-test allowance the way an
-ordinary test would spend it on assertions. Two runs on hosted runners measured
-it:
+ordinary test would spend it on assertions. Three runs on hosted runners
+measured it:
 
-| Run          | Nested `dev` build | Test allowance | Outcome                                 |
-| ------------ | ------------------ | -------------- | --------------------------------------- |
-| 118844928700 | 697 s              | 900 s          | timed out at 900 s on the first fixture |
-| 117818957223 | 619 s              | 900 s          | timed out at 900 s on the first fixture |
+| Run          | `db_surface_compile_contracts` | Test allowance | Outcome                                 |
+| ------------ | ------------------------------ | -------------- | --------------------------------------- |
+| 118844928700 | 900 s (killed)                 | 900 s          | timed out at 900 s on the first fixture |
+| 117818957223 | 900 s (killed)                 | 900 s          | timed out at 900 s on the first fixture |
+| 39579143288  | 1,137.6 s                      | 1,500 s        | passed, 362 s under the allowance       |
 
-*Table: nested `trybuild` builds measured against the former 900-second
-allowance. The build alone left under 300 seconds for the fixtures this session
-compiles.*
+*Table: nested `trybuild` builds measured against the allowance in force. The
+first two runs never got past the first fixture, so their duration is the
+allowance that killed them; the third ran the session to completion.*
+
+The third run is the one that settles the figure. It is a cold cache of the
+same shape as the other two, and it took 1,137.6 seconds — 238 seconds beyond
+the old 900-second allowance, and 441 seconds longer than the largest partial
+build the first two runs had recorded before they were killed. A budget sized
+from those partial measurements alone would still have failed this run.
 
 The warm comparison is a pull-request run at a 99.92 % sccache hit rate, which
 finished the same binary in 391 s. Nothing else about the test changed between
@@ -3583,12 +3590,13 @@ compile-contract binaries. A branch's first run of `Tests (default)` is
 therefore cold however busy the repository is, and a budget sized against warm
 runs fails every branch once.
 
-1,500 seconds leaves 803 seconds after the larger cold build, which is more
-than twice the 391 seconds the warm run spent on the build and the fixtures
-together. It is also the figure commit `730f6f7a` chose for `schema_helpers_ui`
-when that target carried the same cold-cache problem, and it leaves 300 seconds
-below the 30-minute whole-run budget, which is the ordering constraint this
-tier has to satisfy.
+1,500 seconds leaves 362 seconds after the measured cold run, which is 29
+seconds less than the 391 seconds the warm run spent on the build and the
+fixtures together — a narrower margin than it looks, and the reason the figure
+should not be trimmed without a fresh measurement. It is also the figure commit
+`730f6f7a` chose for `schema_helpers_ui` when that target carried the same
+cold-cache problem, and it leaves 300 seconds below the 30-minute whole-run
+budget, which is the ordering constraint this tier has to satisfy.
 
 ### The values are pinned, not merely ordered
 
