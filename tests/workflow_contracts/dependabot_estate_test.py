@@ -7,12 +7,14 @@ change that drops the catch-all, widens a narrow group, points an entry at a
 directory the repository no longer has, or stops covering an ecosystem fails
 the repository's own gate.
 
-The readings themselves are in `_dependabot_shape.py`; the values this estate
-is held to are in `dependabot_estate.py`. Because the estate's configuration
-is correct, a reader that answered "no faults" unconditionally would pass
-every test here exactly as the real one does. `dependabot_reader_test.py`
-drives the same readers with controlled documents, which is what stops that
-reader passing.
+The readings themselves are in `_dependabot_shape.py`, for the questions
+about one entry's own shape, and `_dependabot_coverage.py`, for what the
+configuration covers and the tree it points at. The values this estate is held
+to are in `dependabot_estate.py`. Because the estate's configuration is
+correct, a reader that answered "no faults" unconditionally would pass every
+test here exactly as the real one does. `dependabot_reader_test.py` and
+`dependabot_coverage_test.py` drive the same readings with controlled
+documents, which is what stops that reader passing.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -22,14 +24,17 @@ from __future__ import annotations
 import typing as typ
 
 import pytest
+from _dependabot_coverage import (
+    directory_faults,
+    duplicate_faults,
+    uncovered_directories,
+)
 from _dependabot_shape import (
     cadence_faults,
     cargo_strategy_faults,
-    directory_faults,
-    duplicate_faults,
     group_faults,
-    uncovered_directories,
 )
+from _sources import is_regular_file
 from _workflow_policy import REPOSITORY_ROOT
 from dependabot_config import (
     declared_directories,
@@ -158,7 +163,11 @@ def test_the_github_actions_entry_covers_the_workflows(
     `.github/workflows` unmanaged.
     """
     entry = entry_for(configuration, "github-actions", "/")
-    assert "/" in declared_directories(entry)
+    covered = sorted(declared_directories(entry))
+    assert "/" in declared_directories(entry), (
+        "the github-actions entry must cover the repository root, where the "
+        f"workflows it bumps live; it covers {covered}"
+    )
 
 
 @pytest.mark.parametrize("entry_point", ENTRY_POINTS, ids=_ids())
@@ -208,5 +217,17 @@ def test_the_bun_entry_watches_the_front_end(
     as a text lock.
     """
     entry = entry_for(configuration, "bun", "/web-src")
-    assert (REPOSITORY_ROOT / "web-src" / "bun.lock").is_file()
-    assert group_names(entry)[-1] == "minor-and-patch"
+    assert is_regular_file(REPOSITORY_ROOT / "web-src" / "bun.lock"), (
+        "the bun entry reads web-src/bun.lock, so that lockfile must be "
+        "committed; without it the entry watches a directory whose lock "
+        "Dependabot cannot find"
+    )
+    names = group_names(entry)
+    assert names, (
+        "the bun entry must declare groups, so the catch-all has a place to "
+        "be last; it declares none"
+    )
+    assert names[-1] == "minor-and-patch", (
+        f"the bun entry's last group must be the catch-all, so a major "
+        f"arrives as its own pull request; its groups are {names}"
+    )

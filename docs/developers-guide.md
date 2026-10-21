@@ -1068,6 +1068,112 @@ The permission cases skip on Windows, whose `chmod` only toggles a read-only
 bit, and under `root`, which reads a directory whatever its mode bits say;
 without the second skip the case passes vacuously in a container.
 
+### Dependabot update policy
+
+`.github/dependabot.yml` is held to Concordat's DB-005 rule, but a rule audit
+is evidence about one revision and nothing a later contributor edits has to
+pass before it merges. The contracts in `tests/workflow_contracts/` ask the
+same questions on every run, so this section states the policy they encode.
+
+**One catch-all group, last.** Every entry ends with a group whose patterns are
+`["*"]` and whose update types are `minor` and `patch`. Dependabot assigns a
+dependency to the first group that matches it, so a group placed before the
+catch-all that also matches everything takes the majors the catch-all
+deliberately leaves ungrouped, and those arrive in a pull request that mixes
+them with routine patches. Narrower groups go before it. `rstest-bdd` is one,
+because those crates release in lockstep and Cargo counts a 0.x minor as a
+major, which the catch-all leaves ungrouped. A catch-all may also carry
+`applies-to: version-updates`, which is the default spelled out; every other
+key narrows what the group takes. `exclude-patterns`, `dependency-type` and
+`group-by` each carve a class of dependency out of the group, and
+`applies-to: security-updates` leaves version updates ungrouped.
+
+**Daily cadence.** `schedule.interval` is `daily` on every entry. A weekly
+interval leaves a security fix unreviewed for a week, and with a seven-day
+cooldown on top it is a fortnight before a patch is even proposed.
+
+**Cargo strategies.** A `cargo` entry may set `versioning-strategy` to `auto` or
+`lockfile-only`, or leave the key out. `auto` lets Dependabot choose;
+`lockfile-only` updates the lock graph alone. The remaining strategies are
+refused. No other ecosystem is judged on this key.
+
+**Directories hold their manifests.** Every path an entry lists must exist and
+hold the files that ecosystem reads: `Cargo.toml` for `cargo`, `pyproject.toml`
+for `pip`, and both `package.json` and `bun.lock` for `bun`. A path a rename
+left behind, or one holding only part of that set, leaves Dependabot watching a
+directory with nothing in it, and it reports exactly that, which reads the same
+as a repository with no updates. A declared path that is a glob is canon's to
+expand and is not resolved here. The `github-actions` entry maps to no
+manifest, because the files it reads are the workflow files themselves.
+
+**Required ecosystems.** The repository runs updates for `cargo`, `pip`, `bun`
+and `github-actions`, and each has an entry of its own. A configuration with no
+`pip` entry satisfies every per-entry question vacuously, since there is no
+entry left to ask, so the coverage reading is what notices an entry deleted
+whole.
+
+**No two entries share a directory.** Two entries of one ecosystem over one
+path open two update streams for the same dependencies, and each bump arrives
+twice. Entries of different ecosystems never contend.
+
+**Labels, limits and cooldowns.** Each entry carries `dependencies` and its
+ecosystem name, keeps five pull requests open, and applies a cooldown before
+proposing anything. A cooldown is what keeps a release from arriving in the
+hour it is published, which is when a compromised or yanked release is most
+likely to be taken. The `cargo`, `pip` and `bun` entries apply
+`default-days: 7` and `semver-major-days: 14`; the `github-actions` entry
+applies only the default, canon giving no reason for a major allowance of its
+own.
+
+The `bun` entry watches `/web-src`, the SolidJS gateway front-end, and reads
+the text `bun.lock` committed there. Nothing else reaches that directory: the
+`cargo` entry lists Rust manifests, and an npm-shaped entry would read a
+lockfile the workspace does not have.
+
+#### The Dependabot contract modules
+
+| Module                    | Answers                                                         |
+| ------------------------- | --------------------------------------------------------------- |
+| `dependabot_config.py`    | What the file says: its entries, directories, labels and groups |
+| `_dependabot_shape.py`    | What one entry's own shape must be: groups, cadence, strategy   |
+| `_dependabot_coverage.py` | What the configuration covers, and the tree it points at        |
+| `dependabot_estate.py`    | The values this repository's own configuration is held to       |
+
+`dependabot_config.py` is the boundary. Its `read_dependabot` converts a file
+that is missing, undecodable, not YAML, not a mapping, or not a mapping keyed
+by text into a `SourceError` that names the path. Above it, every reading is
+pure in the mapping it is handed and returns a list of fault messages rather
+than raising on the first, so a contributor who breaks two things sees both in
+one run. `dependabot_estate.py` names the entry points and the labels, limits
+and cooldowns each carries, so changing any of them is a change to that module
+rather than to a test body.
+
+The directory and manifest readings ask the filesystem two questions, and both
+go through `is_directory` and `is_regular_file` in `_sources.py`. They give the
+three answers the acquisition boundary gives, for the same reason: a path that
+is absent or under a file is a definite no, while one that could not be
+`stat`ed is a question that went unanswered, and `directory_faults` reports it
+as a `SourceError` rather than as a configuration fault. Reading it as a
+missing directory would send a contributor after a rename that never happened.
+The answer matters here because the fault is otherwise silent: a path the
+reading cannot see and one that holds no manifest both mean Dependabot watches
+nothing, and neither produces a pull request to notice.
+
+`dependabot_estate_test.py` applies the readings to this repository's own
+configuration, which is correct. A reader that answered "no faults"
+unconditionally would pass it for exactly that reason, so
+`dependabot_reader_test.py` and `dependabot_coverage_test.py` drive the same
+readings with documents written for the purpose, and
+`dependabot_shape_property_test.py` holds the readings that are relations --
+group order, coverage, duplication and directory spelling -- to a generated
+model. Each new reading belongs in all three: the estate case is what keeps
+this repository honest, the written cases are what a failure names, and the
+property is what covers the range a table cannot.
+
+Run them with `make test-workflow-contracts`, which is also where the Python
+packages are named: `uv run` provisions `pytest`, `PyYAML` and `Hypothesis` for
+the duration of the run.
+
 ### What remains of the runner migration wave
 
 The wave is nearly done. `code_style.yml` `format` and `clippy`, `test.yml`

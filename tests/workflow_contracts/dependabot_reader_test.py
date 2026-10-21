@@ -6,6 +6,10 @@ protection deleted. Each case here states one entry that breaks a rule in one
 way and drives the same reading the estate contract calls, so a reader that
 stopped reporting a fault fails a named case rather than gliding along.
 
+These are the questions about one entry's own shape: its groups, its cadence,
+and its strategy. What the configuration covers -- the coverage, duplicate and
+manifest readings -- is driven by `dependabot_coverage_test.py`.
+
 The approved entry below is the positive half: it has the shape canon
 requires, and every mutation is derived from it, so a reader reporting a
 fault for everything cannot pass both.
@@ -21,14 +25,11 @@ import pytest
 from _dependabot_shape import (
     cadence_faults,
     cargo_strategy_faults,
-    directory_faults,
-    duplicate_faults,
     group_faults,
 )
 from _sources import SourceError
 from dependabot_config import DependabotConfigurationError, entries_of
-from dependabot_config import entry_for
-from dependabot_config import read_dependabot
+from dependabot_config import entry_for, read_dependabot
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Mapping
@@ -49,20 +50,6 @@ APPROVED_ENTRY: dict[str, object] = {
         },
     },
 }
-
-
-def _entry_listing(directories: list[str]) -> dict[str, object]:
-    """Return the approved entry with `directories` instead of `directory`.
-
-    Dependabot reads one or the other, and the approved entry carries
-    `directory`, so a case that wants `directories` has to drop it. Keeping
-    both would leave the reading free to see a root the case never meant to
-    declare.
-    """
-    entry = {key: value for key, value in APPROVED_ENTRY.items()}
-    entry.pop("directory")
-    entry["directories"] = directories
-    return entry
 
 
 def _catch_all(**extra: object) -> dict[str, object]:
@@ -158,20 +145,43 @@ def test_a_group_shape_canon_refuses_is_reported(
 
 def test_the_approved_group_shape_is_accepted() -> None:
     """The positive case, without which the mutations above prove nothing."""
-    assert group_faults(APPROVED_ENTRY) == []
+    assert group_faults(APPROVED_ENTRY) == [], (
+        "the approved entry must pass the shape reading; a reader that "
+        "reported a fault for everything would satisfy every mutation above"
+    )
 
 
-def test_a_non_daily_entry_is_reported() -> None:
-    """Cadence is read from the entry, not assumed from the file."""
-    entry = dict(APPROVED_ENTRY, schedule={"interval": "weekly"})
-    assert cadence_faults(entry)
-
-
-def test_an_entry_without_a_schedule_is_reported() -> None:
-    """An entry with no schedule is not silently daily."""
+def _without_schedule() -> dict[str, object]:
+    """Return the approved entry with its schedule dropped."""
     entry = {key: value for key, value in APPROVED_ENTRY.items()}
     entry.pop("schedule")
-    assert cadence_faults(entry)
+    return entry
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param(
+            dict(APPROVED_ENTRY, schedule={"interval": "weekly"}),
+            id="weekly",
+        ),
+        pytest.param(_without_schedule(), id="no-schedule"),
+    ],
+)
+def test_an_entry_that_does_not_run_daily_is_reported(
+    entry: dict[str, object],
+) -> None:
+    """Cadence is read from the entry, never assumed from the file.
+
+    A weekly interval leaves a security fix unreviewed for a week, and an
+    entry with no schedule at all is not the daily one a missing key might
+    be read as. Both are the same fault: the cadence canon requires is not
+    declared.
+    """
+    assert cadence_faults(entry), (
+        f"{entry.get('schedule', 'no schedule')!r} must be reported; canon "
+        f"requires schedule.interval to be daily"
+    )
 
 
 @pytest.mark.parametrize(
@@ -187,7 +197,10 @@ def test_an_unlisted_cargo_versioning_strategy_is_reported(
 ) -> None:
     """Canon allows only auto and lockfile-only for cargo."""
     entry = dict(APPROVED_ENTRY, **{"versioning-strategy": strategy})
-    assert cargo_strategy_faults(entry)
+    assert cargo_strategy_faults(entry), (
+        f"the cargo strategy {strategy!r} must be reported; canon allows "
+        f"only auto or lockfile-only"
+    )
 
 
 @pytest.mark.parametrize(
@@ -203,7 +216,10 @@ def test_an_allowed_cargo_versioning_strategy_is_accepted(
 ) -> None:
     """The allowance canon states, including the key left out."""
     entry = dict(APPROVED_ENTRY, **{"versioning-strategy": strategy})
-    assert cargo_strategy_faults(entry) == []
+    assert cargo_strategy_faults(entry) == [], (
+        f"the cargo strategy {strategy!r} is one canon allows, so it must "
+        f"not be reported"
+    )
 
 
 def test_another_ecosystem_is_not_judged_on_its_strategy() -> None:
@@ -215,55 +231,10 @@ def test_another_ecosystem_is_not_judged_on_its_strategy() -> None:
             "versioning-strategy": "increase",
         },
     )
-    assert cargo_strategy_faults(entry) == []
-
-
-def test_a_missing_directory_is_reported(tmp_path: Path) -> None:
-    """A listed path that does not exist is a fault, not a quiet no-op."""
-    entry = dict(APPROVED_ENTRY, directory="/absent")
-    faults = directory_faults(entry, tmp_path)
-    assert faults, "a listed directory that does not exist must be reported"
-
-
-def test_a_directory_without_its_manifest_is_reported(tmp_path: Path) -> None:
-    """A directory that exists but holds no manifest is the same no-op."""
-    (tmp_path / "empty").mkdir()
-    entry = dict(APPROVED_ENTRY, directory="/empty")
-    faults = directory_faults(entry, tmp_path)
-    assert faults, "a listed directory holding no Cargo.toml must be reported"
-
-
-def test_a_directory_with_its_manifest_is_accepted(tmp_path: Path) -> None:
-    """The positive case for the reading above."""
-    (tmp_path / "crate").mkdir()
-    (tmp_path / "crate" / "Cargo.toml").write_text("", encoding="utf-8")
-    entry = dict(APPROVED_ENTRY, directory="/crate")
-    assert directory_faults(entry, tmp_path) == []
-
-
-def test_a_glob_is_left_to_the_rule(tmp_path: Path) -> None:
-    """A pattern that names no real path is not reported as a missing one."""
-    entry = dict(APPROVED_ENTRY, directory="/.github/actions/*")
-    assert directory_faults(entry, tmp_path) == []
-
-
-def test_two_entries_over_one_directory_are_reported() -> None:
-    """Two update streams for one dependency open two pull requests a bump."""
-    entries = [
-        dict(APPROVED_ENTRY),
-        dict(APPROVED_ENTRY, labels=["dependencies"]),
-    ]
-    faults = duplicate_faults(entries)
-    assert faults, "two cargo entries over / must be reported"
-
-
-def test_entries_over_different_directories_are_accepted() -> None:
-    """The positive case: a cargo entry per directory is the normal shape."""
-    entries = [
-        _entry_listing(["/a"]),
-        _entry_listing(["/b"]),
-    ]
-    assert duplicate_faults(entries) == []
+    assert cargo_strategy_faults(entry) == [], (
+        "a pip entry's versioning-strategy is not canon's question, so the "
+        "strategy cargo refuses must not be reported for it"
+    )
 
 
 def test_a_repeated_key_is_reported_as_a_source_error(tmp_path: Path) -> None:
@@ -284,6 +255,20 @@ def test_a_document_that_is_not_a_mapping_is_reported(tmp_path: Path) -> None:
     path = tmp_path / "dependabot.yml"
     path.write_text("- version: 2\n", encoding="utf-8")
     with pytest.raises(SourceError, match="dependabot.yml"):
+        read_dependabot(path)
+
+
+def test_a_root_key_that_is_not_a_string_is_reported(tmp_path: Path) -> None:
+    """YAML keys need not be text, and every Dependabot key is.
+
+    `1:` parses as an integer key, so a cast to the `Mapping[str, object]`
+    every reading above assumes would promise something the file does not
+    keep. The boundary answers for it here rather than letting a reading
+    compare an integer against a name and find nothing.
+    """
+    path = tmp_path / "dependabot.yml"
+    path.write_text("1: version\n", encoding="utf-8")
+    with pytest.raises(SourceError, match="root key"):
         read_dependabot(path)
 
 

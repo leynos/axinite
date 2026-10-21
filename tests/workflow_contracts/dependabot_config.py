@@ -17,7 +17,10 @@ such directory.
 
 `read_dependabot` is the one function here that touches the filesystem, and it
 reports a file it cannot read as the same `SourceError` every other reading in
-this directory raises.
+this directory raises. The directory and manifest checks `_dependabot_shape`
+makes go through `_sources` for the same reason: `Path.is_dir` and
+`Path.is_file` answer `False` for a path they could not `stat`, so a
+configuration fault would be reported about a file nothing managed to look at.
 """
 
 from __future__ import annotations
@@ -59,21 +62,38 @@ def read_dependabot(path: Path) -> Mapping[str, object]:
     Returns
     -------
     Mapping
-        The parsed document.
+        The parsed document, with every key at its root a string. YAML lets a
+        mapping be keyed by anything -- `1:` and `true:` parse as an integer
+        and a boolean -- and Dependabot's own keys are all names, so a root
+        key that is not text means something other than a configuration was
+        read. Narrowing here is what lets every reading above treat a key as
+        the string it says it is.
 
     Raises
     ------
     SourceError
-        If the file cannot be read, is not valid YAML, is not a mapping, or
-        declares one key twice. The cause names the line.
+        If the file cannot be read, is not valid YAML, is not a mapping,
+        declares one key twice, or carries a root key that is not a string.
+        The cause names the line.
     """
     text = read_text(path)
     try:
-        return parse_strict(text, path.name)
+        document = parse_strict(text, path.name)
     except WorkflowReadError as error:
         raise SourceError(
             path, f"cannot be read as a Dependabot configuration ({error})"
         ) from error
+    if not _keyed_by_text(document):
+        raise SourceError(
+            path, "cannot be read as a Dependabot configuration (a root key "
+            "is not a string)"
+        )
+    return typ.cast("Mapping[str, object]", document)
+
+
+def _keyed_by_text(document: dict[object, object]) -> bool:
+    """Return whether every key in a parsed mapping is a string."""
+    return all(isinstance(key, str) for key in document)
 
 
 def entries_of(document: Mapping[str, object]) -> list[Mapping[str, object]]:
@@ -198,11 +218,50 @@ def group_names(entry: Mapping[str, object]) -> list[str]:
 
 
 def absolute(directory: str) -> str:
-    """Return a declared directory in the one spelling these readings use."""
+    """Return a declared directory in the one spelling these readings use.
+
+    Dependabot accepts one directory spelled with or without a leading
+    slash, with or without a trailing one, and either with or without a
+    leading `./`. All four name the same path, so a reading that compared
+    the spellings would see two entries over one directory where the
+    configuration declares one. Every comparison is made on this spelling.
+
+    Parameters
+    ----------
+    directory
+        A declared directory, in any spelling Dependabot accepts.
+
+    Returns
+    -------
+    str
+        The same directory with exactly one leading slash and no trailing
+        one, so `/tests/e2e`, `tests/e2e/` and `./tests/e2e` all read as
+        `/tests/e2e`. The repository root reads as `/`.
+    """
     return "/" + directory.removeprefix("./").strip("/")
 
 
 def label(entry: Mapping[str, object]) -> str:
-    """Name one entry in a fault message."""
+    """Name one entry in a fault message.
+
+    A fault reported against the estate has to say which stanza it is
+    about, and an entry carries no name of its own. The ecosystem and the
+    directories it covers identify it: there is at most one entry per
+    ecosystem per directory, which is what `duplicate_faults` exists to
+    hold.
+
+    Parameters
+    ----------
+    entry
+        One `updates` entry, which need not be well formed. A missing
+        ecosystem reads as `no ecosystem`, so a message about an entry
+        that declared nothing still says something.
+
+    Returns
+    -------
+    str
+        The entry named as its ecosystem and its sorted directories, such
+        as `cargo entry over ['/']`.
+    """
     ecosystem = entry.get("package-ecosystem", "no ecosystem")
     return f"{ecosystem} entry over {sorted(declared_directories(entry))}"

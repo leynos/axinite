@@ -13,15 +13,29 @@ import-time snapshots these replaced, the same faults raised while pytest was
 collecting, and a contract directory that fails to collect reports no failures
 at all, which reads exactly like a clean run.
 
+`is_directory` and `is_regular_file` carry the same obligation for a question
+rather than a read. `Path.is_dir` and `Path.is_file` answer False for a path
+they could not `stat`, so a manifest check built on them reports a missing
+file it never managed to look at. These cases state all three answers each
+predicate owes: yes, no, and a failure that is reported rather than guessed.
+
 Run via ``make test-workflow-contracts``.
 """
 
 from __future__ import annotations
 
+import os
+import sys
 import typing as typ
 
 import pytest
-from _sources import SourceError, read_text, read_toml
+from _sources import (
+    SourceError,
+    is_directory,
+    is_regular_file,
+    read_text,
+    read_toml,
+)
 from _estate import read_estate
 from _suite_targets import (
     GITHUB_TOOL_RECIPE,
@@ -262,3 +276,109 @@ def test_reading_a_directory_as_a_file_names_it(tmp_path: Path) -> None:
     """The remaining `OSError` shape: a path that is not a regular file."""
     with pytest.raises(SourceError, match="cannot be read"):
         read_text(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("predicate", "kind", "other"),
+    [
+        pytest.param(
+            is_directory, "crate", "crate/Cargo.toml", id="directory"
+        ),
+        pytest.param(
+            is_regular_file, "crate/Cargo.toml", "crate", id="regular-file"
+        ),
+    ],
+)
+def test_a_presence_check_answers_for_a_path_it_can_see(
+    tmp_path: Path,
+    predicate: typ.Callable[[Path], bool],
+    kind: str,
+    other: str,
+) -> None:
+    """The positive half of the classification boundary.
+
+    Each predicate is asked about both paths, so a reader that answered True
+    for anything it could `stat` fails here rather than passing the
+    permission cases below.
+    """
+    (tmp_path / "crate").mkdir()
+    (tmp_path / "crate" / "Cargo.toml").write_text("", encoding="utf-8")
+    assert predicate(tmp_path / kind) is True, (
+        f"the predicate must answer True for {kind!r}, which it can see"
+    )
+    assert predicate(tmp_path / other) is False, (
+        f"the predicate must answer False for {other!r}, which is a path of "
+        f"the other kind"
+    )
+
+
+@pytest.mark.parametrize(
+    ("predicate", "name"),
+    [
+        pytest.param(is_directory, "is_directory", id="directory"),
+        pytest.param(is_regular_file, "is_regular_file", id="regular-file"),
+    ],
+)
+def test_an_absent_path_is_a_definite_answer_not_a_failure(
+    tmp_path: Path, predicate: typ.Callable[[Path], bool], name: str
+) -> None:
+    """A path that is not there is answered False, not reported.
+
+    Every declared directory is checked this way, so reporting an ordinary
+    absence as a source failure would fail the suite on a configuration that
+    is simply missing a path -- which is the configuration fault the reading
+    exists to report.
+    """
+    assert predicate(tmp_path / "absent") is False, (
+        f"{name} must answer False for an absent path, not raise"
+    )
+    assert predicate(tmp_path / "absent" / "deeper") is False, (
+        f"{name} must answer False for a path whose parent is not a "
+        f"directory, not raise"
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits; Windows chmod only toggles read-only",
+)
+@pytest.mark.parametrize(
+    ("predicate", "name"),
+    [
+        pytest.param(is_directory, "is_directory", id="directory"),
+        pytest.param(is_regular_file, "is_regular_file", id="regular-file"),
+    ],
+)
+def test_an_unclassifiable_path_is_reported_not_answered_false(
+    tmp_path: Path, predicate: typ.Callable[[Path], bool], name: str
+) -> None:
+    """A `stat` that fails is not the same answer as an absent file.
+
+    This is the whole reason the boundary exists. `Path.is_dir` and
+    `Path.is_file` answer `False` here, so a manifest check built on them
+    would report a configuration fault about a path it never managed to look
+    at.
+
+    The parent is made unreadable rather than the entry itself: `stat` needs
+    the search bit on the directory holding the name, which is the failure a
+    permission mistake actually produces.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root reads a directory whatever its mode bits say")
+    unreadable = tmp_path / "unreadable"
+    unreadable.mkdir()
+    (unreadable / "Cargo.toml").write_text("", encoding="utf-8")
+    unreadable.chmod(0o000)
+    try:
+        with pytest.raises(SourceError) as raised:
+            predicate(unreadable / "Cargo.toml")
+    finally:
+        unreadable.chmod(0o700)
+    assert raised.value.path == unreadable / "Cargo.toml", (
+        f"{name} must name the path it could not classify; it named "
+        f"{raised.value.path}"
+    )
+    assert isinstance(raised.value.__cause__, OSError), (
+        f"{name} must chain the `stat` failure as the cause; the cause was "
+        f"{raised.value.__cause__!r}"
+    )

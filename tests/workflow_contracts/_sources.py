@@ -16,10 +16,13 @@ contracts that depend on it, by name and with the path in the message.
 
 from __future__ import annotations
 
+import errno
+import stat
 import tomllib
 import typing as typ
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    import collections.abc as cabc
     from collections.abc import Mapping
     from pathlib import Path
 
@@ -90,3 +93,109 @@ def read_toml(path: Path) -> Mapping[str, object]:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise SourceError(path, f"is not valid TOML ({error})") from error
+
+
+def _classified_as(
+    path: Path, predicate: cabc.Callable[[int], bool], description: str
+) -> bool:
+    """Return whether a path is of the kind `predicate` tests for.
+
+    `Path.is_dir` and `Path.is_file` look like questions rather than
+    filesystem calls, and they answer `False` for an entry they could not
+    `stat`. That makes an unreadable path indistinguishable from one that is
+    simply absent, which is the same silent under-reading `contract_sources`
+    documents about `Path.glob`: a contract asking whether a manifest exists
+    would be told it does not, and would report a configuration fault about a
+    file it never managed to look at.
+
+    The `stat` is taken directly rather than through
+    `Path.is_dir(follow_symlinks=...)`, which only arrived in Python 3.13.
+    The call raises on every supported version, which is the point of asking
+    this way.
+
+    Parameters
+    ----------
+    path
+        The entry to classify.
+    predicate
+        A `stat` mode test, such as `stat.S_ISDIR`.
+    description
+        What the predicate tests for, named in the failure so a reader learns
+        which question went unanswered.
+
+    Returns
+    -------
+    bool
+        Whether the entry is of that kind. False for an entry that is absent,
+        or whose parent is not a directory.
+
+    Raises
+    ------
+    SourceError
+        If the entry exists but cannot be classified.
+    """
+    try:
+        return predicate(path.stat().st_mode)
+    except OSError as error:
+        if error.errno in (errno.ENOENT, errno.ENOTDIR):
+            return False
+        raise SourceError(
+            path,
+            f"cannot be classified as {description} or not "
+            f"({error.strerror or error})",
+        ) from error
+
+
+def is_directory(path: Path) -> bool:
+    """Return whether a path is a directory, or say it could not be told.
+
+    The directory test is a filesystem call, not a question, and it answers
+    `False` for a path it could not `stat`. A reading that took that answer
+    would report a declared directory as missing when it exists and simply
+    could not be looked at, which sends a reader after a rename that never
+    happened.
+
+    Parameters
+    ----------
+    path
+        The entry to classify.
+
+    Returns
+    -------
+    bool
+        Whether the entry is a directory. False for an entry that is absent
+        or whose parent is not a directory.
+
+    Raises
+    ------
+    SourceError
+        If the entry exists but cannot be classified.
+    """
+    return _classified_as(path, stat.S_ISDIR, "a directory")
+
+
+def is_regular_file(path: Path) -> bool:
+    """Return whether a path is a regular file, or say it could not be told.
+
+    The same hazard as :func:`is_directory`, and the one a manifest check
+    would otherwise hit: `Path.is_file` answers `False` for a file that is
+    there but could not be `stat`, so a contract would report a manifest
+    missing from a directory that holds it.
+
+    Parameters
+    ----------
+    path
+        The entry to classify.
+
+    Returns
+    -------
+    bool
+        Whether the entry is a regular file. False for an entry that is
+        absent or whose parent is not a directory.
+
+    Raises
+    ------
+    SourceError
+        If the entry exists but cannot be classified.
+    """
+    return _classified_as(path, stat.S_ISREG, "a regular file")

@@ -5,6 +5,13 @@ way the entry breaks it, rather than raising on the first. A contributor who
 drops the catch-all or widens a narrow group should see the whole fault list
 in one run.
 
+These are the questions about one entry's own shape: its groups, its cadence,
+and the versioning strategy its ecosystem allows. What the configuration
+covers -- which ecosystems have an entry, whether two contend for one
+directory, and whether the declared directories hold their manifests -- is a
+question about the configuration and the tree, and lives in
+`_dependabot_coverage.py`.
+
 `dependabot_config.py` holds the boundary and the lookups; this module is pure
 in the mapping it is handed, so `dependabot_reader_test.py` can state each
 canon case against a document it wrote, and `dependabot_estate_test.py` can
@@ -16,12 +23,10 @@ from __future__ import annotations
 import re
 import typing as typ
 
-from dependabot_config import absolute, declared_directories
 from dependabot_config import label as _label
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Mapping
-    from pathlib import Path
 
 #: A pattern that matches every dependency. A group carrying one before the
 #: catch-all is a second catch-all, and Dependabot assigns a dependency to the
@@ -59,21 +64,6 @@ CATCH_ALL_UPDATE_TYPES_SHAPE: typ.Final[tuple[object, ...]] = (
 ALLOWED_CARGO_STRATEGIES: typ.Final[frozenset[str]] = frozenset(
     {"auto", "lockfile-only"}
 )
-
-#: The files a listed directory has to hold for its ecosystem to find work
-#: there. An ecosystem absent from the table is left unjudged: canon lets a
-#: repository choose its ecosystems, and a guess at a manifest name would
-#: report a fault about the guess rather than about the configuration.
-#:
-#: `github-actions` maps to no file because the manifests it reads are the
-#: workflow files themselves, which live under one directory rather than one
-#: per entry; that entry's coverage is the rule's question, not this one's.
-ECOSYSTEM_MANIFESTS: typ.Final[dict[str, tuple[str, ...]]] = {
-    "cargo": ("Cargo.toml",),
-    "pip": ("pyproject.toml",),
-    "bun": ("package.json", "bun.lock"),
-    "github-actions": (),
-}
 
 
 def group_faults(entry: Mapping[str, object]) -> list[str]:
@@ -157,113 +147,6 @@ def cargo_strategy_faults(entry: Mapping[str, object]) -> list[str]:
         f"{_label(entry)} versioning-strategy is {strategy!r}; cargo allows "
         f"only auto or lockfile-only"
     ]
-
-
-def duplicate_faults(entries: list[Mapping[str, object]]) -> list[str]:
-    """Return every pair of entries of one ecosystem sharing a directory.
-
-    Canon does not judge this, and nothing else would notice it: two entries
-    over one path open two update streams for the same dependencies, so each
-    bump arrives twice and the second is closed by hand. The comparison is an
-    overlap rather than an equality because a cargo entry's `directories` is a
-    set, and two sets can share one member without being equal.
-
-    Parameters
-    ----------
-    entries
-        The configuration's `updates` entries, in document order.
-
-    Returns
-    -------
-    list of str
-        One message per overlapping pair.
-    """
-    faults: list[str] = []
-    for position, first in enumerate(entries):
-        for second in entries[position + 1 :]:
-            fault = _shared_directory_fault(first, second)
-            if fault is not None:
-                faults.append(fault)
-    return faults
-
-
-def _shared_directory_fault(
-    first: Mapping[str, object], second: Mapping[str, object]
-) -> str | None:
-    """Return why two entries of one ecosystem cover a shared directory.
-
-    Entries of different ecosystems never contend for a dependency, so they
-    return `None`.
-    """
-    if first.get("package-ecosystem") != second.get("package-ecosystem"):
-        return None
-    shared = declared_directories(first) & declared_directories(second)
-    if not shared:
-        return None
-    return f"{_label(first)} and {_label(second)} both cover {sorted(shared)}"
-
-
-def directory_faults(entry: Mapping[str, object], root: Path) -> list[str]:
-    """Return every listed directory that is missing or holds no manifest.
-
-    The reading that makes the declared paths mean something. A path a rename
-    left behind, or one typed for an ecosystem whose manifest lives
-    elsewhere, leaves Dependabot watching an empty directory and reporting
-    nothing, which reads exactly like a repository with no updates at all.
-
-    Parameters
-    ----------
-    entry
-        One `updates` entry.
-    root
-        The repository root the declared paths are relative to.
-
-    Returns
-    -------
-    list of str
-        One message per directory that does not exist, or that exists but
-        holds none of the manifests `ECOSYSTEM_MANIFESTS` names for the
-        entry's ecosystem.
-    """
-    manifests = ECOSYSTEM_MANIFESTS.get(str(entry.get("package-ecosystem")))
-    if not manifests:
-        return []
-    faults: list[str] = []
-    for directory in sorted(declared_directories(entry)):
-        fault = _directory_fault(entry, directory, manifests, root)
-        if fault is not None:
-            faults.append(fault)
-    return faults
-
-
-def _is_glob(directory: str) -> bool:
-    """Return whether a declared directory is a pattern rather than a path."""
-    return any(character in directory for character in "*?[")
-
-
-def _directory_fault(
-    entry: Mapping[str, object],
-    directory: str,
-    manifests: tuple[str, ...],
-    root: Path,
-) -> str | None:
-    """Return why one declared directory cannot supply the entry's manifests.
-
-    A glob is not a path this reading can resolve; canon expands one against
-    the tree, so it is skipped rather than reported as a missing directory.
-    """
-    if _is_glob(directory):
-        return None
-    base = root / directory.lstrip("/")
-    if not base.is_dir():
-        return f"{_label(entry)} lists {directory!r}, which is not a directory"
-    missing = [name for name in manifests if not (base / name).is_file()]
-    if not missing:
-        return None
-    return (
-        f"{_label(entry)} lists {directory!r}, which holds no "
-        f"{', '.join(missing)}"
-    )
 
 
 def _update_types_shape(declared: object) -> tuple[bool, bool, bool, bool]:
@@ -352,46 +235,11 @@ def _width_faults(label: str, name: str, group: object) -> list[str]:
     return []
 
 
-def uncovered_directories(
-    entries: list[Mapping[str, object]], ecosystems: frozenset[str]
-) -> list[str]:
-    """Return every ecosystem in `ecosystems` with no entry of its own.
-
-    Canon leaves ecosystem coverage to its governance rules, and this
-    repository has chosen the set below. Without this reading, deleting an
-    entry whole -- the pip one, say -- would pass every group and cadence
-    fault, because there would be no entry left to ask.
-
-    Parameters
-    ----------
-    entries
-        The configuration's `updates` entries.
-    ecosystems
-        The `package-ecosystem` values this repository requires.
-
-    Returns
-    -------
-    list of str
-        One message per required ecosystem no entry declares.
-    """
-    declared = {str(entry.get("package-ecosystem")) for entry in entries}
-    return [
-        f"no {ecosystem} update entry is declared"
-        for ecosystem in sorted(ecosystems)
-        if ecosystem not in declared
-    ]
-
-
 __all__ = [
     "ALLOWED_CARGO_STRATEGIES",
     "CATCH_ALL_KEYS",
     "CATCH_ALL_UPDATE_TYPES",
-    "ECOSYSTEM_MANIFESTS",
-    "absolute",
     "cadence_faults",
     "cargo_strategy_faults",
-    "directory_faults",
-    "duplicate_faults",
     "group_faults",
-    "uncovered_directories",
 ]
