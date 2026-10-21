@@ -47,6 +47,7 @@ from _suite_targets import (
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    import collections.abc as cabc
     from pathlib import Path
 
 #: A Makefile whose rules exercise the shapes the reader has to tell apart.
@@ -291,7 +292,7 @@ def test_reading_a_directory_as_a_file_names_it(tmp_path: Path) -> None:
 )
 def test_a_presence_check_answers_for_a_path_it_can_see(
     tmp_path: Path,
-    predicate: typ.Callable[[Path], bool],
+    predicate: cabc.Callable[[Path], bool],
     kind: str,
     other: str,
 ) -> None:
@@ -320,7 +321,7 @@ def test_a_presence_check_answers_for_a_path_it_can_see(
     ],
 )
 def test_an_absent_path_is_a_definite_answer_not_a_failure(
-    tmp_path: Path, predicate: typ.Callable[[Path], bool], name: str
+    tmp_path: Path, predicate: cabc.Callable[[Path], bool], name: str
 ) -> None:
     """A path that is not there is answered False, not reported.
 
@@ -328,13 +329,22 @@ def test_an_absent_path_is_a_definite_answer_not_a_failure(
     absence as a source failure would fail the suite on a configuration that
     is simply missing a path -- which is the configuration fault the reading
     exists to report.
+
+    The two shapes are distinct failures of `stat`, and `_classified_as`
+    answers both: `ENOENT` for the absent directory, and `ENOTDIR` for the
+    child of a regular file, which is a path no directory can hold.
     """
     assert predicate(tmp_path / "absent") is False, (
         f"{name} must answer False for an absent path, not raise"
     )
     assert predicate(tmp_path / "absent" / "deeper") is False, (
-        f"{name} must answer False for a path whose parent is not a "
-        f"directory, not raise"
+        f"{name} must answer False for a path under an absent parent, not "
+        f"raise"
+    )
+    (tmp_path / "file").write_text("", encoding="utf-8")
+    assert predicate(tmp_path / "file" / "child") is False, (
+        f"{name} must answer False for a path whose parent is a file, not "
+        f"raise"
     )
 
 
@@ -350,7 +360,7 @@ def test_an_absent_path_is_a_definite_answer_not_a_failure(
     ],
 )
 def test_an_unclassifiable_path_is_reported_not_answered_false(
-    tmp_path: Path, predicate: typ.Callable[[Path], bool], name: str
+    tmp_path: Path, predicate: cabc.Callable[[Path], bool], name: str
 ) -> None:
     """A `stat` that fails is not the same answer as an absent file.
 

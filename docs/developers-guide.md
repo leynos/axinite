@@ -1116,7 +1116,7 @@ whole.
 path open two update streams for the same dependencies, and each bump arrives
 twice. Entries of different ecosystems never contend.
 
-**Labels, limits and cooldowns.** Each entry carries `dependencies` and its
+**Labels, limits, and cooldowns.** Each entry carries `dependencies` and its
 ecosystem name, keeps five pull requests open, and applies a cooldown before
 proposing anything. A cooldown is what keeps a release from arriving in the
 hour it is published, which is when a compromised or yanked release is most
@@ -1132,21 +1132,29 @@ lockfile the workspace does not have.
 
 #### The Dependabot contract modules
 
-| Module                    | Answers                                                         |
-| ------------------------- | --------------------------------------------------------------- |
-| `dependabot_config.py`    | What the file says: its entries, directories, labels and groups |
-| `_dependabot_shape.py`    | What one entry's own shape must be: groups, cadence, strategy   |
-| `_dependabot_coverage.py` | What the configuration covers, and the tree it points at        |
-| `dependabot_estate.py`    | The values this repository's own configuration is held to       |
+| Module                    | Answers                                                          |
+| ------------------------- | ---------------------------------------------------------------- |
+| `dependabot_config.py`    | What the file says: its entries, directories, labels, and groups |
+| `_dependabot_shape.py`    | What one entry's own shape must be: groups, cadence, strategy    |
+| `_dependabot_coverage.py` | What the configuration covers, and the tree it points at         |
+| `dependabot_estate.py`    | The values this repository's own configuration is held to        |
 
 `dependabot_config.py` is the boundary. Its `read_dependabot` converts a file
 that is missing, undecodable, not YAML, not a mapping, or not a mapping keyed
 by text into a `SourceError` that names the path. Above it, every reading is
 pure in the mapping it is handed and returns a list of fault messages rather
 than raising on the first, so a contributor who breaks two things sees both in
-one run. `dependabot_estate.py` names the entry points and the labels, limits
+one run. `dependabot_estate.py` names the entry points and the labels, limits,
 and cooldowns each carries, so changing any of them is a change to that module
 rather than to a test body.
+
+`declared_directories` refuses a `directory` or `directories` member that is
+not text rather than dropping it. Skipping the value would make
+`directories: ["/", 42]` read as `["/"]`, so an entry declaring a malformed
+path would satisfy every coverage and manifest reading as though it declared
+one directory fewer. The path itself is normalized with
+`pathlib.PurePosixPath`, which also collapses repeated separators that string
+trimming left in place.
 
 The directory and manifest readings ask the filesystem two questions, and both
 go through `is_directory` and `is_regular_file` in `_sources.py`. They give the
@@ -1165,7 +1173,7 @@ unconditionally would pass it for exactly that reason, so
 `dependabot_reader_test.py` and `dependabot_coverage_test.py` drive the same
 readings with documents written for the purpose, and
 `dependabot_shape_property_test.py` holds the readings that are relations --
-group order, coverage, duplication and directory spelling -- to a generated
+group order, coverage, duplication, and directory spelling -- to a generated
 model. Each new reading belongs in all three: the estate case is what keeps
 this repository honest, the written cases are what a failure names, and the
 property is what covers the range a table cannot.

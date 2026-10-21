@@ -26,6 +26,7 @@ configuration fault would be reported about a file nothing managed to look at.
 from __future__ import annotations
 
 import typing as typ
+from pathlib import PurePosixPath
 
 from _sources import SourceError, read_text
 from _strict_workflows import WorkflowReadError, parse_strict
@@ -39,10 +40,10 @@ class DependabotConfigurationError(Exception):
     """The configuration does not declare something these readings judge.
 
     Raised for a document that is not a configuration these readings can
-    judge -- no `updates` list, an entry that is not a mapping -- and for a
-    lookup that does not find exactly one entry. A shape canon refuses is not
-    an error: those come back as messages, so a contract can name every one
-    of them at once.
+    judge -- no `updates` list, an entry that is not a mapping, a declared
+    directory that is not text -- and for a lookup that does not find exactly
+    one entry. A shape canon refuses is not an error: those come back as
+    messages, so a contract can name every one of them at once.
     """
 
 
@@ -148,15 +149,59 @@ def declared_directories(entry: Mapping[str, object]) -> frozenset[str]:
     frozenset of str
         Each declared directory with a leading slash and without a trailing
         one, so `/tests/e2e` and `tests/e2e/` compare equal.
+
+    Raises
+    ------
+    DependabotConfigurationError
+        If `directory` or a member of `directories` is not text. Dropping such
+        a value would leave `directories: ["/", 42]` reading as `["/"]`, so an
+        entry that declares a malformed path would pass every coverage and
+        manifest reading as though it declared one less directory. An entry
+        that omits both keys still reads as covering nothing, which is what
+        `label` and the coverage readings report.
     """
     values: list[str] = []
-    single = entry.get("directory")
-    if isinstance(single, str):
-        values.append(single)
+    if "directory" in entry:
+        values.append(_declared_string(entry, entry["directory"], "directory"))
     listed = entry.get("directories")
     if isinstance(listed, list):
-        values.extend(value for value in listed if isinstance(value, str))
+        for position, value in enumerate(listed):
+            name = f"directories[{position}]"
+            values.append(_declared_string(entry, value, name))
     return frozenset(absolute(value) for value in values)
+
+
+def _declared_string(
+    entry: Mapping[str, object], value: object, name: str
+) -> str:
+    """Return one declared directory, refusing a value that is not text.
+
+    Parameters
+    ----------
+    entry
+        The entry the value was declared on, named in the failure.
+    value
+        The declared value.
+    name
+        The key the value was read from, such as `directories[1]`.
+
+    Returns
+    -------
+    str
+        The declared directory, unchanged.
+
+    Raises
+    ------
+    DependabotConfigurationError
+        If the value is not text.
+    """
+    if not isinstance(value, str):
+        ecosystem = entry.get("package-ecosystem", "no ecosystem")
+        raise DependabotConfigurationError(
+            f"the {ecosystem} entry declares {name} as {value!r}, which is "
+            f"not a directory path"
+        )
+    return value
 
 
 def entry_for(
@@ -236,9 +281,10 @@ def absolute(directory: str) -> str:
     str
         The same directory with exactly one leading slash and no trailing
         one, so `/tests/e2e`, `tests/e2e/` and `./tests/e2e` all read as
-        `/tests/e2e`. The repository root reads as `/`.
+        `/tests/e2e`. The repository root reads as `/`. Repeated separators
+        collapse too, so `tests//e2e` reads as `/tests/e2e`.
     """
-    return "/" + directory.removeprefix("./").strip("/")
+    return PurePosixPath("/", directory).as_posix()
 
 
 def label(entry: Mapping[str, object]) -> str:

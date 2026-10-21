@@ -25,7 +25,10 @@ from _dependabot_coverage import (
     duplicate_faults,
     uncovered_directories,
 )
-from dependabot_config import declared_directories
+from dependabot_config import (
+    DependabotConfigurationError,
+    declared_directories,
+)
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from pathlib import Path
@@ -47,13 +50,14 @@ APPROVED_ENTRY: dict[str, object] = {
 }
 
 
-def _entry_listing(directories: list[str]) -> dict[str, object]:
+def _entry_listing(directories: list[object]) -> dict[str, object]:
     """Return the approved entry with `directories` instead of `directory`.
 
     Dependabot reads one or the other, and the approved entry carries
     `directory`, so a case that wants `directories` has to drop it. Keeping
     both would leave the reading free to see a root the case never meant to
-    declare.
+    declare. The list holds `object` rather than `str` so a case can declare
+    a value that is not a path at all.
     """
     entry = {key: value for key, value in APPROVED_ENTRY.items()}
     entry.pop("directory")
@@ -145,6 +149,34 @@ def test_entries_over_different_directories_are_accepted() -> None:
     assert duplicate_faults(entries) == [], (
         "two cargo entries over different directories are not a duplicate"
     )
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param(
+            dict(APPROVED_ENTRY, directory=42), id="single-directory"
+        ),
+        pytest.param(
+            _entry_listing(["/", 42]), id="list-holding-a-number"
+        ),
+        pytest.param(
+            _entry_listing(["/", None]), id="list-holding-a-null"
+        ),
+    ],
+)
+def test_a_declared_directory_that_is_not_text_is_reported(
+    entry: dict[str, object],
+) -> None:
+    """A malformed path is refused rather than left out of the set.
+
+    Filtering a non-string value would make `directories: ["/", 42]` read as
+    `["/"]`, so the entry would pass every coverage and manifest reading as
+    though it declared one directory fewer -- and the directory it meant to
+    declare would be watched by nothing.
+    """
+    with pytest.raises(DependabotConfigurationError, match="not a directory"):
+        declared_directories(entry)
 
 
 @pytest.mark.parametrize(

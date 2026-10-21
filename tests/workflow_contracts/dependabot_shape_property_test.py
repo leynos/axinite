@@ -196,6 +196,7 @@ def test_two_entries_contend_exactly_when_their_ecosystems_and_paths_meet(
         pytest.param("tests/e2e/", "/tests/e2e", id="trailing-slash"),
         pytest.param("./tests/e2e", "/tests/e2e", id="dot-prefix"),
         pytest.param("./tests/e2e/", "/tests/e2e", id="both"),
+        pytest.param("tests//e2e", "/tests/e2e", id="repeated-separator"),
         pytest.param("/", "/", id="root"),
         pytest.param("", "/", id="empty"),
     ],
