@@ -258,7 +258,16 @@ def required_ceiling(parsed: dict[str, Profile], invocations: int = 1) -> float:
 
 #: What one nested trybuild session must be allowed, in seconds. Its timeout
 #: covers dependency preparation, fixture compilation and fixture execution.
-NESTED_COMPILER_ALLOWANCE_SECONDS: typ.Final[float] = 900.0
+#:
+#: A branch's first run has a cold compiler cache, and trybuild compiles the
+#: whole generated project's dependency tree inside the test, so the nested
+#: build alone took 697 s in job 118844928700 on 20 October 2026 and the
+#: fixtures then had less than 203 s of a 900 s allowance left. That ended
+#: `Tests (default)` on every branch that had not seeded a cache, since `main`
+#: never runs this suite. 1,500 s is the same estimate the 730f6f7a precedent
+#: used for `schema_helpers_ui`: about half again the measured cold
+#: requirement, and five minutes below the 30 minute whole-run budget.
+NESTED_COMPILER_ALLOWANCE_SECONDS: typ.Final[float] = 1500.0
 #: Compatibility name used by the filterset-reading contracts; this value
 #: now applies only to targets that invoke nested trybuild Cargo.
 COMPILE_CONTRACT_ALLOWANCE_SECONDS: typ.Final[float] = (

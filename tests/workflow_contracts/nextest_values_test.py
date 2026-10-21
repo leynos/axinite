@@ -12,7 +12,7 @@ reads whatever it finds, falling back to nextest's ten-second default. So
 deleting every ``grace-period`` in the file *raises* the computed
 requirement and leaves the ordering assertions passing, while the wait
 between `SIGTERM` and `SIGKILL` silently doubles. The nested trybuild
-override's 900 s is the next: the budget assertion accepts anything at or
+override's 1,500 s is the next: the budget assertion accepts anything at or
 above the allowance, so an override raised to an hour would pass while
 sitting above the 30 m whole-run budget for its tests. And the whole-run
 budget itself is only ever compared with the largest per-test allowance,
@@ -62,10 +62,10 @@ REQUIRED_GLOBAL_TIMEOUT_SECONDS: typ.Final[float] = 30 * 60.0
 
 #: The compile-contract override's ``slow-timeout``, field by field.
 #: ``compile_contract_budget_test`` asserts the allowance is *at least*
-#: 900 s, which is the right shape for that question and leaves an
+#: 1,500 s, which is the right shape for that question and leaves an
 #: override raised past the whole-run budget passing.
 REQUIRED_OVERRIDE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
-    "period": "900s",
+    "period": "1500s",
     "terminate-after": "1",
     "grace-period": "5s",
 }
@@ -188,13 +188,12 @@ def test_each_profile_pins_its_compile_contract_override(
 
     Default and ci each declare two overrides: first one naming only
     `schema_helpers_ui` and preserving its exact 300 s ordinary bound, then
-    the shared one naming both required targets and allowing trybuild 900 s.
-    They also carry the
-    Postgres group override (pinned by
+    the shared one naming both required targets and allowing trybuild
+    1,500 s. They also carry the Postgres group override (pinned by
     ``test_each_profile_pins_its_postgres_group_override``). Coverage declares
-    none; it inherits the ci
-    override and filters the binaries out. The counts are pinned because a
-    second matching override would change the value in force by file order.
+    none; it inherits the ci override and filters the binaries out. The
+    counts are pinned because a second matching override would change the
+    value in force by file order.
     """
     own = nextest_profiles[profile].overrides
     contract_overrides = [
@@ -236,7 +235,7 @@ def test_each_profile_pins_its_compile_contract_override(
     fields = _fields(shared.get("slow-timeout"))
     assert fields == REQUIRED_OVERRIDE_SLOW_TIMEOUT, (
         f"[profile.{profile}]'s shared override slow-timeout is {fields}, "
-        f"not {REQUIRED_OVERRIDE_SLOW_TIMEOUT}; the guide records 900 s for "
+        f"not {REQUIRED_OVERRIDE_SLOW_TIMEOUT}; the guide records 1,500 s for "
         f"`trybuild`, and a larger one would sit above the whole-run budget "
         f"that contains it"
     )

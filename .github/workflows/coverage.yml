@@ -268,7 +268,7 @@ jobs:
       # (issue #237). nextest also skips doctests. The separate
       # compile-contracts job runs both fixture binaries uninstrumented for
       # each feature leg; this coverage profile excludes them because their
-      # fixture compilation exceeded the hosted 900 s test allowance under
+      # fixture compilation exceeded the hosted per-test allowance under
       # llvm-cov instrumentation.
       - name: Generate coverage
         if: matrix.name != 'libsql-only'

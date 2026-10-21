@@ -3453,12 +3453,12 @@ they must be ordered lives in the `generate-coverage` README in
 cargo watchdog only on the two lanes that use that action, and two of the four
 were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                          |
-| ------------------------ | ---------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
-| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 900 s per nested `trybuild` session; 5 s grace |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                                   |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                                      |
-| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                            |
+| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                            |
+| ------------------------ | ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 1,500 s per nested `trybuild` session; 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                                     |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                                        |
+| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                              |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -3494,7 +3494,7 @@ beside the profile a reader selects rather than one section away.
 All three therefore set a 300-second base allowance and a 30-minute whole-run
 budget. The default and ci profiles each declare an explicit 300-second
 override for `schema_helpers_ui`, followed by the shared serial-group override
-that allows nested `trybuild` sessions 900 seconds. Coverage inherits the ci
+that allows nested `trybuild` sessions 1,500 seconds. Coverage inherits the ci
 overrides.
 
 ### The compile-contract binaries are not ordinary tests
@@ -3533,7 +3533,7 @@ both run from its one `ui` test.
 
 The per-test timeout applies to the test process. For `trybuild`, nested Cargo
 preparation, fixture compilation and execution all happen inside that process
-and count towards its 900-second allowance. For `schema_helpers_ui`, the
+and count towards its 1,500-second allowance. For `schema_helpers_ui`, the
 integration target compiles before nextest starts the test timer; its `ui` test
 has the ordinary 300-second execution bound. Nextest's 30-minute global timer
 also starts with the test run. It does not bound the Cargo build that precedes
@@ -3553,7 +3553,42 @@ Contracts also check default-profile inheritance, CI override precedence, and
 that ordinary tests stay outside the compile-contract group. The timeout probe
 scales the periods down and verifies that schema-helper execution is terminated
 at its ordinary 300-second bound while a `trybuild` test survives its
-900-second allowance.
+1,500-second allowance.
+
+### Why the nested session needs 1,500 seconds
+
+The figure comes from a cold cache, which is the state every branch starts in.
+`trybuild` compiles the whole generated project's dependency tree inside the
+test process, so that build spends a nextest per-test allowance the way an
+ordinary test would spend it on assertions. Two runs on hosted runners measured
+it:
+
+| Run          | Nested `dev` build | Test allowance | Outcome                                 |
+| ------------ | ------------------ | -------------- | --------------------------------------- |
+| 118844928700 | 697 s              | 900 s          | timed out at 900 s on the first fixture |
+| 117818957223 | 619 s              | 900 s          | timed out at 900 s on the first fixture |
+
+*Table: nested `trybuild` builds measured against the former 900-second
+allowance. The build alone left under 300 seconds for the fixtures this session
+compiles.*
+
+The warm comparison is a pull-request run at a 99.92 % sccache hit rate, which
+finished the same binary in 391 s. Nothing else about the test changed between
+those runs, so the difference is the cache and not the fixtures.
+
+`main` never seeds a warm cache for this job. `test.yml`'s `tests` job runs
+`if: github.event_name != 'push'`, so the default leg exists only on pull
+requests, and `coverage.yml`, which does run on `main`, excludes both
+compile-contract binaries. A branch's first run of `Tests (default)` is
+therefore cold however busy the repository is, and a budget sized against warm
+runs fails every branch once.
+
+1,500 seconds leaves 803 seconds after the larger cold build, which is more
+than twice the 391 seconds the warm run spent on the build and the fixtures
+together. It is also the figure commit `730f6f7a` chose for `schema_helpers_ui`
+when that target carried the same cold-cache problem, and it leaves 300 seconds
+below the 30-minute whole-run budget, which is the ordering constraint this
+tier has to satisfy.
 
 ### The values are pinned, not merely ordered
 
@@ -3572,16 +3607,16 @@ ten-second default when it finds none. Deleting every `grace-period` in the
 file therefore *raises* the computed requirement, leaves every assertion
 passing, and doubles the wait a terminated test actually gets.
 
-The 900-second override is the next. The compile-contract contract asks whether
-the `trybuild` binary is allowed *at least* that much, which is the right shape
-for its own question and says nothing about the value, so an override raised to
-an hour would satisfy it while sitting above the 30-minute whole-run budget
-that contains it: the run would end before the allowance could be used. The
-number of overrides is pinned with it, because a second one matching the same
-binaries would decide the allowance in force by file order. And the whole-run
-budget is only ever compared with the largest per-test allowance, so the
-documented thirty minutes could drift to forty with nothing failing and this
-table left describing a value the runner does not use.
+The 1,500-second override is the next. The compile-contract contract asks
+whether the `trybuild` binary is allowed *at least* that much, which is the
+right shape for its own question and says nothing about the value, so an
+override raised to an hour would satisfy it while sitting above the 30-minute
+whole-run budget that contains it: the run would end before the allowance could
+be used. The number of overrides is pinned with it, because a second one
+matching the same binaries would decide the allowance in force by file order.
+And the whole-run budget is only ever compared with the largest per-test
+allowance, so the documented thirty minutes could drift to forty with nothing
+failing and this table left describing a value the runner does not use.
 
 The set of profiles is pinned too. Every assertion in this suite is
 parametrized over `default`, `ci` and `coverage`, so a profile carrying looser
@@ -3703,8 +3738,8 @@ one run per leg.
 ### What the values are sized against
 
 The 30 minute whole-run budget is a bound rather than a measurement. It has to
-exceed the largest per-test allowance, the 900 second nested `trybuild`
-session, and it does so with fifteen minutes to spare.
+exceed the largest per-test allowance, the 1,500 second nested `trybuild`
+session, and it does so with five minutes to spare.
 
 The contract also refuses a step that names a suite command without plainly
 running one. `if false; then cargo nextest run; fi` keeps the text and runs
