@@ -138,6 +138,16 @@ formatter and general-purpose linter, TypeScript owns static types, and Oxlint
 adds the requested syntax-aware Unicorn and evidence-focused `ai-deslop` rules.
 Explicit rules and exact pins keep that boundary auditable.
 
+## Addendum (2026-10-22): Bun dependency updates
+
+The repository configuration added in main commit `c187e632` (#446) now runs
+daily Dependabot updates for `/web-src`, grouping minor and patch updates and
+applying the shared seven-day default and fourteen-day major-version cooldowns.
+This policy covers the pinned Oxlint and `ai-deslop` dependencies as well as
+the rest of the front-end dependency graph. No additional update configuration
+is needed here; proposed version changes must still pass the compatibility and
+front-end gates described in this decision.
+
 ## References
 
 - [Oxlint built-in plug-ins](https://oxc.rs/docs/guide/usage/linter/plugins.html)
@@ -146,5 +156,6 @@ Explicit rules and exact pins keep that boundary auditable.
 - [Unicorn recommended configuration](https://github.com/sindresorhus/eslint-plugin-unicorn#recommended-config)
 - [`ai-deslop` package](https://www.npmjs.com/package/ai-deslop)
 - [Model pull request #121](https://github.com/leynos/simulacat-core/pull/121)
+- [Repository dependency policy, pull request #446](https://github.com/leynos/axinite/pull/446)
 - [Web API reference](web-api-reference.md)
 - [Front-end Oxlint configuration](../web-src/.oxlintrc.json)
