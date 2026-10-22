@@ -8,34 +8,34 @@
  */
 
 import { withRequestTimeout } from "@/lib/api/client";
+import {
+  isJsonObject,
+  isJsonValue,
+  isString,
+  type JsonValue,
+} from "@/lib/api/json-value";
 
 export type TeeStatus = {
   image_digest: string;
-  [key: string]: unknown;
+  [key: string]: JsonValue;
 };
 
 export type TeeReport = {
   tls_certificate_fingerprint?: string;
   report_data?: string;
   vm_config?: string;
-  [key: string]: unknown;
+  [key: string]: JsonValue | undefined;
 };
 
 const IPV4_PATTERN =
   /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/u;
 
 function currentHostname(): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.location.hostname;
+  return globalThis.location.hostname;
 }
 
 function currentProtocol(): string {
-  if (typeof window === "undefined") {
-    return "https:";
-  }
-  return window.location.protocol;
+  return globalThis.location.protocol;
 }
 
 /**
@@ -75,14 +75,57 @@ export function teeInstanceName(hostname: string = currentHostname()): string {
   return hostname.split(".")[0] ?? "";
 }
 
-function fetchJson<T>(url: string): Promise<T> {
+function fetchJson(url: string): Promise<JsonValue> {
   return withRequestTimeout(async (signal) => {
     const response = await fetch(url, { signal });
     if (!response.ok) {
       throw new Error(`TEE request failed for ${url} with ${response.status}`);
     }
-    return (await response.json()) as T;
+    const payload: unknown = await response.json();
+    if (!isJsonValue(payload)) {
+      throw new TypeError("TEE response is not a valid JSON value");
+    }
+    return payload;
   });
+}
+
+function parseTeeStatus(payload: JsonValue) {
+  if (!isJsonObject(payload)) {
+    throw new TypeError("TEE attestation response must be an object");
+  }
+
+  const imageDigest = payload["image_digest"];
+  if (!isString(imageDigest)) {
+    throw new TypeError("TEE attestation response is missing image_digest");
+  }
+
+  const status = { ...payload, image_digest: imageDigest } satisfies TeeStatus;
+  return status;
+}
+
+function parseTeeReport(payload: JsonValue) {
+  if (!isJsonObject(payload)) {
+    throw new TypeError("TEE report response must be an object");
+  }
+
+  const report = { ...payload } satisfies TeeReport;
+  const stringFields = [
+    "tls_certificate_fingerprint",
+    "report_data",
+    "vm_config",
+  ] as const;
+
+  for (const field of stringFields) {
+    const value = payload[field];
+    if (value !== undefined) {
+      if (!isString(value)) {
+        throw new TypeError(`TEE report field ${field} must be a string`);
+      }
+      report[field] = value;
+    }
+  }
+
+  return report;
 }
 
 /**
@@ -96,15 +139,10 @@ export async function checkTeeStatus(): Promise<TeeStatus | null> {
   }
 
   const name = teeInstanceName();
-  const status = await fetchJson<TeeStatus>(
+  const payload = await fetchJson(
     `${base}/instances/${encodeURIComponent(name)}/attestation`
   );
-
-  if (typeof status.image_digest !== "string") {
-    throw new Error("TEE attestation response is missing image_digest");
-  }
-
-  return status;
+  return parseTeeStatus(payload);
 }
 
 let reportCache: TeeReport | null = null;
@@ -120,7 +158,8 @@ export async function fetchTeeReport(): Promise<TeeReport> {
     throw new Error("TEE attestation is unavailable on this host");
   }
 
-  const report = await fetchJson<TeeReport>(`${base}/attestation/report`);
+  const payload = await fetchJson(`${base}/attestation/report`);
+  const report = parseTeeReport(payload);
   reportCache = report;
   return report;
 }

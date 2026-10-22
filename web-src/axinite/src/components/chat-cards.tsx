@@ -74,7 +74,7 @@ export const JobStartCard = (props: {
   browseUrl?: string | undefined;
 }) => {
   const { t } = useI18n();
-  const basePath = import.meta.env.BASE_URL as string | undefined;
+  const basePath = import.meta.env.BASE_URL;
   const shortId = () => props.jobId.slice(0, 8);
   const displayTitle = () =>
     props.title.trim().length > 0

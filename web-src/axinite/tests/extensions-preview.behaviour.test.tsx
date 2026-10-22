@@ -1,74 +1,34 @@
 /**
  * @file Behaviour tests for the extensions route (`ExtensionsPreview`): the
- * installed list, registry, setup and activation flows, with the extensions
- * API replaced by shared mocks from `support/extension-api-mocks`.
+ * installed list, registry, setup and activation flows through controlled
+ * responses from an in-process gateway.
  */
 
 import { render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { AppProviders } from "@/app/providers";
 import { ExtensionsPreview } from "@/components/extensions-preview";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
-import {
-  applyDefaultExtensionMocks,
-  cloneFirecrawlExtension,
-  cloneFirecrawlRegistryEntry,
-  extensionApiMocks,
-  type MockExtension,
-  type MockRegistryEntry,
-  resetExtensionApiMocks,
-} from "./support/extension-api-mocks";
+import { createFirecrawlGateway } from "./support/extension-api-fixtures";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
 
-vi.mock(
-  "@/lib/api/extensions",
-  async () => (await import("./support/extension-api-mocks")).extensionApiMocks
-);
+let gateway: ReturnType<typeof createFirecrawlGateway>;
 
 beforeAll(async () => {
   await setupI18nTestHarness();
 });
 
 describe("extensions preview behaviour", () => {
-  let installedExtensions: MockExtension[];
-  let registryEntries: MockRegistryEntry[];
-
   beforeEach(async () => {
-    installedExtensions = [cloneFirecrawlExtension()];
-    registryEntries = [cloneFirecrawlRegistryEntry()];
+    gateway = createFirecrawlGateway();
 
-    resetExtensionApiMocks();
-
-    window.localStorage.clear();
+    globalThis.localStorage.clear();
     document.documentElement.lang = "";
     document.documentElement.dir = "";
     const runtime = await import("@/lib/i18n/runtime");
     await runtime.default.changeLanguage(DEFAULT_LOCALE);
-
-    applyDefaultExtensionMocks();
-    extensionApiMocks.fetchExtensions.mockImplementation(async () => ({
-      extensions: installedExtensions,
-    }));
-    extensionApiMocks.fetchExtensionRegistry.mockImplementation(async () => ({
-      entries: registryEntries,
-    }));
-    extensionApiMocks.removeExtension.mockImplementation(
-      async (name: string) => {
-        installedExtensions = installedExtensions.filter(
-          (extension) => extension.name !== name
-        );
-        registryEntries = registryEntries.map((entry) =>
-          entry.name === name ? { ...entry, installed: false } : entry
-        );
-
-        return {
-          message: "Removed",
-          success: true,
-        };
-      }
-    );
   });
 
   it("confirms removal and makes built-in wasm extensions installable again", async () => {
@@ -109,9 +69,13 @@ describe("extensions preview behaviour", () => {
     );
 
     await waitFor(() => {
-      expect(extensionApiMocks.removeExtension).toHaveBeenCalledWith(
-        "firecrawl"
-      );
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/extensions/firecrawl/remove"
+        )
+      ).toBe(true);
     });
     await waitFor(() => {
       expect(

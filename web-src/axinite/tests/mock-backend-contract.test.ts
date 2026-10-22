@@ -5,6 +5,18 @@
 
 import { describe, expect, it } from "vitest";
 
+import type {
+  ExtensionListResponse,
+  FeatureFlagsResponse,
+  GatewayStatusResponse,
+  JobListResponse,
+  MemoryTreeResponse,
+  PairingListResponse,
+  RoutineListResponse,
+  SkillListResponse,
+  ThreadListResponse,
+} from "@/lib/api/contracts";
+import { isBoolean, isJsonObject, type JsonObject } from "@/lib/api/json-value";
 import {
   handleMockRequest,
   parseFailureRoutes,
@@ -20,14 +32,29 @@ function request(path: string, init?: RequestInit): Request {
   return new Request(`http://mock.test${path}`, init);
 }
 
-async function getJson(
-  state: MockBackendState,
-  path: string
-): Promise<unknown> {
+function parseJsonObject(text: string): JsonObject {
+  const value: unknown = JSON.parse(text);
+  if (!isJsonObject(value)) {
+    throw new Error("Expected a JSON object in the mock backend response");
+  }
+  return value;
+}
+
+async function readJsonObject(response: Response): Promise<JsonObject> {
+  const value: unknown = await response.json();
+  if (!isJsonObject(value)) {
+    throw new Error("Expected a JSON object in the mock backend response");
+  }
+  return value;
+}
+
+async function getJson<T>(state: MockBackendState, path: string): Promise<T> {
   const response = await handleMockRequest(request(path), state);
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toContain("application/json");
-  return response.json();
+  // SAFETY: The route-specific type at each call site matches the typed DTO
+  // returned by this in-process mock backend handler.
+  return (await response.json()) as T;
 }
 
 type SseFrame = { event: string; data: string };
@@ -46,7 +73,7 @@ function parseSseFrames(buffer: string): SseFrame[] {
 async function collectSse(
   response: Response,
   isDone: (frames: SseFrame[]) => boolean,
-  timeoutMs = 3_000
+  timeoutMs = 3000
 ): Promise<SseFrame[]> {
   const reader = response.body?.getReader();
   expect(reader).toBeDefined();
@@ -82,35 +109,56 @@ async function collectSse(
 }
 
 describe("stub HTTP contract", () => {
+  it("rejects malformed chat bodies before changing mock state", async () => {
+    const state = new MockBackendState();
+    const threadsBefore = state.listThreads();
+    const historyBefore = state.getHistory(null);
+    const response = await handleMockRequest(
+      request("/api/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "hello", images: [{ data: "AA==" }] }),
+      }),
+      state
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Invalid chat message body.",
+    });
+    expect(state.listThreads()).toEqual(threadsBefore);
+    expect(state.getHistory(null)).toEqual(historyBefore);
+  });
+
   it("serves the feature-flag map as flag names to booleans", async () => {
-    const flags = (await getJson(
+    const flags = await getJson<FeatureFlagsResponse>(
       new MockBackendState(),
       "/api/features"
-    )) as Record<string, unknown>;
+    );
 
     expect(flags["route_chat"]).toBe(true);
     expect(flags["panel_logs"]).toBe(true);
     expect(flags["action_memory_edit"]).toBe(false);
     for (const value of Object.values(flags)) {
-      expect(typeof value).toBe("boolean");
+      expect(isBoolean(value)).toBe(true);
     }
   });
 
   it("honours injected feature-flag overrides", async () => {
-    const flags = (await getJson(
+    const flags = await getJson<FeatureFlagsResponse>(
       new MockBackendState(undefined, {
         featureFlagOverrides: { panel_logs: false },
       }),
       "/api/features"
-    )) as Record<string, unknown>;
+    );
     expect(flags["panel_logs"]).toBe(false);
   });
 
   it("serves gateway status with the operational telemetry fields", async () => {
-    const status = (await getJson(
+    const status = await getJson<GatewayStatusResponse>(
       new MockBackendState(),
       "/api/gateway/status"
-    )) as Record<string, unknown>;
+    );
     expect(status).toMatchObject({
       version: expect.any(String),
       sse_connections: expect.any(Number),
@@ -121,32 +169,28 @@ describe("stub HTTP contract", () => {
   it("serves the initial-load list routes with their expected shapes", async () => {
     const state = new MockBackendState();
 
-    const threads = (await getJson(state, "/api/chat/threads")) as {
-      threads: unknown[];
-    };
+    const threads = await getJson<ThreadListResponse>(
+      state,
+      "/api/chat/threads"
+    );
     expect(Array.isArray(threads.threads)).toBe(true);
 
-    const jobs = (await getJson(state, "/api/jobs")) as { jobs: unknown[] };
+    const jobs = await getJson<JobListResponse>(state, "/api/jobs");
     expect(Array.isArray(jobs.jobs)).toBe(true);
 
-    const routines = (await getJson(state, "/api/routines")) as {
-      routines: unknown[];
-    };
+    const routines = await getJson<RoutineListResponse>(state, "/api/routines");
     expect(Array.isArray(routines.routines)).toBe(true);
 
-    const extensions = (await getJson(state, "/api/extensions")) as {
-      extensions: unknown[];
-    };
+    const extensions = await getJson<ExtensionListResponse>(
+      state,
+      "/api/extensions"
+    );
     expect(Array.isArray(extensions.extensions)).toBe(true);
 
-    const skills = (await getJson(state, "/api/skills")) as {
-      skills: unknown[];
-    };
+    const skills = await getJson<SkillListResponse>(state, "/api/skills");
     expect(Array.isArray(skills.skills)).toBe(true);
 
-    const tree = (await getJson(state, "/api/memory/tree")) as {
-      entries: unknown[];
-    };
+    const tree = await getJson<MemoryTreeResponse>(state, "/api/memory/tree");
     expect(Array.isArray(tree.entries)).toBe(true);
   });
 
@@ -158,7 +202,7 @@ describe("stub HTTP contract", () => {
       failures
     );
     expect(response.status).toBe(500);
-    const body = (await response.json()) as { error: string };
+    const body: { error: string } = await response.json();
     expect(body.error).toContain("/api/jobs");
 
     const untouched = await handleMockRequest(
@@ -190,15 +234,11 @@ describe("stub SSE contract", () => {
     expect(response.headers.get("content-type")).toBe("text/event-stream");
     expect(response.headers.get("cache-control")).toBe("no-cache");
 
-    const frames = await collectSse(
-      response,
-      (seen) => seen.length >= 4,
-      2_000
-    );
+    const frames = await collectSse(response, (seen) => seen.length >= 4, 2000);
     expect(frames.length).toBeGreaterThanOrEqual(4);
     for (const frame of frames) {
       expect(frame.event).toBe("log");
-      const entry = JSON.parse(frame.data) as Record<string, unknown>;
+      const entry = parseJsonObject(frame.data);
       expect(entry).toMatchObject({
         level: expect.any(String),
         target: expect.any(String),
@@ -220,7 +260,10 @@ describe("stub SSE contract", () => {
       request("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: "Summarize the preview state" }),
+        body: JSON.stringify({
+          content: "Summarize the preview state",
+          images: [],
+        }),
       }),
       state
     );
@@ -239,8 +282,8 @@ describe("stub SSE contract", () => {
     expect(responseIndex).toBeGreaterThan(toolStarted);
 
     for (const frame of frames) {
-      const payload = JSON.parse(frame.data) as { type: string };
-      expect(payload.type).toBe(frame.event);
+      const payload = parseJsonObject(frame.data);
+      expect(payload["type"]).toBe(frame.event);
     }
   });
 
@@ -255,7 +298,7 @@ describe("stub SSE contract", () => {
       request("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: "/restart" }),
+        body: JSON.stringify({ content: "/restart", images: [] }),
       }),
       state
     );
@@ -269,22 +312,20 @@ describe("stub SSE contract", () => {
       if (event !== "tool_completed") {
         return false;
       }
-      const payload = JSON.parse(frames[index]?.data ?? "null") as {
-        name: string;
-      };
-      return payload.name === "restart";
+      const payload = parseJsonObject(frames[index]?.data ?? "null");
+      return payload["name"] === "restart";
     });
     const responseIndex = order.indexOf("response");
     expect(toolCompletedIndex).toBeGreaterThanOrEqual(0);
     expect(responseIndex).toBeGreaterThan(toolCompletedIndex);
 
     const toolStartedFrame = frames[order.indexOf("tool_started")];
-    expect(JSON.parse(toolStartedFrame?.data ?? "null")).toMatchObject({
+    expect(parseJsonObject(toolStartedFrame?.data ?? "null")).toMatchObject({
       name: "restart",
     });
 
     const responseFrame = frames[responseIndex];
-    expect(JSON.parse(responseFrame?.data ?? "null")).toMatchObject({
+    expect(parseJsonObject(responseFrame?.data ?? "null")).toMatchObject({
       content: expect.stringContaining("Restart initiated"),
     });
   });
@@ -300,7 +341,10 @@ describe("stub SSE contract", () => {
       request("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: "Generate an image of a robot panda" }),
+        body: JSON.stringify({
+          content: "Generate an image of a robot panda",
+          images: [],
+        }),
       }),
       state
     );
@@ -314,12 +358,9 @@ describe("stub SSE contract", () => {
       (frame) => frame.event === "image_generated"
     );
     expect(imageFrame).toBeDefined();
-    const payload = JSON.parse(imageFrame?.data ?? "{}") as {
-      data_url: string;
-      path?: string;
-    };
-    expect(payload.data_url).toMatch(/^data:image\/png;base64,/);
-    expect(payload.path).toBe("workspace/generated/preview.png");
+    const payload = parseJsonObject(imageFrame?.data ?? "{}");
+    expect(payload["data_url"]).toMatch(/^data:image\/png;base64,/);
+    expect(payload["path"]).toBe("workspace/generated/preview.png");
   });
 
   it("emits job_started for job-flavoured prompts", async () => {
@@ -333,7 +374,10 @@ describe("stub SSE contract", () => {
       request("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: "Spawn a background job for this" }),
+        body: JSON.stringify({
+          content: "Spawn a background job for this",
+          images: [],
+        }),
       }),
       state
     );
@@ -345,7 +389,7 @@ describe("stub SSE contract", () => {
 
     const jobFrame = frames.find((frame) => frame.event === "job_started");
     expect(jobFrame).toBeDefined();
-    expect(JSON.parse(jobFrame?.data ?? "{}")).toMatchObject({
+    expect(parseJsonObject(jobFrame?.data ?? "{}")).toMatchObject({
       job_id: "job-spawned-1",
       title: "Spawned preview job",
       browse_url: "/projects/job-spawned-1/",
@@ -380,10 +424,8 @@ describe("stub SSE contract", () => {
     );
     const responseFrame = frames.find((frame) => frame.event === "response");
     expect(responseFrame).toBeDefined();
-    const payload = JSON.parse(responseFrame?.data ?? "{}") as {
-      content: string;
-    };
-    expect(payload.content).toContain("Received 2 image attachment(s).");
+    const payload = parseJsonObject(responseFrame?.data ?? "{}");
+    expect(payload["content"]).toContain("Received 2 image attachment(s).");
   });
 
   it("publishes auth_completed on the chat stream when a chat auth token succeeds", async () => {
@@ -405,15 +447,15 @@ describe("stub SSE contract", () => {
       state
     );
     expect(authResponse.status).toBe(200);
-    const authBody = (await authResponse.json()) as { success: boolean };
-    expect(authBody.success).toBe(true);
+    const authBody = await readJsonObject(authResponse);
+    expect(authBody["success"]).toBe(true);
 
     const frames = await collectSse(response, (seen) =>
       seen.some((frame) => frame.event === "auth_completed")
     );
     const authFrame = frames.find((frame) => frame.event === "auth_completed");
     expect(authFrame).toBeDefined();
-    expect(JSON.parse(authFrame?.data ?? "{}")).toMatchObject({
+    expect(parseJsonObject(authFrame?.data ?? "{}")).toMatchObject({
       type: "auth_completed",
       extension_name: "google-drive",
       success: true,
@@ -432,8 +474,8 @@ describe("stub SSE contract", () => {
       state
     );
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { success: boolean };
-    expect(body.success).toBe(false);
+    const body = await readJsonObject(response);
+    expect(body["success"]).toBe(false);
   });
 
   it("cancels a chat auth flow", async () => {
@@ -447,28 +489,28 @@ describe("stub SSE contract", () => {
       state
     );
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { success: boolean };
-    expect(body.success).toBe(true);
+    const body = await readJsonObject(response);
+    expect(body["success"]).toBe(true);
   });
 });
 
 describe("stub pairing contract", () => {
   it("returns an empty request list for an unknown channel", async () => {
     const state = new MockBackendState();
-    const list = (await getJson(state, "/api/pairing/does-not-exist")) as {
-      channel: string;
-      requests: unknown[];
-    };
+    const list = await getJson<PairingListResponse>(
+      state,
+      "/api/pairing/does-not-exist"
+    );
     expect(list.channel).toBe("does-not-exist");
     expect(list.requests).toEqual([]);
   });
 
   it("lists the deterministic whatsapp pending pairing request", async () => {
     const state = new MockBackendState();
-    const list = (await getJson(state, "/api/pairing/whatsapp")) as {
-      channel: string;
-      requests: { code: string; sender_id: string; created_at: string }[];
-    };
+    const list = await getJson<PairingListResponse>(
+      state,
+      "/api/pairing/whatsapp"
+    );
     expect(list.requests).toHaveLength(1);
     expect(list.requests[0]).toMatchObject({
       code: "PAIR-1234",
@@ -487,12 +529,13 @@ describe("stub pairing contract", () => {
       state
     );
     expect(approve.status).toBe(200);
-    const body = (await approve.json()) as { success: boolean };
-    expect(body.success).toBe(true);
+    const body = await readJsonObject(approve);
+    expect(body["success"]).toBe(true);
 
-    const list = (await getJson(state, "/api/pairing/whatsapp")) as {
-      requests: unknown[];
-    };
+    const list = await getJson<PairingListResponse>(
+      state,
+      "/api/pairing/whatsapp"
+    );
     expect(list.requests).toEqual([]);
   });
 
@@ -507,8 +550,8 @@ describe("stub pairing contract", () => {
       state
     );
     expect(approve.status).toBe(200);
-    const body = (await approve.json()) as { success: boolean };
-    expect(body.success).toBe(false);
+    const body = await readJsonObject(approve);
+    expect(body["success"]).toBe(false);
   });
 
   it("returns a plain-text 429 for the rate-limited fixture code", async () => {

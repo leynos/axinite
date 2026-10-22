@@ -52,7 +52,7 @@ export function readJobFile(
 ): Promise<ProjectFileReadResponse> {
   const url = new URL(
     `/api/jobs/${encodeURIComponent(id)}/files/read`,
-    window.location.origin
+    globalThis.location.origin
   );
   url.searchParams.set("path", path);
   return requestJson<ProjectFileReadResponse>(`${url.pathname}${url.search}`);
@@ -75,7 +75,7 @@ export function promptJob(
   id: string,
   request: JobPromptRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>(
+  return postJson<ActionResponse, JobPromptRequest>(
     `/api/jobs/${encodeURIComponent(id)}/prompt`,
     request
   );

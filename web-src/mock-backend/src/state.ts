@@ -53,6 +53,7 @@ import type {
   TurnInfo,
 } from "../../axinite/src/lib/api/contracts";
 import type { MemoryDocument } from "./fixtures";
+import { isString } from "../../axinite/src/lib/api/json-value";
 import {
   createSeedCatalogueSkills,
   createSeedExtensions,
@@ -106,7 +107,7 @@ type EventSubscriber<T> = {
 
 // Indexed lookups on a secrets map yield `undefined` for absent keys.
 function isNonBlankString(value: string | undefined): boolean {
-  return typeof value === "string" && value.trim().length > 0;
+  return value !== undefined && value.trim().length > 0;
 }
 
 /** Only a successful restart tool completion schedules simulated downtime. */
@@ -132,7 +133,7 @@ export class MockBackendState {
     this.bootTime = clock();
     for (const name of Object.keys(this.featureFlags)) {
       const value = options.featureFlagOverrides?.[name];
-      if (typeof value === "boolean") {
+      if (value !== undefined) {
         this.featureFlags[name] = value;
       }
     }
@@ -195,7 +196,7 @@ export class MockBackendState {
   private readonly logSubscribers = new Set<EventSubscriber<LogEntry>>();
 
   // Newest first: pushLog() unshifts, so the chronological seed is reversed.
-  private readonly logs: LogEntry[] = createSeedLogs().reverse();
+  private readonly logs: LogEntry[] = createSeedLogs().toReversed();
 
   private activeThreadId = "thread-review";
 
@@ -239,7 +240,7 @@ export class MockBackendState {
       sse_connections,
       ws_connections,
       total_connections: sse_connections + ws_connections,
-      uptime_secs: Math.floor((this.clock() - this.bootTime) / 1_000),
+      uptime_secs: Math.floor((this.clock() - this.bootTime) / 1000),
       restart_enabled: this.restartFixture.enabled,
       daily_cost: "2.3140",
       actions_this_hour: 18,
@@ -247,13 +248,13 @@ export class MockBackendState {
         {
           model: "gpt-5.4",
           input_tokens: 28_450,
-          output_tokens: 4_208,
+          output_tokens: 4208,
           cost: "1.201400",
         },
         {
           model: "gpt-5.4-mini",
           input_tokens: 12_004,
-          output_tokens: 7_102,
+          output_tokens: 7102,
           cost: "1.112600",
         },
       ],
@@ -287,7 +288,7 @@ export class MockBackendState {
     this.logSubscribers.add(subscriber);
     // Replay the newest 25 entries oldest-to-newest, as a live tail would
     // have delivered them.
-    for (const entry of this.logs.slice(0, 25).reverse()) {
+    for (const entry of this.logs.slice(0, 25).toReversed()) {
       subscriber.send(entry);
     }
     return () => {
@@ -333,7 +334,7 @@ export class MockBackendState {
     const assistant_thread = this.threads.get("thread-assistant")?.info ?? null;
     const threads = [...this.threads.values()]
       .filter((thread) => thread.info.id !== "thread-assistant")
-      .sort((left, right) =>
+      .toSorted((left, right) =>
         right.info.updated_at.localeCompare(left.info.updated_at)
       )
       .map((thread) => thread.info);
@@ -377,7 +378,7 @@ export class MockBackendState {
    */
   getHistory(threadId?: string | null): HistoryResponse {
     const fallbackThreadId =
-      threadId ?? this.activeThreadId ?? this.threads.keys().next().value;
+      threadId ?? this.activeThreadId;
     const thread = this.threads.get(fallbackThreadId);
     if (!thread) {
       throw new Error("Thread not found");
@@ -614,9 +615,9 @@ export class MockBackendState {
         return results;
       })
       .filter((entry) =>
-        typeof depth === "number" ? entry.path.split("/").length <= depth : true
+        depth === undefined || entry.path.split("/").length <= depth
       )
-      .sort((left, right) => left.path.localeCompare(right.path));
+      .toSorted((left, right) => left.path.localeCompare(right.path));
 
     return { entries };
   }
@@ -680,7 +681,7 @@ export class MockBackendState {
 
     return {
       path,
-      entries: [...entries.values()].sort((left, right) =>
+      entries: [...entries.values()].toSorted((left, right) =>
         left.path.localeCompare(right.path)
       ),
     };
@@ -746,7 +747,7 @@ export class MockBackendState {
 
     return {
       results: results
-        .sort((left, right) => right.score - left.score)
+        .toSorted((left, right) => right.score - left.score)
         .slice(0, request.limit ?? 10),
     };
   }
@@ -834,8 +835,8 @@ export class MockBackendState {
       throw new Error("Job not found");
     }
     const content = job.files[path];
-    if (typeof content !== "string") {
-      throw new Error("File not found");
+    if (content === undefined) {
+      throw new TypeError("File not found");
     }
     return { path, content };
   }
@@ -956,11 +957,11 @@ export class MockBackendState {
         enabled: detail.enabled,
         trigger_type: String(detail.trigger["type"] ?? "manual"),
         trigger_summary:
-          typeof detail.trigger["schedule"] === "string"
+          isString(detail.trigger["schedule"])
             ? `cron: ${detail.trigger["schedule"]}`
-            : typeof detail.trigger["pattern"] === "string"
+            : (isString(detail.trigger["pattern"])
               ? `on ${detail.trigger["pattern"]}`
-              : "manual only",
+              : "manual only"),
         action_type: String(detail.action["type"] ?? "lightweight"),
         last_run_at: detail.last_run_at,
         next_fire_at: detail.next_fire_at,

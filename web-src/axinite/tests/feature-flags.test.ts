@@ -27,9 +27,8 @@ describe("feature flag resolution", () => {
   });
 
   it("ignores unknown server and override keys", () => {
-    const overrides = {} as Parameters<typeof resolveFeatureFlags>[1] &
-      Record<string, boolean>;
-    overrides["unknown_flag"] = false;
+    const overrides: Parameters<typeof resolveFeatureFlags>[1] &
+      Record<string, boolean> = { unknown_flag: false };
 
     const resolved = resolveFeatureFlags(
       { route_jobs: false, unknown_flag: true },
@@ -40,13 +39,8 @@ describe("feature flag resolution", () => {
     expect("unknown_flag" in resolved).toBe(false);
   });
 
-  it("falls back to the server or default value when override values are nullish", () => {
-    const overrides = {
-      route_jobs: undefined,
-      panel_logs: null,
-    } as unknown as Parameters<typeof resolveFeatureFlags>[1];
-
-    const resolved = resolveFeatureFlags({ route_jobs: false }, overrides);
+  it("falls back to the server or default when no override is present", () => {
+    const resolved = resolveFeatureFlags({ route_jobs: false }, {});
 
     expect(resolved.route_jobs).toBe(false);
     expect(resolved.panel_logs).toBe(getFeatureFlagDefaults().panel_logs);

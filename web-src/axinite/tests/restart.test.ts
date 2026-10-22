@@ -25,8 +25,8 @@ function makeHarness(options?: { reachable?: boolean; failSend?: boolean }) {
   const controller = createRestartController({
     sendRestart: () =>
       options?.failSend
-        ? Promise.reject(new Error("send failed"))
-        : Promise.resolve(),
+        ? Promise.resolve({ kind: "failed", category: "transport" })
+        : Promise.resolve({ kind: "accepted" }),
     openStream: (h) => {
       handlers = h;
       return {

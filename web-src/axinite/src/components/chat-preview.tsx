@@ -100,9 +100,9 @@ function readImageFile(
 ): Promise<{ mediaType: string; data: string; dataUrl: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.addEventListener("load", () => {
       const result = reader.result;
-      if (typeof result !== "string") {
+      if (result === null || result instanceof ArrayBuffer) {
         reject(new Error("Unreadable image data"));
         return;
       }
@@ -113,9 +113,10 @@ function readImageFile(
       }
       const [, mediaType = "", data = ""] = match;
       resolve({ mediaType, data, dataUrl: result });
-    };
-    reader.onerror = () =>
-      reject(reader.error ?? new Error("Image read error"));
+    });
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("Image read error"))
+    );
     reader.readAsDataURL(file);
   });
 }
@@ -208,6 +209,69 @@ type ChatEventHandlers = {
   ) => void;
 };
 
+function dispatchChatEvent(
+  handlers: ChatEventHandlers,
+  event: ChatSseEvent
+): void {
+  switch (event.type) {
+    case "thinking": {
+      handlers.thinking?.(event);
+      break;
+    }
+    case "status": {
+      handlers.status?.(event);
+      break;
+    }
+    case "tool_started": {
+      handlers.tool_started?.(event);
+      break;
+    }
+    case "tool_result": {
+      handlers.tool_result?.(event);
+      break;
+    }
+    case "tool_completed": {
+      handlers.tool_completed?.(event);
+      break;
+    }
+    case "stream_chunk": {
+      handlers.stream_chunk?.(event);
+      break;
+    }
+    case "response": {
+      handlers.response?.(event);
+      break;
+    }
+    case "approval_needed": {
+      handlers.approval_needed?.(event);
+      break;
+    }
+    case "error": {
+      handlers.error?.(event);
+      break;
+    }
+    case "image_generated": {
+      handlers.image_generated?.(event);
+      break;
+    }
+    case "job_started": {
+      handlers.job_started?.(event);
+      break;
+    }
+    case "auth_required": {
+      handlers.auth_required?.(event);
+      break;
+    }
+    case "auth_completed": {
+      handlers.auth_completed?.(event);
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
 /**
  * Owns the chat composer, thread selection and SSE-driven message lifecycle.
  * Registers the current stream controls for the window test hooks while
@@ -277,7 +341,7 @@ export const ChatPreview = () => {
     event: Event & { currentTarget: HTMLInputElement }
   ) => {
     const input = event.currentTarget;
-    const files = input.files ? Array.from(input.files) : [];
+    const files = input.files ? [...input.files] : [];
     if (files.length > 0) {
       void stageFiles(files);
     }
@@ -351,7 +415,7 @@ export const ChatPreview = () => {
   const history = createQuery(() => ({
     queryKey: ["chat", "history", activeThreadId()],
     queryFn: () => fetchHistory(activeThreadId()),
-    enabled: typeof activeThreadId() === "string",
+    enabled: activeThreadId() !== undefined,
   }));
 
   createEffect(() => {
@@ -385,7 +449,7 @@ export const ChatPreview = () => {
         content,
         thread_id: activeThreadId() ?? null,
         timezone:
-          Intl.DateTimeFormat().resolvedOptions().timeZone ?? "Europe/London",
+          Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London",
         images: payload,
       });
     },
@@ -505,10 +569,9 @@ export const ChatPreview = () => {
       return;
     }
 
-    // Dispatch to the matching per-variant handler; unlisted event types
-    // (heartbeat, extension_status, job_* progress frames) are no-ops.
-    const handler = chatEventHandlers[event.type];
-    handler?.(event as never);
+    // Unlisted event types (heartbeat, extension_status, job_* progress frames)
+    // are intentionally no-ops.
+    dispatchChatEvent(chatEventHandlers, event);
   };
 
   createEffect(() => {
@@ -521,7 +584,7 @@ export const ChatPreview = () => {
     const connect = () => {
       markConnecting();
       source = connectChatEvents(handleChatEvent, () => markDisconnected());
-      source.onopen = () => markConnected();
+      source.addEventListener("open", () => markConnected());
       return source;
     };
     connect();

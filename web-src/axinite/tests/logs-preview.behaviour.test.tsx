@@ -1,30 +1,26 @@
 /**
- * @file Behaviour tests for the logs route (`LogsPreview`), with the logs API
- * mocked so log-level changes and streamed entries can be driven directly.
+ * @file Behaviour tests for the logs route (`LogsPreview`) using real API
+ * requests and controlled in-process gateway responses and SSE frames.
  */
 
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { AppProviders } from "@/app/providers";
 import { LogsPreview } from "@/components/logs-preview";
 import type { LogEntry } from "@/lib/api/contracts";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
-import { setupI18nTestHarness } from "./support/i18n-test-runtime";
+import {
+  GatewayEventSource,
+  GatewayTestServer,
+} from "./support/gateway-test-server";
+import {
+  setApiRequestHandler,
+  setupI18nTestHarness,
+} from "./support/i18n-test-runtime";
 
-const logsApiMocks = vi.hoisted(() => ({
-  fetchLogLevel: vi.fn(),
-  setLogLevel: vi.fn(),
-  connectLogEvents: vi.fn(),
-  listener: null as ((entry: LogEntry) => void) | null,
-}));
-
-vi.mock("@/lib/api/logs", () => ({
-  connectLogEvents: logsApiMocks.connectLogEvents,
-  fetchLogLevel: logsApiMocks.fetchLogLevel,
-  setLogLevel: logsApiMocks.setLogLevel,
-}));
+let gateway: GatewayTestServer;
 
 function makeEntry(overrides: Partial<LogEntry> = {}): LogEntry {
   return {
@@ -41,26 +37,16 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  logsApiMocks.listener = null;
-  logsApiMocks.fetchLogLevel.mockReset();
-  logsApiMocks.setLogLevel.mockReset();
-  logsApiMocks.connectLogEvents.mockReset();
+  gateway = new GatewayTestServer()
+    .respond("GET", "/api/logs/level", { level: "info" })
+    .respond("PUT", "/api/logs/level", { level: "info" });
 
-  window.localStorage.clear();
+  globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
-
-  logsApiMocks.fetchLogLevel.mockResolvedValue({ level: "info" });
-  logsApiMocks.setLogLevel.mockImplementation((level: string) =>
-    Promise.resolve({ level })
-  );
-  logsApiMocks.connectLogEvents.mockImplementation(
-    (listener: (entry: LogEntry) => void) => {
-      logsApiMocks.listener = listener;
-      return { close: vi.fn() };
-    }
-  );
 });
+
+afterEach(() => setApiRequestHandler(undefined));
 
 async function renderLogsPreview() {
   render(() => (
@@ -69,16 +55,15 @@ async function renderLogsPreview() {
     </AppProviders>
   ));
 
-  await waitFor(() => {
-    expect(logsApiMocks.connectLogEvents).toHaveBeenCalled();
-  });
+  await waitFor(() => expect(GatewayEventSource.latest).toBeDefined());
 }
 
 describe("logs preview behaviour", () => {
   it("renders streamed entries", async () => {
     await renderLogsPreview();
 
-    logsApiMocks.listener?.(
+    GatewayEventSource.latest?.emit(
+      "log",
       makeEntry({ message: "Gateway ready", target: "axinite::gateway" })
     );
 
@@ -94,10 +79,12 @@ describe("logs preview behaviour", () => {
     const filterSelect = screen.getByLabelText("Display level");
     await userEvent.selectOptions(filterSelect, "warn");
 
-    logsApiMocks.listener?.(
+    GatewayEventSource.latest?.emit(
+      "log",
       makeEntry({ level: "info", message: "Ignored info entry" })
     );
-    logsApiMocks.listener?.(
+    GatewayEventSource.latest?.emit(
+      "log",
       makeEntry({ level: "warn", message: "Visible warn entry" })
     );
 
@@ -113,10 +100,12 @@ describe("logs preview behaviour", () => {
     const targetInput = screen.getByLabelText("Target filter");
     await userEvent.type(targetInput, "chat");
 
-    logsApiMocks.listener?.(
+    GatewayEventSource.latest?.emit(
+      "log",
       makeEntry({ target: "axinite::chat", message: "Chat entry" })
     );
-    logsApiMocks.listener?.(
+    GatewayEventSource.latest?.emit(
+      "log",
       makeEntry({ target: "axinite::jobs", message: "Jobs entry" })
     );
 
@@ -131,7 +120,10 @@ describe("logs preview behaviour", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Pause" }));
 
-    logsApiMocks.listener?.(makeEntry({ message: "Missed while paused" }));
+    GatewayEventSource.latest?.emit(
+      "log",
+      makeEntry({ message: "Missed while paused" })
+    );
 
     await waitFor(() => {
       expect(screen.queryByText(/Missed while paused/)).toBeNull();
@@ -139,7 +131,10 @@ describe("logs preview behaviour", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Resume" }));
 
-    logsApiMocks.listener?.(makeEntry({ message: "Visible after resume" }));
+    GatewayEventSource.latest?.emit(
+      "log",
+      makeEntry({ message: "Visible after resume" })
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/Visible after resume/)).toBeVisible();
@@ -149,7 +144,10 @@ describe("logs preview behaviour", () => {
   it("clears rendered entries", async () => {
     await renderLogsPreview();
 
-    logsApiMocks.listener?.(makeEntry({ message: "Entry to clear" }));
+    GatewayEventSource.latest?.emit(
+      "log",
+      makeEntry({ message: "Entry to clear" })
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/Entry to clear/)).toBeVisible();
@@ -167,7 +165,14 @@ describe("logs preview behaviour", () => {
     await userEvent.selectOptions(levelSelect, "debug");
 
     await waitFor(() => {
-      expect(logsApiMocks.setLogLevel).toHaveBeenCalledWith("debug");
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.method === "PUT" &&
+            request.path === "/api/logs/level" &&
+            request.body?.["level"] === "debug"
+        )
+      ).toBe(true);
     });
   });
 });

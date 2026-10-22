@@ -29,7 +29,7 @@ export function approvePairing(
   // The gateway answers a rate-limited approval with 429 and a plain-text
   // body; `request` surfaces that body as the thrown Error's message, so the
   // caller can display it verbatim without special-casing the status here.
-  return postJson<ActionResponse>(
+  return postJson<ActionResponse, PairingApproveRequest>(
     `/api/pairing/${encodeURIComponent(channel)}/approve`,
     body
   );

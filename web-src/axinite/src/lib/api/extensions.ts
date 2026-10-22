@@ -29,7 +29,7 @@ export function fetchExtensionTools(): Promise<ToolListResponse> {
 export function fetchExtensionRegistry(
   query?: string
 ): Promise<RegistrySearchResponse> {
-  const url = new URL("/api/extensions/registry", window.location.origin);
+  const url = new URL("/api/extensions/registry", globalThis.location.origin);
   if (query && query.trim().length > 0) {
     url.searchParams.set("query", query.trim());
   }
@@ -40,7 +40,10 @@ export function fetchExtensionRegistry(
 export function installExtension(
   request: InstallExtensionRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>("/api/extensions/install", request);
+  return postJson<ActionResponse, InstallExtensionRequest>(
+    "/api/extensions/install",
+    request
+  );
 }
 
 /** POST /api/extensions/{name}/activate: activate an installed extension. */
@@ -71,7 +74,7 @@ export function submitExtensionSetup(
   name: string,
   request: ExtensionSetupRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>(
+  return postJson<ActionResponse, ExtensionSetupRequest>(
     `/api/extensions/${encodeURIComponent(name)}/setup`,
     request
   );

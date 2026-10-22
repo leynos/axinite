@@ -288,7 +288,9 @@ nature of the mockup.
 The repo’s front-end quality stack goes beyond a simple formatter plus linter.
 
 - `bun fmt` runs Biome formatting.
-- `bun lint` runs Biome checks across source, tests, tools, and docs.
+- `bun lint` runs Biome checks across source, tests, tools, and docs, then
+  applies the pinned Oxlint Unicorn recommended and `ai-deslop` rules to the
+  SPA, tests, mock backend, and lint scripts.
 - `bun check:types` runs strict TypeScript checking with `tsc --noEmit`.
 - `bun run semantic` layers on extra structural checks:
   - class-list length and near-duplicate class scripts,

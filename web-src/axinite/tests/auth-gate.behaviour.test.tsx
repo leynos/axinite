@@ -10,6 +10,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AppProviders } from "@/app/providers";
 import { AuthGate } from "@/components/auth-gate";
+import type { JsonValue } from "@/lib/api/json-value";
 import { clearGatewayToken, getGatewayToken } from "@/lib/auth/token";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
 
@@ -21,11 +22,11 @@ afterEach(() => {
   clearGatewayToken();
   vi.unstubAllGlobals();
   // Reset the URL so a `?token=` boot test cannot leak into later cases.
-  window.history.replaceState({}, "", "/");
+  globalThis.history.replaceState({}, "", "/");
 });
 
-function jsonResponse(status: number, body: unknown = {}): Response {
-  return new Response(JSON.stringify(body), {
+function jsonResponse(status: number, body: JsonValue = {}): Response {
+  return Response.json(body, {
     status,
     headers: { "Content-Type": "application/json" },
   });
@@ -54,7 +55,7 @@ describe("auth gate behaviour", () => {
   });
 
   it("consumes a ?token= boot parameter, strips it, and unlocks", async () => {
-    window.history.replaceState({}, "", "/?token=abc&view=chat");
+    globalThis.history.replaceState({}, "", "/?token=abc&view=chat");
 
     let seenAuth: string | null = null;
     vi.stubGlobal(
@@ -81,8 +82,10 @@ describe("auth gate behaviour", () => {
     expect(getGatewayToken()).toBe("abc");
     expect(seenAuth).toBe("Bearer abc");
     // It is stripped from the URL while other parameters and the path survive.
-    expect(window.location.search).toBe("?view=chat");
-    expect(new URL(window.location.href).searchParams.has("token")).toBe(false);
+    expect(globalThis.location.search).toBe("?view=chat");
+    expect(new URL(globalThis.location.href).searchParams.has("token")).toBe(
+      false
+    );
   });
 
   it("prompts for a token when the gateway returns 401 and unlocks on success", async () => {

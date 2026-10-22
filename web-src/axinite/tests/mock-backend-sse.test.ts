@@ -19,7 +19,11 @@ function harness() {
     },
     heartbeatFrame: ": keep-alive\n\n",
   });
-  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+  const stream = response.body;
+  if (!stream) {
+    throw new Error("stream response had no body");
+  }
+  const reader = stream.getReader();
   if (!subscriber) {
     throw new Error("stream did not subscribe");
   }
@@ -41,7 +45,8 @@ describe("mock backend SSE teardown", () => {
   it("tears down once when the state closes the subscriber", async () => {
     const { subscriber, unsubscribe, reader } = harness();
     subscriber.send("data: one\n\n");
-    expect(decode((await reader.read()).value)).toBe("data: one\n\n");
+    const firstRead = await reader.read();
+    expect(decode(firstRead.value)).toBe("data: one\n\n");
 
     subscriber.close();
     subscriber.close();
@@ -50,7 +55,8 @@ describe("mock backend SSE teardown", () => {
     vi.advanceTimersByTime(30_000);
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
-    expect((await reader.read()).done).toBe(true);
+    const finalRead = await reader.read();
+    expect(finalRead.done).toBe(true);
   });
 
   it("tears down once when the client cancels", async () => {

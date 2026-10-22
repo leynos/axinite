@@ -6,6 +6,8 @@ interface Window {
   __axinite?: import("@/lib/test-hooks").AxiniteTestHooks;
 }
 
+declare var __axinite: import("@/lib/test-hooks").AxiniteTestHooks | undefined;
+
 declare module "i18next-fluent-backend" {
   import type {
     BackendModule,
@@ -14,11 +16,18 @@ declare module "i18next-fluent-backend" {
     Services,
   } from "i18next";
 
+  interface FluentBackendAjaxOptions {
+    body?: BodyInit | null;
+    headers?: Record<string, string>;
+    method?: string;
+    withCredentials?: boolean;
+  }
+
   interface FluentBackendOptions {
     loadPath?: string;
     ajax?: (
       url: string,
-      options: Record<string, unknown>,
+      options: FluentBackendAjaxOptions,
       callback: (
         data: string | Error,
         xhr: { status: number; statusText?: string }

@@ -1,51 +1,51 @@
 /**
- * @file Behaviour tests for the memory route (`MemoryPreview`), with the memory
- * API module mocked so tree, read, search and write flows run without a
- * gateway.
+ * @file Behaviour tests for the memory route (`MemoryPreview`) using the real
+ * API module against controlled in-process gateway responses.
  */
 
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { AppProviders } from "@/app/providers";
 import { MemoryPreview } from "@/components/memory-preview";
+import { isJsonObject, isString } from "@/lib/api/json-value";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
+import { GatewayTestServer } from "./support/gateway-test-server";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
 
-const memoryApiMocks = vi.hoisted(() => ({
-  fetchMemoryTree: vi.fn(),
-  readMemory: vi.fn(),
-  searchMemory: vi.fn(),
-  writeMemory: vi.fn(),
-}));
-
-vi.mock("@/lib/api/memory", () => memoryApiMocks);
+let gateway: GatewayTestServer;
 
 beforeAll(async () => {
   await setupI18nTestHarness();
 });
 
 beforeEach(async () => {
-  for (const mock of Object.values(memoryApiMocks)) {
-    mock.mockReset();
-  }
-  window.localStorage.clear();
+  gateway = new GatewayTestServer()
+    .respond("GET", "/api/memory/tree", {
+      entries: [
+        { path: "notes/alpha.md", is_dir: false },
+        { path: "notes/beta.md", is_dir: false },
+      ],
+    })
+    .route("GET", "/api/memory/read", async (request) => {
+      const path = new URL(request.url).searchParams.get("path") ?? "";
+      return Response.json({
+        path,
+        content: `Body of ${path}`,
+        updated_at: null,
+      });
+    })
+    .route("POST", "/api/memory/write", async (request) => {
+      const body: unknown = await request.json();
+      if (!isJsonObject(body) || !isString(body["path"])) {
+        return new Response("Invalid write request", { status: 400 });
+      }
+      return Response.json({ path: body["path"] });
+    });
+  globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
-
-  memoryApiMocks.fetchMemoryTree.mockResolvedValue({
-    entries: [
-      { path: "notes/alpha.md", is_dir: false },
-      { path: "notes/beta.md", is_dir: false },
-    ],
-  });
-  memoryApiMocks.readMemory.mockImplementation(async (path: string) => ({
-    path,
-    content: `Body of ${path}`,
-    updated_at: null,
-  }));
-  memoryApiMocks.writeMemory.mockResolvedValue({ path: "notes/alpha.md" });
 });
 
 describe("memory preview editing", () => {
@@ -67,9 +67,14 @@ describe("memory preview editing", () => {
     await userEvent.click(beta);
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(memoryApiMocks.writeMemory).toHaveBeenCalledWith(
-        expect.objectContaining({ path: "notes/alpha.md" })
-      );
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/memory/write" &&
+            request.body?.["path"] === "notes/alpha.md"
+        )
+      ).toBe(true);
     });
 
     await waitFor(() => {

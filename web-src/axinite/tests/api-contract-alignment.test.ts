@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { activateExtension, installExtension } from "@/lib/api/extensions";
 import { fetchJobDetail, promptJob } from "@/lib/api/jobs";
+import type { JsonValue } from "@/lib/api/json-value";
 import { setLogLevel } from "@/lib/api/logs";
 import { deleteRoutine } from "@/lib/api/routines";
 import { removeSkill } from "@/lib/api/skills";
@@ -22,7 +23,7 @@ describe("log entry contract", () => {
     const received: unknown[] = [];
     const unsubscribe = state.subscribeToLogs({
       send: (entry) => received.push(entry),
-      close: () => undefined,
+      close: () => {},
     });
     unsubscribe();
 
@@ -47,12 +48,12 @@ describe("log entry contract", () => {
     const received: { message: string; timestamp: string }[] = [];
     state.subscribeToLogs({
       send: (entry) => received.push(entry),
-      close: () => undefined,
+      close: () => {},
     })();
 
     expect(received).toHaveLength(25);
     const timestamps = received.map((entry) => Date.parse(entry.timestamp));
-    expect(timestamps).toEqual([...timestamps].sort((a, b) => a - b));
+    expect(timestamps).toEqual([...timestamps].toSorted((a, b) => a - b));
     // The most recent write is the last entry replayed.
     expect(received.at(-1)?.message).toBe(`Created thread ${newest}.`);
   });
@@ -78,9 +79,12 @@ describe("job prompt contract", () => {
   it("posts content and done from the typed client", async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify({ success: true, message: "ok" }), {
-          headers: { "Content-Type": "application/json" },
-        })
+        Response.json(
+          { success: true, message: "ok" },
+          {
+            headers: { "Content-Type": "application/json" },
+          }
+        )
     );
     vi.stubGlobal("fetch", fetchMock);
     try {
@@ -101,9 +105,12 @@ describe("extension install contract", () => {
   it("posts name, url, and kind from the typed client", async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify({ success: true, message: "ok" }), {
-          headers: { "Content-Type": "application/json" },
-        })
+        Response.json(
+          { success: true, message: "ok" },
+          {
+            headers: { "Content-Type": "application/json" },
+          }
+        )
     );
     vi.stubGlobal("fetch", fetchMock);
     try {
@@ -125,10 +132,11 @@ describe("extension install contract", () => {
   });
 });
 
-function stubFetch(status = 200, body: unknown = { success: true }) {
+function stubFetch(status = 200, body?: JsonValue) {
+  const responseBody = body === undefined ? { success: true } : body;
   const fetchMock = vi.fn(
     async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      new Response(JSON.stringify(body), {
+      Response.json(responseBody, {
         status,
         headers: { "Content-Type": "application/json" },
       })
