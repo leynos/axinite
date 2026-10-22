@@ -419,7 +419,7 @@ dependencies = [
  "ambient-fs",
  "anyhow",
  "axum 0.8.9",
- "base64 0.22.1",
+ "base64 0.23.1",
  "blake3",
  "bollard",
  "bytes",
