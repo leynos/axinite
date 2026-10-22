@@ -7,8 +7,8 @@ the `postgres` feature but forgets to enable `embedded-postgres` has no
 database source: its PostgreSQL tests skip and the leg reports success for
 tests that never ran. These contracts make that omission a failure.
 
-`coverage.yml` is the other way to give a leg a database, a service container
-named by `TEST_DATABASE_URL`, and `coverage_database_test.py` binds it.
+`coverage.yml` carries the same legs in its own jobs, and
+`coverage_database_test.py` binds them.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -19,19 +19,14 @@ import shlex
 import typing as typ
 
 import pytest
+from _cargo_features import EMBEDDED_FEATURE, _enables_postgres, _features_named_by
 from _trigger_reading import matrix_legs
 from _workflow_files import jobs_of
 from _workflow_policy import Job
-from coverage_database_test import (
-    REQUIRE_VARIABLE,
-    _enables_postgres,
-    _features_named_by,
-)
+from coverage_database_test import REQUIRE_VARIABLE
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from _estate import Estate
-
-EMBEDDED_FEATURE: typ.Final[str] = "embedded-postgres"
 
 #: Every event the `tests` job's matrix can resolve for.
 EVENTS: typ.Final[tuple[str, ...]] = (
