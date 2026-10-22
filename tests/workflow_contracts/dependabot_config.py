@@ -283,8 +283,18 @@ def absolute(directory: str) -> str:
         one, so `/tests/e2e`, `tests/e2e/` and `./tests/e2e` all read as
         `/tests/e2e`. The repository root reads as `/`. Repeated separators
         collapse too, so `tests//e2e` reads as `/tests/e2e`.
+
+    Notes
+    -----
+    The leading slashes are stripped before `PurePosixPath` is built rather
+    than left to it. POSIX gives a path beginning with exactly two slashes an
+    implementation-defined meaning, and `PurePosixPath` keeps both: joining
+    `//tests/e2e` onto a root yields `//tests/e2e`, which is a different
+    string from `/tests/e2e` and would read as a second directory over the
+    same path. Stripping first leaves the single slash this function adds as
+    the only one there is.
     """
-    return PurePosixPath("/", directory).as_posix()
+    return PurePosixPath("/", directory.lstrip("/")).as_posix()
 
 
 def label(entry: Mapping[str, object]) -> str:

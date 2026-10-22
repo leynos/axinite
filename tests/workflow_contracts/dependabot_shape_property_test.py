@@ -197,6 +197,8 @@ def test_two_entries_contend_exactly_when_their_ecosystems_and_paths_meet(
         pytest.param("./tests/e2e", "/tests/e2e", id="dot-prefix"),
         pytest.param("./tests/e2e/", "/tests/e2e", id="both"),
         pytest.param("tests//e2e", "/tests/e2e", id="repeated-separator"),
+        pytest.param("//tests/e2e", "/tests/e2e", id="two-leading-slashes"),
+        pytest.param("//tests//e2e", "/tests/e2e", id="two-leading-and-repeated"),
         pytest.param("/", "/", id="root"),
         pytest.param("", "/", id="empty"),
     ],
@@ -213,7 +215,15 @@ def test_a_directory_normalizes_to_one_spelling(
 
 @given(
     spellings=st.lists(
-        st.sampled_from(["/tests/e2e", "tests/e2e/", "./tests/e2e"]),
+        st.sampled_from(
+            [
+                "/tests/e2e",
+                "tests/e2e/",
+                "./tests/e2e",
+                "//tests/e2e",
+                "tests//e2e",
+            ]
+        ),
         min_size=1,
         max_size=4,
     )

@@ -1152,9 +1152,12 @@ rather than to a test body.
 not text rather than dropping it. Skipping the value would make
 `directories: ["/", 42]` read as `["/"]`, so an entry declaring a malformed
 path would satisfy every coverage and manifest reading as though it declared
-one directory fewer. The path itself is normalized with
-`pathlib.PurePosixPath`, which also collapses repeated separators that string
-trimming left in place.
+one directory fewer. The path itself is normalized with `pathlib.PurePosixPath`
+after its leading slashes are stripped, which also collapses repeated
+separators that string trimming left in place. The strip is not redundant:
+POSIX leaves a path beginning with exactly two slashes implementation-defined,
+and `PurePosixPath` keeps both, so `//tests/e2e` would otherwise read as a
+directory distinct from `/tests/e2e`.
 
 The directory and manifest readings ask the filesystem two questions, and both
 go through `is_directory` and `is_regular_file` in `_sources.py`. They give the
