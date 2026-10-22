@@ -347,7 +347,9 @@ def test_timeout_preserves_output_and_terminates_its_descendant(
             process_status = Path(f"/proc/{descendant_pid}/stat").read_text(
                 encoding="utf-8"
             )
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # The stat file is gone, or the read raced the process's reaping;
+            # either way the descendant has exited, which is the assertion.
             break
         if process_status[process_status.rfind(")") + 2] == "Z":
             break

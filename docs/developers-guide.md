@@ -1068,6 +1068,124 @@ The permission cases skip on Windows, whose `chmod` only toggles a read-only
 bit, and under `root`, which reads a directory whatever its mode bits say;
 without the second skip the case passes vacuously in a container.
 
+### Dependabot update policy
+
+`.github/dependabot.yml` is held to Concordat's DB-005 rule, but a rule audit
+is evidence about one revision and nothing a later contributor edits has to
+pass before it merges. The contracts in `tests/workflow_contracts/` ask the
+same questions on every run, so this section states the policy they encode.
+
+**One catch-all group, last.** Every entry ends with a group whose patterns are
+`["*"]` and whose update types are `minor` and `patch`. Dependabot assigns a
+dependency to the first group that matches it, so a group placed before the
+catch-all that also matches everything takes the majors the catch-all
+deliberately leaves ungrouped, and those arrive in a pull request that mixes
+them with routine patches. Narrower groups go before it. `rstest-bdd` is one,
+because those crates release in lockstep and Cargo counts a 0.x minor as a
+major, which the catch-all leaves ungrouped. A catch-all may also carry
+`applies-to: version-updates`, which is the default spelled out; every other
+key narrows what the group takes. `exclude-patterns`, `dependency-type` and
+`group-by` each carve a class of dependency out of the group, and
+`applies-to: security-updates` leaves version updates ungrouped.
+
+**Daily cadence.** `schedule.interval` is `daily` on every entry. A weekly
+interval leaves a security fix unreviewed for a week, and with a seven-day
+cooldown on top it is a fortnight before a patch is even proposed.
+
+**Cargo strategies.** A `cargo` entry may set `versioning-strategy` to `auto` or
+`lockfile-only`, or leave the key out. `auto` lets Dependabot choose;
+`lockfile-only` updates the lock graph alone. The remaining strategies are
+refused. No other ecosystem is judged on this key.
+
+**Directories hold their manifests.** Every path an entry lists must exist and
+hold the files that ecosystem reads: `Cargo.toml` for `cargo`, `pyproject.toml`
+for `pip`, and both `package.json` and `bun.lock` for `bun`. A path a rename
+left behind, or one holding only part of that set, leaves Dependabot watching a
+directory with nothing in it, and it reports exactly that, which reads the same
+as a repository with no updates. A declared path that is a glob is canon's to
+expand and is not resolved here. The `github-actions` entry maps to no
+manifest, because the files it reads are the workflow files themselves.
+
+**Required ecosystems.** The repository runs updates for `cargo`, `pip`, `bun`
+and `github-actions`, and each has an entry of its own. A configuration with no
+`pip` entry satisfies every per-entry question vacuously, since there is no
+entry left to ask, so the coverage reading is what notices an entry deleted
+whole.
+
+**No two entries share a directory.** Two entries of one ecosystem over one
+path open two update streams for the same dependencies, and each bump arrives
+twice. Entries of different ecosystems never contend.
+
+**Labels, limits, and cooldowns.** Each entry carries `dependencies` and its
+ecosystem name, keeps five pull requests open, and applies a cooldown before
+proposing anything. A cooldown is what keeps a release from arriving in the
+hour it is published, which is when a compromised or yanked release is most
+likely to be taken. The `cargo`, `pip` and `bun` entries apply
+`default-days: 7` and `semver-major-days: 14`; the `github-actions` entry
+applies only the default, canon giving no reason for a major allowance of its
+own.
+
+The `bun` entry watches `/web-src`, the SolidJS gateway front-end, and reads
+the text `bun.lock` committed there. Nothing else reaches that directory: the
+`cargo` entry lists Rust manifests, and an npm-shaped entry would read a
+lockfile the workspace does not have.
+
+#### The Dependabot contract modules
+
+| Module                    | Answers                                                          |
+| ------------------------- | ---------------------------------------------------------------- |
+| `dependabot_config.py`    | What the file says: its entries, directories, labels, and groups |
+| `_dependabot_shape.py`    | What one entry's own shape must be: groups, cadence, strategy    |
+| `_dependabot_coverage.py` | What the configuration covers, and the tree it points at         |
+| `dependabot_estate.py`    | The values this repository's own configuration is held to        |
+
+`dependabot_config.py` is the boundary. Its `read_dependabot` converts a file
+that is missing, undecodable, not YAML, not a mapping, or not a mapping keyed
+by text into a `SourceError` that names the path. Above it, every reading is
+pure in the mapping it is handed and returns a list of fault messages rather
+than raising on the first, so a contributor who breaks two things sees both in
+one run. `dependabot_estate.py` names the entry points and the labels, limits,
+and cooldowns each carries, so changing any of them is a change to that module
+rather than to a test body.
+
+`declared_directories` refuses a `directory` value, or an item in the
+`directories` list, that is not text rather than dropping it. The list itself
+is a list, and each item in it is a path. Skipping the invalid item would make
+`directories: ["/", 42]` read as `["/"]`, so an entry declaring a malformed
+path would satisfy every coverage and manifest reading as though it declared
+one directory fewer. The path itself is normalized with `pathlib.PurePosixPath`
+after its leading slashes are stripped, which also collapses repeated
+separators that string trimming left in place. The strip is not redundant:
+POSIX leaves a path beginning with exactly two slashes implementation-defined,
+and `PurePosixPath` keeps both, so `//tests/e2e` would otherwise read as a
+directory distinct from `/tests/e2e`.
+
+The directory and manifest readings ask the filesystem two questions, and both
+go through `is_directory` and `is_regular_file` in `_sources.py`. They give the
+three answers the acquisition boundary gives, for the same reason: a path that
+is absent or under a file is a definite no, while one that could not be
+`stat`ed is a question that went unanswered, and `directory_faults` reports it
+as a `SourceError` rather than as a configuration fault. Reading it as a
+missing directory would send a contributor after a rename that never happened.
+The answer matters here because the fault is otherwise silent: a path the
+reading cannot see and one that holds no manifest both mean Dependabot watches
+nothing, and neither produces a pull request to notice.
+
+`dependabot_estate_test.py` applies the readings to this repository's own
+configuration, which is correct. A reader that answered "no faults"
+unconditionally would pass it for exactly that reason, so
+`dependabot_reader_test.py` and `dependabot_coverage_test.py` drive the same
+readings with documents written for the purpose, and
+`dependabot_shape_property_test.py` holds the readings that are relations --
+group order, coverage, duplication, and directory spelling -- to a generated
+model. Each new reading belongs in all three: the estate case is what keeps
+this repository honest, the written cases are what a failure names, and the
+property is what covers the range a table cannot.
+
+Run them with `make test-workflow-contracts`, which is also where the Python
+packages are named: `uv run` provisions `pytest`, `PyYAML` and `Hypothesis` for
+the duration of the run.
+
 ### What remains of the runner migration wave
 
 The wave is nearly done. `code_style.yml` `format` and `clippy`, `test.yml`
@@ -3453,12 +3571,12 @@ they must be ordered lives in the `generate-coverage` README in
 cargo watchdog only on the two lanes that use that action, and two of the four
 were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                          |
-| ------------------------ | ---------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
-| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 900 s per nested `trybuild` session; 5 s grace |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                                   |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                                      |
-| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                            |
+| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                            |
+| ------------------------ | ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 1,500 s per nested `trybuild` session; 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                                     |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                                        |
+| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                              |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -3494,7 +3612,7 @@ beside the profile a reader selects rather than one section away.
 All three therefore set a 300-second base allowance and a 30-minute whole-run
 budget. The default and ci profiles each declare an explicit 300-second
 override for `schema_helpers_ui`, followed by the shared serial-group override
-that allows nested `trybuild` sessions 900 seconds. Coverage inherits the ci
+that allows nested `trybuild` sessions 1,500 seconds. Coverage inherits the ci
 overrides.
 
 ### The compile-contract binaries are not ordinary tests
@@ -3533,7 +3651,7 @@ both run from its one `ui` test.
 
 The per-test timeout applies to the test process. For `trybuild`, nested Cargo
 preparation, fixture compilation and execution all happen inside that process
-and count towards its 900-second allowance. For `schema_helpers_ui`, the
+and count towards its 1,500-second allowance. For `schema_helpers_ui`, the
 integration target compiles before nextest starts the test timer; its `ui` test
 has the ordinary 300-second execution bound. Nextest's 30-minute global timer
 also starts with the test run. It does not bound the Cargo build that precedes
@@ -3553,7 +3671,50 @@ Contracts also check default-profile inheritance, CI override precedence, and
 that ordinary tests stay outside the compile-contract group. The timeout probe
 scales the periods down and verifies that schema-helper execution is terminated
 at its ordinary 300-second bound while a `trybuild` test survives its
-900-second allowance.
+1,500-second allowance.
+
+### Why the nested session needs 1,500 seconds
+
+The figure comes from a cold cache, which is the state every branch starts in.
+`trybuild` compiles the whole generated project's dependency tree inside the
+test process, so that build spends a nextest per-test allowance the way an
+ordinary test would spend it on assertions. Three runs on hosted runners
+measured it:
+
+| Run          | `db_surface_compile_contracts` | Test allowance | Outcome                                 |
+| ------------ | ------------------------------ | -------------- | --------------------------------------- |
+| 118844928700 | 900 s (killed)                 | 900 s          | timed out at 900 s on the first fixture |
+| 117818957223 | 900 s (killed)                 | 900 s          | timed out at 900 s on the first fixture |
+| 39579143288  | 1,137.6 s                      | 1,500 s        | passed, 362 s under the allowance       |
+
+*Table: nested `trybuild` builds measured against the allowance in force. The
+first two runs never got past the first fixture, so their duration is the
+allowance that killed them; the third ran the session to completion.*
+
+The third run is the one that settles the figure. It is a cold cache of the
+same shape as the other two, and it took 1,137.6 seconds — 238 seconds beyond
+the old 900-second allowance, and 441 seconds longer than the largest partial
+build the first two runs had recorded before they were killed. A budget sized
+from those partial measurements alone would still have failed this run.
+
+The warm comparison is a pull-request run at a 99.92 % sccache hit rate, which
+finished the same binary in 391 s. Nothing else about the test changed between
+those runs, so the difference is the cache and not the fixtures.
+
+`main` never seeds a warm cache for this job. `test.yml`'s `tests` job runs
+`if: github.event_name != 'push'`, so the default leg exists only on pull
+requests, and `coverage.yml`, which does run on `main`, excludes both
+compile-contract binaries. A branch's first run of `Tests (default)` is
+therefore cold however busy the repository is, and a budget sized against warm
+runs fails every branch once.
+
+1,500 seconds leaves 362 seconds after the measured cold run, which is 29
+seconds less than the 391 seconds the warm run spent on the build and the
+fixtures together — a narrower margin than it looks, and the reason the figure
+should not be trimmed without a fresh measurement. It is also the figure commit
+`730f6f7a` chose for `schema_helpers_ui` when that target carried the same
+cold-cache problem, and it leaves 300 seconds below the 30-minute whole-run
+budget, which is the ordering constraint this tier has to satisfy.
 
 ### The values are pinned, not merely ordered
 
@@ -3572,16 +3733,16 @@ ten-second default when it finds none. Deleting every `grace-period` in the
 file therefore *raises* the computed requirement, leaves every assertion
 passing, and doubles the wait a terminated test actually gets.
 
-The 900-second override is the next. The compile-contract contract asks whether
-the `trybuild` binary is allowed *at least* that much, which is the right shape
-for its own question and says nothing about the value, so an override raised to
-an hour would satisfy it while sitting above the 30-minute whole-run budget
-that contains it: the run would end before the allowance could be used. The
-number of overrides is pinned with it, because a second one matching the same
-binaries would decide the allowance in force by file order. And the whole-run
-budget is only ever compared with the largest per-test allowance, so the
-documented thirty minutes could drift to forty with nothing failing and this
-table left describing a value the runner does not use.
+The 1,500-second override is the next. The compile-contract contract asks
+whether the `trybuild` binary is allowed *at least* that much, which is the
+right shape for its own question and says nothing about the value, so an
+override raised to an hour would satisfy it while sitting above the 30-minute
+whole-run budget that contains it: the run would end before the allowance could
+be used. The number of overrides is pinned with it, because a second one
+matching the same binaries would decide the allowance in force by file order.
+And the whole-run budget is only ever compared with the largest per-test
+allowance, so the documented thirty minutes could drift to forty with nothing
+failing and this table left describing a value the runner does not use.
 
 The set of profiles is pinned too. Every assertion in this suite is
 parametrized over `default`, `ci` and `coverage`, so a profile carrying looser
@@ -3703,8 +3864,8 @@ one run per leg.
 ### What the values are sized against
 
 The 30 minute whole-run budget is a bound rather than a measurement. It has to
-exceed the largest per-test allowance, the 900 second nested `trybuild`
-session, and it does so with fifteen minutes to spare.
+exceed the largest per-test allowance, the 1,500 second nested `trybuild`
+session, and it does so with five minutes to spare.
 
 The contract also refuses a step that names a suite command without plainly
 running one. `if false; then cargo nextest run; fi` keeps the text and runs

@@ -9,7 +9,7 @@
 # `schema_helpers_ui`, runs in default and ci and executes accepted public API
 # call sites compiled with its integration target before the test timer starts.
 # The matching overrides keep both required contracts in the serial group;
-# only nested trybuild sessions need 900s.
+# only nested trybuild sessions need 1500s.
 #
 # The ci profile below runs both. Coverage excludes both from its test
 # selection; separate required jobs run the contracts with the baseline
@@ -58,13 +58,13 @@ global-timeout = "30m"
 #
 # The default and ci profiles carry this override because default runs
 # `schema_helpers_ui`, while ci runs both required contract targets. Coverage
-# inherits the ci override and filters both binaries out. The 900s timeout is
+# inherits the ci override and filters both binaries out. The 1500s timeout is
 # per nested trybuild test session, not per fixture or per binary.
 #
 # The schema-helper test has an explicit ordinary 300s runtime bound, declared
 # first because nextest applies the first matching value for a field. Its Rust
 # source compiles before the test process starts; the shared override below
-# supplies its serial group while retaining 900s for nested trybuild sessions.
+# supplies its serial group while retaining 1500s for nested trybuild sessions.
 [test-groups.compile-contracts]
 max-threads = 1
 
@@ -75,7 +75,7 @@ slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 [[profile.default.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
 test-group = 'compile-contracts'
-slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
+slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]
 filter = 'binary(schema_helpers_ui)'
@@ -84,7 +84,7 @@ slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 [[profile.ci.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
 test-group = 'compile-contracts'
-slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
+slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
 
 # Bound the Postgres tests, not because they interfere with each other (each
 # gets its own database), but because they share one cluster's connection

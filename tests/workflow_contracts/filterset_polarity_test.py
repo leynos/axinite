@@ -41,7 +41,7 @@ NEGATED_OVERRIDE = (
     'global-timeout = "30m"\n'
     "\n[[profile.example.overrides]]\n"
     "filter = 'not binary(trybuild)'\n"
-    'slow-timeout = { period = "900s", terminate-after = 1, '
+    'slow-timeout = { period = "1500s", terminate-after = 1, '
     'grace-period = "5s" }\n'
 )
 
@@ -54,7 +54,7 @@ POSITIVE_OVERRIDE = NEGATED_OVERRIDE.replace(
 
 #: A profile whose two overrides both select the compile-contract
 #: binary and grant different allowances. nextest applies the first and
-#: stops, so the second's 900 s is never in force. Written with the
+#: stops, so the second's 1,500 s is never in force. Written with the
 #: shorter budget first, because that is the ordering a reading taking
 #: the maximum gets wrong; with the longer one first the two readings
 #: agree and the case would discriminate nothing.
@@ -69,7 +69,7 @@ OVERLAPPING_OVERRIDES = (
     'grace-period = "5s" }\n'
     "\n[[profile.example.overrides]]\n"
     "filter = 'binary(trybuild)'\n"
-    'slow-timeout = { period = "900s", terminate-after = 1, '
+    'slow-timeout = { period = "1500s", terminate-after = 1, '
     'grace-period = "5s" }\n'
 )
 
@@ -288,7 +288,7 @@ def test_a_negated_override_grants_the_binary_nothing() -> None:
     compile-contract allowance; under the negated one nextest applies it
     to everything but ``trybuild``, which then runs under the 300 s base
     allowance sized for the ordinary tests. A reading that collected
-    names reported 900 s for both.
+    names reported the override's period for both.
     """
     positive = allowance_for_binary(_example(POSITIVE_OVERRIDE), "trybuild")
     negated = allowance_for_binary(_example(NEGATED_OVERRIDE), "trybuild")
@@ -395,13 +395,14 @@ def test_the_first_matching_override_governs_not_the_largest() -> None:
     nextest reads a profile's overrides in order and applies the first
     whose filterset selects a test, so a later override granting more is
     never in force. A reading that took the maximum would report the
-    900 s here and certify a compile-contract binary under a budget
-    nextest does not apply, which is the same class of silent pass as
-    the negated override above: every number in the right order while
-    the binary runs under something else.
+    second override's period here and certify a compile-contract binary
+    under a budget nextest does not apply, which is the same class of
+    silent pass as the negated override above: every number in the right
+    order while the binary runs under something else.
 
-    The repository's own overrides all grant 900 s, so nothing in the
-    estate distinguishes the two readings. This is the case that does.
+    The repository's own matching overrides all grant the same period,
+    so nothing in the estate distinguishes the two readings. This is the
+    case that does.
     """
     allowed = allowance_for_binary(_example(OVERLAPPING_OVERRIDES), "trybuild")
     assert allowed == FIRST_OVERLAPPING_ALLOWANCE, (
