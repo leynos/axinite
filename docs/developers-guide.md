@@ -1148,8 +1148,9 @@ one run. `dependabot_estate.py` names the entry points and the labels, limits,
 and cooldowns each carries, so changing any of them is a change to that module
 rather than to a test body.
 
-`declared_directories` refuses a `directory` or `directories` member that is
-not text rather than dropping it. Skipping the value would make
+`declared_directories` refuses a `directory` value, or an item in the
+`directories` list, that is not text rather than dropping it. The list itself
+is a list, and each item in it is a path. Skipping the invalid item would make
 `directories: ["/", 42]` read as `["/"]`, so an entry declaring a malformed
 path would satisfy every coverage and manifest reading as though it declared
 one directory fewer. The path itself is normalized with `pathlib.PurePosixPath`
