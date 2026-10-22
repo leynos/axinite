@@ -88,7 +88,7 @@ export function createPreviewHandler(
     if (pathname.startsWith("/api/"))
       return proxyRequest(request, options.apiPort, deps);
     const resolved = candidatePaths(options.distDir, pathname).find(
-      deps.isFile
+      (candidate) => deps.isFile(candidate)
     );
     return resolved
       ? new Response(deps.readFile(resolved))

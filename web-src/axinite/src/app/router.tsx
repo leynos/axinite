@@ -18,13 +18,10 @@ import { AppShell } from "@/components/app-shell";
 import { RoutePage } from "@/components/route-page";
 import { normalizeBasePath } from "@/lib/base-path";
 
-const routerBasePath = normalizeBasePath(
-  import.meta.env.BASE_URL as string | undefined
-);
+const routerBasePath = normalizeBasePath(import.meta.env.BASE_URL);
 
 const NotFoundRedirect = () => {
-  const invalidPath =
-    typeof window === "undefined" ? "(unknown path)" : window.location.pathname;
+  const invalidPath = globalThis.location.pathname;
   console.warn(
     `[router] Redirecting unmatched route "${invalidPath}" to /chat`
   );

@@ -32,7 +32,7 @@ type ShellChromeProps = {
 export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
   const { t } = useI18n();
   const flags = useFeatureFlags();
-  const basePath = import.meta.env.BASE_URL as string | undefined;
+  const basePath = import.meta.env.BASE_URL;
   const gatewayStatus = createQuery(() => ({
     queryKey: ["gateway-status"],
     queryFn: fetchGatewayStatusRaw,

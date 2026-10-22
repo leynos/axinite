@@ -11,19 +11,19 @@ import type {
 } from "@/lib/api/contracts";
 import { pascalCase } from "@/lib/string-case";
 
-export const STATUS_CLASS: Record<string, string> = {
-  completed: "pill pill--success",
-  failed: "pill pill--danger",
-  in_progress: "pill pill--success",
-  pending: "pill pill--neutral",
-  stuck: "pill pill--warning",
-};
+export const STATUS_CLASS = new Map<string, string>([
+  ["completed", "pill pill--success"],
+  ["failed", "pill pill--danger"],
+  ["in_progress", "pill pill--success"],
+  ["pending", "pill pill--neutral"],
+  ["stuck", "pill pill--warning"],
+]);
 
-export const SOURCE_CLASS: Record<string, string> = {
-  agent: "pill pill--neutral",
-  direct: "pill pill--neutral",
-  sandbox: "pill pill--info",
-};
+export const SOURCE_CLASS = new Map<string, string>([
+  ["agent", "pill pill--neutral"],
+  ["direct", "pill pill--neutral"],
+  ["sandbox", "pill pill--info"],
+]);
 
 /**
  * The daemon reports `job_kind: "sandbox"` for jobs launched under
@@ -36,7 +36,7 @@ export const CLAUDE_CODE_JOB_KIND = "sandbox";
 /** Converts a Pascal-like segment to lowercase hyphenated text. */
 export function toKebabSegment(value: string): string {
   return pascalCase(value)
-    .replace(/([A-Z])/g, "-$1")
+    .replaceAll(/([A-Z])/g, "-$1")
     .toLowerCase()
     .replace(/^-/, "");
 }
@@ -65,10 +65,10 @@ export function formatTimestamp(
 export function sourceName(
   job: JobDetailResponse | JobInfo | { job_kind?: string; job_mode?: string }
 ): string {
-  if ("job_kind" in job && typeof job.job_kind === "string") {
+  if ("job_kind" in job) {
     return job.job_kind;
   }
-  if ("job_mode" in job && typeof job.job_mode === "string") {
+  if ("job_mode" in job) {
     return job.job_mode;
   }
   return "direct";
@@ -76,7 +76,7 @@ export function sourceName(
 
 /** Collapses whitespace and truncates a payload preview for compact display. */
 export function truncatePreview(value: string, limit = 140): string {
-  const collapsed = value.replace(/\s+/g, " ").trim();
+  const collapsed = value.replaceAll(/\s+/g, " ").trim();
   if (collapsed.length <= limit) {
     return collapsed;
   }
@@ -90,7 +90,7 @@ export function truncatePreview(value: string, limit = 140): string {
  */
 export function resolveActiveFilePath(
   entries: readonly ProjectFileEntry[],
-  selected: string | undefined
+  selected?: string
 ): string | undefined {
   if (selected && entries.some((entry) => entry.path === selected)) {
     return selected;

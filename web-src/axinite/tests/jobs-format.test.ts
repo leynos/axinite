@@ -20,7 +20,7 @@ describe("resolveActiveFilePath", () => {
   });
 
   it("defaults to the first file when nothing is selected", () => {
-    expect(resolveActiveFilePath(entries, undefined)).toBe("a.md");
+    expect(resolveActiveFilePath(entries)).toBe("a.md");
   });
 
   it("falls back to the first file when the selection disappears", () => {

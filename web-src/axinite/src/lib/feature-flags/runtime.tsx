@@ -17,11 +17,13 @@ import {
 } from "solid-js";
 
 import { fetchRuntimeFeatureFlags } from "@/lib/api/gateway";
+import { isBoolean, isJsonObject } from "@/lib/api/json-value";
 import {
   type OverrideMap,
   resolveFeatureFlags,
 } from "@/lib/feature-flags/policy";
 import type { FeatureFlagName } from "@/lib/feature-flags/registry";
+import { FEATURE_FLAGS } from "@/lib/feature-flags/registry";
 
 const OVERRIDE_STORAGE_KEY = "axinite.feature-flag-overrides";
 
@@ -35,16 +37,23 @@ type FeatureFlagContextValue = {
 };
 
 function readOverrides(): OverrideMap {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
   try {
-    const raw = window.localStorage.getItem(OVERRIDE_STORAGE_KEY);
+    const raw = globalThis.localStorage.getItem(OVERRIDE_STORAGE_KEY);
     if (!raw) {
       return {};
     }
-    return JSON.parse(raw) as OverrideMap;
+    const payload: unknown = JSON.parse(raw);
+    if (!isJsonObject(payload)) {
+      throw new TypeError("Feature-flag overrides must be an object");
+    }
+    const overrides: OverrideMap = {};
+    for (const flag of FEATURE_FLAGS) {
+      const value = payload[flag.name];
+      if (isBoolean(value)) {
+        overrides[flag.name] = value;
+      }
+    }
+    return overrides;
   } catch {
     console.error(
       "[feature-flags] Failed to hydrate local overrides; using defaults."
@@ -54,12 +63,8 @@ function readOverrides(): OverrideMap {
 }
 
 function writeOverrides(overrides: OverrideMap): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
   try {
-    window.localStorage.setItem(
+    globalThis.localStorage.setItem(
       OVERRIDE_STORAGE_KEY,
       JSON.stringify(overrides)
     );
@@ -73,11 +78,7 @@ function writeOverrides(overrides: OverrideMap): void {
 // Debug flag surfacing is enabled in dev builds or when the `debug-flags=1`
 // query parameter is present.
 function isDebugFlagsEnabled(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  const searchParams = new URLSearchParams(window.location.search);
+  const searchParams = new URLSearchParams(globalThis.location.search);
   return import.meta.env.DEV || searchParams.get("debug-flags") === "1";
 }
 
@@ -109,10 +110,8 @@ export const FeatureFlagProvider: ParentComponent = (props) => {
 
   const syncOverrides = () => setOverrides(readOverrides());
 
-  if (typeof window !== "undefined") {
-    window.addEventListener("storage", syncOverrides);
-    onCleanup(() => window.removeEventListener("storage", syncOverrides));
-  }
+  globalThis.addEventListener("storage", syncOverrides);
+  onCleanup(() => globalThis.removeEventListener("storage", syncOverrides));
 
   const setOverride = (name: FeatureFlagName, value: boolean) => {
     const next = { ...overrides(), [name]: value };

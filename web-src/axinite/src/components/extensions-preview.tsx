@@ -43,19 +43,19 @@ type TranslateFn = (
   options?: Record<string, string | number>
 ) => string;
 
-const KIND_CLASS: Record<string, string> = {
-  grpcm: "pill pill--info",
-  mcp: "pill pill--success",
-  mcp_server: "pill pill--success",
-  wasm: "pill pill--warning",
-  wasm_tool: "pill pill--warning",
-  wasm_channel: "pill pill--warning",
-};
+const KIND_CLASS = new Map<string, string>([
+  ["grpcm", "pill pill--info"],
+  ["mcp", "pill pill--success"],
+  ["mcp_server", "pill pill--success"],
+  ["wasm", "pill pill--warning"],
+  ["wasm_tool", "pill pill--warning"],
+  ["wasm_channel", "pill pill--warning"],
+]);
 
-const STATUS_CLASS: Record<string, string> = {
-  active: "catalogue-status-dot catalogue-status-dot--active",
-  inactive: "catalogue-status-dot",
-};
+const STATUS_CLASS = new Map<string, string>([
+  ["active", "catalogue-status-dot catalogue-status-dot--active"],
+  ["inactive", "catalogue-status-dot"],
+]);
 
 function isMcpExtensionKind(kind: string): boolean {
   return kind === "mcp" || kind === "mcp_server";
@@ -93,7 +93,7 @@ function tagList(extension: ExtensionInfo): string[] {
 function tagLabel(t: TranslateFn, tag: string): string {
   return t(
     `extensions-tag-${pascalCase(tag)
-      .replace(/([A-Z])/g, "-$1")
+      .replaceAll(/([A-Z])/g, "-$1")
       .toLowerCase()
       .replace(/^-/, "")}`
   );
@@ -175,7 +175,7 @@ function InstalledExtensionCard(props: InstalledExtensionCardProps) {
             {extensionDisplayName(props.extension)}
           </h4>
           <span
-            class={KIND_CLASS[props.extension.kind] ?? "pill pill--neutral"}
+            class={KIND_CLASS.get(props.extension.kind) ?? "pill pill--neutral"}
           >
             {extensionKindLabel(props.t, props.extension.kind)}
           </span>
@@ -187,8 +187,8 @@ function InstalledExtensionCard(props: InstalledExtensionCardProps) {
           <span
             class={
               props.extension.active
-                ? STATUS_CLASS["active"]
-                : STATUS_CLASS["inactive"]
+                ? STATUS_CLASS.get("active")
+                : STATUS_CLASS.get("inactive")
             }
           />
         </div>
@@ -636,7 +636,7 @@ export const ExtensionsPreview = () => {
   const setup = createQuery(() => ({
     queryKey: ["extensions", "setup", configuringName()],
     queryFn: () => fetchExtensionSetup(configuringName() ?? ""),
-    enabled: typeof configuringName() === "string",
+    enabled: configuringName() !== undefined,
     placeholderData: keepPreviousData,
   }));
 

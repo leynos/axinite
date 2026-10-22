@@ -29,7 +29,7 @@ export class ObservationModel {
 
   private hasRecoveryWitness(history: Observation[]): boolean {
     const down = history.indexOf("down");
-    return down >= 0 && history.slice(down + 1).includes("up");
+    return down !== -1 && history.slice(down + 1).includes("up");
   }
 
   /** Accept live observations and complete only after an ordered ack/down/up witness. */

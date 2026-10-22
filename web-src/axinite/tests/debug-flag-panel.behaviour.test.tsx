@@ -53,7 +53,7 @@ function flagRow(name: string) {
 }
 
 function storedOverrides(): Record<string, boolean> {
-  return JSON.parse(window.localStorage.getItem(storageKey) ?? "{}");
+  return JSON.parse(globalThis.localStorage.getItem(storageKey) ?? "{}");
 }
 
 async function openPanel() {
@@ -76,13 +76,13 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   vi.stubEnv("DEV", false);
-  window.localStorage.clear();
-  window.history.replaceState(null, "", "/?debug-flags=1");
+  globalThis.localStorage.clear();
+  globalThis.history.replaceState(null, "", "/?debug-flags=1");
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/features") {
-        return Promise.resolve(new Response(JSON.stringify(runtimeFlags)));
+        return Promise.resolve(Response.json(runtimeFlags));
       }
       return originalFetch(input, init);
     })
@@ -91,15 +91,15 @@ beforeEach(async () => {
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
 });
 afterEach(() => {
-  window.localStorage.clear();
-  window.history.replaceState(null, "", "/");
+  globalThis.localStorage.clear();
+  globalThis.history.replaceState(null, "", "/");
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe("debug flag panel with the real runtime", () => {
   it("is absent in production unless the exact debug query opt-in is present", () => {
-    window.history.replaceState(null, "", "/?debug-flags=0");
+    globalThis.history.replaceState(null, "", "/?debug-flags=0");
     mountPanel();
     expect(screen.queryByRole("heading", { name: "Feature flags" })).toBeNull();
     expect(

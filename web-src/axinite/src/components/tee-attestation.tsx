@@ -8,7 +8,6 @@ import { Popover } from "@kobalte/core/popover";
 import { createQuery } from "@tanstack/solid-query";
 import type { Accessor, Component } from "solid-js";
 import { createSignal, Show } from "solid-js";
-
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
 import { useI18n } from "@/lib/i18n/provider";
 import {
@@ -35,6 +34,15 @@ type TeeReportLoader = {
   copyReport: () => void;
 };
 
+type ClipboardWriter = Pick<Clipboard, "writeText">;
+
+function isClipboardWriter(value: unknown): value is ClipboardWriter {
+  if (typeof value !== "object" || value === null || !("writeText" in value)) {
+    return false;
+  }
+  return typeof value.writeText === "function";
+}
+
 // Encapsulate the lazy report fetch and clipboard export. `status` is the live
 // query result so its latest data is read when the report is copied.
 function createTeeReportLoader(status: {
@@ -58,11 +66,15 @@ function createTeeReportLoader(status: {
 
   const copyReport = () => {
     const current = report();
-    if (!current || !navigator.clipboard) {
+    const clipboard: unknown = Object.getOwnPropertyDescriptor(
+      globalThis.navigator,
+      "clipboard"
+    )?.value;
+    if (!current || !isClipboardWriter(clipboard)) {
       return;
     }
-    const combined = { ...current, ...(status.data ?? {}) };
-    void navigator.clipboard.writeText(JSON.stringify(combined, null, 2));
+    const combined = { ...current, ...status.data };
+    void clipboard.writeText(JSON.stringify(combined, null, 2));
   };
 
   return { report, reportError, reportLoading, loadReport, copyReport };

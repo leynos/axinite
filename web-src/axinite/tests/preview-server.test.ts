@@ -105,7 +105,8 @@ describe("preview upstream transport", () => {
   ])("forwards %s without a request body and preserves204", async (method) => {
     const h = harness();
     h.upstream.mockResolvedValue(new Response(null, { status: 204 }));
-    expect((await h.request("/api/jobs", { method })).status).toBe(204);
+    const response = await h.request("/api/jobs", { method });
+    expect(response.status).toBe(204);
     expect(h.upstream.mock.calls[0]?.[1].body).toBeNull();
   });
 

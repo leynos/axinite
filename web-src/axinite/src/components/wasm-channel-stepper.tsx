@@ -25,13 +25,13 @@ const STEP_COUNT = 3;
 // from the table fall back to DEFAULT_STATUS_ENTRY.
 type StatusEntry = { reachedIdx: number; reachedState: StepState };
 
-const STATUS_TABLE: Record<string, StatusEntry> = {
-  active: { reachedIdx: 2, reachedState: "completed" },
-  pairing: { reachedIdx: 2, reachedState: "in-progress" },
-  failed: { reachedIdx: 2, reachedState: "failed" },
-  configured: { reachedIdx: 1, reachedState: "completed" },
-  installed: { reachedIdx: 0, reachedState: "completed" },
-};
+const STATUS_TABLE = new Map<string, StatusEntry>([
+  ["active", { reachedIdx: 2, reachedState: "completed" }],
+  ["pairing", { reachedIdx: 2, reachedState: "in-progress" }],
+  ["failed", { reachedIdx: 2, reachedState: "failed" }],
+  ["configured", { reachedIdx: 1, reachedState: "completed" }],
+  ["installed", { reachedIdx: 0, reachedState: "completed" }],
+]);
 
 const DEFAULT_STATUS_ENTRY: StatusEntry = {
   reachedIdx: 0,
@@ -42,10 +42,11 @@ const DEFAULT_STATUS_ENTRY: StatusEntry = {
  * Compute the three-step activation stepper model for a WASM channel, mirroring
  * the legacy `renderWasmChannelStepper` heuristic.
  */
-export function computeStepperModel(activationStatus?: string): StepperModel {
-  const status = activationStatus || "installed";
+export function computeStepperModel(
+  status: string = "installed"
+): StepperModel {
   const { reachedIdx, reachedState } =
-    STATUS_TABLE[status] ?? DEFAULT_STATUS_ENTRY;
+    STATUS_TABLE.get(status) ?? DEFAULT_STATUS_ENTRY;
 
   const states: StepState[] = Array.from({ length: STEP_COUNT }, (_, i) => {
     if (i < reachedIdx) {
@@ -75,14 +76,18 @@ export const WasmChannelStepper: Component<{
   };
   const stateLabel = (state: StepState) => {
     switch (state) {
-      case "completed":
+      case "completed": {
         return t("extensions-stepper-state-completed");
-      case "failed":
+      }
+      case "failed": {
         return t("extensions-stepper-state-failed");
-      case "in-progress":
+      }
+      case "in-progress": {
         return t("extensions-stepper-state-in-progress");
-      default:
+      }
+      default: {
         return t("extensions-stepper-state-pending");
+      }
     }
   };
 

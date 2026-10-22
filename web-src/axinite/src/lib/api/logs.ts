@@ -9,7 +9,12 @@ import {
   requestJson,
   setStreamConnectionErrorHandler,
 } from "@/lib/api/client";
-import type { LogEntry, LogLevelResponse } from "@/lib/api/contracts";
+import type {
+  LogEntry,
+  LogLevelRequest,
+  LogLevelResponse,
+} from "@/lib/api/contracts";
+import { isJsonObject, isString } from "@/lib/api/json-value";
 
 /** GET /api/logs/level: fetch the gateway's current runtime log level. */
 export function fetchLogLevel(): Promise<LogLevelResponse> {
@@ -21,7 +26,26 @@ export function fetchLogLevel(): Promise<LogLevelResponse> {
  * failures propagate so the caller can reflect the confirmed server value.
  */
 export function setLogLevel(level: string): Promise<LogLevelResponse> {
-  return putJson<LogLevelResponse>("/api/logs/level", { level });
+  return putJson<LogLevelResponse, LogLevelRequest>("/api/logs/level", {
+    level,
+  });
+}
+
+function isLogEntry(value: unknown): value is LogEntry {
+  if (!isJsonObject(value)) {
+    return false;
+  }
+  const level = value["level"];
+  return (
+    (level === "trace" ||
+      level === "debug" ||
+      level === "info" ||
+      level === "warn" ||
+      level === "error") &&
+    isString(value["target"]) &&
+    isString(value["message"]) &&
+    isString(value["timestamp"])
+  );
 }
 
 /**
@@ -34,18 +58,21 @@ export function connectLogEvents(
 ): EventSource {
   const source = createEventStream("/api/logs/events");
   source.addEventListener("log", (rawEvent) => {
-    const messageEvent = rawEvent as MessageEvent<unknown>;
-    if (typeof messageEvent.data !== "string") {
+    if (!(rawEvent instanceof MessageEvent) || !isString(rawEvent.data)) {
       return;
     }
-    let entry: LogEntry;
+    let payload: unknown;
     try {
-      entry = JSON.parse(messageEvent.data) as LogEntry;
+      payload = JSON.parse(rawEvent.data);
     } catch {
       onError?.();
       return;
     }
-    listener(entry);
+    if (!isLogEntry(payload)) {
+      onError?.();
+      return;
+    }
+    listener(payload);
   });
   if (onError) {
     setStreamConnectionErrorHandler(source, onError);

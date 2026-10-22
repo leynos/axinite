@@ -74,7 +74,7 @@ export const DebugFlagPanel = () => {
                       <button
                         class="btn btn-ghost btn-xs shell-button"
                         type="button"
-                        disabled={typeof override() === "undefined"}
+                        disabled={override() === undefined}
                         onClick={() => flags.clearOverride(flag.name)}
                       >
                         {t("flag-clear-override")}

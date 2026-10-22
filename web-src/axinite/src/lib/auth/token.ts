@@ -6,26 +6,23 @@
 
 const STORAGE_KEY = "axinite.gateway-token";
 
-function storage(): Storage | null {
-  if (typeof window === "undefined" || !window.sessionStorage) {
-    return null;
-  }
-  return window.sessionStorage;
+function storage(): Storage {
+  return globalThis.sessionStorage;
 }
 
 /** Return the stored gateway token, or `null` when none is stored. */
 export function getGatewayToken(): string | null {
-  return storage()?.getItem(STORAGE_KEY) ?? null;
+  return storage().getItem(STORAGE_KEY);
 }
 
 /** Store the gateway token for the browser session. */
 export function setGatewayToken(token: string): void {
-  storage()?.setItem(STORAGE_KEY, token);
+  storage().setItem(STORAGE_KEY, token);
 }
 
 /** Remove the stored gateway token. */
 export function clearGatewayToken(): void {
-  storage()?.removeItem(STORAGE_KEY);
+  storage().removeItem(STORAGE_KEY);
 }
 
 /**
