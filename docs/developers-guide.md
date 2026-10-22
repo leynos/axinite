@@ -839,11 +839,17 @@ ratchet.
   `echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"`.
   The expression is evaluated before the shell runs, so nothing is bound and no
   shell conditional can neutralize the write.
-- The upload is guarded on the leg, on that output, and on
-  `github.ref == 'refs/heads/main'`, joined by `&&` alone. The ref guard is
-  needed because `workflow_dispatch` can name any branch.
-- The workflow's concurrency group is `coverage-${{ github.ref }}`, keyed on
-  the ref alone, and never cancels. A cancelled run abandons its upload and its
+- The check step comes after the coverage step and before the upload, and the
+  upload is guarded on that output and on `github.ref == 'refs/heads/main'`,
+  joined by `&&` alone: no `workflow_dispatch` disjunct, no widening. The ref
+  guard is needed because `workflow_dispatch` can name any branch. The ratchet
+  does not depend on the token: it runs, and fails the job on a regression,
+  whether or not the token exists. A skipped upload therefore proves nothing
+  about provisioning, and only a run on `main` that reaches the uploader and
+  receives CodeScene's acknowledgement proves that CodeScene got a report.
+- The workflow's concurrency group is
+  `${{ github.workflow }}-${{ github.ref }}`, keyed on the workflow and the ref
+  alone, and never cancels. A cancelled run abandons its upload and its
   baseline; with no cancellation GitHub keeps one pending run per group, so
   among triggered runs (pushes and dispatches) a newer one replaces an older
   pending one and the latest push's baseline stands. A manual "Re-run jobs" on
@@ -853,9 +859,14 @@ ratchet.
   `main` race. Because a dispatch saves no baseline, a dispatch that replaces a
   pending push leaves the baseline one commit behind until the next push to
   `main`.
-- Merges made by the automerge workflow with `GITHUB_TOKEN` fire no push
-  event, so they reach neither the upload nor the baseline. That is a known
-  exception; a manual dispatch covers it, and no schedule is added.
+- Merges made by the automerge workflow (`dependabot-automerge.yml`, which
+  enables auto-merge with `GITHUB_TOKEN`) fire no push event, so they reach
+  neither the upload nor the baseline: the Dependabot merge commits on `main`
+  have no `coverage.yml` push run. That is a known exception. A dispatch on
+  `main` re-runs the upload, but `generate-coverage` saves the baseline only
+  for a push to `main` (`publish-baseline: auto`), so a dispatch leaves the
+  baseline where the last push put it. No schedule is added, and no trigger
+  exists to close the gap.
 - Both shared actions are pinned to a full commit SHA (the CV-005 library for
   the uploader, `workflow_tooling_test.py` for every shared-actions reference),
   and nothing passes the withdrawn `installer-checksum` input or the
@@ -871,10 +882,19 @@ ratchet.
   so only a job deploying from `main` can read it. Every job that calls the
   uploader declares the environment, as a name or as `{name: codescene}`; no
   other job declares it; and no job in a workflow a pull request can start
-  declares it. The declaration is on the whole matrix job, so a
+  declares it. The declaration is on the whole `coverage-libsql` job, so a
   `workflow_dispatch` from any branch other than `main` is refused at the
-  environment on all three legs, not only the uploading one. The shared CV-005
-  library holds the placement.
+  environment before any step of the publisher runs; the matrix `coverage` jobs
+  do not declare it and run anywhere. The shared CV-005 library holds the
+  placement. A non-`main` dispatch of the publisher is therefore not a proof
+  route: the evidence for a change to it is the pull-request lane's run, the
+  offline contracts, and the first run on `main` after it merges.
+- The environment exists with a custom deployment policy that admits the
+  `main` branch alone, and `CS_ACCESS_TOKEN` is an environment secret there,
+  with no repository-level secret behind it. Neither fact is in Git: the
+  workflow declaration does not create or protect the environment, so read both
+  back from the API (`environments/codescene`, its `deployment-branch-policies`
+  and its `secrets`) before relying on them.
 
 The shared CV-005 library holds the estate to all of this. The pull-request
 surface it checks is every workflow a pull-request, review or merge-queue event
@@ -2298,8 +2318,8 @@ derives the same promise from its leg's flags.
 `tests/workflow_contracts/embedded_postgres_legs_test.py` hold the contracts.
 They assert that each leg of the `coverage` matrix compiles the `postgres`
 feature, resolved against the root manifest's `default` list (in
-`_cargo_features.py`), because `postgres` is a default feature and a leg gets it
-unless it passes `--no-default-features`; that each of those legs enables
+`_cargo_features.py`), because `postgres` is a default feature and a leg gets
+it unless it passes `--no-default-features`; that each of those legs enables
 `embedded-postgres`, in `coverage.yml` and in `test.yml`'s `tests` job on every
 event; that neither coverage job declares `services` or exports a database URL;
 that exactly one unconditional step of `coverage` appends the promise to
@@ -4137,8 +4157,8 @@ Four consequences shape `coverage.yml` and `codescene-coverage.yml`:
   cannot be declared, so the lane has no dispatch.
 
 The repository keeps the assertions that are policy rather than contract:
-timeout ordering, `NEXTEST_PROFILE: ci`, the database export, and the runner
-shapes.
+timeout ordering, `NEXTEST_PROFILE: coverage`, the database export, and the
+runner shapes.
 
 ### The watchdog tier, and where it exists
 
