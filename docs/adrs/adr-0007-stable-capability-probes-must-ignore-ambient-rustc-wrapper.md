@@ -1,5 +1,5 @@
 <!-- markdownlint-disable-next-line MD013 -->
-# Architectural decision record (ADR) 007: Stable capability probes must ignore ambient `RUSTC_WRAPPER`
+# Architectural decision record (ADR) 0007: Stable capability probes must ignore ambient `RUSTC_WRAPPER`
 
 ## Status
 
@@ -191,5 +191,5 @@ carry a local vendor delta to defend itself from that environment bug.
 
 ## References
 
-- [Feature-gate bollard: clean build](execplans/feature-gate-bollard-clean-build.md)
-- [Cargo.toml](../Cargo.toml)
+- [Feature-gate bollard: clean build](../execplans/feature-gate-bollard-clean-build.md)
+- [Cargo.toml](../../Cargo.toml)

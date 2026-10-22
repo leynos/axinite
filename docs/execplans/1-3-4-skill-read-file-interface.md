@@ -59,8 +59,8 @@ rule: the model can read bundle-relative files, oversized or disallowed files
 fail through a skill-scoped error path, and raw filesystem access is not
 exposed.
 
-`docs/rfcs/0003-skill-bundle-installation.md` is the design authority for this
-feature. Keep the sections `Problem`, `Reference Model`,
+`docs/rfcs/rfc-0003-skill-bundle-installation.md` is the design authority for
+this feature. Keep the sections `Problem`, `Reference Model`,
 `Runtime Model Interface`, `Why A Dedicated Tool Instead Of Raw File Paths`,
 `Security Considerations`, `Testing`, and `Rollout Plan` open while
 implementing. The RFC suggests the model-facing schema, successful response,

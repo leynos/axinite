@@ -2,7 +2,7 @@
 //! dyn-safe counterparts via `Box::pin`.
 //!
 //! The private [`impl_db_forwarders!`] macro eliminates boilerplate for the
-//! ADR-006 dual-trait boundary pattern.  Each invocation generates a blanket
+//! ADR-0006 dual-trait boundary pattern.  Each invocation generates a blanket
 //! `impl DynTrait for T where T: NativeTrait` that wraps every method's
 //! return value in a boxed future.
 
@@ -34,7 +34,7 @@ use crate::workspace::{MemoryChunk, MemoryDocument, SearchResult, WorkspaceEntry
 /// Generate blanket adapter implementations that forward dyn-safe trait methods
 /// to native async trait methods via `Box::pin`.
 ///
-/// This macro eliminates boilerplate for the ADR-006 dyn/native boundary
+/// This macro eliminates boilerplate for the ADR-0006 dyn/native boundary
 /// pattern, where each object-safe `*Store` trait has a companion
 /// `Native*Store` trait with native async fn methods (RPITIT), and a blanket
 /// impl bridges the two.

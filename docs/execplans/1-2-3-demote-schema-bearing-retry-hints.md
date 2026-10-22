@@ -9,7 +9,7 @@ Status: COMPLETED
 ## Purpose / big picture
 
 Roadmap item `1.2.3` exists to finish the contract reversal described in
-[RFC 0002](../rfcs/0002-expose-wasm-tool-definitions.md). After this work,
+[RFC 0002](../rfcs/rfc-0002-expose-wasm-tool-definitions.md). After this work,
 Axinite must treat proactive `ToolDefinition.parameters` publication as the
 normal contract for active WebAssembly (WASM) tools, while schema-bearing retry
 hints remain only supplemental recovery guidance when a call already failed.
@@ -65,8 +65,8 @@ The following files are the important orientation points for this feature.
 - `docs/roadmap.md` defines `1.2.3`, its dependency on `1.2.1`, and the
   success condition that retry hints become supplemental help rather than the
   primary contract.
-- `docs/rfcs/0002-expose-wasm-tool-definitions.md` is the design authority for
-  this change. The most important sections are `Summary`, `Proposal` step 2
+- `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` is the design authority
+  for this change. The most important sections are `Summary`, `Proposal` step 2
   ("Treat retry hints as fallback diagnostics only"), `Unit tests`,
   `Behavioural tests`, and `Migration Plan` step 4.
 - `src/tools/wasm/wrapper.rs` owns the tool-level error branch in
@@ -277,7 +277,7 @@ recovery guidance without redefining the contract.
 The implementation is not done until the documents stop contradicting each
 other.
 
-1. Update `docs/rfcs/0002-expose-wasm-tool-definitions.md` implementation
+1. Update `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` implementation
    status to show `1.2.3` complete and leave `1.2.4` open.
 2. Update RFC 0002 wording if needed so the fallback-diagnostic behaviour and
    chosen error phrasing are reflected in the migration notes.
@@ -329,7 +329,7 @@ required by the repository instructions.
    bunx markdownlint-cli2 \
      docs/execplans/1-2-3-demote-schema-bearing-retry-hints.md \
      docs/roadmap.md \
-     docs/rfcs/0002-expose-wasm-tool-definitions.md \
+     docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md \
      docs/users-guide.md \
      docs/worker-orchestrator-contract.md \
      docs/axinite-architecture-overview.md \

@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 003: Theme management belongs in memoryd
+# Architectural decision record (ADR) 0003: Theme management belongs in memoryd
 
 ## Status
 
@@ -129,12 +129,12 @@ rules that are impossible to untangle later.
 ## References
 
 [^1]: RFC 0015: Hierarchical memory materialization for `memoryd`. See
-    `docs/rfcs/0015-hierarchical-memory-materialization-for-memoryd.md`.
+    `docs/rfcs/rfc-0015-hierarchical-memory-materialization-for-memoryd.md`.
 [^2]: RFC 0016: Theme detection and sparsity rebalancing for `memoryd`. See
-    `docs/rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md`.
+    `docs/rfcs/rfc-0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md`.
 [^3]: Chutoro design document, section 12: incremental clustering. See
     <https://raw.githubusercontent.com/leynos/chutoro/main/docs/chutoro-design.md>.
 [^4]: Beyond RAG for Agent Memory: Retrieval by Decoupling and Aggregation.
     See <https://arxiv.org/abs/2602.02007>.
 [^5]: RFC 0007: Secure memory sidecar design for axinite. See
-    `docs/rfcs/0007-secure-memory-sidecar-design.md`.
+    `docs/rfcs/rfc-0007-secure-memory-sidecar-design.md`.

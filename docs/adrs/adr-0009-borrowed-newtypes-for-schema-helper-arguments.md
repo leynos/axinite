@@ -1,4 +1,4 @@
-# ADR 009 — Borrowed newtypes for schema helper arguments
+# Architectural decision record (ADR) 0009: Borrowed newtypes for schema helper arguments
 
 ## Status
 

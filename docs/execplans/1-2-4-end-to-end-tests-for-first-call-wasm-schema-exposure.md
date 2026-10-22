@@ -74,7 +74,7 @@ The files below are the authoritative orientation points for this feature.
 - `docs/roadmap.md` defines `1.2.4`, its dependencies on `1.2.2` and `1.2.3`,
   and the success condition that both hosted and non-hosted paths fail if
   proactive schema publication regresses.
-- `docs/rfcs/0002-expose-wasm-tool-definitions.md` is the design authority.
+- `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` is the design authority.
   The most important sections are `Goals`, `Detailed Interface`,
   `Testing Strategy`, and `Migration Plan` step 5.
 - `docs/execplans/1-2-1-audit-and-fix-wasm-registration-paths.md`,
@@ -331,7 +331,7 @@ Update the documents that define or summarize the contract once the tests land.
 
 1. Update `docs/roadmap.md` to mark `1.2.4` done only after the test evidence
    exists.
-2. Update `docs/rfcs/0002-expose-wasm-tool-definitions.md` implementation
+2. Update `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` implementation
    status so it says first-call end-to-end regression coverage is complete.
 3. Review `docs/users-guide.md` and
    `docs/worker-orchestrator-contract.md` for wording about proactive schema

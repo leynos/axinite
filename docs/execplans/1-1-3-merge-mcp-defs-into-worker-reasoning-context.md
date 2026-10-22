@@ -79,8 +79,9 @@ not replace them.
   `src/orchestrator/api/tests/remote_tools.rs`, `src/tools/registry/tests.rs`,
   and `src/tools/builtin/worker_remote_tool_proxy.rs` tests are the closest
   existing regression seams.
-- `docs/rfcs/0001-expose-mcp-tool-definitions.md` remains the design authority
-  for this work, while `docs/roadmap.md` defines the delivery checkpoint.
+- `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` remains the design
+  authority for this work, while `docs/roadmap.md` defines the delivery
+  checkpoint.
 - The user request named `docs/axinite-architecture-summary.md`, but that file
   does not exist in this checkout. Use `docs/axinite-architecture-overview.md`
   as the current architecture source of truth.
@@ -112,7 +113,7 @@ not replace them.
   `rstest-bdd` behavioural coverage if it can reuse in-process harnesses
   without Docker, live MCP services, or an unrelated test framework expansion.
 - Update the design and operator docs that actually change. At minimum, review
-  `docs/rfcs/0001-expose-mcp-tool-definitions.md`,
+  `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md`,
   `docs/axinite-architecture-overview.md`, `docs/users-guide.md`,
   `docs/roadmap.md`, and `FEATURE_PARITY.md` before closing the work.
 
@@ -198,9 +199,9 @@ Perform the following discovery work before changing behaviour:
    preserve them as a dedicated system guidance message at context-build time,
    and do not duplicate that message during later `available_tools` refreshes.
 
-Record the chosen rule in `docs/rfcs/0001-expose-mcp-tool-definitions.md` and
-`docs/axinite-architecture-overview.md` if the implementation clarifies an open
-question from the RFC, especially around whether guidance injection is a
+Record the chosen rule in `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md`
+and `docs/axinite-architecture-overview.md` if the implementation clarifies an
+open question from the RFC, especially around whether guidance injection is a
 context-build concern or a per-iteration refresh concern.
 
 ## Milestone 2: refactor the worker to compute one unified tool surface
@@ -285,7 +286,7 @@ integration seam.
 The code and docs already describe overlapping pieces of this feature. Update
 them in the same implementation pass so they stop drifting.
 
-1. Update `docs/rfcs/0001-expose-mcp-tool-definitions.md` implementation
+1. Update `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` implementation
    status and any resolved wording around the reasoning-context merge and
    guidance injection.
 2. Update `docs/axinite-architecture-overview.md` to describe the final
@@ -327,7 +328,7 @@ If documentation changes are made outside the Rust gates, also run:
 
 ```bash
 set -o pipefail && bunx markdownlint-cli2 docs/roadmap.md docs/users-guide.md \
-  docs/axinite-architecture-overview.md docs/rfcs/0001-expose-mcp-tool-definitions.md \
+  docs/axinite-architecture-overview.md docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md \
   docs/execplans/1-1-3-merge-mcp-defs-into-worker-reasoning-context.md docs/contents.md \
   | tee /tmp/markdownlint-axinite-1-1-3-merge-mcp-defs-into-worker-reasoning-context.out
 git diff --check

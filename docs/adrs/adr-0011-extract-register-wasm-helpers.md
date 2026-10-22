@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 011: Extract `register_wasm` helpers to reduce cyclomatic complexity
+# Architectural decision record (ADR) 0011: Extract `register_wasm` helpers to reduce cyclomatic complexity
 
 ## Status
 
@@ -30,7 +30,7 @@ large registration method.
 The refactor is implemented in `src/tools/registry/wasm_preparation.rs`, with
 tests in `src/tools/registry/wasm_preparation_tests.rs`, and is summarized for
 maintainers in
-[developer guide section 29](developers-guide.md#29-wasm-tool-schema-normalization).
+[developer guide section 29](../developers-guide.md#29-wasm-tool-schema-normalization).
 
 ## Decision drivers
 

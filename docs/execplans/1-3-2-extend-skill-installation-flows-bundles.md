@@ -75,7 +75,7 @@ architecture reference.
 `1.3.1`, and the success rule for preserving `references/` and `assets/` while
 reporting archive-shape failures explicitly.
 
-`docs/rfcs/0003-skill-bundle-installation.md` is the design authority. The
+`docs/rfcs/rfc-0003-skill-bundle-installation.md` is the design authority. The
 sections to keep open while implementing are `Summary`, `Installation Flows`,
 `Canonical skill names and conflict handling`, `Validation And Extraction`,
 `UI Changes`, `Testing`, and `Rollout Plan`.

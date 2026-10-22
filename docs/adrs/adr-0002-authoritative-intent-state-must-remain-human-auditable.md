@@ -1,5 +1,5 @@
 <!-- markdownlint-disable-next-line MD013 -->
-# Architectural decision record (ADR) 002: Authoritative intent state must remain human-auditable
+# Architectural decision record (ADR) 0002: Authoritative intent state must remain human-auditable
 
 ## Status
 
@@ -179,7 +179,7 @@ lives.
 ______________________________________________________________________
 
 [^1]: RFC 0008: WebSocket Responses API. See
-    `docs/rfcs/0008-websocket-responses-api.md`.
+    `docs/rfcs/rfc-0008-websocket-responses-api.md`.
 
 [^2]: Intent-engineering analysis, compaction as an intent hazard. See
     `docs/What Axinite can learn from the video's approach to intent
@@ -191,7 +191,7 @@ ______________________________________________________________________
     <https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf>.
 
 [^4]: RFC 0010: Intent contracts and fail-closed runtime gates. See
-    `docs/rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md`.
+    `docs/rfcs/rfc-0010-intent-contracts-and-fail-closed-runtime-gates.md`.
 
 [^5]: RFC 0011: Execution truth ledger and action provenance. See
-    `docs/rfcs/0011-execution-truth-ledger-and-action-provenance.md`.
+    `docs/rfcs/rfc-0011-execution-truth-ledger-and-action-provenance.md`.

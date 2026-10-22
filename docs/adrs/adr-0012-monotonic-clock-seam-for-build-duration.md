@@ -1,4 +1,4 @@
-# ADR-012 — Monotonic clock seam for build duration measurement
+# Architectural decision record (ADR) 0012: Monotonic clock seam for build duration measurement
 
 **Status:** Accepted **Date:** 2026-05-22 **Deciders:** `@leynos`
 

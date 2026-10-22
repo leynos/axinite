@@ -1,5 +1,5 @@
 <!-- markdownlint-disable-next-line MD013 -->
-# Architectural decision record (ADR) 005: Dual-mode uncertainty gating for hierarchical recall
+# Architectural decision record (ADR) 0005: Dual-mode uncertainty gating for hierarchical recall
 
 ## Status
 
@@ -130,4 +130,4 @@ a richer optional path, and a clean place to compare them.
 [^1]: Beyond RAG for Agent Memory: Retrieval by Decoupling and Aggregation.
     See <https://arxiv.org/abs/2602.02007>.
 [^2]: RFC 0017: Hierarchical recall for `memoryd`. See
-    `docs/rfcs/0017-hierarchical-recall-for-memoryd.md`.
+    `docs/rfcs/rfc-0017-hierarchical-recall-for-memoryd.md`.

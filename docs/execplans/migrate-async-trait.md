@@ -12,14 +12,15 @@ complete for production code in `src/`. The repository originally had 158
 broad rollout (2026-03-23), **0 production `#[async_trait]` attribute usages**
 remain in `src/`.
 
-All dyn-backed trait families now use Architectural Decision Record (ADR) 006's
-dual-trait pattern: a dyn-safe trait with boxed futures for the object-safe
-boundary, and a `Native*` sibling trait with RPITIT (return-position impl Trait
-in trait) for ergonomic implementation. The direct `async-trait` dependency was
-removed from `Cargo.toml` on 2026-03-24 (Milestone 5).
+All dyn-backed trait families now use Architectural Decision Record (ADR)
+0006's dual-trait pattern: a dyn-safe trait with boxed futures for the
+object-safe boundary, and a `Native*` sibling trait with RPITIT
+(return-position impl Trait in trait) for ergonomic implementation. The direct
+`async-trait` dependency was removed from `Cargo.toml` on 2026-03-24 (Milestone
+5).
 
 This document tracks the phased migration: Phase 1 (audit/checklist), Phase 2
-(concrete-only traits), Phase 3 (ADR 006 pilot), Phase 4 (cleanup).
+(concrete-only traits), Phase 3 (ADR 0006 pilot), Phase 4 (cleanup).
 
 ## Approval gates
 
@@ -49,18 +50,18 @@ This document tracks the phased migration: Phase 1 (audit/checklist), Phase 2
 
 - Rust edition 2024, minimum version 1.94.
 - Traits used as `dyn Trait` (boxed trait objects) cannot use native async
-  methods directly. Architectural decision record (ADR) 006 adopts a dual-trait
-  pattern for those surfaces.
+  methods directly. Architectural decision record (ADR) 0006 adopts a
+  dual-trait pattern for those surfaces.
 - The migration must be incremental — it is not feasible or desirable to
   change all 158 uses in a single commit.
 - Each batch of changes must pass `make all`.
 
 ## Trait classification
 
-### Core extensibility traits (used as `dyn Trait` — blocked pending ADR 006)
+### Core extensibility traits (used as `dyn Trait` — blocked pending ADR 0006)
 
 These traits are used as trait objects throughout the codebase and cannot
-trivially migrate to native async traits. Until the ADR 006 pilot lands, they
+trivially migrate to native async traits. Until the ADR 0006 pilot lands, they
 remain on `async-trait`:
 
 - `Database` (`src/db/mod.rs`) — 10 `dyn` references
@@ -113,7 +114,7 @@ independently of the trait definition.
    `impl` blocks.
 3. Leave core extensibility traits unchanged (they require `async-trait`
    for object safety).
-4. For dyn-backed traits, follow ADR 006's dual-trait pattern rather than
+4. For dyn-backed traits, follow ADR 0006's dual-trait pattern rather than
    evaluating `trait_variant` as an active migration path.
 
 ### Phase 1: Audit and classify every `#[async_trait]` use
@@ -164,36 +165,36 @@ Re-audit snapshot as of 2026-03-21:
 
 Re-audit snapshot as of 2026-03-21 after Phase 3 expansion:
 
-- `SettingsStore` in `src/db/mod.rs` is now piloted with ADR 006's
+- `SettingsStore` in `src/db/mod.rs` is now piloted with ADR 0006's
   dual-trait pattern while preserving both direct `Arc<dyn SettingsStore>`
   consumers and the `Database` supertrait boundary.
 - `SoftwareBuilder` in `src/tools/builder/core/domain.rs` is now piloted
-  with ADR 006's dual-trait pattern while preserving `Arc<dyn SoftwareBuilder>`
-  consumers in self-repair and the build tool.
+  with ADR 0006's dual-trait pattern while preserving
+  `Arc<dyn SoftwareBuilder>` consumers in self-repair and the build tool.
 
-Re-audit snapshot as of 2026-03-22 during ADR 006 broad rollout execution:
+Re-audit snapshot as of 2026-03-22 during ADR 0006 broad rollout execution:
 
-- `LoopDelegate` in `src/agent/agentic_loop.rs` now uses ADR 006's dual-trait
+- `LoopDelegate` in `src/agent/agentic_loop.rs` now uses ADR 0006's dual-trait
   pattern while preserving `&dyn LoopDelegate` call sites in the shared agentic
   loop and the chat, job, and container delegates.
-- `SelfRepair` in `src/agent/self_repair.rs` now uses ADR 006's dual-trait
+- `SelfRepair` in `src/agent/self_repair.rs` now uses ADR 0006's dual-trait
   pattern while preserving `Arc<dyn SelfRepair>` consumers in the repair task.
-- `TaskHandler` in `src/agent/task.rs` now uses ADR 006's dual-trait pattern
+- `TaskHandler` in `src/agent/task.rs` now uses ADR 0006's dual-trait pattern
   while preserving `Arc<dyn TaskHandler>` consumers in scheduler background
   tasks.
 
 Re-audit snapshot as of 2026-03-23 after Milestone 2 completion:
 
-- `CredentialResolver` in `src/sandbox/proxy/http.rs` now uses ADR 006's
+- `CredentialResolver` in `src/sandbox/proxy/http.rs` now uses ADR 0006's
   dual-trait pattern. `EnvCredentialResolver` and `NoCredentialResolver`
   implement `NativeCredentialResolver` directly.
-- `ChannelSecretUpdater` in `src/channels/channel.rs` now uses ADR 006's
+- `ChannelSecretUpdater` in `src/channels/channel.rs` now uses ADR 0006's
   dual-trait pattern. `HttpChannelState` in `src/channels/http.rs` implements
   `NativeChannelSecretUpdater` directly.
-- `HttpInterceptor` in `src/llm/recording.rs` now uses ADR 006's dual-trait
+- `HttpInterceptor` in `src/llm/recording.rs` now uses ADR 0006's dual-trait
   pattern. `RecordingHttpInterceptor` and `ReplayingHttpInterceptor` implement
   `NativeHttpInterceptor` directly.
-- `WasmToolStore` in `src/tools/wasm/storage.rs` now uses ADR 006's dual-trait
+- `WasmToolStore` in `src/tools/wasm/storage.rs` now uses ADR 0006's dual-trait
   pattern. `PostgresWasmToolStore` and `LibSqlWasmToolStore` implement
   `NativeWasmToolStore` directly.
 - All seven Milestone 2 families are complete. Whole-tree footprint:
@@ -229,11 +230,11 @@ For each module, in separate commits:
 - [x] `src/evaluation/success.rs`
 - [x] Re-audit remaining candidates after the first batch lands
 - [x] Stop direct concrete-only expansion after the first batch and route
-  all higher-effort follow-on work through ADR 006's dyn-backed pilot pattern
+  all higher-effort follow-on work through ADR 0006's dyn-backed pilot pattern
 
-### Phase 3: pilot ADR 006 for dyn-backed traits (optional, higher effort)
+### Phase 3: pilot ADR 0006 for dyn-backed traits (optional, higher effort)
 
-- [x] Apply ADR 006's dual-trait pattern to one narrow dyn-backed trait
+- [x] Apply ADR 0006's dual-trait pattern to one narrow dyn-backed trait
   family as a proof of concept
 - [x] Verify that the pilot preserves object-safe call sites while removing
   `#[async_trait]` from the trait family and its implementations
@@ -251,7 +252,7 @@ For each module, in separate commits:
 Final `async-trait` status as of 2026-03-24 (after Milestone 5):
 
 - No production trait families require `async-trait` for their definitions or
-  impl blocks. All dyn-backed families have been migrated to the ADR 006
+  impl blocks. All dyn-backed families have been migrated to the ADR 0006
   dual-trait pattern.
 - The direct `async-trait` dependency has been removed from `Cargo.toml` as
   part of the Milestone 5 cleanup. Zero `#[async_trait]` attribute usages
@@ -265,32 +266,32 @@ Final `async-trait` status as of 2026-03-24 (after Milestone 5):
 
 ## Estimated scope
 
-Table 1. Pre-ADR-006 migration scope by async-trait category (historical).
+Table 1. Pre-ADR-0006 migration scope by async-trait category (historical).
 
-| Category                         | Uses | Migratable (pre-ADR-006) | Post-ADR-006 Status                           |
-| -------------------------------- | ---- | ------------------------ | --------------------------------------------- |
-| Core trait definitions           | ~12  | No (dyn Trait)           | **Migrated** via dual-trait pattern (ADR 006) |
-| Core trait `impl` blocks         | ~80  | No (must match trait)    | **Migrated** via dual-trait pattern (ADR 006) |
-| Confirmed safe trait definitions | 2    | **Yes**                  | **Completed** (Milestone 1)                   |
-| Confirmed safe impl blocks       | 3    | **Yes**                  | **Completed** (Milestone 1)                   |
+| Category                         | Uses | Migratable (pre-ADR-0006) | Post-ADR-0006 Status                           |
+| -------------------------------- | ---- | ------------------------- | ---------------------------------------------- |
+| Core trait definitions           | ~12  | No (dyn Trait)            | **Migrated** via dual-trait pattern (ADR 0006) |
+| Core trait `impl` blocks         | ~80  | No (must match trait)     | **Migrated** via dual-trait pattern (ADR 0006) |
+| Confirmed safe trait definitions | 2    | **Yes**                   | **Completed** (Milestone 1)                    |
+| Confirmed safe impl blocks       | 3    | **Yes**                   | **Completed** (Milestone 1)                    |
 
-See ADR 006 and Milestones 2–4 for the broad rollout that reduced production
+See ADR 0006 and Milestones 2–4 for the broad rollout that reduced production
 `#[async_trait]` usage to zero. Milestone 5 removed the direct dependency from
 `Cargo.toml`.
 
 Table 2. Current status of the highest-value migration buckets after the
-initial safe batch and ADR 006 pilots.
+initial safe batch and ADR 0006 pilots.
 
-| Bucket                                                                                                                     | Current status          | Why it stands here                                                                                                                                        | Next step                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Concrete-only traits (`WasmChannelStore`, `SuccessEvaluator`)                                                              | Completed               | No dyn-backed consumers were found, so native async traits could replace `#[async_trait]` directly.                                                       | No follow-up needed unless new trait-object usage appears.                                |
-| Narrow dyn-backed pilots (`McpTransport`, `SettingsStore`, `SoftwareBuilder`)                                              | Completed under ADR 006 | These families needed object-safe consumers to stay intact, so the dual-trait pattern replaced `#[async_trait]` while preserving existing dyn call sites. | Use these as the reference shape for future dyn-backed migrations.                        |
-| Remaining dyn-backed families (`Database`, `Channel`, `Tool`, `LlmProvider`, `WasmToolStore`, and smaller internal traits) | Completed under ADR 006 | All planned families migrated via the dual-trait pattern across Milestones 2–4. Zero production `#[async_trait]` attribute usages remain in `src/`.       | Completed: `async-trait` removed from `Cargo.toml` (Milestone 5); governing docs updated. |
+| Bucket                                                                                                                     | Current status           | Why it stands here                                                                                                                                        | Next step                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Concrete-only traits (`WasmChannelStore`, `SuccessEvaluator`)                                                              | Completed                | No dyn-backed consumers were found, so native async traits could replace `#[async_trait]` directly.                                                       | No follow-up needed unless new trait-object usage appears.                                |
+| Narrow dyn-backed pilots (`McpTransport`, `SettingsStore`, `SoftwareBuilder`)                                              | Completed under ADR 0006 | These families needed object-safe consumers to stay intact, so the dual-trait pattern replaced `#[async_trait]` while preserving existing dyn call sites. | Use these as the reference shape for future dyn-backed migrations.                        |
+| Remaining dyn-backed families (`Database`, `Channel`, `Tool`, `LlmProvider`, `WasmToolStore`, and smaller internal traits) | Completed under ADR 0006 | All planned families migrated via the dual-trait pattern across Milestones 2–4. Zero production `#[async_trait]` attribute usages remain in `src/`.       | Completed: `async-trait` removed from `Cargo.toml` (Milestone 5); governing docs updated. |
 
-The original directly-migratable scope was **5 of 158 uses**. The ADR 006 broad
-rollout (Milestones 2–4) migrated the remaining dyn-backed families, bringing
-the production `#[async_trait]` footprint to **0 of 158 uses**. The direct
-`async-trait` dependency was removed from `Cargo.toml` in Milestone 5,
+The original directly-migratable scope was **5 of 158 uses**. The ADR 0006
+broad rollout (Milestones 2–4) migrated the remaining dyn-backed families,
+bringing the production `#[async_trait]` footprint to **0 of 158 uses**. The
+direct `async-trait` dependency was removed from `Cargo.toml` in Milestone 5,
 completing the migration.
 
 ## Risks
@@ -310,7 +311,7 @@ completing the migration.
 
 - [x] Phase 1: Audit and classify
 - [x] Phase 2: Migrate concrete-only traits
-- [x] Phase 3: Pilot ADR 006 for dyn-backed traits (optional)
+- [x] Phase 3: Pilot ADR 0006 for dyn-backed traits (optional)
 - [x] Phase 4: Clean up
 
 ## Progress notes
@@ -325,15 +326,15 @@ completing the migration.
   `Send` contract that `async-trait` previously supplied implicitly.
 - 2026-03-21: Re-audited the remaining async traits after the first batch.
   No additional low-risk migrations were found. The next meaningful work item
-  is architectural: pilot ADR 006's object-safe dual-trait pattern for one
+  is architectural: pilot ADR 0006's object-safe dual-trait pattern for one
   blocked trait family.
-- 2026-03-21: ADR 006 records the
+- 2026-03-21: ADR 0006 records the
   proposed design direction for the remaining dyn-backed traits:
-  `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`.
-- 2026-03-21: ADR 006 supersedes `trait_variant` as the active Phase 3
+  `docs/adrs/adr-0006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`.
+- 2026-03-21: ADR 0006 supersedes `trait_variant` as the active Phase 3
   plan for remaining dyn-backed async traits. Any `trait_variant` discussion in
   this document is retained only as historical background.
-- 2026-03-21: Piloted ADR 006 on the `McpTransport` family. The dyn-facing
+- 2026-03-21: Piloted ADR 0006 on the `McpTransport` family. The dyn-facing
   `McpTransport` trait now uses an explicit boxed-future boundary, while
   `NativeMcpTransport` keeps concrete implementations on native async methods.
   `HttpMcpTransport`, `StdioMcpTransport`, `UnixMcpTransport`, and the client
@@ -344,19 +345,19 @@ completing the migration.
   only export the sibling trait when external or cross-module implementors need
   the ergonomic path. The next candidates should be comparably small dyn-backed
   families rather than `Tool`, `LlmProvider`, or `Database`.
-- 2026-03-21: Expanded the ADR 006 pattern to `SettingsStore` and
+- 2026-03-21: Expanded the ADR 0006 pattern to `SettingsStore` and
   `SoftwareBuilder`, the two narrow follow-on candidates named in the ADR.
   `PgBackend`, `LibSqlBackend`, and `LlmSoftwareBuilder` now use the native
   sibling traits, while existing `Arc<dyn SettingsStore>` and
   `Arc<dyn SoftwareBuilder>` call sites remain unchanged.
-- 2026-03-22: Initiated the broad ADR 006 rollout (Milestone 2–4) to migrate
+- 2026-03-22: Initiated the broad ADR 0006 rollout (Milestone 2–4) to migrate
   the remaining dyn-backed trait families. The rollout plan is documented in
   `docs/execplans/adr-006-broad-rollout.md`.
 - 2026-03-23: Completed the broad rollout across all
   Milestones 2–4. Zero production `#[async_trait]` attribute usages remain in
-  `src/`. All dyn-backed trait families now use the ADR 006 dual-trait pattern.
-  The `async-trait` crate remains in `Cargo.toml` pending the Milestone 5 audit
-  and explicit removal.
+  `src/`. All dyn-backed trait families now use the ADR 0006 dual-trait
+  pattern. The `async-trait` crate remains in `Cargo.toml` pending the
+  Milestone 5 audit and explicit removal.
 - 2026-03-24: Milestone 5 complete. Removed `async-trait` from the direct
   `[dependencies]` in `Cargo.toml`. A fresh tree audit confirmed zero
   `#[async_trait]` attribute usages in `src/` and `tests/`. Zero

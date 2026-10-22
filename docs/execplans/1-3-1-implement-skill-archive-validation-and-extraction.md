@@ -88,7 +88,7 @@ The files below are the key orientation points for this roadmap item.
 - `docs/roadmap.md` defines `1.3.1`, its dependency position before
   `2.2`, and the success rule that only bundles with one shared top-level
   prefix and `SKILL.md` at `<root>/SKILL.md` are accepted.
-- `docs/rfcs/0003-skill-bundle-installation.md` is the design authority.
+- `docs/rfcs/rfc-0003-skill-bundle-installation.md` is the design authority.
   The most important sections are `Proposed Bundle Format`,
   `Validation And Extraction`, and `Rollout Plan`.
 - `docs/agent-skills-support.md` is the maintainer-facing architecture

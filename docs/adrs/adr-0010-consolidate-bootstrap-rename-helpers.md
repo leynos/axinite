@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
+# Architectural decision record (ADR) 0010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
 
 ## Status
 
@@ -82,6 +82,6 @@ All other non-fatal migration paths also use explicit `let _ = ...` discards:
 - PR `#166`:
   [Issue #33: Deduplicate bootstrap migration rename helpers](https://github.com/leynos/axinite/pull/166).
 - Implementation:
-  [`src/bootstrap/migration.rs`](../src/bootstrap/migration.rs), which defines
-  `rename_legacy_bootstrap`.
-- See also: [`docs/contents.md`](contents.md).
+  [`src/bootstrap/migration.rs`](../../src/bootstrap/migration.rs), which
+  defines `rename_legacy_bootstrap`.
+- See also: [`docs/contents.md`](../contents.md).

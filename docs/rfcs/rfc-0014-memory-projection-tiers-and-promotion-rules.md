@@ -345,7 +345,7 @@ These changes extend RFC 0007's sidecar without requiring architectural rework.
 ______________________________________________________________________
 
 [^1]: RFC 0007: Secure memory sidecar design. See
-    `docs/rfcs/0007-secure-memory-sidecar-design.md`.
+    `docs/rfcs/rfc-0007-secure-memory-sidecar-design.md`.
 
 [^2]: Honcho analysis, memory projection and promotion lessons. See
     `docs/ChatGPT-Analysis_of_Honcho_System.md`.

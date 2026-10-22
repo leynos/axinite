@@ -74,7 +74,7 @@ IronClaw already emits rich runtime data through several channels:
   compaction events, and other non-standard paths do not appear in the normal
   conversation transcript.[^1]
 - **Policy decisions are not recorded**: when a safety check, approval
-  gate, or policy evaluation (ADR 001) produces a decision, that decision is
+  gate, or policy evaluation (ADR 0001) produces a decision, that decision is
   not durably stored in a queryable form.
 
 ## Goals and non-goals
@@ -149,7 +149,7 @@ delegation contract, tool allowlist, and budget parameters.
 
 **Provider event**: records provider-side continuity state changes such as
 `previous_response_id` transitions, compaction events, and connection lifecycle
-events (see RFC 0008 and ADR 002).
+events (see RFC 0008 and ADR 0002).
 
 **Bypass event**: records actions that bypass normal conversational
 persistence, such as auth token submissions, with a redacted detail payload.

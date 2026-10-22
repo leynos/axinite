@@ -65,8 +65,8 @@ product direction, and top-level runtime shape. `docs/roadmap.md` defines item
 > Tests cover valid bundles, malformed bundles, and lazy bundled-file
 > reads, and prove that installation no longer drops ancillary files.
 
-`docs/rfcs/0003-skill-bundle-installation.md` is the design authority. Read the
-`Problem`, `Reference Model`, `Validation And Extraction`,
+`docs/rfcs/rfc-0003-skill-bundle-installation.md` is the design authority. Read
+the `Problem`, `Reference Model`, `Validation And Extraction`,
 `Runtime Model Interface`, `Testing`, and `Rollout Plan` sections. The RFC's
 `Testing` section enumerates the unit and behavioural cases that this milestone
 is responsible for completing.

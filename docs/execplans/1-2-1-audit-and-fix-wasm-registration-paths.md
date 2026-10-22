@@ -26,9 +26,9 @@ The change is observable in three ways:
    supplemental fallback guidance.
 
 This plan delivers roadmap item `1.2.1` and addresses
-[RFC 0002 §Current State](../rfcs/0002-expose-wasm-tool-definitions.md#current-state)
+[RFC 0002 §Current State](../rfcs/rfc-0002-expose-wasm-tool-definitions.md#current-state)
 and
-[RFC 0002 §Migration Plan](../rfcs/0002-expose-wasm-tool-definitions.md#migration-plan)
+[RFC 0002 §Migration Plan](../rfcs/rfc-0002-expose-wasm-tool-definitions.md#migration-plan)
 steps 1 and 2.
 
 ## Approval gates
@@ -54,7 +54,7 @@ steps 1 and 2.
 
 - Docs synced
   Acceptance criteria: `docs/roadmap.md` marks `1.2.1` done,
-  `docs/rfcs/0002-expose-wasm-tool-definitions.md` implementation status
+  `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` implementation status
   reflects the completed audit, `docs/contents.md` indexes this ExecPlan,
   `docs/users-guide.md` is reviewed, and this ExecPlan status is updated.
   Sign-off: implementer completes documentation sync as the final pre-commit
@@ -170,7 +170,7 @@ registered through any of the three paths publishes a non-placeholder schema in
 
 ### Reference documents
 
-- [RFC 0002: Expose WASM tool definitions to LLMs](../rfcs/0002-expose-wasm-tool-definitions.md)
+- [RFC 0002: Expose WASM tool definitions to LLMs](../rfcs/rfc-0002-expose-wasm-tool-definitions.md)
 - [Roadmap item 1.2.1](../roadmap.md)
 - `docs/rust-testing-with-rstest-fixtures.md` for `rstest` fixture patterns.
 - `docs/rstest-bdd-users-guide.md` for `rstest-bdd` behaviour-driven
@@ -448,7 +448,7 @@ same guarantees; document the decision and move on.
 
 ### Milestone 6: synchronize design and operator documentation
 
-1. Update `docs/rfcs/0002-expose-wasm-tool-definitions.md` to note that
+1. Update `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` to note that
    `1.2.1` is complete: registration paths have been audited, placeholder
    fallback logging has been escalated, and tests are in place.
 
@@ -498,7 +498,7 @@ set -o pipefail && bunx markdownlint-cli2 \
   docs/roadmap.md \
   docs/users-guide.md \
   docs/axinite-architecture-overview.md \
-  docs/rfcs/0002-expose-wasm-tool-definitions.md \
+  docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md \
   docs/execplans/1-2-1-audit-and-fix-wasm-registration-paths.md \
   docs/contents.md \
   | tee /tmp/markdownlint-axinite-1-2-1.out
@@ -728,7 +728,7 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool;
     `src/tools/registry/wasm_registration_tests.rs`
 - Synchronized the documentation in:
   - `docs/roadmap.md`
-  - `docs/rfcs/0002-expose-wasm-tool-definitions.md`
+  - `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md`
   - `docs/contents.md`
 - Validation evidence:
   - `set -o pipefail && CARGO_BUILD_JOBS=1 make all 2>&1 | tee /tmp/axinite-1-2-1-make-all.log`

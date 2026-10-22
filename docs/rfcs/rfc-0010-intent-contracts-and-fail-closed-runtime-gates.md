@@ -102,7 +102,7 @@ level.
 - Non-goals:
   - Replace IronClaw's existing safety mechanisms. This RFC composes them
     under a contract, not replaces them.
-  - Define the policy language. That is the subject of ADR 001, which
+  - Define the policy language. That is the subject of ADR 0001, which
     recommends OPA Rego compiled to WebAssembly.
   - Specify memory projection semantics. That is the subject of RFC 0014.
 
@@ -226,7 +226,7 @@ of the language model (LLM) in a deterministic, auditable manner.[^7]
 - Trust labels must survive serialization/deserialization boundaries,
   including persistence to the database and retrieval.
 - The gate evaluation interface must accept structured inputs suitable for
-  an external policy engine (see ADR 001).
+  an external policy engine (see ADR 0001).
 
 ## Compatibility and migration
 
@@ -281,7 +281,7 @@ Adopt the intent contract as a first-class artefact with fail-closed runtime
 gates. Start with a shadow mode for migration, enforce narrowing-only scope
 composition, and treat all retrieved content as untrusted unless explicitly
 promoted. Use the contract as the structured input to an external policy engine
-(ADR 001) rather than embedding policy logic in application code.
+(ADR 0001) rather than embedding policy logic in application code.
 
 ______________________________________________________________________
 
@@ -293,7 +293,7 @@ ______________________________________________________________________
     activation and tool attenuation sections.
 
 [^3]: RFC 0006: Provenance-based, zero-knowledge intent plugins. See
-    `docs/rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md`.
+    `docs/rfcs/rfc-0006-provenance-based-zero-knowledge-intent-plugins.md`.
 
 [^4]: Safety layer. See `SafetyLayer` in `src/safety/`.
 
