@@ -9,10 +9,10 @@
 //!
 //! Get a key at: https://brave.com/search/api/
 
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
+
+use bindings::{exports, near};
 
 use serde::Deserialize;
 
@@ -350,8 +350,6 @@ const SCHEMA: &str = r#"{
     "required": ["query"],
     "additionalProperties": false
 }"#;
-
-export!(WebSearchTool);
 
 #[cfg(test)]
 mod tests {

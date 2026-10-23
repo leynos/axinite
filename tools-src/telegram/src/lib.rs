@@ -53,10 +53,10 @@ mod types;
 use session::Session;
 use types::TelegramAction;
 
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
+
+use bindings::{exports, near};
 
 struct TelegramTool;
 
@@ -308,4 +308,3 @@ const SCHEMA: &str = r#"{
     }
 }"#;
 
-export!(TelegramTool);

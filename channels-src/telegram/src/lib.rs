@@ -2,10 +2,10 @@
 // that are deserialized for compatibility but not read by every module.
 #![allow(dead_code)]
 
-wit_bindgen::generate!({
-    world: "sandboxed-channel",
-    path: "../../wit/channel.wit",
-});
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
+
+use bindings::{exports, near};
 
 mod attachments;
 mod downloads;
@@ -23,5 +23,3 @@ mod tests;
 
 struct TelegramChannel;
 
-// Export the component
-export!(TelegramChannel);
