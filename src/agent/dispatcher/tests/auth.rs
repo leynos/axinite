@@ -12,22 +12,33 @@ fn check_auth_json(tool_name: &str, json: serde_json::Value) -> Option<(String, 
     check_auth_required(tool_name, &result)
 }
 
+/// Report whether a detection result carries `expected_name` and instructions
+/// containing `expected_instructions_fragment`.
+fn is_auth_detected(
+    detected: &Option<(String, String)>,
+    expected_name: &str,
+    expected_instructions_fragment: &str,
+) -> bool {
+    detected.as_ref().is_some_and(|(name, instructions)| {
+        name == expected_name && instructions.contains(expected_instructions_fragment)
+    })
+}
+
 /// Assert that an auth-awaiting detection result is `Some`, and that the
 /// returned name and instructions match the expected values.
+#[track_caller]
 fn assert_auth_detected(
     detected: Option<(String, String)>,
     expected_name: &str,
     expected_instructions_fragment: &str,
 ) {
-    assert!(detected.is_some(), "expected auth detection to fire");
-    let (name, instructions) =
-        detected.expect_valid("expected auth detection to fire and return (name, instructions)");
-    assert_eq!(name, expected_name);
+    let Some((name, instructions)) = detected.as_ref() else {
+        panic!("expected auth detection to fire and return (name, instructions)");
+    };
     assert!(
-        instructions.contains(expected_instructions_fragment),
-        "instructions did not contain {:?}: {:?}",
-        expected_instructions_fragment,
-        instructions,
+        is_auth_detected(&detected, expected_name, expected_instructions_fragment),
+        "expected auth detection of {expected_name:?} with instructions containing \
+         {expected_instructions_fragment:?}, got name {name:?} and instructions {instructions:?}"
     );
 }
 
