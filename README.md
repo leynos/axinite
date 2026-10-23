@@ -43,9 +43,16 @@ publication are unsupported: registry archives do not carry the workspace's
 local dependency security patches.
 
 ```bash
+make install-build-tools
 cargo build
 target/debug/axinite onboard --quick
 ```
+
+A source build uses the dated nightly toolchain pinned in
+`rust-toolchain.toml`, and on Linux the `clang` linker driver and the pinned
+`mold` linker. `make install-build-tools` installs the toolchain and `mold`;
+`clang` comes from your package manager. The developers' guide explains the
+build standard and the builds that deliberately do not use it.
 
 > **Migrating from IronClaw?** If you have an existing `ironclaw`-named
 > build, move `~/.ironclaw` to `~/.axinite` and rename any `IRONCLAW_*`
