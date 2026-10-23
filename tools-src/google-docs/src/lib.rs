@@ -49,16 +49,8 @@ mod types;
 
 use types::GoogleDocsAction;
 
-// The generated bindings live in a private module so the undocumented
-// wit-bindgen items are not part of the crate's documented surface.
-mod bindings {
-    //! Guest bindings that wit-bindgen generates from the tool WIT world.
-
-    wit_bindgen::generate!({
-        world: "sandboxed-tool",
-        path: "../../wit/tool.wit",
-    });
-}
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
 
 use bindings::{exports, near};
 
@@ -357,4 +349,3 @@ fn execute_inner(params: &str) -> Result<String, String> {
     Ok(result)
 }
 
-bindings::export!(GoogleDocsTool with_types_in bindings);
