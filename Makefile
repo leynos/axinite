@@ -296,6 +296,14 @@ test-workflow-contracts:
 	$(CV005_CONTRACTS) check --repository .
 	uv run --python '>=3.12' --with 'pytest>=8' --with 'pyyaml>=6' --with 'hypothesis>=6' pytest tests/workflow_contracts -q
 
+# Unsafe-boundary contract (docs/adr-015-audited-unsafe-boundaries.md).
+# `boundary-contract` checks the crate allow-list and proves, with the
+# compiler, that every safe crate rejects unsafe code. It builds three small
+# crates in a scratch workspace under `target/`.
+.PHONY: boundary-contract
+boundary-contract:
+	python3 scripts/check_unsafe_boundaries.py
+
 clean:
 	$(CARGO_COMMAND) clean
 	$(CARGO_COMMAND) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
