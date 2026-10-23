@@ -12,6 +12,12 @@ use crate::{channels::StatusUpdate, test_support::ExpectValid};
 
 use super::*;
 
+mod status_asserts;
+use status_asserts::{
+    assert_thinking_status, assert_tool_completed_status, assert_tool_result_status,
+    assert_tool_started_status,
+};
+
 struct TestPipelineTool {
     name: &'static str,
     description: &'static str,
@@ -185,46 +191,6 @@ async fn build_run_loop_ctx(
     };
 
     (session, thread_id, message, ctx)
-}
-
-fn assert_thinking_status(statuses: &[StatusUpdate], expected: &str) {
-    assert!(
-        statuses
-            .iter()
-            .any(|status| matches!(status, StatusUpdate::Thinking(message) if message == expected)),
-        "expected Thinking status `{expected}`, got: {statuses:?}"
-    );
-}
-
-fn assert_tool_result_status(statuses: &[StatusUpdate], tool_name: &str) {
-    assert!(
-        statuses.iter().any(|status| matches!(
-            status,
-            StatusUpdate::ToolResult { name, preview }
-                if name == tool_name && !preview.is_empty()
-        )),
-        "expected non-empty ToolResult preview for `{tool_name}`, got: {statuses:?}"
-    );
-}
-
-fn assert_tool_completed_status(statuses: &[StatusUpdate], tool_name: &str) {
-    assert!(
-        statuses.iter().any(|status| matches!(
-            status,
-            StatusUpdate::ToolCompleted { name, success, .. }
-                if name == tool_name && *success
-        )),
-        "expected successful ToolCompleted for `{tool_name}`, got: {statuses:?}"
-    );
-}
-
-fn assert_tool_started_status(statuses: &[StatusUpdate], tool_name: &str) {
-    assert!(
-        statuses.iter().any(
-            |status| matches!(status, StatusUpdate::ToolStarted { name } if name == tool_name)
-        ),
-        "expected ToolStarted for `{tool_name}`, got: {statuses:?}"
-    );
 }
 
 #[tokio::test]
