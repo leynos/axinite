@@ -1,5 +1,7 @@
 //! Domain newtypes for WASM wrapper values that carry security semantics.
 
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 /// A non-empty, lowercased host pattern used for credential matching
 /// (e.g. `"api.slack.com"`, `"*.example.org"`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -27,7 +29,10 @@ impl std::fmt::Display for HostPattern {
 /// A raw secret value.
 ///
 /// `Debug` is deliberately redacted to prevent accidental logging.
-/// Memory is zeroed on `Drop`.
+/// Memory is zeroed on `Drop` by the derived [`ZeroizeOnDrop`] implementation,
+/// which overwrites the string's heap buffer with volatile writes and so needs
+/// no handwritten unsafe code.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub(super) struct SecretValue(String);
 
 impl SecretValue {
@@ -47,24 +52,6 @@ impl SecretValue {
 impl std::fmt::Debug for SecretValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("[REDACTED]")
-    }
-}
-
-impl Drop for SecretValue {
-    fn drop(&mut self) {
-        // Zero memory to limit the window in which secret material lives.
-        // SAFETY: overwriting valid UTF-8 bytes with zeros is safe here because
-        // the String is being dropped immediately after.
-        unsafe {
-            let bytes = self.0.as_bytes_mut();
-            std::ptr::write_bytes(bytes.as_mut_ptr(), 0, bytes.len());
-        }
-    }
-}
-
-impl Clone for SecretValue {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
     }
 }
 
@@ -171,4 +158,42 @@ pub(super) struct OutboundRequestSpec<'a> {
     pub(super) headers_json: &'a str,
     /// Optional request body bytes.
     pub(super) body: Option<&'a [u8]>,
+}
+
+#[cfg(test)]
+mod tests {
+    //! `SecretValue` redaction, copy independence, and zeroing contract.
+
+    use super::SecretValue;
+    use zeroize::{Zeroize, ZeroizeOnDrop};
+
+    /// Fails to compile unless `T` zeroes its memory when dropped, so removing
+    /// the derive (and with it the guarantee) is a build error, not a silent
+    /// change.
+    const fn assert_zeroizes_on_drop<T: ZeroizeOnDrop>() {}
+
+    const _: () = assert_zeroizes_on_drop::<SecretValue>();
+
+    #[test]
+    fn debug_output_is_redacted() {
+        let secret = SecretValue::new("token-123");
+        assert_eq!(format!("{secret:?}"), "[REDACTED]");
+    }
+
+    #[test]
+    fn zeroizing_clears_the_value() {
+        let mut secret = SecretValue::new("token-123");
+        secret.zeroize();
+        assert!(secret.is_empty());
+        assert_eq!(secret.as_str(), "");
+    }
+
+    #[test]
+    fn a_clone_is_zeroed_independently_of_the_original() {
+        let original = SecretValue::new("token-123");
+        let mut copy = original.clone();
+        copy.zeroize();
+        assert!(copy.is_empty());
+        assert_eq!(original.as_str(), "token-123");
+    }
 }
