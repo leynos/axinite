@@ -20,8 +20,7 @@ import pytest
 REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY / "scripts"))
 
-from unsafe_boundaries import inventory, probes  # noqa: E402
-from unsafe_boundaries import static_checks as checks  # noqa: E402
+from unsafe_boundaries import files, inventory, probes  # noqa: E402
 
 REJECTION = "error: use of unsafe code is forbidden by `-F unsafe-code`"
 SAFE = "crates/ambient-fs"
@@ -45,7 +44,7 @@ class RecordedCompiler:
         """Record one compile and return the result its sources imply."""
         sources = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in sorted(checks.rust_sources(site.crate_dir))
+            for path in sorted(files.rust_sources(site.crate_dir))
         )
         manifest = (site.crate_dir / "Cargo.toml").read_text(encoding="utf-8")
         present = [p for p in inventory.PROBES if p in sources]
@@ -155,7 +154,7 @@ def test_a_probe_that_cannot_fail_is_reported(tmp_path: Path) -> None:
     def always_rejecting(compile_site: probes.ProbeSite) -> probes.CompileResult:
         sources = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in checks.rust_sources(compile_site.crate_dir)
+            for path in files.rust_sources(compile_site.crate_dir)
         )
         if any(probe in sources for probe in inventory.PROBES):
             return 1, REJECTION

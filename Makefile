@@ -296,13 +296,62 @@ test-workflow-contracts:
 	$(CV005_CONTRACTS) check --repository .
 	uv run --python '>=3.12' --with 'pytest>=8' --with 'pyyaml>=6' --with 'hypothesis>=6' pytest tests/workflow_contracts -q
 
-# Unsafe-boundary contract (docs/adr-015-audited-unsafe-boundaries.md).
+# Unsafe-boundary verification (docs/adr-015-audited-unsafe-boundaries.md).
+#
 # `boundary-contract` checks the crate allow-list and proves, with the
 # compiler, that every safe crate rejects unsafe code. It builds three small
 # crates in a scratch workspace under `target/`.
-.PHONY: boundary-contract
+#
+# `miri` interprets the host-runnable boundary and memory paths under a pinned
+# dated nightly. The `miri` component is installed by the dedicated CI job
+# only (`rustup component add miri --toolchain $(MIRI_TOOLCHAIN)` locally).
+# Keep the pin aligned with the nightly the build standard pins. Isolation is
+# disabled so Miri forwards file-system calls; tests that need syscalls Miri
+# cannot model carry `#[cfg_attr(miri, ignore = "...")]` and are listed in
+# docs/rust-boundary-verification.md.
+#
+# The generated WebAssembly glue is written for a 32-bit target, and two facts
+# follow. It lays out the return area for 4-byte pointers, so on a 64-bit host
+# it under-aligns it (Miri reports "alignment 4, but alignment 8 is required"),
+# and the ABI round trips therefore run for `$(MIRI_ABI_TARGET)`, which has
+# WebAssembly's pointer width. And it lowers a string by taking `as_ptr()` of
+# an owned boxed slice, forgetting the box, and later freeing through that
+# pointer, which both of Miri's aliasing models reject (wit-bindgen 0.36, 0.41
+# and 0.51 all emit it). So the round trips in `MIRI_ABI_ROOTS` run with
+# Stacked Borrows off, and everything else, the guest logic included, runs
+# with it on. Allocation, bounds, alignment, initialization and leak checks
+# stay on for the round trips.
+MIRI_TOOLCHAIN ?= nightly-2026-10-16
+MIRIFLAGS ?= -Zmiri-disable-isolation
+MIRI_ABI_TARGET ?= i686-unknown-linux-gnu
+# Standalone WASM component roots that carry host-runnable unit tests.
+MIRI_COMPONENT_ROOTS := channels-src/discord channels-src/slack \
+	channels-src/telegram channels-src/whatsapp tools-src/github \
+	tools-src/telegram tools-src/web-search
+# The subset with ABI round trips in `src/bindings/abi_round_trip.rs`.
+MIRI_ABI_ROOTS := channels-src/discord tools-src/web-search
+MIRI_CARGO = MIRIFLAGS="$(MIRIFLAGS)$(1)" $(CARGO_COMMAND) +$(MIRI_TOOLCHAIN) miri test
+
+.PHONY: boundary-contract miri print-miri-toolchain
 boundary-contract:
 	python3 scripts/check_unsafe_boundaries.py
+
+print-miri-toolchain:
+	@printf '%s\n' '$(MIRI_TOOLCHAIN)'
+
+miri:
+	$(call MIRI_CARGO,) --package ambient-fs
+	@for root in $(MIRI_COMPONENT_ROOTS); do \
+		echo "== miri: $$root (guest logic)"; \
+		$(call MIRI_CARGO,) --manifest-path "$$root/Cargo.toml" \
+			-- --skip abi_round_trip || exit 1; \
+	done
+	@for root in $(MIRI_ABI_ROOTS); do \
+		echo "== miri: $$root (ABI round trips, $(MIRI_ABI_TARGET), Stacked Borrows off)"; \
+		$(call MIRI_CARGO, -Zmiri-disable-stacked-borrows) \
+			--target $(MIRI_ABI_TARGET) --manifest-path "$$root/Cargo.toml" \
+			-- abi_round_trip || exit 1; \
+	done
 
 clean:
 	$(CARGO_COMMAND) clean
