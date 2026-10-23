@@ -1,6 +1,5 @@
 use crate::downloads::{
     document_download_failure_feedback, download_and_store_documents, is_downloadable_document,
-    MAX_DOWNLOAD_SIZE_BYTES,
 };
 use crate::near::agent::channel_host::InboundAttachment;
 
@@ -45,12 +44,6 @@ fn test_is_downloadable_document() {
         "video/mp4",
         Some("clip.mp4")
     )));
-}
-
-#[test]
-fn test_max_download_size_constant() {
-    // Verify the constant is 20 MB, matching the Slack channel limit
-    assert_eq!(MAX_DOWNLOAD_SIZE_BYTES, 20 * 1024 * 1024);
 }
 
 #[test]

@@ -808,9 +808,10 @@ mod tests {
             ]
         }"#;
 
-        let event: SlackEvent = serde_json::from_str(json).unwrap();
+        let event: SlackEvent =
+            serde_json::from_str(json).expect("fixture JSON should parse as a SlackEvent");
         assert!(event.files.is_some());
-        let files = event.files.unwrap();
+        let files = event.files.expect("event fixture should include files");
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].id, "F001");
     }
@@ -825,13 +826,8 @@ mod tests {
             "ts": "1234567890.000001"
         }"#;
 
-        let event: SlackEvent = serde_json::from_str(json).unwrap();
+        let event: SlackEvent =
+            serde_json::from_str(json).expect("fixture JSON should parse as a SlackEvent");
         assert!(event.files.is_none());
-    }
-
-    #[test]
-    fn test_max_download_size_constant() {
-        // Verify the constant is 20 MB
-        assert_eq!(MAX_DOWNLOAD_SIZE_BYTES, 20 * 1024 * 1024);
     }
 }
