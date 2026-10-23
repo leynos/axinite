@@ -1,0 +1,158 @@
+"""Judging how the workflows exclude the build standard where it must not apply.
+
+Coverage, release and Whitaker are the builds that opt out. Each opts out with
+``RUSTFLAGS``, which displaces the configuration's rustflags tables. The judges here take a parsed job (and its workflow document for
+the environment layers) and return messages. They share the step model of
+`_build_standard_workflows`.
+
+Run via ``make test-workflow-contracts``.
+"""
+
+from __future__ import annotations
+
+import re
+import typing as typ
+
+from _build_standard import FAST_FLAGS, split_flags
+from _build_standard_workflows import (
+    GENERATE_COVERAGE,
+    INSTALL_COMMAND,
+    INSTALL_WHITAKER,
+    Step,
+    steps_of,
+)
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Mapping
+
+#: Things the standard replaced. Any of them in a workflow is a second source.
+RETIRED = (
+    (re.compile(r"rui314/setup-mold"), "an unpinned mold installer"),
+    (
+        re.compile(r"dtolnay/rust-toolchain"),
+        "a toolchain step that ignores rust-toolchain.toml",
+    ),
+    (
+        re.compile(r"CARGO_TARGET_[A-Z0-9_]+_(?:LINKER|RUSTFLAGS)"),
+        "a second source of linker flags",
+    ),
+    (
+        re.compile(r"apt-get\s+install[^\n]*\bmold\b"),
+        "a distribution mold that drifts from the pin",
+    ),
+)
+
+
+def _merged_env(
+    document: Mapping[str, object], job: Mapping[str, object], step: Step
+) -> dict[str, object]:
+    """Return the environment a step sees: workflow, then job, then step."""
+    merged: dict[str, object] = {}
+    for layer in (document.get("env"), job.get("env"), step.env):
+        if isinstance(layer, dict):
+            merged.update(layer)
+    return merged
+
+
+def _is_coverage(step: Step) -> bool:
+    """Report whether a step measures coverage."""
+    return step.uses.startswith(GENERATE_COVERAGE) or bool(
+        re.search(r"\bcargo\s+llvm-cov\s+(?!--version\b)", step.run)
+    )
+
+
+def coverage_violations(
+    label: str, document: Mapping[str, object], job: Mapping[str, object]
+) -> list[str]:
+    """Judge that coverage steps exclude the development standard.
+
+    ``RUSTFLAGS`` must be present, so the configuration's rustflags tables are
+    displaced, and carry none of the standard's flags.
+    """
+    problems: list[str] = []
+    for step in steps_of(job):
+        if not _is_coverage(step):
+            continue
+        env = _merged_env(document, job, step)
+        if "RUSTFLAGS" not in env:
+            problems.append(
+                f"{label}: {step.name!r} leaves the configuration's rustflags in force"
+            )
+        else:
+            flags = split_flags(str(env["RUSTFLAGS"]))
+            leaked = [flag for flag in FAST_FLAGS if flag in flags]
+            if leaked:
+                problems.append(
+                    f"{label}: {step.name!r} carries {leaked} into coverage"
+                )
+    return problems
+
+
+def release_violations(
+    label: str, document: Mapping[str, object], job: Mapping[str, object]
+) -> list[str]:
+    """Judge that release and packaging jobs exclude the development standard."""
+    problems: list[str] = []
+    builds = False
+    for step in steps_of(job):
+        text = step.run
+        if re.search(
+            r"\bdist\s+build\b|\bcargo\s|release-plz/action", text + step.uses
+        ):
+            builds = True
+        if INSTALL_COMMAND.search(text):
+            problems.append(
+                f"{label}: a release job installs the development build tools"
+            )
+    if not builds:
+        return problems
+    env = _merged_env(document, job, Step("", "", "", False, {}, {}))
+    if "RUSTFLAGS" not in env:
+        problems.append(
+            f"{label}: RUSTFLAGS is unset, so the configuration's rustflags apply to the release"
+        )
+    else:
+        flags = split_flags(str(env["RUSTFLAGS"]))
+        leaked = [flag for flag in FAST_FLAGS if flag in flags]
+        if leaked:
+            problems.append(f"{label}: RUSTFLAGS carries {leaked} into the release")
+    return problems
+
+
+def whitaker_violations(label: str, job: Mapping[str, object]) -> list[str]:
+    """Judge the Whitaker job: install through the action, then the gate."""
+    sequence = steps_of(job)
+    installs = [
+        i for i, s in enumerate(sequence) if s.uses.startswith(INSTALL_WHITAKER)
+    ]
+    gates = [
+        i
+        for i, s in enumerate(sequence)
+        if re.search(r"\bmake\s+lint-whitaker\b", s.run)
+    ]
+    if not installs and not gates:
+        return []
+    problems: list[str] = []
+    if not installs:
+        return [f"{label}: runs make lint-whitaker without the install-whitaker action"]
+    for index in installs:
+        inputs = sequence[index].inputs
+        if "suite-version" in inputs:
+            problems.append(f"{label}: install-whitaker pins the rolling suite")
+    if gates and min(gates) < min(installs):
+        problems.append(f"{label}: make lint-whitaker runs before install-whitaker")
+    for step in sequence:
+        if any(name in step.env for name in ("RUSTFLAGS",)) and re.search(
+            r"lint-whitaker|whitaker", step.run
+        ):
+            problems.append(f"{label}: {step.name!r} injects build flags into Whitaker")
+    return problems
+
+
+def retired_violations(name: str, text: str) -> list[str]:
+    """Report any mechanism the standard retired, found in a workflow's text."""
+    return [
+        f"{name}: still uses {why} ({pattern.pattern})"
+        for pattern, why in RETIRED
+        if pattern.search(text)
+    ]

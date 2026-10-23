@@ -154,10 +154,10 @@ def test_the_repository_makefile_is_read_through_the_boundary() -> None:
     hands it, while the contracts read a different file or none at all.
     """
     found = make_rule_in(read_makefile(), "test-github-tool")
-    assert found == ((), (GITHUB_TOOL_RECIPE,)), (
-        "the repository Makefile's `test-github-tool` rule should have no "
-        f"prerequisites and the one recipe line {GITHUB_TOOL_RECIPE!r}, but "
-        f"the reading returned {found}"
+    assert found == (("check-build-tools",), (GITHUB_TOOL_RECIPE,)), (
+        "the repository Makefile's `test-github-tool` rule should have only the "
+        "build-tools check as a prerequisite and the one recipe line "
+        f"{GITHUB_TOOL_RECIPE!r}, but the reading returned {found}"
     )
 
 
