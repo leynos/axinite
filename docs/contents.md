@@ -272,3 +272,7 @@
   moves short jobs off the hosted pool only when it makes them wait.
 - [ADR 0014: Apply Oxlint plug-ins to the front end](adrs/adr-0014-front-end-oxlint-plugins.md)
   records the pinned Unicorn and `ai-deslop` rules and their conflict policy.
+- [ADR 015: Audited unsafe boundaries](adr-015-audited-unsafe-boundaries.md)
+  records why the root workspace forbids unsafe code, why the fourteen
+  WebAssembly component crates confine generated bindings to one audited
+  module, and how the allow-list contract and Miri enforce and verify that.
