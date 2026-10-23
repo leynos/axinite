@@ -1,0 +1,16 @@
+# The dated nightly is the toolchain every local and CI build uses. The
+# development build standard needs it: the parallel frontend (`-Zthreads=8`) is
+# nightly-only.
+# Dependabot's `rust-toolchain` ecosystem moves the date, and the build follows
+# the file. The published stable promise (`rust-version`) is tested by the
+# `msrv` job in `.github/workflows/test.yml`; see the "Toolchain policy"
+# section of docs/developers-guide.md.
+[toolchain]
+channel = "nightly-2026-10-16"
+components = [
+    "rustfmt",
+    "clippy",
+    "rust-analyzer",
+    "llvm-tools-preview",
+]
+targets = ["wasm32-wasip2"]

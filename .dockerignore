@@ -6,3 +6,10 @@ target/
 !CLAUDE.md
 node_modules/
 tools-src/
+# The development build standard (mold, the parallel frontend, Cranelift) and
+# the pinned nightly are for development and CI. The images build for
+# production on the stable MSRV compiler their `rust:` base image carries, so
+# neither file may reach the build context; `COPY . .` would otherwise hand
+# Cargo the nightly-only keys and rustup the nightly pin.
+.cargo/
+rust-toolchain.toml

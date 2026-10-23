@@ -93,10 +93,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install mold
-        uses: rui314/setup-mold@v1
+      # The pinned `mold` (tools/mold/VERSION, verified against
+      # tools/mold/SHA256SUMS) and the toolchain's components and targets,
+      # before anything compiles. Unconditional: `.cargo/config.toml` names
+      # mold for every Linux build and `make` checks it, so a job that
+      # skips this step fails at link time instead.
+      - name: Install build tools
+        run: make install-build-tools
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
@@ -124,9 +127,6 @@ jobs:
       # selects the backend from the runner (shared-actions ADR 0005).
       # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
-        -C link-arg=-fuse-ld=mold
     strategy:
       fail-fast: false
       matrix:
@@ -160,39 +160,38 @@ jobs:
       - name: Start resource sampler
         run: ./scripts/ci-resource-sampler.sh start
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-          targets: wasm32-wasip2
-
       # The free-disk-space step above removes large apt packages,
-      # including the clang the CARGO_..._LINKER env demands. Reinstall
-      # it (as test.yml does) so the host build scripts link.
+      # including the clang `.cargo/config.toml` names as the Linux linker.
+      # Reinstall it (as test.yml does) so the host build scripts link.
       - name: Install clang
         run: sudo apt-get update && sudo apt-get install -y clang
-
-      - name: Install mold
-        uses: rui314/setup-mold@v1
 
       # sccache belongs to setup-rust: it exports Ubicloud's cache-proxy
       # credentials, clears the v2 cache-service flag the proxy does not
       # serve, installs and starts sccache and names it as the wrapper.
-      # The toolchain, its targets and components stay with the step
-      # above, so this passes an empty `rustflags` (the mold flags live
-      # in CARGO_TARGET_*_RUSTFLAGS, which RUSTFLAGS would displace),
+      # The toolchain, its targets and components come from
+      # `rust-toolchain.toml` (no `toolchain` input), so this passes an
+      # empty `rustflags` (the development standard lives in
+      # `.cargo/config.toml`, which an exported RUSTFLAGS would displace),
       # leaves the Cargo registry to this job's own cache step, and
       # installs no second cargo-binstall.
       - name: Setup Rust
         id: setup-rust
         uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
         with:
-          toolchain: stable
           rustflags: ''
           cache-provider: external
           install-binstall: 'false'
           # Ubicloud only, so a missing cache proxy fails the job rather
           # than letting it compile against local disk unnoticed.
           expect-cache: ubicloud
+      # The pinned `mold` (tools/mold/VERSION, verified against
+      # tools/mold/SHA256SUMS) and the toolchain's components and targets,
+      # before anything compiles. Unconditional: `.cargo/config.toml` names
+      # mold for every Linux build and `make` checks it, so a job that
+      # skips this step fails at link time instead.
+      - name: Install build tools
+        run: make install-build-tools
       - name: Restore Cargo registry and index
         id: cargo-registry
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -272,6 +271,12 @@ jobs:
       # llvm-cov instrumentation.
       - name: Generate coverage
         if: matrix.name != 'libsql-only'
+        env:
+          # Coverage is a measurement, not a development build. An exported
+          # (even empty) RUSTFLAGS displaces every `rustflags` table in
+          # `.cargo/config.toml`, so coverage keeps neither `-Zthreads=8` nor
+          # `mold`; the instrumentation flags are added on top of it.
+          RUSTFLAGS: ''
         run: >-
           cargo llvm-cov nextest ${{ matrix.flags }} --features test-helpers
           --workspace --profile coverage --lcov
@@ -289,6 +294,11 @@ jobs:
         # reads the variable, and a composite action's steps inherit its env.
         env:
           NEXTEST_PROFILE: coverage
+          # Coverage is a measurement, not a development build. An exported
+          # (even empty) RUSTFLAGS displaces every `rustflags` table in
+          # `.cargo/config.toml`, so coverage keeps neither `-Zthreads=8` nor
+          # `mold`; the instrumentation flags are added on top of it.
+          RUSTFLAGS: ''
         uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
         with:
           features: libsql,test-helpers
@@ -401,9 +411,6 @@ jobs:
       # selects the backend from the runner (shared-actions ADR 0005).
       # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
-        -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v6
 
@@ -414,33 +421,32 @@ jobs:
       - name: Start resource sampler
         run: ./scripts/ci-resource-sampler.sh start
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-          targets: wasm32-wasip2
-
-      - name: Install mold
-        uses: rui314/setup-mold@v1
-
       # sccache belongs to setup-rust: it exports Ubicloud's cache-proxy
       # credentials, clears the v2 cache-service flag the proxy does not
       # serve, installs and starts sccache and names it as the wrapper.
-      # The toolchain, its targets and components stay with the step
-      # above, so this passes an empty `rustflags` (the mold flags live
-      # in CARGO_TARGET_*_RUSTFLAGS, which RUSTFLAGS would displace),
+      # The toolchain, its targets and components come from
+      # `rust-toolchain.toml` (no `toolchain` input), so this passes an
+      # empty `rustflags` (the development standard lives in
+      # `.cargo/config.toml`, which an exported RUSTFLAGS would displace),
       # leaves the Cargo registry to this job's own cache step, and
       # installs no second cargo-binstall.
       - name: Setup Rust
         id: setup-rust
         uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
         with:
-          toolchain: stable
           rustflags: ''
           cache-provider: external
           install-binstall: 'false'
           # Ubicloud only, so a missing cache proxy fails the job rather
           # than letting it compile against local disk unnoticed.
           expect-cache: ubicloud
+      # The pinned `mold` (tools/mold/VERSION, verified against
+      # tools/mold/SHA256SUMS) and the toolchain's components and targets,
+      # before anything compiles. Unconditional: `.cargo/config.toml` names
+      # mold for every Linux build and `make` checks it, so a job that
+      # skips this step fails at link time instead.
+      - name: Install build tools
+        run: make install-build-tools
       - name: Restore Cargo registry and index
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -484,6 +490,12 @@ jobs:
         run: ./scripts/build-wasm-extensions.sh --channels
 
       - name: Set up coverage instrumentation
+        env:
+          # Coverage is a measurement, not a development build. An exported
+          # (even empty) RUSTFLAGS displaces every `rustflags` table in
+          # `.cargo/config.toml`, so coverage keeps neither `-Zthreads=8` nor
+          # `mold`; the instrumentation flags are added on top of it.
+          RUSTFLAGS: ''
         run: |
           # show-env outputs shell-quoted values (KEY='value') but GITHUB_ENV
           # expects unquoted KEY=value. Strip only the wrapping single quotes
@@ -492,6 +504,12 @@ jobs:
             "s/^([A-Za-z_][A-Za-z0-9_]*)='(.*)'$/\1=\2/" >> "$GITHUB_ENV"
 
       - name: Clean coverage workspace
+        env:
+          # Coverage is a measurement, not a development build. An exported
+          # (even empty) RUSTFLAGS displaces every `rustflags` table in
+          # `.cargo/config.toml`, so coverage keeps neither `-Zthreads=8` nor
+          # `mold`; the instrumentation flags are added on top of it.
+          RUSTFLAGS: ''
         run: cargo llvm-cov clean --workspace
 
       - name: Build instrumented binary
@@ -529,6 +547,12 @@ jobs:
 
       - name: Generate coverage report
         if: always()
+        env:
+          # Coverage is a measurement, not a development build. An exported
+          # (even empty) RUSTFLAGS displaces every `rustflags` table in
+          # `.cargo/config.toml`, so coverage keeps neither `-Zthreads=8` nor
+          # `mold`; the instrumentation flags are added on top of it.
+          RUSTFLAGS: ''
         run: cargo llvm-cov report --lcov --output-path e2e-coverage.info
 
       - name: Upload to Codecov

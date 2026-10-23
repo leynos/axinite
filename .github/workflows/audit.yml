@@ -26,8 +26,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      # The toolchain is the dated nightly in `rust-toolchain.toml`; rustup
+      # installs it with the components and targets the file lists.
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup toolchain install --profile minimal
       - name: Install cargo-audit
         uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
         with:

@@ -59,6 +59,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      # `dist` reads the workspace through Cargo, so the dated nightly in
+      # `rust-toolchain.toml` has to be installed even where nothing compiles.
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -113,6 +117,11 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+      # Release artefacts take none of the development standard in
+      # `.cargo/config.toml`. An exported (even empty) RUSTFLAGS displaces its
+      # `rustflags` tables, which drops `-Zthreads=8` and the `mold` link flag.
+      # The toolchain is still the dated nightly in `rust-toolchain.toml`: what CI tests is what ships.
+      RUSTFLAGS: ''
     steps:
       - name: enable windows longpaths
         run: |
@@ -128,9 +137,10 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
-      - name: Install mold
-        if: ${{ runner.os == 'Linux' }}
-        uses: rui314/setup-mold@v1
+      # The toolchain is the dated nightly in `rust-toolchain.toml`; rustup
+      # installs it with the components and targets the file lists.
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal
       - uses: swatinem/rust-cache@v2
         with:
           key: ${{ join(matrix.targets, '-') }}
@@ -211,11 +221,18 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
+      # Release artefacts take none of the development standard; see
+      # build-local-artifacts.
+      RUSTFLAGS: ''
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           submodules: recursive
+      # `dist` reads the workspace through Cargo, so the dated nightly in
+      # `rust-toolchain.toml` has to be installed even where nothing compiles.
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal
       - name: Install cached dist
         uses: actions/download-artifact@v8
         with:
@@ -257,15 +274,18 @@ jobs:
     env:
       CARGO_TARGET_DIR: target/wasm-extensions
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Release artefacts take none of the development standard; see
+      # build-local-artifacts.
+      RUSTFLAGS: ''
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           submodules: recursive
+      # The dated nightly in `rust-toolchain.toml`, with its wasm32-wasip2
+      # target.
       - name: Install Rust toolchain + wasm target
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip2
+        run: rustup toolchain install --profile minimal
       - name: Install cargo-binstall
         uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
         with:
@@ -409,6 +429,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      # `dist` reads the workspace through Cargo, so the dated nightly in
+      # `rust-toolchain.toml` has to be installed even where nothing compiles.
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal
       - name: Install cached dist
         uses: actions/download-artifact@v8
         with:
