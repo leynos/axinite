@@ -109,11 +109,7 @@ fn unix_socket_candidates() -> Vec<PathBuf> {
             std::env::var_os("XDG_RUNTIME_DIR")
         }
         .map(PathBuf::from),
-        Some({
-            // SAFETY: `geteuid` has no preconditions and simply returns the
-            // effective user ID for the current process.
-            unsafe { libc::geteuid() }.to_string()
-        }),
+        Some(rustix::process::geteuid().as_raw().to_string()),
     )
 }
 
