@@ -1,6 +1,8 @@
 //! Serde round-trip tests for builder domain types and default
 //! configuration values.
 
+use crate::test_support::assert_json_round_trip;
+
 use super::super::{
     BuildPhase, BuildRequirement, BuilderConfig, Language, ProjectName, SoftwareType,
 };
@@ -24,13 +26,7 @@ fn test_software_type_serde_roundtrip() {
     for (variant, expected) in variants.iter().zip(expected_strings.iter()) {
         let json = serde_json::to_string(variant).expect("serialize SoftwareType variant");
         assert_eq!(&json, expected, "serialization mismatch for {:?}", variant);
-        let deserialized: SoftwareType =
-            serde_json::from_str(&json).expect("deserialize SoftwareType");
-        assert_eq!(
-            &deserialized, variant,
-            "roundtrip mismatch for {:?}",
-            variant
-        );
+        assert_json_round_trip(variant);
     }
 }
 
@@ -55,12 +51,7 @@ fn test_language_serde_roundtrip() {
     for (variant, expected) in variants.iter().zip(expected_strings.iter()) {
         let json = serde_json::to_string(variant).expect("serialize Language variant");
         assert_eq!(&json, expected, "serialization mismatch for {:?}", variant);
-        let deserialized: Language = serde_json::from_str(&json).expect("deserialize Language");
-        assert_eq!(
-            &deserialized, variant,
-            "roundtrip mismatch for {:?}",
-            variant
-        );
+        assert_json_round_trip(variant);
     }
 }
 
@@ -162,12 +153,6 @@ fn test_build_phase_serde_roundtrip() {
         BuildPhase::Failed,
     ];
     for variant in &variants {
-        let json = serde_json::to_string(variant).expect("serialize BuildPhase variant");
-        let deserialized: BuildPhase = serde_json::from_str(&json).expect("deserialize BuildPhase");
-        assert_eq!(
-            &deserialized, variant,
-            "roundtrip mismatch for {:?}",
-            variant
-        );
+        assert_json_round_trip(variant);
     }
 }
