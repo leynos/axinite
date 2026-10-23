@@ -3,11 +3,11 @@
 use super::*;
 use ambient_fs as fs;
 
-fn create_test_registry(dir: &Path) {
+fn create_test_registry(dir: &Path) -> std::io::Result<()> {
     let tools_dir = dir.join("tools");
     let channels_dir = dir.join("channels");
-    fs::create_dir_all(&tools_dir).unwrap();
-    fs::create_dir_all(&channels_dir).unwrap();
+    fs::create_dir_all(&tools_dir)?;
+    fs::create_dir_all(&channels_dir)?;
 
     fs::write(
         tools_dir.join("slack.json"),
@@ -30,8 +30,7 @@ fn create_test_registry(dir: &Path) {
             },
             "tags": ["default", "messaging"]
         }"#,
-    )
-    .unwrap();
+    )?;
 
     fs::write(
         tools_dir.join("github.json"),
@@ -49,8 +48,7 @@ fn create_test_registry(dir: &Path) {
             },
             "tags": ["default", "development"]
         }"#,
-    )
-    .unwrap();
+    )?;
 
     fs::write(
         channels_dir.join("telegram.json"),
@@ -67,8 +65,7 @@ fn create_test_registry(dir: &Path) {
             },
             "tags": ["messaging"]
         }"#,
-    )
-    .unwrap();
+    )?;
 
     fs::write(
         dir.join("_bundles.json"),
@@ -85,51 +82,54 @@ fn create_test_registry(dir: &Path) {
                 }
             }
         }"#,
-    )
-    .unwrap();
+    )?;
+    Ok(())
 }
 
 #[test]
-fn test_load_catalog() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_load_catalog() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
     assert_eq!(catalog.all().len(), 3);
+    Ok(())
 }
 
 #[test]
-fn test_list_by_kind() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_list_by_kind() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
     let tools = catalog.list(Some(ManifestKind::Tool), None);
     assert_eq!(tools.len(), 2);
 
     let channels = catalog.list(Some(ManifestKind::Channel), None);
     assert_eq!(channels.len(), 1);
+    Ok(())
 }
 
 #[test]
-fn test_list_by_tag() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_list_by_tag() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
     let defaults = catalog.list(None, Some("default"));
     assert_eq!(defaults.len(), 2);
 
     let messaging = catalog.list(None, Some("messaging"));
     assert_eq!(messaging.len(), 2); // slack (tool) and telegram (channel) both have "messaging" tag
+    Ok(())
 }
 
 #[test]
-fn test_get_by_name() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_get_by_name() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
 
     // Full key
     assert!(catalog.get("tools/slack").is_some());
@@ -140,14 +140,15 @@ fn test_get_by_name() {
 
     // Missing
     assert!(catalog.get("nonexistent").is_none());
+    Ok(())
 }
 
 #[test]
-fn test_search() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_search() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
 
     let results = catalog.search("slack");
     assert_eq!(results.len(), 1);
@@ -158,48 +159,52 @@ fn test_search() {
 
     let results = catalog.search("nonexistent query");
     assert!(results.is_empty());
+    Ok(())
 }
 
 #[test]
-fn test_resolve_bundle() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_resolve_bundle() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
 
-    let (manifests, missing) = catalog.resolve_bundle("default").unwrap();
+    let (manifests, missing) = catalog.resolve_bundle("default")?;
     assert_eq!(manifests.len(), 3);
     assert!(missing.is_empty());
 
     assert!(catalog.resolve_bundle("nonexistent").is_err());
+    Ok(())
 }
 
 #[test]
-fn test_resolve_single_or_bundle() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_resolve_single_or_bundle() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
 
     // Single extension
-    let (manifests, bundle) = catalog.resolve("slack").unwrap();
+    let (manifests, bundle) = catalog.resolve("slack")?;
     assert_eq!(manifests.len(), 1);
     assert!(bundle.is_none());
 
     // Bundle
-    let (manifests, bundle) = catalog.resolve("default").unwrap();
+    let (manifests, bundle) = catalog.resolve("default")?;
     assert_eq!(manifests.len(), 3);
     assert!(bundle.is_some());
+    Ok(())
 }
 
 #[test]
-fn test_bundle_names() {
-    let tmp = tempfile::tempdir().unwrap();
-    create_test_registry(tmp.path());
+fn test_bundle_names() -> anyhow::Result<()> {
+    let tmp = tempfile::tempdir()?;
+    create_test_registry(tmp.path())?;
 
-    let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+    let catalog = RegistryCatalog::load(tmp.path())?;
     let names = catalog.bundle_names();
     assert_eq!(names, vec!["default", "messaging"]);
+    Ok(())
 }
 
 #[test]
@@ -211,7 +216,8 @@ fn test_directory_not_found() {
 #[test]
 fn test_load_or_embedded_succeeds() {
     // Should always succeed: either finds registry/ on disk or falls back to embedded
-    let catalog = RegistryCatalog::load_or_embedded().unwrap();
+    let catalog = RegistryCatalog::load_or_embedded()
+        .expect("registry should load from disk or embedded fallback");
     // At minimum, the embedded catalog from the repo should have entries
     assert!(!catalog.all().is_empty() || !catalog.bundle_names().is_empty());
 }
@@ -219,10 +225,13 @@ fn test_load_or_embedded_succeeds() {
 #[test]
 fn test_bundle_entries_resolve_against_real_registry() {
     // Load the actual registry/ directory (catches stale bundle refs after renames)
-    let catalog = RegistryCatalog::load_or_embedded().unwrap();
+    let catalog = RegistryCatalog::load_or_embedded()
+        .expect("registry should load from disk or embedded fallback");
 
     for bundle_name in catalog.bundle_names() {
-        let (manifests, missing) = catalog.resolve_bundle(bundle_name).unwrap();
+        let (manifests, missing) = catalog
+            .resolve_bundle(bundle_name)
+            .expect("bundle should resolve");
         assert!(
             missing.is_empty(),
             "Bundle '{}' has unresolved entries: {:?}. \
