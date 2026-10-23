@@ -4433,4 +4433,91 @@ serving contract. The Make targets are:
 
 *Table: front-end Make targets.*
 
+## 40. Unsafe code and audited boundaries
+
+Axinite forbids unsafe Rust everywhere except the generated WebAssembly
+component glue. [ADR 015](adr-015-audited-unsafe-boundaries.md) records the
+decision, and
+[Rust boundary verification and unsafe inventory](rust-boundary-verification.md)
+records the inventory and what Miri covers.
+
+### The rule
+
+- The root crate, `crates/ambient-fs`, the vendored `crates/hyper-rustls` and
+  the `fuzz` crate set `[lints.rust] unsafe_code = "forbid"` in their
+  manifests, which covers every target Cargo builds, now and in future. The
+  library, binary and build-script roots of first-party crates also carry
+  `#![forbid(unsafe_code)]`.
+- Each crate under `channels-src/` and `tools-src/` is a boundary crate. It sets
+  `unsafe_code = "deny"` in its own `[lints.rust]` table and holds all
+  generated bindings in `src/bindings.rs`, declared in `src/lib.rs` as:
+
+  ```rust
+  #[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+  mod bindings;
+
+  use bindings::{exports, near};
+  ```
+
+  `bindings.rs` holds only `use super::GuestType;`, the
+  `wit_bindgen::generate!` invocation and `export!(GuestType);`. Write guest
+  logic in other modules and reach the generated items through the `exports` and
+  `near` re-exports.
+- A component crate may add Miri-checked ABI round trips as
+  `src/bindings/abi_round_trip.rs`, declared in `bindings.rs` as
+  `#[cfg(all(test, target_pointer_width = "32"))] mod abi_round_trip;`. The
+  module plays the host: it lowers arguments as `cabi_realloc` would, calls the
+  generated `_export_*_cabi` shim, decodes the return area, and calls
+  `__post_return_*`. It may contain `unsafe` and nothing that exports a symbol
+  or relaxes a lint. List the crate in `MIRI_ABI_ROOTS` in the `Makefile`; the
+  contract rejects a mismatch both ways. `tools-src/web-search` is the
+  tool-world example and `channels-src/discord` the channel-world one.
+- Prefer a safe dependency to a new unsafe block. `rustix` provides
+  `openat2` and `geteuid`, `zeroize` provides zero-on-drop, and the
+  `EnvContext` snapshot replaces `std::env::set_var`.
+
+### Adding a crate
+
+1. Add the crate and its entry to `INVENTORY` in
+   `scripts/unsafe_boundaries/inventory.py`, choosing `SAFE` unless it hosts an
+   ABI that has no safe form. A boundary entry also needs the table row in
+   `docs/adr-015-audited-unsafe-boundaries.md` and a new ADR if the boundary is
+   not a WebAssembly component.
+2. Give it the lint table and crate-root attribute for its role.
+3. For a root-workspace member, add it to `[workspace] members`. For a
+   standalone root, give it its own `[workspace]` table and add it to `exclude`
+   if it lives inside a workspace's directory.
+4. Run `make boundary-contract` and `make test-workflow-contracts`.
+
+An unlisted manifest, a member the inventory does not name, and a crate whose
+role disagrees with its manifest each fail those gates with a message that
+names the crate.
+
+### When the lint configuration layer lands
+
+The estate lint table defines `unsafe_code = "forbid"` once for the workspace.
+Safe crates then replace their `[lints.rust]` table with
+`[lints] workspace = true`; the contract resolves both forms. Cargo rejects
+`workspace = true` alongside local lint keys, so a boundary crate must never
+inherit. It declares its own complete table: the workspace table with
+`unsafe_code` lowered to `deny`. The contract requires that level and rejects
+`workspace = true` there.
+
+### Commands
+
+| Target                   | Effect                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `make boundary-contract` | Check the allow-list, then compile unsafe probes against scratch crate copies.                 |
+| `make miri`              | Interpret the `ambient-fs` tests, the component crates' host tests, and their ABI round trips. |
+
+*Table: unsafe-boundary Make targets.*
+
+`make boundary-contract` writes logs to `target/unsafe-boundary-verification/`
+and builds under `target/unsafe-boundary-contract/`. `make miri` needs the
+`miri` component on the toolchain named by `MIRI_TOOLCHAIN` in the `Makefile`
+(`rustup component add miri --toolchain nightly-2026-10-16`); only the
+`Rust Boundaries` workflow's Miri job installs it in CI. A test that needs a
+syscall Miri cannot model carries `#[cfg_attr(miri, ignore = "reason")]`, and
+the reason appears in the Miri table of the verification document.
+
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
