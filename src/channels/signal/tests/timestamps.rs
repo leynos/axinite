@@ -4,10 +4,10 @@
 use super::*;
 
 #[test]
-fn process_envelope_uses_data_message_timestamp() -> Result<(), ChannelError> {
+fn process_envelope_uses_data_message_timestamp() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = SignalChannel::new(config)?;
+    let ch = make_channel_from_config(config);
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -23,17 +23,18 @@ fn process_envelope_uses_data_message_timestamp() -> Result<(), ChannelError> {
         story_message: None,
         timestamp: Some(1111),
     };
-    let (msg, _) = ch.process_envelope(&env).unwrap();
+    let (msg, _) = ch
+        .process_envelope(&env)
+        .expect("envelope should be accepted and processed");
     // data_message timestamp takes priority.
     assert_eq!(msg.metadata["signal_timestamp"], 9999);
-    Ok(())
 }
 
 #[test]
-fn process_envelope_falls_back_to_envelope_timestamp() -> Result<(), ChannelError> {
+fn process_envelope_falls_back_to_envelope_timestamp() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = SignalChannel::new(config)?;
+    let ch = make_channel_from_config(config);
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -49,16 +50,17 @@ fn process_envelope_falls_back_to_envelope_timestamp() -> Result<(), ChannelErro
         story_message: None,
         timestamp: Some(7777),
     };
-    let (msg, _) = ch.process_envelope(&env).unwrap();
+    let (msg, _) = ch
+        .process_envelope(&env)
+        .expect("envelope should be accepted and processed");
     assert_eq!(msg.metadata["signal_timestamp"], 7777);
-    Ok(())
 }
 
 #[test]
-fn process_envelope_generates_timestamp_when_missing() -> Result<(), ChannelError> {
+fn process_envelope_generates_timestamp_when_missing() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = SignalChannel::new(config)?;
+    let ch = make_channel_from_config(config);
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -74,9 +76,12 @@ fn process_envelope_generates_timestamp_when_missing() -> Result<(), ChannelErro
         story_message: None,
         timestamp: None,
     };
-    let (msg, _) = ch.process_envelope(&env).unwrap();
+    let (msg, _) = ch
+        .process_envelope(&env)
+        .expect("envelope should be accepted and processed");
     // Should generate a timestamp (current time in millis), just verify it's positive.
-    let ts = msg.metadata["signal_timestamp"].as_u64().unwrap();
+    let ts = msg.metadata["signal_timestamp"]
+        .as_u64()
+        .expect("signal_timestamp metadata should be a u64");
     assert!(ts > 0, "Generated timestamp should be positive");
-    Ok(())
 }
