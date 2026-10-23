@@ -28,17 +28,17 @@ fn container_age_is_past_threshold(age_offset: chrono::Duration) -> Result<bool>
 }
 
 #[test]
-fn orphan_threshold_filters_young_containers() -> Result<()> {
-    let is_past = container_age_is_past_threshold(chrono::Duration::minutes(2))?;
+fn orphan_threshold_filters_young_containers() {
+    let is_past = container_age_is_past_threshold(chrono::Duration::minutes(2))
+        .expect("age check should succeed for a well-formed timestamp");
     assert!(!is_past, "Young container should be skipped");
-    Ok(())
 }
 
 #[test]
-fn orphan_threshold_allows_old_containers() -> Result<()> {
-    let is_past = container_age_is_past_threshold(chrono::Duration::minutes(15))?;
+fn orphan_threshold_allows_old_containers() {
+    let is_past = container_age_is_past_threshold(chrono::Duration::minutes(15))
+        .expect("age check should succeed for a well-formed timestamp");
     assert!(is_past, "Old container should be reaped");
-    Ok(())
 }
 
 #[tokio::test]

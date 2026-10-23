@@ -16,11 +16,15 @@ fn sse_envelope_deserializes() {
             }
         }
     }"#;
-    let sse: SseEnvelope = serde_json::from_str(json).unwrap();
-    let env = sse.envelope.unwrap();
+    let sse: SseEnvelope = serde_json::from_str(json).expect("fixture JSON should deserialize");
+    let env = sse
+        .envelope
+        .expect("SSE payload should contain an envelope");
     assert_eq!(env.source_number.as_deref(), Some("+1111111111"));
     assert_eq!(env.source_name.as_deref(), Some("Test User"));
-    let dm = env.data_message.unwrap();
+    let dm = env
+        .data_message
+        .expect("envelope should contain a data message");
     assert_eq!(dm.message.as_deref(), Some("Hello Signal!"));
 }
 
@@ -37,11 +41,19 @@ fn sse_envelope_deserializes_group() {
             }
         }
     }"#;
-    let sse: SseEnvelope = serde_json::from_str(json).unwrap();
-    let env = sse.envelope.unwrap();
-    let dm = env.data_message.unwrap();
+    let sse: SseEnvelope = serde_json::from_str(json).expect("fixture JSON should deserialize");
+    let env = sse
+        .envelope
+        .expect("SSE payload should contain an envelope");
+    let dm = env
+        .data_message
+        .expect("envelope should contain a data message");
     assert_eq!(
-        dm.group_info.as_ref().unwrap().group_id.as_deref(),
+        dm.group_info
+            .as_ref()
+            .expect("data message should contain group info")
+            .group_id
+            .as_deref(),
         Some("abc123")
     );
 }
@@ -49,7 +61,7 @@ fn sse_envelope_deserializes_group() {
 #[test]
 fn envelope_defaults() {
     let json = r#"{}"#;
-    let env: Envelope = serde_json::from_str(json).unwrap();
+    let env: Envelope = serde_json::from_str(json).expect("fixture JSON should deserialize");
     assert!(env.source.is_none());
     assert!(env.source_number.is_none());
     assert!(env.source_name.is_none());
@@ -63,7 +75,7 @@ fn envelope_defaults() {
 #[test]
 fn sse_envelope_missing_envelope_field() {
     let json = r#"{"account": "+1234567890"}"#;
-    let sse: SseEnvelope = serde_json::from_str(json).unwrap();
+    let sse: SseEnvelope = serde_json::from_str(json).expect("fixture JSON should deserialize");
     assert!(sse.envelope.is_none());
 }
 
@@ -78,8 +90,10 @@ fn sse_envelope_with_story_message() {
             }
         }
     }"#;
-    let sse: SseEnvelope = serde_json::from_str(json).unwrap();
-    let env = sse.envelope.unwrap();
+    let sse: SseEnvelope = serde_json::from_str(json).expect("fixture JSON should deserialize");
+    let env = sse
+        .envelope
+        .expect("SSE payload should contain an envelope");
     assert!(env.story_message.is_some());
     assert!(env.data_message.is_some());
 }
@@ -98,8 +112,14 @@ fn sse_envelope_with_attachments() {
             }
         }
     }"#;
-    let sse: SseEnvelope = serde_json::from_str(json).unwrap();
-    let dm = sse.envelope.unwrap().data_message.unwrap();
-    let attachments = dm.attachments.unwrap();
+    let sse: SseEnvelope = serde_json::from_str(json).expect("fixture JSON should deserialize");
+    let dm = sse
+        .envelope
+        .expect("SSE payload should contain an envelope")
+        .data_message
+        .expect("envelope should contain a data message");
+    let attachments = dm
+        .attachments
+        .expect("data message should contain attachments");
     assert_eq!(attachments.len(), 2);
 }
