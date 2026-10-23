@@ -128,7 +128,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     assert identities == [
         "Free disk space",
         "actions/checkout@v6",
-        "Start resource sampler",
+        "Start CI telemetry",
         "dtolnay/rust-toolchain@stable",
         "Install clang",
         "Install mold",
@@ -141,7 +141,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Build WASM channels (for integration tests)",
         "Generate coverage",
         "Report sccache statistics",
-        "Report resource peaks",
+        "Report CI telemetry",
     ], "coverage-check setup and report steps must stay ordered"
 
     rust = next(
