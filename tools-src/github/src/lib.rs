@@ -13,10 +13,10 @@
 //! - workflow (for triggering actions)
 //! - read:org (for org repos)
 
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
+
+use bindings::{exports, near};
 
 mod schema;
 
@@ -694,8 +694,6 @@ fn is_retryable_status(status: u16) -> bool {
 fn is_invalid_workflow_id(workflow_id: &str) -> bool {
     workflow_id.contains('/') || workflow_id.contains("..") || workflow_id.contains(':')
 }
-
-export!(GitHubTool);
 
 #[cfg(test)]
 mod tests {

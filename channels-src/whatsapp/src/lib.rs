@@ -19,11 +19,10 @@
 //! - WASM never sees raw credentials
 //! - Webhook verify token validation by host
 
-// Generate bindings from the WIT file
-wit_bindgen::generate!({
-    world: "sandboxed-channel",
-    path: "../../wit/channel.wit",
-});
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
+
+use bindings::{exports, near};
 
 use serde::{Deserialize, Serialize};
 
@@ -955,9 +954,6 @@ fn json_response(status: u16, value: serde_json::Value) -> OutgoingHttpResponse 
         body,
     }
 }
-
-// Export the component
-export!(WhatsAppChannel);
 
 // ============================================================================
 // Tests

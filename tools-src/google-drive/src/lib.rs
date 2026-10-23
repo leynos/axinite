@@ -37,10 +37,10 @@ mod types;
 
 use types::GoogleDriveAction;
 
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
+
+use bindings::{exports, near};
 
 struct GoogleDriveTool;
 
@@ -302,4 +302,3 @@ fn execute_inner(params: &str) -> Result<String, String> {
     Ok(result)
 }
 
-export!(GoogleDriveTool);
