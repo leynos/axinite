@@ -1,0 +1,114 @@
+---
+name: Rust Boundaries
+"on":
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "crates/ambient-fs/**"
+      - "channels-src/**"
+      - "tools-src/**"
+      - "wit/**"
+      - "scripts/check_unsafe_boundaries.py"
+      - "scripts/unsafe_boundaries/**"
+      - "tests/workflow_contracts/*unsafe_boundary*"
+      - "docs/adr-015-audited-unsafe-boundaries.md"
+      - "docs/rust-boundary-verification.md"
+      - "Makefile"
+      - ".github/workflows/rust-boundaries.yml"
+  schedule:
+    - cron: "37 5 * * 1"  # Weekly Monday 5:37 AM UTC
+  workflow_dispatch:
+
+# A push to a pull request supersedes the run already in flight. Cancellation
+# is conditioned on the event so a schedule or a dispatch always runs to
+# completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every job reads the checkout and writes nothing.
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  contract:
+    name: Unsafe boundary contract
+    # Compiler proof lane: it copies three small crates and runs the
+    # compiler over deliberate unsafe probes. It builds nothing a developer
+    # waits on, so it stays on a GitHub-hosted runner (ADR 013).
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          # The job compiles repository code, so the checkout token must not
+          # stay in .git/config where that code could read it.
+          persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+      - name: Check the allow-list and prove the compiler rejects unsafe code
+        run: |
+          set -euo pipefail
+          mkdir -p target/unsafe-boundary-verification
+          make boundary-contract 2>&1 | tee target/unsafe-boundary-verification/contract.log
+      - name: Archive compiler probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsafe-boundary-contract
+          path: target/unsafe-boundary-verification
+          retention-days: 14
+
+  miri:
+    name: Miri (boundary and memory paths)
+    # Interpreter proof lane. Miri is 10-100 times slower than native
+    # execution, so it runs only the targets `make miri` lists and stays on a
+    # GitHub-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+      # The `miri` component is installed here and in no other job, so the
+      # ordinary build and test lanes never carry it. The toolchain is a dated
+      # nightly so a new nightly cannot change the verdict without a reviewed
+      # edit. Its name comes from the Makefile (`MIRI_TOOLCHAIN`), which is the
+      # one place to change it and which should track the nightly that
+      # rust-toolchain.toml pins once the build standard lands.
+      - name: Install the pinned Miri toolchain
+        run: |
+          set -euo pipefail
+          toolchain="$(make --no-print-directory print-miri-toolchain)"
+          rustup toolchain install "${toolchain}" --profile minimal \
+            --component miri --component rust-src
+      - name: Interpret the boundary and memory paths
+        run: |
+          set -euo pipefail
+          mkdir -p target/unsafe-boundary-verification
+          make miri 2>&1 | tee target/unsafe-boundary-verification/miri.log
+      - name: Archive Miri evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsafe-boundary-miri
+          path: target/unsafe-boundary-verification
+          retention-days: 14

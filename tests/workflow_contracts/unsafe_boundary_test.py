@@ -27,7 +27,7 @@ import pytest
 REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY / "scripts"))
 
-from unsafe_boundaries import inventory  # noqa: E402
+from unsafe_boundaries import files, inventory  # noqa: E402
 from unsafe_boundaries import static_checks as checks  # noqa: E402
 
 from _unsafe_boundary_faults import FAULTS, WEB_SEARCH, Fault, append  # noqa: E402
@@ -36,7 +36,28 @@ from _unsafe_boundary_faults import FAULTS, WEB_SEARCH, Fault, append  # noqa: E
 @functools.cache
 def _real_manifests() -> tuple[str, ...]:
     """Return the real repository's manifest directories, discovered once."""
-    return tuple(sorted(checks.discover_manifests(REPOSITORY)))
+    return tuple(sorted(files.discover_manifests(REPOSITORY)))
+
+
+def _copy_file(relative: str, destination: Path) -> None:
+    """Copy one repository file to the same relative path, if it exists."""
+    source = REPOSITORY / relative
+    if source.exists():
+        (destination / relative).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(source, destination / relative)
+
+
+def _copy_boundary_sources(crate: inventory.Crate, destination: Path) -> None:
+    """Copy every Rust source of a boundary crate, which the contract scans."""
+    root = REPOSITORY / crate.path
+    for path in files.rust_sources(root):
+        _copy_file(path.relative_to(REPOSITORY).as_posix(), destination)
+
+
+def _copy_safe_roots(crate: inventory.Crate, destination: Path) -> None:
+    """Copy the crate roots of a safe crate, which are all the contract reads."""
+    for name in ("src/lib.rs", "src/main.rs", "build.rs"):
+        _copy_file(f"{crate.path}/{name}", destination)
 
 
 def _copy_contract_inputs(destination: Path) -> None:
@@ -46,24 +67,13 @@ def _copy_contract_inputs(destination: Path) -> None:
     contribute every source, because the contract scans them all; every other
     manifest is copied so inventory discovery sees the real set.
     """
-    for relative in _real_manifests():
-        source = REPOSITORY / relative
-        target = destination / relative
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copy(source / "Cargo.toml", target / "Cargo.toml")
+    for relative in ("Makefile", *(f"{m}/Cargo.toml" for m in _real_manifests())):
+        _copy_file(relative, destination)
     for crate in inventory.INVENTORY:
-        source = REPOSITORY / crate.path
-        target = destination / crate.path
         if crate.role is inventory.Role.BOUNDARY:
-            for path in checks.rust_sources(source):
-                copy = target / path.relative_to(source)
-                copy.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(path, copy)
-            continue
-        for name in ("src/lib.rs", "src/main.rs", "build.rs"):
-            if (source / name).exists():
-                (target / name).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(source / name, target / name)
+            _copy_boundary_sources(crate, destination)
+        else:
+            _copy_safe_roots(crate, destination)
 
 
 @pytest.fixture
