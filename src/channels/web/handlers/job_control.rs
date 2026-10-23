@@ -45,10 +45,10 @@ pub(super) enum SandboxJobStatus {
     Interrupted,
 }
 
-impl TryFrom<&str> for SandboxJobStatus {
-    type Error = String;
+impl std::str::FromStr for SandboxJobStatus {
+    type Err = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "creating" => Ok(Self::Creating),
             "running" => Ok(Self::Running),
@@ -81,7 +81,9 @@ async fn load_sandbox_job(
         .map_err(|e| internal_error("Failed to load sandbox job", e))?;
     record
         .map(|record| {
-            let status = SandboxJobStatus::try_from(record.status.as_str())
+            let status = record
+                .status
+                .parse::<SandboxJobStatus>()
                 .map_err(|e| internal_error("Failed to parse sandbox job status", e))?;
             Ok(LoadedSandboxJob { record, status })
         })

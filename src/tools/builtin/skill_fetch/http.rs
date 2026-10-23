@@ -65,7 +65,7 @@ async fn build_safe_fetch_client(parsed: &reqwest::Url) -> Result<reqwest::Clien
 
 /// Fetch raw skill bytes from a URL with SSRF protection.
 pub(crate) async fn fetch_skill_bytes(url: &str) -> Result<Vec<u8>, ToolError> {
-    let https = HttpsUrl::try_from(url)?;
+    let https = url.parse::<HttpsUrl>()?;
     let parsed = validate_fetch_url(&https)?;
     let client = build_safe_fetch_client(&parsed).await?;
     let safe_url = redact_url(&parsed);

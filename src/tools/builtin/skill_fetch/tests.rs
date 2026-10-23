@@ -23,7 +23,7 @@ fn test_validate_fetch_url_rejects_invalid_targets(
     #[case] input_url: &str,
     #[case] expected_error_substring: &str,
 ) {
-    let err = match HttpsUrl::try_from(input_url) {
+    let err = match input_url.parse::<HttpsUrl>() {
         Ok(url) => validate_fetch_url(&url).expect_err("URL should be rejected"),
         Err(err) => err,
     };
@@ -41,7 +41,9 @@ fn test_validate_fetch_url_rejects_invalid_targets(
 #[case("https://example.com/skills/deploy.md")]
 #[case("https://[::ffff:8.8.8.8]/skill.md")]
 fn test_validate_fetch_url_allows_public_https_targets(#[case] input_url: &str) {
-    let https = HttpsUrl::try_from(input_url).expect("public HTTPS URL should parse");
+    let https = input_url
+        .parse::<HttpsUrl>()
+        .expect("public HTTPS URL should parse");
     validate_fetch_url(&https).expect("public HTTPS URL should be accepted");
 }
 
@@ -92,7 +94,8 @@ fn test_validate_resolved_addrs_rejects_empty_results() {
 
 #[test]
 fn test_validate_fetch_url_rejects_internal_host_without_leaking_credentials() {
-    let https = HttpsUrl::try_from("https://user:secret@localhost/path?token=abc")
+    let https = "https://user:secret@localhost/path?token=abc"
+        .parse::<HttpsUrl>()
         .expect("credentialled localhost URL should parse");
     let err = validate_fetch_url(&https).expect_err("localhost URL should be rejected");
     let err_text = err.to_string();
@@ -109,7 +112,7 @@ fn test_validate_fetch_url_rejects_internal_host_without_leaking_credentials() {
 #[test]
 fn test_https_url_parse_error_does_not_echo_raw_input() {
     let raw_input = "not a url";
-    let err = match HttpsUrl::try_from(raw_input) {
+    let err = match raw_input.parse::<HttpsUrl>() {
         Ok(_) => panic!("malformed URL should be rejected"),
         Err(err) => err,
     };

@@ -43,10 +43,10 @@ impl fmt::Display for SandboxMode {
     }
 }
 
-impl TryFrom<&str> for SandboxMode {
-    type Error = SandboxModeParseError;
+impl std::str::FromStr for SandboxMode {
+    type Err = SandboxModeParseError;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "worker" => Ok(Self::Worker),
             "claude_code" => Ok(Self::ClaudeCode),

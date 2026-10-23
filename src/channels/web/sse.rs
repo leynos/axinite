@@ -261,7 +261,7 @@ mod tests {
     async fn test_subscribe_raw_decrements_on_drop() {
         let manager = SseManager::new();
         {
-            let _stream = Box::pin(manager.subscribe_raw().expect("should subscribe"));
+            let _stream = std::pin::pin!(manager.subscribe_raw().expect("should subscribe"));
             assert_eq!(manager.connection_count(), 1);
         }
         // Stream dropped, counter should decrement
@@ -293,8 +293,8 @@ mod tests {
         let mut manager = SseManager::new();
         manager.max_connections = 2; // Low limit for testing
 
-        let _s1 = Box::pin(manager.subscribe_raw().expect("first should succeed"));
-        let _s2 = Box::pin(manager.subscribe_raw().expect("second should succeed"));
+        let _s1 = std::pin::pin!(manager.subscribe_raw().expect("first should succeed"));
+        let _s2 = std::pin::pin!(manager.subscribe_raw().expect("second should succeed"));
         assert_eq!(manager.connection_count(), 2);
 
         // Third should be rejected
