@@ -274,6 +274,31 @@ def _develops(invocation: Invocation) -> bool:
     return invocation.tool != "whitaker" and not is_release_build(invocation)
 
 
+def _whitaker_flags(
+    invocation: Invocation, effective: list[str], present: set[str], where: str
+) -> list[str]:
+    """Judge Whitaker: none of the standard, and a literal `-D warnings` boundary."""
+    problems = [f"{where}: Whitaker inherits {sorted(present)}"] if present else []
+    if CRANELIFT_FLAG in effective:
+        problems.append(f"{where}: Whitaker inherits the Cranelift flag")
+    boundary = invocation.assignments.get("RUSTFLAGS")
+    if boundary is None:
+        problems.append(f"{where}: Whitaker has no RUSTFLAGS boundary")
+    elif "-D warnings" not in boundary:
+        problems.append(f"{where}: Whitaker's boundary dropped -D warnings")
+    return problems
+
+
+def _development_flags(
+    triple: str, effective: list[str], present: set[str], where: str
+) -> list[str]:
+    """Judge a development build: the frontend everywhere, mold on Linux only."""
+    expected = {THREADS_FLAG} | ({MOLD_FLAG} if PLATFORMS[triple] == "linux" else set())
+    if expected <= present and (MOLD_FLAG in present) == (MOLD_FLAG in expected):
+        return []
+    return [f"{where}: development build lost the standard, got {effective}"]
+
+
 def _judge_flags(
     invocation: Invocation,
     triple: str,
@@ -285,25 +310,21 @@ def _judge_flags(
     where = f"{label} on {triple} (caller RUSTFLAGS {inherited!r})"
     present = {flag for flag in FAST_FLAGS if flag in effective}
     if invocation.tool == "whitaker":
-        problems = [f"{where}: Whitaker inherits {sorted(present)}"] if present else []
-        if CRANELIFT_FLAG in effective:
-            problems.append(f"{where}: Whitaker inherits the Cranelift flag")
-        if "RUSTFLAGS" not in invocation.assignments:
-            problems.append(f"{where}: Whitaker has no RUSTFLAGS boundary")
-        elif "-D warnings" not in invocation.assignments["RUSTFLAGS"]:
-            problems.append(f"{where}: Whitaker's boundary dropped -D warnings")
-        return problems
+        return _whitaker_flags(invocation, effective, present, where)
     if is_release_build(invocation):
         return (
             [f"{where}: a release build inherits {sorted(present)}"] if present else []
         )
-    expected = {THREADS_FLAG} | ({MOLD_FLAG} if PLATFORMS[triple] == "linux" else set())
-    problems = []
-    if not expected <= present or (MOLD_FLAG in present) != (MOLD_FLAG in expected):
-        problems.append(
-            f"{where}: development build lost the standard, got {effective}"
-        )
-    return problems
+    return _development_flags(triple, effective, present, where)
+
+
+def _is_development_compile(invocation: Invocation) -> bool:
+    """Report whether an invocation compiles under the development standard."""
+    return (
+        invocation.verb not in ("fmt", "clean")
+        and not is_release_build(invocation)
+        and invocation.tool != "whitaker"
+    )
 
 
 def preflight_violations(lines: list[str], invocations: list[Invocation]) -> list[str]:
@@ -321,13 +342,7 @@ def preflight_violations(lines: list[str], invocations: list[Invocation]) -> lis
     list of str
         A message when a development compile precedes, or lacks, the check.
     """
-    developing = [
-        inv
-        for inv in invocations
-        if inv.verb not in ("fmt", "clean")
-        and not is_release_build(inv)
-        and inv.tool != "whitaker"
-    ]
+    developing = [inv for inv in invocations if _is_development_compile(inv)]
     if not developing:
         return []
     checks = [index for index, line in enumerate(lines) if line.strip() == PREFLIGHT]

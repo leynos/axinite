@@ -119,34 +119,43 @@ def release_violations(
     return problems
 
 
-def whitaker_violations(label: str, job: Mapping[str, object]) -> list[str]:
-    """Judge the Whitaker job: install through the action, then the gate."""
-    sequence = steps_of(job)
+_WHITAKER_GATE = re.compile(r"\bmake\s+lint-whitaker\b")
+_WHITAKER_ANY = re.compile(r"lint-whitaker|whitaker")
+
+
+def _whitaker_indices(sequence: list[Step]) -> tuple[list[int], list[int]]:
+    """Return the indices of the install steps and of the gate steps."""
     installs = [
         i for i, s in enumerate(sequence) if s.uses.startswith(INSTALL_WHITAKER)
     ]
-    gates = [
-        i
-        for i, s in enumerate(sequence)
-        if re.search(r"\bmake\s+lint-whitaker\b", s.run)
+    gates = [i for i, s in enumerate(sequence) if _WHITAKER_GATE.search(s.run)]
+    return installs, gates
+
+
+def _flag_injections(label: str, sequence: list[Step]) -> list[str]:
+    """Report steps that put build flags in the environment of a Whitaker run."""
+    return [
+        f"{label}: {step.name!r} injects build flags into Whitaker"
+        for step in sequence
+        if "RUSTFLAGS" in step.env and _WHITAKER_ANY.search(step.run)
     ]
-    if not installs and not gates:
-        return []
-    problems: list[str] = []
+
+
+def whitaker_violations(label: str, job: Mapping[str, object]) -> list[str]:
+    """Judge the Whitaker job: install through the action, then the gate."""
+    sequence = steps_of(job)
+    installs, gates = _whitaker_indices(sequence)
     if not installs:
-        return [f"{label}: runs make lint-whitaker without the install-whitaker action"]
-    for index in installs:
-        inputs = sequence[index].inputs
-        if "suite-version" in inputs:
-            problems.append(f"{label}: install-whitaker pins the rolling suite")
-    if gates and min(gates) < min(installs):
+        gate = [f"{label}: runs make lint-whitaker without the install-whitaker action"]
+        return gate if gates else []
+    pinned = any("suite-version" in sequence[i].inputs for i in installs)
+    ordered = not gates or min(installs) < min(gates)
+    problems = []
+    if pinned:
+        problems.append(f"{label}: install-whitaker pins the rolling suite")
+    if not ordered:
         problems.append(f"{label}: make lint-whitaker runs before install-whitaker")
-    for step in sequence:
-        if any(name in step.env for name in ("RUSTFLAGS",)) and re.search(
-            r"lint-whitaker|whitaker", step.run
-        ):
-            problems.append(f"{label}: {step.name!r} injects build flags into Whitaker")
-    return problems
+    return problems + _flag_injections(label, sequence)
 
 
 def retired_violations(name: str, text: str) -> list[str]:

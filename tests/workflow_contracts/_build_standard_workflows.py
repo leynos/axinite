@@ -74,6 +74,34 @@ def _truthy(value: object) -> bool:
     return str(value).strip().lower() not in ("false", "")
 
 
+def _step_of(raw: Mapping[str, object]) -> Step:
+    """Read one workflow step mapping as a `Step`."""
+    env = raw.get("env")
+    inputs = raw.get("with")
+    return Step(
+        str(raw.get("name", raw.get("uses", "unnamed"))),
+        str(raw.get("run", "")),
+        str(raw.get("uses", "")),
+        "if" in raw or _truthy(raw.get("continue-on-error", False)),
+        env if isinstance(env, dict) else {},
+        inputs if isinstance(inputs, dict) else {},
+    )
+
+
+def _setup_command_steps(job: Mapping[str, object]) -> list[Step]:
+    """Read a reusable caller's `setup-commands` lines as steps."""
+    inputs = job.get("with")
+    commands = inputs.get("setup-commands") if isinstance(inputs, dict) else None
+    if not isinstance(commands, str):
+        return []
+    lines = (line.strip().rstrip("\\") for line in commands.splitlines())
+    return [
+        Step(line, line, "", line.endswith(("|| true", "|| :")), {}, {})
+        for line in lines
+        if line
+    ]
+
+
 def steps_of(job: Mapping[str, object]) -> list[Step]:
     """Return a job's steps, with a reusable caller's setup commands as steps.
 
@@ -82,33 +110,10 @@ def steps_of(job: Mapping[str, object]) -> list[Step]:
     its lines is read as a step. Reading only ``steps`` would let the mutation
     caller skip every contract here.
     """
-    result: list[Step] = []
     declared = job.get("steps")
-    for raw in declared if isinstance(declared, list) else []:
-        if not isinstance(raw, dict):
-            continue
-        guarded = "if" in raw or _truthy(raw.get("continue-on-error", False))
-        env = raw.get("env")
-        inputs = raw.get("with")
-        result.append(
-            Step(
-                str(raw.get("name", raw.get("uses", "unnamed"))),
-                str(raw.get("run", "")),
-                str(raw.get("uses", "")),
-                guarded,
-                env if isinstance(env, dict) else {},
-                inputs if isinstance(inputs, dict) else {},
-            )
-        )
-    inputs = job.get("with")
-    commands = inputs.get("setup-commands") if isinstance(inputs, dict) else None
-    if isinstance(commands, str):
-        for line in commands.splitlines():
-            stripped = line.strip().rstrip("\\")
-            if stripped:
-                tail = stripped.endswith(("|| true", "|| :"))
-                result.append(Step(stripped, stripped, "", tail, {}, {}))
-    return result
+    raw_steps = declared if isinstance(declared, list) else []
+    steps = [_step_of(raw) for raw in raw_steps if isinstance(raw, dict)]
+    return steps + _setup_command_steps(job)
 
 
 def runs_on_linux(job: Mapping[str, object]) -> bool:
@@ -159,6 +164,40 @@ def make_targets_in(documents: Mapping[str, Mapping[str, object]]) -> set[str]:
     return named
 
 
+def _first_index(sequence: list[Step], test: typ.Callable[[Step], bool]) -> int | None:
+    """Return the index of the first step satisfying `test`, if any."""
+    return next((i for i, step in enumerate(sequence) if test(step)), None)
+
+
+def _ordering_violations(
+    label: str, job: Mapping[str, object], sequence: list[Step], first: int
+) -> list[str]:
+    """Judge the installer steps of a job whose first compile is at `first`."""
+    installs = [i for i, s in enumerate(sequence) if INSTALL_COMMAND.search(s.run)]
+    compile_name = sequence[first].name
+    if not installs:
+        return [
+            f"{label}: compiles at step {compile_name!r} but never runs "
+            f"make {INSTALL_TARGET}"
+        ]
+    early = [i for i in installs if i < first]
+    problems = [
+        f"{label}: {sequence[i].name!r} is conditional or soft-failing"
+        for i in early
+        if sequence[i].guarded
+    ]
+    if not early:
+        problems.append(
+            f"{label}: make {INSTALL_TARGET} runs after the first compile, "
+            f"{compile_name!r}"
+        )
+    if _truthy(job.get("continue-on-error", False)):
+        problems.append(
+            f"{label}: the job continues on error, so a failed install does not fail it"
+        )
+    return problems
+
+
 def install_violations(
     label: str, job: Mapping[str, object], compiling_targets: Iterable[str]
 ) -> list[str]:
@@ -184,36 +223,10 @@ def install_violations(
         return []
     sequence = steps_of(job)
     targets = set(compiling_targets)
-    first = next(
-        (i for i, step in enumerate(sequence) if compiles(step, targets)), None
-    )
+    first = _first_index(sequence, lambda step: compiles(step, targets))
     if first is None:
         return []
-    removal = next(
-        (i for i, s in enumerate(sequence) if CONFIG_REMOVAL.search(s.run)), None
-    )
+    removal = _first_index(sequence, lambda step: bool(CONFIG_REMOVAL.search(step.run)))
     if removal is not None and removal < first:
         return []
-    installs = [
-        i for i, step in enumerate(sequence) if INSTALL_COMMAND.search(step.run)
-    ]
-    if not installs:
-        return [
-            f"{label}: compiles at step {sequence[first].name!r} but never runs make {INSTALL_TARGET}"
-        ]
-    problems: list[str] = []
-    early = [i for i in installs if i < first]
-    if not early:
-        problems.append(
-            f"{label}: make {INSTALL_TARGET} runs after the first compile, {sequence[first].name!r}"
-        )
-    for index in early:
-        if sequence[index].guarded:
-            problems.append(
-                f"{label}: {sequence[index].name!r} is conditional or soft-failing"
-            )
-    if _truthy(job.get("continue-on-error", False)):
-        problems.append(
-            f"{label}: the job continues on error, so a failed install does not fail it"
-        )
-    return problems
+    return _ordering_violations(label, job, sequence, first)

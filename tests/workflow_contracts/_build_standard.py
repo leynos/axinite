@@ -198,6 +198,67 @@ def effective_rustflags(
     return list(sources.get("build", []))
 
 
+def _source_violations(name: str, flags: list[str]) -> list[str]:
+    """Judge one `rustflags` source: the frontend, mold's scope, no Cranelift."""
+    problems: list[str] = []
+    key = name.removeprefix("target.")
+    is_target = name.startswith("target.")
+    is_linux = is_target and os_of_key(key) == "linux"
+    if THREADS_FLAG not in flags:
+        problems.append(
+            f"{name} lacks {THREADS_FLAG}; Cargo selects one source, not a merge"
+        )
+    if is_linux and MOLD_FLAG not in flags:
+        problems.append(f"{name} applies on Linux but lacks {MOLD_FLAG}")
+    if not is_linux and MOLD_FLAG in flags:
+        problems.append(f"{name} names the Linux-only {MOLD_FLAG}")
+    if is_target and os_of_key(key) is None:
+        problems.append(f"{name} is a target key these contracts cannot place")
+    if CRANELIFT_FLAG in flags:
+        problems.append(f"{name} selects Cranelift; {_EXCEPTION}")
+    return problems
+
+
+def _platform_violations(config: Mapping[str, typ.Any]) -> list[str]:
+    """Judge what Cargo would actually pass on each modelled platform."""
+    problems: list[str] = []
+    for triple, platform in PLATFORMS.items():
+        flags = effective_rustflags(config, triple)
+        if THREADS_FLAG not in flags:
+            problems.append(
+                f"{triple}: effective rustflags {flags} lack {THREADS_FLAG}"
+            )
+        if (MOLD_FLAG in flags) != (platform == "linux"):
+            problems.append(
+                f"{triple}: mold must be present exactly on Linux, got {flags}"
+            )
+    return problems
+
+
+def _profile_violations(config: Mapping[str, typ.Any]) -> list[str]:
+    """Hold the configuration and the recorded Cranelift exception in agreement.
+
+    While the guide refuses the backend, no profile may select it. This is the
+    repository's own state, not a prohibition on codegen-backend keys: a
+    profile naming LLVM, or a future measured adoption that removes the
+    exception, passes through the same judge by editing both together.
+    """
+    profiles = config.get("profile", {})
+    if not isinstance(profiles, dict):
+        return []
+    return [
+        f"profile.{name} selects Cranelift; {_EXCEPTION}"
+        for name, table in profiles.items()
+        if isinstance(table, dict) and table.get("codegen-backend") == "cranelift"
+    ]
+
+
+_EXCEPTION = (
+    "this repository refuses it on recorded evidence "
+    "(docs/developers-guide.md, Cranelift)"
+)
+
+
 def config_violations(
     config: Mapping[str, typ.Any], toolchain: Mapping[str, typ.Any]
 ) -> list[str]:
@@ -215,53 +276,16 @@ def config_violations(
     list of str
         One message per violation; empty when the configuration conforms.
     """
-    problems: list[str] = []
     sources = rustflag_sources(config)
+    problems: list[str] = []
     if len(sources) < 2:
         problems.append(
             f"expected a [build] and a Linux rustflags source, found {sorted(sources)}"
         )
     for name, flags in sources.items():
-        if THREADS_FLAG not in flags:
-            problems.append(
-                f"{name} lacks {THREADS_FLAG}; Cargo selects one source, not a merge"
-            )
-        key = name.removeprefix("target.")
-        is_linux = name.startswith("target.") and os_of_key(key) == "linux"
-        if is_linux and MOLD_FLAG not in flags:
-            problems.append(f"{name} applies on Linux but lacks {MOLD_FLAG}")
-        if not is_linux and MOLD_FLAG in flags:
-            problems.append(f"{name} names the Linux-only {MOLD_FLAG}")
-        if name.startswith("target.") and os_of_key(key) is None:
-            problems.append(f"{name} is a target key these contracts cannot place")
-        if CRANELIFT_FLAG in flags:
-            problems.append(
-                f"{name} selects Cranelift, which this repository refuses on "
-                "recorded evidence (docs/developers-guide.md, Cranelift)"
-            )
-    for triple, platform in PLATFORMS.items():
-        flags = effective_rustflags(config, triple)
-        if THREADS_FLAG not in flags:
-            problems.append(
-                f"{triple}: effective rustflags {flags} lack {THREADS_FLAG}"
-            )
-        if (MOLD_FLAG in flags) != (platform == "linux"):
-            problems.append(
-                f"{triple}: mold must be present exactly on Linux, got {flags}"
-            )
-    # The recorded Cranelift exception and the configuration must agree: while
-    # the guide refuses the backend, no profile may select it. This is the
-    # repository's own state, not a prohibition on codegen-backend keys: a
-    # profile naming LLVM, or a future measured adoption that removes the
-    # exception, passes through the same judge by editing both together.
-    profiles = config.get("profile", {})
-    for name, table in profiles.items() if isinstance(profiles, dict) else []:
-        selected = table.get("codegen-backend") if isinstance(table, dict) else None
-        if selected == "cranelift":
-            problems.append(
-                f"profile.{name} selects Cranelift, which this repository "
-                "refuses on recorded evidence (docs/developers-guide.md, Cranelift)"
-            )
+        problems.extend(_source_violations(name, flags))
+    problems.extend(_platform_violations(config))
+    problems.extend(_profile_violations(config))
     channel = str(toolchain.get("toolchain", {}).get("channel", ""))
     if not DATED_NIGHTLY.match(channel):
         problems.append(

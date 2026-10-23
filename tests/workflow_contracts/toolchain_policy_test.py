@@ -65,6 +65,76 @@ def setup_rust_toolchains(
     return named
 
 
+def _pin_violations(channel: str) -> list[str]:
+    """RT-022: the channel is an exact release or a dated nightly."""
+    if DATED_NIGHTLY.match(channel) or EXACT_RELEASE.match(channel):
+        return []
+    return [f"RT-022: the channel {channel!r} is not an exact pin"]
+
+
+def _dependabot_violations(dependabot: dict[str, typ.Any]) -> list[str]:
+    """RT-024: a rust-toolchain entry for `/` on a daily or weekly schedule."""
+    entries = [
+        entry
+        for entry in dependabot.get("updates", [])
+        if entry.get("package-ecosystem") == "rust-toolchain"
+    ]
+    if any(
+        entry.get("directory") == "/"
+        and entry.get("schedule", {}).get("interval") in SCHEDULES
+        for entry in entries
+    ):
+        return []
+    return [
+        "RT-024: no rust-toolchain Dependabot entry for / on a daily or weekly schedule"
+    ]
+
+
+def _msrv_violations(
+    msrvs: dict[str, str], documents: cabc.Mapping[str, typ.Any]
+) -> list[str]:
+    """RT-026: every declared MSRV is tested, and no toolchain input is stray."""
+    problems: list[str] = []
+    if len(set(msrvs.values())) > 1:
+        problems.append(f"workspace members declare different MSRVs: {msrvs}")
+    named = setup_rust_toolchains(documents)
+    tested = {toolchain for _, toolchain in named}
+    problems.extend(
+        f"RT-026: {package} declares rust-version {version} but no job tests it "
+        f"({sorted(tested)})"
+        for package, version in msrvs.items()
+        if version not in tested
+    )
+    problems.extend(
+        f"{job}: setup-rust names {toolchain!r}, which is no declared MSRV, so "
+        "the pin is ignored"
+        for job, toolchain in named
+        if toolchain not in set(msrvs.values())
+    )
+    return problems
+
+
+def _nightly_violations(channel: str, texts: cabc.Mapping[str, str]) -> list[str]:
+    """RT-027: no workflow names a dated nightly other than the pin."""
+    return [
+        f"RT-027: {name} names {found}, not the pin {channel}"
+        for name, text in texts.items()
+        for found in sorted(set(NIGHTLY_IN_TEXT.findall(text)))
+        if found != channel
+    ]
+
+
+def _dockerignore_violations(dockerignore: str) -> list[str]:
+    """The image build context must not receive the nightly standard."""
+    lines = dockerignore.splitlines()
+    return [
+        f".dockerignore does not exclude {excluded}, so an image build would "
+        "take the nightly standard"
+        for excluded in (".cargo/", "rust-toolchain.toml")
+        if excluded not in lines
+    ]
+
+
 def policy_violations(
     pin: dict[str, typ.Any],
     dependabot: dict[str, typ.Any],
@@ -74,48 +144,14 @@ def policy_violations(
     dockerignore: str,
 ) -> list[str]:
     """Judge the pin, its Dependabot entry and the MSRV evidence together."""
-    problems: list[str] = []
     channel = str(pin.get("toolchain", {}).get("channel", ""))
-    if not (DATED_NIGHTLY.match(channel) or EXACT_RELEASE.match(channel)):
-        problems.append(f"RT-022: the channel {channel!r} is not an exact pin")
-    entries = [
-        entry
-        for entry in dependabot.get("updates", [])
-        if entry.get("package-ecosystem") == "rust-toolchain"
+    return [
+        *_pin_violations(channel),
+        *_dependabot_violations(dependabot),
+        *_msrv_violations(msrvs, documents),
+        *_nightly_violations(channel, texts),
+        *_dockerignore_violations(dockerignore),
     ]
-    if not any(
-        entry.get("directory") == "/"
-        and entry.get("schedule", {}).get("interval") in SCHEDULES
-        for entry in entries
-    ):
-        problems.append(
-            "RT-024: no rust-toolchain Dependabot entry for / on a daily or weekly schedule"
-        )
-    if len(set(msrvs.values())) > 1:
-        problems.append(f"workspace members declare different MSRVs: {msrvs}")
-    tested = {toolchain for _, toolchain in setup_rust_toolchains(documents)}
-    for package, version in msrvs.items():
-        if version not in tested:
-            problems.append(
-                f"RT-026: {package} declares rust-version {version} but no job tests it ({sorted(tested)})"
-            )
-    for job, toolchain in setup_rust_toolchains(documents):
-        if toolchain not in set(msrvs.values()):
-            problems.append(
-                f"{job}: setup-rust names {toolchain!r}, which is no declared MSRV, so the pin is ignored"
-            )
-    for name, text in texts.items():
-        problems.extend(
-            f"RT-027: {name} names {found}, not the pin {channel}"
-            for found in sorted(set(NIGHTLY_IN_TEXT.findall(text)))
-            if found != channel
-        )
-    for excluded in (".cargo/", "rust-toolchain.toml"):
-        if excluded not in dockerignore.splitlines():
-            problems.append(
-                f".dockerignore does not exclude {excluded}, so an image build would take the nightly standard"
-            )
-    return problems
 
 
 @pytest.fixture(scope="module")
