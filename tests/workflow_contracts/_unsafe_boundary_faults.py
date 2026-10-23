@@ -278,6 +278,53 @@ FAULTS: tuple[Fault, ...] = (
         _add(f"{WEB_SEARCH}/src/bindings/abi_round_trip.rs", "#![allow(unsafe_code)]"),
         "unsafe_code lint override",
     ),
+    # `make miri` must interpret every component crate that has host tests.
+    Fault(
+        "miri-root-dropped-from-the-makefile",
+        _edit(
+            "Makefile",
+            "channels-src/discord channels-src/slack",
+            "channels-src/slack",
+        ),
+        "has host tests but is missing",
+    ),
+    Fault(
+        "miri-root-is-not-a-boundary-crate",
+        _edit(
+            "Makefile",
+            "tools-src/telegram tools-src/web-search",
+            "tools-src/telegram tools-src/web-search crates/ambient-fs",
+        ),
+        "is not a boundary crate",
+    ),
+    Fault(
+        "miri-root-has-no-tests",
+        _edit(
+            "Makefile",
+            "tools-src/telegram tools-src/web-search",
+            "tools-src/gmail tools-src/telegram tools-src/web-search",
+        ),
+        "has no host tests",
+    ),
+    Fault(
+        "abi-root-dropped-from-the-makefile",
+        _edit(
+            "Makefile",
+            "MIRI_ABI_ROOTS := channels-src/discord tools-src/web-search",
+            "MIRI_ABI_ROOTS := channels-src/discord",
+        ),
+        "missing from Makefile MIRI_ABI_ROOTS",
+    ),
+    Fault(
+        "abi-root-without-a-round-trip-module",
+        _edit(
+            "Makefile",
+            "MIRI_ABI_ROOTS := channels-src/discord tools-src/web-search",
+            "MIRI_ABI_ROOTS := channels-src/discord tools-src/web-search "
+            "tools-src/github",
+        ),
+        "declares no ABI round trips",
+    ),
     # Membership: a crate appears, disappears or changes shape without a decision.
     Fault(
         "unlisted-crate-added",
