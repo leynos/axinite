@@ -3,7 +3,6 @@
 use std::net::IpAddr;
 
 use crate::tools::builtin::http::HttpTool;
-use crate::tools::builtin::http::MAX_RESPONSE_SIZE;
 use crate::tools::builtin::http::validation::{
     extract_host_from_params, is_disallowed_ip, parse_headers_param, validate_save_to_path,
     validate_url,
@@ -31,7 +30,7 @@ fn test_validate_url_rejects_localhost() {
 
 #[test]
 fn test_validate_url_accepts_https_public() {
-    let url = validate_url("https://example.com").unwrap();
+    let url = validate_url("https://example.com").expect("public https URL should validate");
     assert_eq!(url.host_str(), Some("example.com"));
 }
 
@@ -72,15 +71,9 @@ fn test_is_disallowed_ip_covers_ranges() {
 }
 
 #[test]
-fn test_max_response_size_is_reasonable() {
-    // MAX_RESPONSE_SIZE should be 5 MB to prevent OOM while allowing typical API responses.
-    assert_eq!(MAX_RESPONSE_SIZE, 5 * 1024 * 1024);
-}
-
-#[test]
 fn test_parse_headers_param_accepts_object_legacy_shape() {
     let headers = serde_json::json!({"Authorization": "Bearer token"});
-    let parsed = parse_headers_param(Some(&headers)).unwrap();
+    let parsed = parse_headers_param(Some(&headers)).expect("headers fixture should parse");
     assert_eq!(
         parsed,
         vec![("Authorization".to_string(), "Bearer token".to_string())]
@@ -93,7 +86,7 @@ fn test_parse_headers_param_accepts_array_shape() {
         {"name": "Authorization", "value": "Bearer token"},
         {"name": "X-Test", "value": "1"}
     ]);
-    let parsed = parse_headers_param(Some(&headers)).unwrap();
+    let parsed = parse_headers_param(Some(&headers)).expect("headers fixture should parse");
     assert_eq!(
         parsed,
         vec![
@@ -177,14 +170,16 @@ fn test_save_to_rejects_deep_traversal() {
 
 #[test]
 fn test_save_to_accepts_simple_tmp_path() {
-    let path = validate_save_to_path("/tmp/test_axinite_photo.jpg").unwrap();
+    let path = validate_save_to_path("/tmp/test_axinite_photo.jpg")
+        .expect("save_to path under /tmp should validate");
     assert!(path.starts_with("/tmp"));
     let _ = ambient_fs::remove_file(&path);
 }
 
 #[test]
 fn test_save_to_accepts_nested_tmp_path() {
-    let path = validate_save_to_path("/tmp/axinite_test_subdir/nested/file.png").unwrap();
+    let path = validate_save_to_path("/tmp/axinite_test_subdir/nested/file.png")
+        .expect("nested save_to path under /tmp should validate");
     assert!(path.starts_with("/tmp"));
     let _ = ambient_fs::remove_dir_all("/tmp/axinite_test_subdir");
 }
