@@ -237,8 +237,7 @@ fn test_unsupported_params_validation_rejects_invalid() {
     );
     assert!(
         result
-            .err()
-            .expect("deserialization should fail")
+            .expect_err("deserialization should fail")
             .to_string()
             .contains("temperrature"),
         "error message should mention the invalid parameter"
