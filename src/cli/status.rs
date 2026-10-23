@@ -42,12 +42,7 @@ fn default_channels_dir() -> PathBuf {
     axinite_base_dir().join("channels")
 }
 fn db_backend_name() -> String {
-    {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_BACKEND")
-    }
-    .ok()
-    .unwrap_or_else(|| "postgres".to_string())
+    crate::config::ambient_backend_name()
 }
 async fn print_database_status(db_backend: &str) {
     print!("  Database:    ");

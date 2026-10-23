@@ -3,14 +3,9 @@
 use crate::test_support::ExpectValid;
 use std::process::Command;
 
-use crate::config::EnvContext;
 use tempfile::tempdir;
 
 use super::super::*;
-
-fn would_autodetect_libsql(ctx: &EnvContext, db_path: &std::path::Path) -> bool {
-    !ctx.contains_key("DATABASE_BACKEND") && db_path.exists()
-}
 
 fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
     assert!(env_path.exists(), ".env must exist after migration");
@@ -143,40 +138,6 @@ fn test_migrate_bootstrap_json_missing() {
     migrate_bootstrap_json_to_env(&env_path);
 
     assert!(!env_path.exists());
-}
-
-#[test]
-fn test_libsql_autodetect_sets_backend_when_db_exists() {
-    let dir = tempdir().expect_valid("create temp dir for libsql autodetect");
-    let db_path = dir.path().join("axinite.db");
-
-    assert!(!db_path.exists());
-    assert!(
-        !would_autodetect_libsql(&EnvContext::default(), &db_path),
-        "should not auto-detect when db file is absent"
-    );
-
-    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
-    assert!(
-        would_autodetect_libsql(&EnvContext::default(), &db_path),
-        "should detect libsql when db file is present and backend unset"
-    );
-}
-
-#[test]
-fn test_libsql_autodetect_does_not_override_explicit_backend() {
-    let dir = tempdir().expect_valid("create temp dir for explicit backend autodetect test");
-    let db_path = dir.path().join("axinite.db");
-    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
-
-    let would_override = would_autodetect_libsql(
-        &EnvContext::default().with_env("DATABASE_BACKEND", "postgres"),
-        &db_path,
-    );
-    assert!(
-        !would_override,
-        "must not override an explicitly set DATABASE_BACKEND"
-    );
 }
 
 #[test]

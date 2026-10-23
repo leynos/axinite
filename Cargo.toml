@@ -123,6 +123,8 @@ semver = "1"
 
 # Secrecy for sensitive values
 secrecy = { version = "0.10", features = ["serde"] }
+# Safe zero-on-drop for in-memory secret strings
+zeroize = { version = "1", features = ["derive"] }
 
 # URL parsing and encoding
 url = "2"
@@ -201,6 +203,10 @@ security-framework = "3"
 # Linux secret-service (GNOME Keyring, KWallet)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+# Safe wrappers over the Linux `openat2` syscall and the effective-user query.
+# These replace handwritten `unsafe` blocks so the root crate can forbid
+# unsafe code; see docs/adr-015-audited-unsafe-boundaries.md.
+rustix = { version = "1", default-features = false, features = ["fs", "process", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 secret-service = { version = "5", features = ["rt-tokio-crypto-rust"] }
@@ -260,6 +266,15 @@ embedded-postgres = [
     "dep:pg_embedded_setup_unpriv",
 ]
 docker = ["dep:bollard"]
+
+# Unsafe policy: this crate and every one of its targets (library, binary,
+# build script, tests, benches, examples) forbid unsafe Rust. `forbid` cannot be
+# relaxed by an inner `allow`/`expect`, so the audited unsafe code lives only in
+# the boundary crates listed in docs/adr-015-audited-unsafe-boundaries.md. When
+# the workspace lint table lands, replace this table with `[lints] workspace =
+# true`; never mix the two (Cargo rejects overrides next to `workspace = true`).
+[lints.rust]
+unsafe_code = "forbid"
 
 [[test]]
 name = "channels"

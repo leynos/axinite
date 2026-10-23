@@ -38,6 +38,8 @@
 //! - **Prompt injection defence** - Sanitize all external data
 //! - **Continuous learning** - Improve estimates from historical data
 
+#![forbid(unsafe_code)]
+
 pub mod agent;
 pub mod app;
 pub mod boot_screen;
