@@ -62,7 +62,6 @@ def dry_run(
     cargo: str = "probe-cargo",
     extra: Mapping[str, str] | None = None,
     root: Path = REPOSITORY_ROOT,
-    home: Path | None = None,
 ) -> list[str]:
     """Return the lines ``make --dry-run <target>`` emits.
 
@@ -76,8 +75,6 @@ def dry_run(
         Additional ``VAR=value`` pairs for the command line.
     root
         Directory holding the Makefile.
-    home
-        ``HOME`` for the run, so ``BUILD_TOOLS_PREFIX`` stays out of the real one.
 
     Returns
     -------
@@ -93,7 +90,7 @@ def dry_run(
         "WHITAKER=probe-whitaker",
     ]
     command.extend(f"{key}={value}" for key, value in (extra or {}).items())
-    environment = {"PATH": "/usr/bin:/bin", "HOME": str(home or "/nonexistent-home")}
+    environment = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent-home"}
     completed = subprocess.run(  # noqa: S603 - fixed argv, repository Makefile
         command, cwd=root, env=environment, check=True, capture_output=True, text=True
     )

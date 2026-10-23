@@ -121,9 +121,8 @@ def make_violations(
         )
         for triple in target_triples(invocation):
             effective = effective_rustflags(config, triple, assigned)
-            problems.extend(
-                _judge_flags(invocation, triple, effective, inherited, label)
-            )
+            where = f"{label} on {triple} (caller RUSTFLAGS {inherited!r})"
+            problems.extend(_judge_flags(invocation, triple, effective, where))
     return problems
 
 
@@ -161,11 +160,9 @@ def _judge_flags(
     invocation: Invocation,
     triple: str,
     effective: list[str],
-    inherited: str | None,
-    label: str,
+    where: str,
 ) -> list[str]:
     """Judge one invocation's effective flags on one platform."""
-    where = f"{label} on {triple} (caller RUSTFLAGS {inherited!r})"
     present = {flag for flag in FAST_FLAGS if flag in effective}
     if invocation.tool == "whitaker":
         return _whitaker_flags(invocation, effective, present, where)
