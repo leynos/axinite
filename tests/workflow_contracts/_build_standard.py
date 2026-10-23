@@ -202,7 +202,7 @@ def effective_rustflags(
     return list(sources.get("build", []))
 
 
-def _mold_violations(name: str, flags: list[str], is_linux: bool) -> list[str]:
+def _linker_scope_violations(name: str, flags: list[str], is_linux: bool) -> list[str]:
     """Judge mold's scope: on every Linux source, on no other."""
     if is_linux and MOLD_FLAG not in flags:
         return [f"{name} applies on Linux but lacks {MOLD_FLAG}"]
@@ -216,7 +216,7 @@ def _source_violations(name: str, flags: list[str]) -> list[str]:
     key = name.removeprefix("target.")
     is_target = name.startswith("target.")
     os_name = os_of_key(key) if is_target else None
-    problems = _mold_violations(name, flags, os_name == "linux")
+    problems = _linker_scope_violations(name, flags, os_name == "linux")
     if THREADS_FLAG not in flags:
         problems.append(
             f"{name} lacks {THREADS_FLAG}; Cargo selects one source, not a merge"
