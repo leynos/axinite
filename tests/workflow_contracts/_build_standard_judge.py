@@ -24,19 +24,24 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 def _job_violations(
-    name: str,
-    job_id: str,
+    label: str,
     document: Mapping[str, object],
     job: Mapping[str, object],
-    targets: list[str],
-    dist_generated: bool,
+    install_targets: list[str] | None,
 ) -> list[str]:
-    """Judge one job against every contract that applies to it."""
-    label = f"{name}:{job_id}"
-    problems = [] if dist_generated else install_violations(label, job, targets)
+    """Judge one job against every contract that applies to it.
+
+    ``install_targets`` is ``None`` for the dist-generated workflow, which is
+    exempt from the install rule.
+    """
+    problems = (
+        []
+        if install_targets is None
+        else install_violations(label, job, install_targets)
+    )
     problems += coverage_violations(label, document, job)
     problems += whitaker_violations(label, job)
-    if name.startswith("release"):
+    if label.startswith("release"):
         problems += release_violations(label, document, job)
     return problems
 
@@ -74,9 +79,8 @@ def judge_all(
     ]
     targets = list(compiling_targets)
     for name, job_id, job in iter_jobs(documents):
+        install_targets = None if name == dist_generated else targets
         problems.extend(
-            _job_violations(
-                name, job_id, documents[name], job, targets, name == dist_generated
-            )
+            _job_violations(f"{name}:{job_id}", documents[name], job, install_targets)
         )
     return problems

@@ -27,13 +27,8 @@ from pathlib import Path
 import pytest
 
 from _build_standard import REPOSITORY_ROOT, read_toml
-from _build_standard_make import (
-    Invocation,
-    dry_run,
-    make_violations,
-    parse_invocations,
-    preflight_violations,
-)
+from _build_standard_make import Invocation, dry_run, parse_invocations
+from _build_standard_routing import make_violations, preflight_violations
 
 #: Every target that reaches Cargo or Whitaker, so a recipe that gains a Cargo
 #: line is judged. The aggregates are listed too: they are what developers run.

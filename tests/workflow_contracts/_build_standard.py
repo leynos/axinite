@@ -156,6 +156,15 @@ def rustflag_sources(config: Mapping[str, typ.Any]) -> dict[str, list[str]]:
     return sources
 
 
+def _table_matches(name: str, triple: str, platform: str) -> bool:
+    """Report whether a `target.*` rustflags source applies on a platform."""
+    if not name.startswith("target."):
+        return False
+    key = name.removeprefix("target.")
+    on_platform_cfg = key.startswith("cfg(") and os_of_key(key) == platform
+    return key == triple or on_platform_cfg
+
+
 def effective_rustflags(
     config: Mapping[str, typ.Any], triple: str, assigned: str | None = None
 ) -> list[str]:
@@ -182,19 +191,14 @@ def effective_rustflags(
     """
     if assigned is not None:
         return split_flags(assigned)
-    platform = PLATFORMS[triple]
     sources = rustflag_sources(config)
-    matched: list[str] = []
-    found = False
-    for name, flags in sources.items():
-        if not name.startswith("target."):
-            continue
-        key = name.removeprefix("target.")
-        if key == triple or (os_of_key(key) == platform and key.startswith("cfg(")):
-            matched.extend(flags)
-            found = True
-    if found:
-        return matched
+    matching = [
+        flags
+        for name, flags in sources.items()
+        if _table_matches(name, triple, PLATFORMS[triple])
+    ]
+    if matching:
+        return [flag for flags in matching for flag in flags]
     return list(sources.get("build", []))
 
 
