@@ -61,62 +61,53 @@ def _is_coverage(step: Step) -> bool:
     )
 
 
-def coverage_violations(
-    label: str, document: Mapping[str, object], job: Mapping[str, object]
+def _rustflags_violation(
+    label: str, env: Mapping[str, object], where: str
 ) -> list[str]:
-    """Judge that coverage steps exclude the development standard.
+    """Judge that an environment displaces the rustflags tables without the standard.
 
     ``RUSTFLAGS`` must be present, so the configuration's rustflags tables are
     displaced, and carry none of the standard's flags.
     """
-    problems: list[str] = []
-    for step in steps_of(job):
-        if not _is_coverage(step):
-            continue
-        env = _merged_env(document, job, step)
-        if "RUSTFLAGS" not in env:
-            problems.append(
-                f"{label}: {step.name!r} leaves the configuration's rustflags in force"
-            )
-        else:
-            flags = split_flags(str(env["RUSTFLAGS"]))
-            leaked = [flag for flag in FAST_FLAGS if flag in flags]
-            if leaked:
-                problems.append(
-                    f"{label}: {step.name!r} carries {leaked} into coverage"
-                )
-    return problems
+    if "RUSTFLAGS" not in env:
+        return [f"{label}: RUSTFLAGS is unset for {where}, so the rustflags apply"]
+    flags = split_flags(str(env["RUSTFLAGS"]))
+    leaked = [flag for flag in FAST_FLAGS if flag in flags]
+    return [f"{label}: {where} carries {leaked}"] if leaked else []
+
+
+def coverage_violations(
+    label: str, document: Mapping[str, object], job: Mapping[str, object]
+) -> list[str]:
+    """Judge that coverage steps exclude the development standard."""
+    coverage = [step for step in steps_of(job) if _is_coverage(step)]
+    return [
+        problem
+        for step in coverage
+        for problem in _rustflags_violation(
+            label, _merged_env(document, job, step), f"coverage step {step.name!r}"
+        )
+    ]
+
+
+_RELEASE_BUILD = re.compile(r"\bdist\s+build\b|\bcargo\s|release-plz/action")
 
 
 def release_violations(
     label: str, document: Mapping[str, object], job: Mapping[str, object]
 ) -> list[str]:
     """Judge that release and packaging jobs exclude the development standard."""
-    problems: list[str] = []
-    builds = False
-    for step in steps_of(job):
-        text = step.run
-        if re.search(
-            r"\bdist\s+build\b|\bcargo\s|release-plz/action", text + step.uses
-        ):
-            builds = True
-        if INSTALL_COMMAND.search(text):
-            problems.append(
-                f"{label}: a release job installs the development build tools"
-            )
+    sequence = steps_of(job)
+    problems = [
+        f"{label}: a release job installs the development build tools"
+        for step in sequence
+        if INSTALL_COMMAND.search(step.run)
+    ]
+    builds = any(_RELEASE_BUILD.search(step.run + step.uses) for step in sequence)
     if not builds:
         return problems
     env = _merged_env(document, job, Step("", "", "", False, {}, {}))
-    if "RUSTFLAGS" not in env:
-        problems.append(
-            f"{label}: RUSTFLAGS is unset, so the configuration's rustflags apply to the release"
-        )
-    else:
-        flags = split_flags(str(env["RUSTFLAGS"]))
-        leaked = [flag for flag in FAST_FLAGS if flag in flags]
-        if leaked:
-            problems.append(f"{label}: RUSTFLAGS carries {leaked} into the release")
-    return problems
+    return problems + _rustflags_violation(label, env, "the release")
 
 
 _WHITAKER_GATE = re.compile(r"\bmake\s+lint-whitaker\b")

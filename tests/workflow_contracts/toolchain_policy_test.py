@@ -26,7 +26,7 @@ import pytest
 import yaml
 
 from _build_standard import DATED_NIGHTLY, REPOSITORY_ROOT, read_toml
-from _build_standard_workflows import steps_of
+from _build_standard_workflows import iter_jobs, steps_of
 from _estate import read_workflows
 from _workflow_policy import WORKFLOW_DIR
 
@@ -54,15 +54,16 @@ def setup_rust_toolchains(
     documents: cabc.Mapping[str, typ.Any],
 ) -> list[tuple[str, str]]:
     """Return ``(job, toolchain)`` for each setup-rust step naming a toolchain."""
-    named: list[tuple[str, str]] = []
-    for workflow, document in documents.items():
-        for job_id, job in (document.get("jobs") or {}).items():
-            for step in steps_of(job):
-                if "setup-rust@" in step.uses and "toolchain" in step.inputs:
-                    named.append(
-                        (f"{workflow}:{job_id}", str(step.inputs["toolchain"]))
-                    )
-    return named
+    steps = (
+        (f"{workflow}:{job_id}", step)
+        for workflow, job_id, job in iter_jobs(documents)
+        for step in steps_of(job)
+    )
+    return [
+        (job, str(step.inputs["toolchain"]))
+        for job, step in steps
+        if "setup-rust@" in step.uses and "toolchain" in step.inputs
+    ]
 
 
 def _pin_violations(channel: str) -> list[str]:
@@ -135,22 +136,24 @@ def _dockerignore_violations(dockerignore: str) -> list[str]:
     ]
 
 
-def policy_violations(
-    pin: dict[str, typ.Any],
-    dependabot: dict[str, typ.Any],
-    msrvs: dict[str, str],
-    documents: cabc.Mapping[str, typ.Any],
-    texts: cabc.Mapping[str, str],
-    dockerignore: str,
-) -> list[str]:
-    """Judge the pin, its Dependabot entry and the MSRV evidence together."""
-    channel = str(pin.get("toolchain", {}).get("channel", ""))
+def policy_violations(estate: cabc.Mapping[str, typ.Any]) -> list[str]:
+    """Judge the pin, its Dependabot entry and the MSRV evidence together.
+
+    Parameters
+    ----------
+    estate
+        The files the policy judges, as the `estate` fixture reads them: the
+        ``pin``, the ``dependabot`` configuration, the declared ``msrvs``, the
+        parsed workflow ``documents`` and their ``texts``, and the
+        ``dockerignore``.
+    """
+    channel = str(estate["pin"].get("toolchain", {}).get("channel", ""))
     return [
         *_pin_violations(channel),
-        *_dependabot_violations(dependabot),
-        *_msrv_violations(msrvs, documents),
-        *_nightly_violations(channel, texts),
-        *_dockerignore_violations(dockerignore),
+        *_dependabot_violations(estate["dependabot"]),
+        *_msrv_violations(estate["msrvs"], estate["documents"]),
+        *_nightly_violations(channel, estate["texts"]),
+        *_dockerignore_violations(estate["dockerignore"]),
     ]
 
 
@@ -181,14 +184,7 @@ def estate() -> dict[str, typ.Any]:
 
 
 def _judge(estate: dict[str, typ.Any]) -> list[str]:
-    return policy_violations(
-        estate["pin"],
-        estate["dependabot"],
-        estate["msrvs"],
-        estate["documents"],
-        estate["texts"],
-        estate["dockerignore"],
-    )
+    return policy_violations(estate)
 
 
 def test_the_repository_conforms(estate: dict[str, typ.Any]) -> None:

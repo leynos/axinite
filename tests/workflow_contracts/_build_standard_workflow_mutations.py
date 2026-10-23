@@ -161,23 +161,26 @@ WORKFLOW_MUTATIONS: dict[str, tuple[typ.Callable[[dict[str, typ.Any]], None], st
     ),
     "coverage-keeps-rustflags": (
         _coverage_keeps_rustflags,
-        "leaves the configuration's rustflags in force",
+        "RUSTFLAGS is unset for coverage step",
     ),
     "coverage-inherits-the-frontend": (
         _coverage_inherits_the_frontend,
-        "into coverage",
+        "carries [",
     ),
-    "coverage-inherits-mold": (_coverage_inherits_mold, "into coverage"),
+    "coverage-inherits-mold": (_coverage_inherits_mold, "carries ["),
     "e2e-coverage-keeps-rustflags": (
         _e2e_coverage_keeps_rustflags,
-        "leaves the configuration's rustflags in force",
+        "RUSTFLAGS is unset for coverage step",
     ),
     "release-inherits-rustflags": (_release_inherits_rustflags, "RUSTFLAGS is unset"),
     "release-installs-dev-tools": (
         _release_installs_dev_tools,
         "installs the development build tools",
     ),
-    "release-plz-inherits-the-frontend": (_release_plz_inherits, "into the release"),
+    "release-plz-inherits-the-frontend": (
+        _release_plz_inherits,
+        "the release carries [",
+    ),
     "whitaker-pins-the-suite": (_whitaker_pins_the_suite, "pins the rolling suite"),
     "whitaker-gate-before-install": (
         _whitaker_before_install,

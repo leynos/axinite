@@ -17,10 +17,28 @@ from _build_standard_exclusions import (
     retired_violations,
     whitaker_violations,
 )
-from _build_standard_workflows import install_violations
+from _build_standard_workflows import install_violations, iter_jobs
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterable, Mapping
+
+
+def _job_violations(
+    name: str,
+    job_id: str,
+    document: Mapping[str, object],
+    job: Mapping[str, object],
+    targets: list[str],
+    dist_generated: bool,
+) -> list[str]:
+    """Judge one job against every contract that applies to it."""
+    label = f"{name}:{job_id}"
+    problems = [] if dist_generated else install_violations(label, job, targets)
+    problems += coverage_violations(label, document, job)
+    problems += whitaker_violations(label, job)
+    if name.startswith("release"):
+        problems += release_violations(label, document, job)
+    return problems
 
 
 def judge_all(
@@ -49,18 +67,16 @@ def judge_all(
     list of str
         Every violation found.
     """
-    problems: list[str] = []
-    for name, document in documents.items():
-        problems.extend(retired_violations(name, texts.get(name, "")))
-        jobs = document.get("jobs")
-        for job_id, job in jobs.items() if isinstance(jobs, dict) else []:
-            if not isinstance(job, dict):
-                continue
-            label = f"{name}:{job_id}"
-            if name != dist_generated:
-                problems.extend(install_violations(label, job, compiling_targets))
-            problems.extend(coverage_violations(label, document, job))
-            problems.extend(whitaker_violations(label, job))
-            if name.startswith("release"):
-                problems.extend(release_violations(label, document, job))
+    problems = [
+        problem
+        for name in documents
+        for problem in retired_violations(name, texts.get(name, ""))
+    ]
+    targets = list(compiling_targets)
+    for name, job_id, job in iter_jobs(documents):
+        problems.extend(
+            _job_violations(
+                name, job_id, documents[name], job, targets, name == dist_generated
+            )
+        )
     return problems

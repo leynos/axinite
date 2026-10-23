@@ -106,6 +106,22 @@ def dry_run(
     return completed.stdout.splitlines()
 
 
+def _parse_line(index: int, line: str) -> Invocation | None:
+    """Parse one emitted line as an invocation, or return ``None``."""
+    try:
+        words = shlex.split(line)
+    except ValueError:
+        return None
+    assignments: dict[str, str] = {}
+    while words and _ASSIGNMENT.match(words[0]):
+        name, _, value = words.pop(0).partition("=")
+        assignments[name] = value
+    return _command_of(words, assignments, index)
+
+
+_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
 def parse_invocations(lines: Iterable[str]) -> tuple[list[Invocation], list[str]]:
     """Return the Cargo and Whitaker invocations in emitted lines.
 
@@ -123,25 +139,14 @@ def parse_invocations(lines: Iterable[str]) -> tuple[list[Invocation], list[str]
         The parsed invocations, and the lines that mention a probe but did
         not parse.
     """
-    found: list[Invocation] = []
-    unparsed: list[str] = []
-    for index, line in enumerate(lines):
-        if "probe-cargo" not in line and "probe-whitaker" not in line:
-            continue
-        try:
-            words = shlex.split(line)
-        except ValueError:
-            unparsed.append(line)
-            continue
-        assignments: dict[str, str] = {}
-        while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
-            name, _, value = words.pop(0).partition("=")
-            assignments[name] = value
-        parsed = _command_of(words, assignments, index)
-        if parsed is None:
-            unparsed.append(line)
-        else:
-            found.append(parsed)
+    mentioning = [
+        (index, line)
+        for index, line in enumerate(lines)
+        if "probe-cargo" in line or "probe-whitaker" in line
+    ]
+    parsed = [(line, _parse_line(index, line)) for index, line in mentioning]
+    found = [inv for _, inv in parsed if inv is not None]
+    unparsed = [line for line, inv in parsed if inv is None]
     return found, unparsed
 
 

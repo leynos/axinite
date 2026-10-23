@@ -23,7 +23,7 @@ import re
 import typing as typ
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Iterator, Mapping
 
 #: The unconditional provisioning command and the Make target it names.
 INSTALL_TARGET = "install-build-tools"
@@ -146,21 +146,30 @@ def compiles(step: Step, compiling_targets: Iterable[str]) -> bool:
     return False
 
 
+def iter_jobs(
+    documents: Mapping[str, Mapping[str, object]],
+) -> Iterator[tuple[str, str, Mapping[str, object]]]:
+    """Yield ``(workflow, job id, job)`` for every job mapping in the documents."""
+    for workflow, document in documents.items():
+        jobs = document.get("jobs")
+        declared = jobs.items() if isinstance(jobs, dict) else []
+        yield from (
+            (workflow, job_id, job) for job_id, job in declared if isinstance(job, dict)
+        )
+
+
+def _targets_named(step: Step) -> set[str]:
+    """Return the Make targets one step's shell lines name."""
+    matches = (MAKE_TARGET.search(line) for line in step.run.splitlines())
+    return {match.group(1) for match in matches if match}
+
+
 def make_targets_in(documents: Mapping[str, Mapping[str, object]]) -> set[str]:
     """Return every Make target any workflow step names."""
     named: set[str] = set()
-    for document in documents.values():
-        jobs = document.get("jobs")
-        for job in jobs.values() if isinstance(jobs, dict) else []:
-            if not isinstance(job, dict):
-                continue
-            for step in steps_of(job):
-                named.update(
-                    match.group(1)
-                    for line in step.run.splitlines()
-                    for match in [MAKE_TARGET.search(line)]
-                    if match
-                )
+    for _, _, job in iter_jobs(documents):
+        for step in steps_of(job):
+            named |= _targets_named(step)
     return named
 
 
@@ -169,17 +178,10 @@ def _first_index(sequence: list[Step], test: typ.Callable[[Step], bool]) -> int 
     return next((i for i, step in enumerate(sequence) if test(step)), None)
 
 
-def _ordering_violations(
-    label: str, job: Mapping[str, object], sequence: list[Step], first: int
+def _early_install_violations(
+    label: str, sequence: list[Step], installs: list[int], first: int
 ) -> list[str]:
-    """Judge the installer steps of a job whose first compile is at `first`."""
-    installs = [i for i, s in enumerate(sequence) if INSTALL_COMMAND.search(s.run)]
-    compile_name = sequence[first].name
-    if not installs:
-        return [
-            f"{label}: compiles at step {compile_name!r} but never runs "
-            f"make {INSTALL_TARGET}"
-        ]
+    """Judge the installers that precede the first compile at `first`."""
     early = [i for i in installs if i < first]
     problems = [
         f"{label}: {sequence[i].name!r} is conditional or soft-failing"
@@ -189,8 +191,22 @@ def _ordering_violations(
     if not early:
         problems.append(
             f"{label}: make {INSTALL_TARGET} runs after the first compile, "
-            f"{compile_name!r}"
+            f"{sequence[first].name!r}"
         )
+    return problems
+
+
+def _ordering_violations(
+    label: str, job: Mapping[str, object], sequence: list[Step], first: int
+) -> list[str]:
+    """Judge the installer steps of a job whose first compile is at `first`."""
+    installs = [i for i, s in enumerate(sequence) if INSTALL_COMMAND.search(s.run)]
+    if not installs:
+        return [
+            f"{label}: compiles at step {sequence[first].name!r} but never runs "
+            f"make {INSTALL_TARGET}"
+        ]
+    problems = _early_install_violations(label, sequence, installs, first)
     if _truthy(job.get("continue-on-error", False)):
         problems.append(
             f"{label}: the job continues on error, so a failed install does not fail it"

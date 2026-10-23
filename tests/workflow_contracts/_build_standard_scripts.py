@@ -33,6 +33,27 @@ def _code_lines(text: str) -> list[tuple[int, str]]:
     ]
 
 
+def _release_violations(name: str, code: list[tuple[int, str]]) -> list[str]:
+    """Report release builds that do not assign RUSTFLAGS on their own line."""
+    return [
+        f"{name}:{number}: a release build inherits the development "
+        "standard; assign RUSTFLAGS on the command"
+        for number, line in code
+        if RELEASE_BUILD.search(line) and not RUSTFLAGS_PREFIX.search(line)
+    ]
+
+
+def _coverage_violations(name: str, code: list[tuple[int, str]]) -> list[str]:
+    """Report a coverage script that runs before exporting RUSTFLAGS."""
+    first = next((n for n, line in code if LLVM_COV.search(line)), None)
+    if first is None:
+        return []
+    before = "\n".join(line for n, line in code if n < first)
+    if re.search(r"^\s*export\s+RUSTFLAGS=", before, re.MULTILINE):
+        return []
+    return [f"{name}: coverage runs without exporting RUSTFLAGS first"]
+
+
 def script_violations(name: str, text: str) -> list[str]:
     """Judge one script's release and coverage invocations.
 
@@ -50,21 +71,8 @@ def script_violations(name: str, text: str) -> list[str]:
         own line, and per coverage script that does not export ``RUSTFLAGS``
         before its first ``cargo llvm-cov``.
     """
-    problems: list[str] = []
     code = _code_lines(text)
-    for number, line in code:
-        if RELEASE_BUILD.search(line) and not RUSTFLAGS_PREFIX.search(line):
-            problems.append(
-                f"{name}:{number}: a release build inherits the development "
-                "standard; assign RUSTFLAGS on the command"
-            )
-    first = next((n for n, line in code if LLVM_COV.search(line)), None)
-    if first is None:
-        return problems
-    before = "\n".join(line for n, line in code if n < first)
-    if not re.search(r"^\s*export\s+RUSTFLAGS=", before, re.MULTILINE):
-        problems.append(f"{name}: coverage runs without exporting RUSTFLAGS first")
-    return problems
+    return _release_violations(name, code) + _coverage_violations(name, code)
 
 
 def all_script_violations(scripts: Mapping[str, str]) -> list[str]:

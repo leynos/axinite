@@ -198,21 +198,26 @@ def effective_rustflags(
     return list(sources.get("build", []))
 
 
+def _mold_violations(name: str, flags: list[str], is_linux: bool) -> list[str]:
+    """Judge mold's scope: on every Linux source, on no other."""
+    if is_linux and MOLD_FLAG not in flags:
+        return [f"{name} applies on Linux but lacks {MOLD_FLAG}"]
+    if not is_linux and MOLD_FLAG in flags:
+        return [f"{name} names the Linux-only {MOLD_FLAG}"]
+    return []
+
+
 def _source_violations(name: str, flags: list[str]) -> list[str]:
     """Judge one `rustflags` source: the frontend, mold's scope, no Cranelift."""
-    problems: list[str] = []
     key = name.removeprefix("target.")
     is_target = name.startswith("target.")
-    is_linux = is_target and os_of_key(key) == "linux"
+    os_name = os_of_key(key) if is_target else None
+    problems = _mold_violations(name, flags, os_name == "linux")
     if THREADS_FLAG not in flags:
         problems.append(
             f"{name} lacks {THREADS_FLAG}; Cargo selects one source, not a merge"
         )
-    if is_linux and MOLD_FLAG not in flags:
-        problems.append(f"{name} applies on Linux but lacks {MOLD_FLAG}")
-    if not is_linux and MOLD_FLAG in flags:
-        problems.append(f"{name} names the Linux-only {MOLD_FLAG}")
-    if is_target and os_of_key(key) is None:
+    if is_target and os_name is None:
         problems.append(f"{name} is a target key these contracts cannot place")
     if CRANELIFT_FLAG in flags:
         problems.append(f"{name} selects Cranelift; {_EXCEPTION}")
