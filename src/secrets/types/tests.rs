@@ -1,6 +1,7 @@
 //! Unit tests for secret reference and parameter types.
 
-use crate::secrets::types::{CreateSecretParams, DecryptedSecret, SecretRef};
+use crate::secrets::types::{CreateSecretParams, CredentialLocation, DecryptedSecret, SecretRef};
+use crate::test_support::{assert_json_round_trip, assert_json_round_trip_with};
 
 #[test]
 fn test_secret_ref_creation() {
@@ -11,7 +12,8 @@ fn test_secret_ref_creation() {
 
 #[test]
 fn test_decrypted_secret_redaction() {
-    let secret = DecryptedSecret::from_bytes(b"super_secret_value".to_vec()).unwrap();
+    let secret =
+        DecryptedSecret::from_bytes(b"super_secret_value".to_vec()).expect("valid secret bytes");
     let debug_str = format!("{:?}", secret);
     assert!(!debug_str.contains("super_secret_value"));
     assert!(debug_str.contains("REDACTED"));
@@ -19,7 +21,7 @@ fn test_decrypted_secret_redaction() {
 
 #[test]
 fn test_decrypted_secret_expose() {
-    let secret = DecryptedSecret::from_bytes(b"test_value".to_vec()).unwrap();
+    let secret = DecryptedSecret::from_bytes(b"test_value".to_vec()).expect("valid secret bytes");
     assert_eq!(secret.expose(), "test_value");
     assert_eq!(secret.len(), 10);
 }
@@ -55,95 +57,59 @@ fn test_secret_ref_without_provider() {
 #[test]
 fn test_secret_ref_serde_roundtrip() {
     let original = SecretRef::new("api_key").with_provider("openai");
-    let json = serde_json::to_string(&original).unwrap();
-    let deserialized: SecretRef = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.name, original.name);
-    assert_eq!(deserialized.provider, original.provider);
+    assert_json_round_trip_with(&original, |a, b| {
+        a.name == b.name && a.provider == b.provider
+    });
 }
 
 #[test]
 fn test_secret_ref_serde_without_provider() {
     let original = SecretRef::new("bare_token");
-    let json = serde_json::to_string(&original).unwrap();
+    let json = serde_json::to_string(&original).expect("serialise SecretRef");
     assert!(json.contains("\"provider\":null"));
-    let deserialized: SecretRef = serde_json::from_str(&json).unwrap();
+    assert_json_round_trip_with(&original, |a, b| {
+        a.name == b.name && a.provider == b.provider
+    });
+    let deserialized: SecretRef = serde_json::from_str(&json).expect("deserialise SecretRef");
     assert!(deserialized.provider.is_none());
 }
 
 #[test]
 fn test_credential_location_serde_roundtrip_bearer() {
-    use crate::secrets::types::CredentialLocation;
-    let loc = CredentialLocation::AuthorizationBearer;
-    let json = serde_json::to_string(&loc).unwrap();
-    let back: CredentialLocation = serde_json::from_str(&json).unwrap();
-    assert!(matches!(back, CredentialLocation::AuthorizationBearer));
+    assert_json_round_trip(&CredentialLocation::AuthorizationBearer);
 }
 
 #[test]
 fn test_credential_location_serde_roundtrip_basic() {
-    use crate::secrets::types::CredentialLocation;
-    let loc = CredentialLocation::AuthorizationBasic {
+    assert_json_round_trip(&CredentialLocation::AuthorizationBasic {
         username: "admin".to_string(),
-    };
-    let json = serde_json::to_string(&loc).unwrap();
-    let back: CredentialLocation = serde_json::from_str(&json).unwrap();
-    match back {
-        CredentialLocation::AuthorizationBasic { username } => {
-            assert_eq!(username, "admin");
-        }
-        _ => panic!("expected AuthorizationBasic"),
-    }
+    });
 }
 
 #[test]
 fn test_credential_location_serde_roundtrip_header() {
-    use crate::secrets::types::CredentialLocation;
-    let loc = CredentialLocation::Header {
+    assert_json_round_trip(&CredentialLocation::Header {
         name: "X-Api-Key".to_string(),
         prefix: Some("Token".to_string()),
-    };
-    let json = serde_json::to_string(&loc).unwrap();
-    let back: CredentialLocation = serde_json::from_str(&json).unwrap();
-    match back {
-        CredentialLocation::Header { name, prefix } => {
-            assert_eq!(name, "X-Api-Key");
-            assert_eq!(prefix, Some("Token".to_string()));
-        }
-        _ => panic!("expected Header"),
-    }
+    });
 }
 
 #[test]
 fn test_credential_location_serde_roundtrip_query_param() {
-    use crate::secrets::types::CredentialLocation;
-    let loc = CredentialLocation::QueryParam {
+    assert_json_round_trip(&CredentialLocation::QueryParam {
         name: "access_token".to_string(),
-    };
-    let json = serde_json::to_string(&loc).unwrap();
-    let back: CredentialLocation = serde_json::from_str(&json).unwrap();
-    match back {
-        CredentialLocation::QueryParam { name } => assert_eq!(name, "access_token"),
-        _ => panic!("expected QueryParam"),
-    }
+    });
 }
 
 #[test]
 fn test_credential_location_serde_roundtrip_url_path() {
-    use crate::secrets::types::CredentialLocation;
-    let loc = CredentialLocation::UrlPath {
+    assert_json_round_trip(&CredentialLocation::UrlPath {
         placeholder: "{api_key}".to_string(),
-    };
-    let json = serde_json::to_string(&loc).unwrap();
-    let back: CredentialLocation = serde_json::from_str(&json).unwrap();
-    match back {
-        CredentialLocation::UrlPath { placeholder } => assert_eq!(placeholder, "{api_key}"),
-        _ => panic!("expected UrlPath"),
-    }
+    });
 }
 
 #[test]
 fn test_credential_location_default_is_bearer() {
-    use crate::secrets::types::CredentialLocation;
     let loc = CredentialLocation::default();
     assert!(matches!(loc, CredentialLocation::AuthorizationBearer));
 }
@@ -179,8 +145,9 @@ fn test_credential_mapping_header_constructor() {
 fn test_credential_mapping_serde_roundtrip() {
     use crate::secrets::types::CredentialMapping;
     let original = CredentialMapping::bearer("tok", "*.api.com");
-    let json = serde_json::to_string(&original).unwrap();
-    let back: CredentialMapping = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("serialise CredentialMapping");
+    let back: CredentialMapping =
+        serde_json::from_str(&json).expect("deserialise CredentialMapping");
     assert_eq!(back.secret_name, "tok");
     assert_eq!(back.host_patterns, vec!["*.api.com".to_string()]);
 }
@@ -193,7 +160,7 @@ fn test_decrypted_secret_invalid_utf8() {
 
 #[test]
 fn test_decrypted_secret_empty() {
-    let secret = DecryptedSecret::from_bytes(Vec::new()).unwrap();
+    let secret = DecryptedSecret::from_bytes(Vec::new()).expect("valid secret bytes");
     assert!(secret.is_empty());
     assert_eq!(secret.len(), 0);
     assert_eq!(secret.expose(), "");
@@ -201,7 +168,7 @@ fn test_decrypted_secret_empty() {
 
 #[test]
 fn test_decrypted_secret_clone() {
-    let original = DecryptedSecret::from_bytes(b"cloneable".to_vec()).unwrap();
+    let original = DecryptedSecret::from_bytes(b"cloneable".to_vec()).expect("valid secret bytes");
     let cloned = original.clone();
     assert_eq!(cloned.expose(), "cloneable");
     assert_eq!(cloned.len(), original.len());
