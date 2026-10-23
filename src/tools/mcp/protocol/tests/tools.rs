@@ -1,6 +1,7 @@
 //! Tests for MCP tool definitions, annotations, and approval hints.
 
 use super::super::*;
+use crate::test_support::assert_json_round_trip;
 
 #[test]
 fn test_mcp_tool_deserialize_camel_case_input_schema() {
@@ -116,6 +117,7 @@ fn test_execution_time_hint_serde() {
     assert_eq!(hint, ExecutionTimeHint::Fast);
     let serialized = serde_json::to_value(hint).expect("serialize fast");
     assert_eq!(serialized, "fast");
+    assert_json_round_trip(&hint);
 
     // Medium
     let json = serde_json::json!("medium");
@@ -123,6 +125,7 @@ fn test_execution_time_hint_serde() {
     assert_eq!(hint, ExecutionTimeHint::Medium);
     let serialized = serde_json::to_value(hint).expect("serialize medium");
     assert_eq!(serialized, "medium");
+    assert_json_round_trip(&hint);
 
     // Slow
     let json = serde_json::json!("slow");
@@ -130,6 +133,7 @@ fn test_execution_time_hint_serde() {
     assert_eq!(hint, ExecutionTimeHint::Slow);
     let serialized = serde_json::to_value(hint).expect("serialize slow");
     assert_eq!(serialized, "slow");
+    assert_json_round_trip(&hint);
 }
 
 #[test]

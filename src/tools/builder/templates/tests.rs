@@ -1,6 +1,7 @@
 //! Unit tests for the tool-builder template engine and templates.
 
 use super::*;
+use crate::test_support::assert_json_round_trip;
 
 #[test]
 fn test_template_engine() {
@@ -108,9 +109,7 @@ fn test_template_type_serde_roundtrip() {
         TemplateType::BashScript,
     ];
     for tt in all_types {
-        let json = serde_json::to_string(&tt).unwrap();
-        let back: TemplateType = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, tt, "roundtrip failed for {:?} (json: {})", tt, json);
+        assert_json_round_trip(&tt);
     }
 }
 
