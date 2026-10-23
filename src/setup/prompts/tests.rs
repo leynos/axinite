@@ -1,7 +1,5 @@
 //! Tests for prompt rendering helpers and secret-input behaviour in the setup prompts module.
 
-use std::io;
-
 use crossterm::event::{KeyCode, KeyModifiers};
 use proptest::prelude::*;
 use rstest::rstest;
@@ -135,27 +133,30 @@ proptest! {
 }
 
 #[test]
-fn test_apply_secret_input_effect_emits_backspace_sequence() -> io::Result<()> {
+fn test_apply_secret_input_effect_emits_backspace_sequence() {
     let mut stdout = Vec::new();
-    apply_secret_input_effect(&mut stdout, &SecretInputEffect::Backspace)?;
+    apply_secret_input_effect(&mut stdout, &SecretInputEffect::Backspace)
+        .expect("writing to an in-memory buffer should not fail");
     assert_eq!(stdout, b"\x08 \x08");
-    Ok(())
 }
 
 #[test]
-fn test_apply_secret_input_effect_emits_mask_character() -> io::Result<()> {
+fn test_apply_secret_input_effect_emits_mask_character() {
     let mut stdout = Vec::new();
-    apply_secret_input_effect(&mut stdout, &SecretInputEffect::MaskChar)?;
+    apply_secret_input_effect(&mut stdout, &SecretInputEffect::MaskChar)
+        .expect("writing to an in-memory buffer should not fail");
     assert_eq!(stdout, b"*");
-    Ok(())
 }
 
 #[test]
-fn test_apply_secret_input_effect_sequence_snapshot() -> io::Result<()> {
+fn test_apply_secret_input_effect_sequence_snapshot() {
     let mut stdout = Vec::new();
-    apply_secret_input_effect(&mut stdout, &SecretInputEffect::MaskChar)?;
-    apply_secret_input_effect(&mut stdout, &SecretInputEffect::Backspace)?;
-    apply_secret_input_effect(&mut stdout, &SecretInputEffect::Submit)?;
+    apply_secret_input_effect(&mut stdout, &SecretInputEffect::MaskChar)
+        .expect("writing to an in-memory buffer should not fail");
+    apply_secret_input_effect(&mut stdout, &SecretInputEffect::Backspace)
+        .expect("writing to an in-memory buffer should not fail");
+    apply_secret_input_effect(&mut stdout, &SecretInputEffect::Submit)
+        .expect("writing to an in-memory buffer should not fail");
     insta::assert_debug_snapshot!(stdout, @"
     [
         42,
@@ -164,5 +165,4 @@ fn test_apply_secret_input_effect_sequence_snapshot() -> io::Result<()> {
         8,
     ]
     ");
-    Ok(())
 }
