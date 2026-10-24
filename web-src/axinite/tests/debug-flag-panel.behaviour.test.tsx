@@ -52,6 +52,14 @@ function flagRow(name: string) {
   return within(screen.getByRole("row", { name: new RegExp(`^${name}\\b`) }));
 }
 
+function flagRowAt(rows: HTMLElement[], index: number) {
+  const row = rows[index];
+  if (!row) {
+    throw new Error(`Missing rendered feature flag row at index ${index}`);
+  }
+  return within(row);
+}
+
 function storedOverrides(): Record<string, boolean> {
   return JSON.parse(globalThis.localStorage.getItem(storageKey) ?? "{}");
 }
@@ -61,10 +69,12 @@ async function openPanel() {
     await screen.findByRole("button", { name: "Toggle overrides" })
   );
   await screen.findByRole("table", { name: "Feature flag overrides" });
+  const rows = screen.getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(FEATURE_FLAGS.length);
   await waitFor(() => {
-    for (const flag of FEATURE_FLAGS) {
+    for (const [index, flag] of FEATURE_FLAGS.entries()) {
       expect(
-        flagRow(flag.name).getByText(runtimeFlags[flag.name] ? "On" : "Off")
+        flagRowAt(rows, index).getByText(runtimeFlags[flag.name] ? "On" : "Off")
       ).toBeVisible();
     }
   });
@@ -113,9 +123,11 @@ describe("debug flag panel with the real runtime", () => {
       await screen.findByRole("heading", { name: "Feature flags" })
     ).toBeVisible();
     await openPanel();
-    expect(screen.getAllByRole("row")).toHaveLength(FEATURE_FLAGS.length + 1);
-    for (const flag of FEATURE_FLAGS) {
-      const row = flagRow(flag.name);
+    const rows = screen.getAllByRole("row");
+    expect(rows).toHaveLength(FEATURE_FLAGS.length + 1);
+    const flagRows = rows.slice(1);
+    for (const [index, flag] of FEATURE_FLAGS.entries()) {
+      const row = flagRowAt(flagRows, index);
       expect(
         row.getByText(`${flag.owner} · ${flag.backendContract}`)
       ).toBeVisible();

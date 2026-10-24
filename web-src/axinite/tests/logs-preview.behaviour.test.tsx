@@ -38,8 +38,16 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   gateway = new GatewayTestServer()
-    .respond("GET", "/api/logs/level", { level: "info" })
-    .respond("PUT", "/api/logs/level", { level: "info" });
+    .respond({
+      method: "GET",
+      path: "/api/logs/level",
+      payload: { level: "info" },
+    })
+    .respond({
+      method: "PUT",
+      path: "/api/logs/level",
+      payload: { level: "info" },
+    });
 
   globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");
@@ -62,10 +70,13 @@ describe("logs preview behaviour", () => {
   it("renders streamed entries", async () => {
     await renderLogsPreview();
 
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ message: "Gateway ready", target: "axinite::gateway" })
-    );
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({
+        message: "Gateway ready",
+        target: "axinite::gateway",
+      }),
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Gateway ready/)).toBeVisible();
@@ -79,14 +90,14 @@ describe("logs preview behaviour", () => {
     const filterSelect = screen.getByLabelText("Display level");
     await userEvent.selectOptions(filterSelect, "warn");
 
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ level: "info", message: "Ignored info entry" })
-    );
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ level: "warn", message: "Visible warn entry" })
-    );
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({ level: "info", message: "Ignored info entry" }),
+    });
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({ level: "warn", message: "Visible warn entry" }),
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Visible warn entry/)).toBeVisible();
@@ -100,14 +111,14 @@ describe("logs preview behaviour", () => {
     const targetInput = screen.getByLabelText("Target filter");
     await userEvent.type(targetInput, "chat");
 
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ target: "axinite::chat", message: "Chat entry" })
-    );
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ target: "axinite::jobs", message: "Jobs entry" })
-    );
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({ target: "axinite::chat", message: "Chat entry" }),
+    });
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({ target: "axinite::jobs", message: "Jobs entry" }),
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Chat entry/)).toBeVisible();
@@ -120,10 +131,10 @@ describe("logs preview behaviour", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Pause" }));
 
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ message: "Missed while paused" })
-    );
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({ message: "Missed while paused" }),
+    });
 
     await waitFor(() => {
       expect(screen.queryByText(/Missed while paused/)).toBeNull();
@@ -131,10 +142,10 @@ describe("logs preview behaviour", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Resume" }));
 
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ message: "Visible after resume" })
-    );
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({ message: "Visible after resume" }),
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Visible after resume/)).toBeVisible();
@@ -144,10 +155,10 @@ describe("logs preview behaviour", () => {
   it("clears rendered entries", async () => {
     await renderLogsPreview();
 
-    GatewayEventSource.latest?.emit(
-      "log",
-      makeEntry({ message: "Entry to clear" })
-    );
+    GatewayEventSource.latest?.emit({
+      type: "log",
+      payload: makeEntry({ message: "Entry to clear" }),
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Entry to clear/)).toBeVisible();

@@ -22,40 +22,56 @@ export function isBoolean(value: unknown): value is boolean {
   return value === true || value === false;
 }
 
-/** Validates the recursive value set produced by parsing JSON text. */
-export function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null || isString(value) || isBoolean(value)) {
-    return true;
+function isJsonPrimitive(
+  value: unknown
+): value is null | boolean | number | string {
+  switch (typeof value) {
+    case "string":
+    case "boolean": {
+      return true;
+    }
+    case "number": {
+      return Number.isFinite(value);
+    }
+    case "object": {
+      return value === null;
+    }
+    default: {
+      return false;
+    }
   }
+}
 
-  if (typeof value === "number") {
-    return Number.isFinite(value);
+function isPlainRecord(value: unknown): value is object {
+  if (value === null) {
+    return false;
   }
-
-  if (Array.isArray(value)) {
-    return value.every((entry) => isJsonValue(entry));
-  }
-
-  if (!(value instanceof Object)) {
+  if (typeof value !== "object") {
     return false;
   }
 
   const prototype = Object.getPrototypeOf(value);
-  return (
-    (prototype === Object.prototype || prototype === null) &&
-    Object.values(value).every((entry) => isJsonValue(entry))
-  );
+  if (prototype === null) {
+    return true;
+  }
+  return prototype === Object.prototype;
+}
+
+/** Validates the recursive value set produced by parsing JSON text. */
+export function isJsonValue(value: unknown): value is JsonValue {
+  if (isJsonPrimitive(value)) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every((entry) => isJsonValue(entry));
+  }
+  return isJsonObject(value);
 }
 
 /** Validates an object payload and every value it contains. */
 export function isJsonObject(value: unknown): value is JsonObject {
-  if (!(value instanceof Object) || Array.isArray(value)) {
+  if (!isPlainRecord(value)) {
     return false;
   }
-
-  const prototype = Object.getPrototypeOf(value);
-  return (
-    (prototype === Object.prototype || prototype === null) &&
-    Object.values(value).every((entry) => isJsonValue(entry))
-  );
+  return Object.values(value).every((entry) => isJsonValue(entry));
 }

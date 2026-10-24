@@ -23,22 +23,30 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   new GatewayTestServer()
-    .respond("GET", "/api/chat/threads", {
-      assistant_thread: {
-        id: "thread-1",
-        state: "Idle",
-        turn_count: 0,
-        created_at: "2026-03-26T12:00:00Z",
-        updated_at: "2026-03-26T12:00:00Z",
-        title: "Chat thread",
+    .respond({
+      method: "GET",
+      path: "/api/chat/threads",
+      payload: {
+        assistant_thread: {
+          id: "thread-1",
+          state: "Idle",
+          turn_count: 0,
+          created_at: "2026-03-26T12:00:00Z",
+          updated_at: "2026-03-26T12:00:00Z",
+          title: "Chat thread",
+        },
+        threads: [],
+        active_thread: "thread-1",
       },
-      threads: [],
-      active_thread: "thread-1",
     })
-    .respond("GET", "/api/chat/history", {
-      thread_id: "thread-1",
-      turns: [],
-      has_more: false,
+    .respond({
+      method: "GET",
+      path: "/api/chat/history",
+      payload: {
+        thread_id: "thread-1",
+        turns: [],
+        has_more: false,
+      },
     });
 
   globalThis.localStorage.clear();

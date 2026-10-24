@@ -22,26 +22,38 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   gateway = new GatewayTestServer()
-    .respond("GET", "/api/memory/tree", {
-      entries: [
-        { path: "notes/alpha.md", is_dir: false },
-        { path: "notes/beta.md", is_dir: false },
-      ],
+    .respond({
+      method: "GET",
+      path: "/api/memory/tree",
+      payload: {
+        entries: [
+          { path: "notes/alpha.md", is_dir: false },
+          { path: "notes/beta.md", is_dir: false },
+        ],
+      },
     })
-    .route("GET", "/api/memory/read", async (request) => {
-      const path = new URL(request.url).searchParams.get("path") ?? "";
-      return Response.json({
-        path,
-        content: `Body of ${path}`,
-        updated_at: null,
-      });
+    .route({
+      method: "GET",
+      path: "/api/memory/read",
+      handler: async (request) => {
+        const path = new URL(request.url).searchParams.get("path") ?? "";
+        return Response.json({
+          path,
+          content: `Body of ${path}`,
+          updated_at: null,
+        });
+      },
     })
-    .route("POST", "/api/memory/write", async (request) => {
-      const body: unknown = await request.json();
-      if (!isJsonObject(body) || !isString(body["path"])) {
-        return new Response("Invalid write request", { status: 400 });
-      }
-      return Response.json({ path: body["path"] });
+    .route({
+      method: "POST",
+      path: "/api/memory/write",
+      handler: async (request) => {
+        const body: unknown = await request.json();
+        if (!isJsonObject(body) || !isString(body["path"])) {
+          return new Response("Invalid write request", { status: 400 });
+        }
+        return Response.json({ path: body["path"] });
+      },
     });
   globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");

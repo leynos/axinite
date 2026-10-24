@@ -209,66 +209,13 @@ type ChatEventHandlers = {
   ) => void;
 };
 
-function dispatchChatEvent(
+function dispatchChatEvent<EventType extends ChatSseEvent["type"]>(
   handlers: ChatEventHandlers,
-  event: ChatSseEvent
+  event: Extract<ChatSseEvent, { type: EventType }>
 ): void {
-  switch (event.type) {
-    case "thinking": {
-      handlers.thinking?.(event);
-      break;
-    }
-    case "status": {
-      handlers.status?.(event);
-      break;
-    }
-    case "tool_started": {
-      handlers.tool_started?.(event);
-      break;
-    }
-    case "tool_result": {
-      handlers.tool_result?.(event);
-      break;
-    }
-    case "tool_completed": {
-      handlers.tool_completed?.(event);
-      break;
-    }
-    case "stream_chunk": {
-      handlers.stream_chunk?.(event);
-      break;
-    }
-    case "response": {
-      handlers.response?.(event);
-      break;
-    }
-    case "approval_needed": {
-      handlers.approval_needed?.(event);
-      break;
-    }
-    case "error": {
-      handlers.error?.(event);
-      break;
-    }
-    case "image_generated": {
-      handlers.image_generated?.(event);
-      break;
-    }
-    case "job_started": {
-      handlers.job_started?.(event);
-      break;
-    }
-    case "auth_required": {
-      handlers.auth_required?.(event);
-      break;
-    }
-    case "auth_completed": {
-      handlers.auth_completed?.(event);
-      break;
-    }
-    default: {
-      break;
-    }
+  const handler = handlers[event.type];
+  if (handler) {
+    handler(event);
   }
 }
 

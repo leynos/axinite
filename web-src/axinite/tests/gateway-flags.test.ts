@@ -8,12 +8,12 @@ afterEach(() => setApiRequestHandler(undefined));
 
 describe("runtime flag transport", () => {
   it("propagates request failure to the provider", async () => {
-    new GatewayTestServer().fail(
-      "GET",
-      "/api/features",
-      503,
-      "gateway unavailable"
-    );
+    new GatewayTestServer().fail({
+      method: "GET",
+      path: "/api/features",
+      status: 503,
+      message: "gateway unavailable",
+    });
     await expect(fetchRuntimeFeatureFlags()).rejects.toThrow(
       "gateway unavailable"
     );
@@ -23,14 +23,22 @@ describe("runtime flag transport", () => {
     { route_jobs: false },
     { flags: { route_jobs: false } },
   ])("accepts flat and wrapped payloads while retaining boolean values", async (payload) => {
-    new GatewayTestServer().respond("GET", "/api/features", payload);
+    new GatewayTestServer().respond({
+      method: "GET",
+      path: "/api/features",
+      payload: payload,
+    });
     await expect(fetchRuntimeFeatureFlags()).resolves.toEqual({
       route_jobs: false,
     });
   });
 
   it("accepts a successful empty response", async () => {
-    new GatewayTestServer().respond("GET", "/api/features", {});
+    new GatewayTestServer().respond({
+      method: "GET",
+      path: "/api/features",
+      payload: {},
+    });
     await expect(fetchRuntimeFeatureFlags()).resolves.toEqual({});
   });
 });

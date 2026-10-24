@@ -53,18 +53,42 @@ beforeEach(async () => {
     requests: [],
   };
   gateway = new GatewayTestServer()
-    .route("GET", "/api/extensions", async () => Response.json({ extensions }))
-    .respond("GET", "/api/extensions/tools", { tools: [] })
-    .respond("GET", "/api/extensions/registry", { entries: [] })
-    .respond("GET", "/api/extensions/whatsapp/setup", {
-      kind: "wasm_channel",
-      name: "whatsapp",
-      secrets: [],
+    .route({
+      method: "GET",
+      path: "/api/extensions",
+      handler: async () => Response.json({ extensions }),
     })
-    .route("GET", "/api/pairing/whatsapp", async () => Response.json(pairing))
-    .respond("POST", "/api/pairing/whatsapp/approve", {
-      success: true,
-      message: "Pairing approved",
+    .respond({
+      method: "GET",
+      path: "/api/extensions/tools",
+      payload: { tools: [] },
+    })
+    .respond({
+      method: "GET",
+      path: "/api/extensions/registry",
+      payload: { entries: [] },
+    })
+    .respond({
+      method: "GET",
+      path: "/api/extensions/whatsapp/setup",
+      payload: {
+        kind: "wasm_channel",
+        name: "whatsapp",
+        secrets: [],
+      },
+    })
+    .route({
+      method: "GET",
+      path: "/api/pairing/whatsapp",
+      handler: async () => Response.json(pairing),
+    })
+    .respond({
+      method: "POST",
+      path: "/api/pairing/whatsapp/approve",
+      payload: {
+        success: true,
+        message: "Pairing approved",
+      },
     });
 });
 
@@ -162,12 +186,12 @@ describe("extension pairing and activation stepper", () => {
         },
       ],
     };
-    gateway.fail(
-      "POST",
-      "/api/pairing/whatsapp/approve",
-      429,
-      "Too many approvals, retry in 30 seconds"
-    );
+    gateway.fail({
+      method: "POST",
+      path: "/api/pairing/whatsapp/approve",
+      status: 429,
+      message: "Too many approvals, retry in 30 seconds",
+    });
 
     render(() => (
       <TestProviders>
