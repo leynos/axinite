@@ -29,3 +29,7 @@ strip = true
 codegen-units = 1
 
 [workspace]
+
+[profile.dev]
+incremental = false
+debug = 0
