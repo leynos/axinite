@@ -27,7 +27,7 @@ codegen-units = 1
 # `#[expect(unsafe_code)]`. This is the complete lint table; when the
 # estate lint configuration lands it must keep `unsafe_code = "deny"`
 # here and must not use `[lints] workspace = true`. See
-# docs/adr-015-audited-unsafe-boundaries.md.
+# docs/adrs/adr-0015-audited-unsafe-boundaries.md.
 [lints.rust]
 unsafe_code = "deny"
 
