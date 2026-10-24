@@ -1,4 +1,4 @@
-"""The deviations the unsafe-boundary contract must report (ADR 015).
+"""The deviations the unsafe-boundary contract must report (ADR 0015).
 
 Each `Fault` applies one deviation to a disposable copy of the real contract
 inputs and names the message that must report it. `mutate` fails closed when
