@@ -163,13 +163,19 @@ this means operators, end users, or integrators.
 - **Tested correctness.** Make every fenced example in a user-facing document
   executable and exercised by the test suite. Precede each fence immediately
   with a marker comment carrying a stable identifier, written
-  `<!-- tested-example: <identifier> -->`. Load the examples from the published
-  document with a shared loader, rather than a copied fixture, so the tests
-  exercise the shipped text; fail the build on an unmarked fence, an
-  unterminated fence, a missing identifier, or a duplicate identifier. Share
-  that loader between integration tests and behaviour-driven scenarios, so a
-  documented example becomes a contract the implementation must satisfy and
-  cannot drift from the behaviour it claims.
+  `<!-- tested-example: <identifier> -->`, except a Before fence in a migration
+  guide: that fence shows the API the named release removes, so it cannot
+  compile against the release the guide documents. Mark it
+  `<!-- legacy-example: <identifier> -->` instead; the loader skips it while
+  still failing the build on a missing or duplicate identifier. Load the
+  examples from the published document with a shared loader, rather than a
+  copied fixture, so the tests exercise the shipped text; fail the build on an
+  unmarked fence, an unterminated fence, a missing identifier, or a duplicate
+  identifier. Share that loader between integration tests and behaviour-driven
+  scenarios, so a documented example becomes a contract the implementation must
+  satisfy and cannot drift from the behaviour it claims. A `no_run` annotation
+  does not exempt an example: `rustdoc` still compiles such a doctest, so it
+  must build even though it does not execute.
 
 ### Migration guide
 
@@ -212,8 +218,10 @@ name, for example `docs/rstest-bdd-v0-5-0-migration-guide.md`.
   track progress.
 - Link rationale to the accepted ADR or RFC that decided it rather than
   restating the reasoning.
-- Hold the guide's examples to the same tested-correctness rule the user's
-  guide follows, rather than restating that rule here.
+- Hold the guide's After examples to the same tested-correctness rule the
+  user's guide follows, rather than restating that rule here. Mark each Before
+  example with `<!-- legacy-example: <identifier> -->`, because it shows the
+  removed API and cannot compile against the release the guide documents.
 
 #### Migration guide skeleton
 
@@ -236,13 +244,15 @@ _Table 1: Obligations when moving from v0.8.0 to v0.9.0._
 
 ### Before
 
-```rust,no_run
+<!-- legacy-example: <identifier> -->
+```rust
 <old code>
 ```
 
 ### After
 
-```rust,no_run
+<!-- tested-example: <identifier> -->
+```rust
 <new code>
 ```
 
@@ -696,8 +706,11 @@ contents of the manual.
 - Place examples under `# Examples`. Let examples run as documentation tests
   when they can execute correctly, so the compiler verifies that they compile
   and behave as documented. Mark examples with `no_run` only when they
-  genuinely cannot execute, such as examples that require external resources,
-  incomplete snippets, or environment-specific setup.
+  genuinely cannot execute, such as examples that require external resources or
+  environment-specific setup. `no_run` suppresses execution, not compilation,
+  so a `no_run` example must still build; give an incomplete snippet the hidden
+  setup lines rustdoc supports, prefixing them with `#`, or present
+  illustrative pseudocode as a non-Rust fence.
 - Put function attributes after the doc comment.
 
 ```rust,no_run
