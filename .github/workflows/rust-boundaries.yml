@@ -42,10 +42,6 @@ jobs:
     # waits on, so it stays on a GitHub-hosted runner (ADR 013).
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
-        -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -53,10 +49,12 @@ jobs:
           # The job compiles repository code, so the checkout token must not
           # stay in .git/config where that code could read it.
           persist-credentials: false
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install mold
-        uses: rui314/setup-mold@v1
+      # The pinned `mold` (tools/mold/VERSION, verified against
+      # tools/mold/SHA256SUMS) and the toolchain from `rust-toolchain.toml`,
+      # before anything compiles. `.cargo/config.toml` names mold for every
+      # Linux build, so a job that skips this step fails at link time.
+      - name: Install build tools
+        run: make install-build-tools
       - name: Check the allow-list and prove the compiler rejects unsafe code
         run: |
           set -euo pipefail
@@ -77,23 +75,23 @@ jobs:
     # GitHub-hosted runner.
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
-        -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Install mold
-        uses: rui314/setup-mold@v1
+      # The pinned `mold` (tools/mold/VERSION, verified against
+      # tools/mold/SHA256SUMS) and the toolchain from `rust-toolchain.toml`,
+      # before anything compiles. `.cargo/config.toml` names mold for every
+      # Linux build, so a job that skips this step fails at link time.
+      - name: Install build tools
+        run: make install-build-tools
       # The `miri` component is installed here and in no other job, so the
-      # ordinary build and test lanes never carry it. The toolchain is a dated
-      # nightly so a new nightly cannot change the verdict without a reviewed
-      # edit. Its name comes from the Makefile (`MIRI_TOOLCHAIN`), which is the
-      # one place to change it and which should track the nightly that
-      # rust-toolchain.toml pins once the build standard lands.
+      # ordinary build and test lanes never carry it. The toolchain is the
+      # dated nightly `rust-toolchain.toml` pins, so a new nightly cannot
+      # change the verdict without a reviewed edit and Dependabot moves Miri
+      # with the build. The Makefile reads the name from that file
+      # (`MIRI_TOOLCHAIN`).
       - name: Install the pinned Miri toolchain
         run: |
           set -euo pipefail
