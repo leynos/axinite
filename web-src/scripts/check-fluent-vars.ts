@@ -9,7 +9,13 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { parse, type Resource } from "@fluent/syntax";
+import {
+  type BaseNode,
+  parse,
+  type Resource,
+  type VariableReference,
+  Visitor,
+} from "@fluent/syntax";
 
 type PlaceholderReport = {
   vars: Set<string>;
@@ -55,43 +61,27 @@ function listFtlFiles(locale: string): string[] {
   return files;
 }
 
-function logFileError(action: string, filePath: string, error: unknown): void {
-  console.error(
-    `[ftl-vars] Unable to ${action} ${filePath}:`,
-    (error as Error).message
-  );
+function logFileError(action: string, filePath: string, cause: unknown): void {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  console.error(`[ftl-vars] Unable to ${action} ${filePath}:`, message);
   process.exitCode = 1;
 }
 
-function variableReferenceName(node: object): string | undefined {
-  if ((node as { type?: string }).type !== "VariableReference") {
-    return undefined;
+class VariableNameVisitor extends Visitor {
+  constructor(private readonly vars: Set<string>) {
+    super();
   }
-  return (node as { id?: { name?: string } }).id?.name;
+
+  override visitVariableReference(node: VariableReference): void {
+    this.vars.add(node.id.name);
+  }
 }
 
-function collectVariableNames(node: unknown, vars: Set<string>): void {
-  if (!node || typeof node !== "object") {
+function collectVariableNames(node: BaseNode | null, vars: Set<string>): void {
+  if (node === null) {
     return;
   }
-
-  if (Array.isArray(node)) {
-    node.forEach((child) => {
-      collectVariableNames(child, vars);
-    });
-    return;
-  }
-
-  const name = variableReferenceName(node);
-  if (name) {
-    vars.add(name);
-  }
-
-  // Non-object values are ignored by the guard above, so recursing into every
-  // property value is equivalent to filtering for objects here.
-  for (const value of Object.values(node)) {
-    collectVariableNames(value, vars);
-  }
+  new VariableNameVisitor(vars).visit(node);
 }
 
 function parseResource(
@@ -123,14 +113,14 @@ function collectEntryPlaceholders(
     return;
   }
 
-  const id = entry.id?.name;
+  const id = entry.id.name;
   if (!id) {
     return;
   }
 
   const vars = results.get(id)?.vars ?? new Set<string>();
   collectVariableNames(entry.value, vars);
-  entry.attributes?.forEach((attribute) => {
+  entry.attributes.forEach((attribute) => {
     collectVariableNames(attribute.value, vars);
   });
 

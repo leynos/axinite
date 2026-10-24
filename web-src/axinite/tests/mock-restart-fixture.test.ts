@@ -66,9 +66,11 @@ describe("restart fixture transport integration", () => {
     expect(state.getGatewayStatus().restart_enabled).toBe(false);
     state.sendMessage({ content: "/restart", images: [] });
     vi.advanceTimersByTime(10_000);
-    expect(
-      (await handleMockRequest(request("/api/gateway/status"), state)).status
-    ).toBe(200);
+    const initialStatus = await handleMockRequest(
+      request("/api/gateway/status"),
+      state
+    );
+    expect(initialStatus.status).toBe(200);
     expect(vi.getTimerCount()).toBe(0);
     state.dispose();
   });
@@ -83,9 +85,11 @@ describe("restart fixture transport integration", () => {
     state.sendMessage({ content: "/restart", images: [] });
     vi.advanceTimersByTime(340);
     expect(state.isGatewayUnavailable).toBe(false);
-    expect(
-      (await handleMockRequest(request("/api/gateway/status"), state)).status
-    ).toBe(200);
+    const availableStatus = await handleMockRequest(
+      request("/api/gateway/status"),
+      state
+    );
+    expect(availableStatus.status).toBe(200);
     vi.advanceTimersByTime(RESTART_OUTAGE_DELAY_MS);
     expect(await chatText).toContain(
       '"type":"tool_completed","name":"restart","success":true'
@@ -97,14 +101,17 @@ describe("restart fixture transport integration", () => {
       "/api/logs/events",
       "/api/jobs",
     ]) {
-      expect((await handleMockRequest(request(path), state)).status).toBe(503);
+      const unavailableResponse = await handleMockRequest(request(path), state);
+      expect(unavailableResponse.status).toBe(503);
     }
     // SSE heartbeat timers were torn down; only fixture recovery remains.
     expect(vi.getTimerCount()).toBe(1);
     vi.advanceTimersByTime(RESTART_OUTAGE_DURATION_MS);
-    expect(
-      (await handleMockRequest(request("/api/gateway/status"), state)).status
-    ).toBe(200);
+    const recoveredStatus = await handleMockRequest(
+      request("/api/gateway/status"),
+      state
+    );
+    expect(recoveredStatus.status).toBe(200);
     const recovered = await handleMockRequest(
       request("/api/chat/events"),
       state

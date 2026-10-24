@@ -12,7 +12,7 @@ export function parseMockFeatureFlagEnvironment(
     Object.entries(environment)
       .filter(
         ([key, value]) =>
-          key.startsWith("FEATURE_FLAG_") && typeof value === "string"
+          key.startsWith("FEATURE_FLAG_") && value !== undefined
       )
       .map(([key, value]) => [
         key.slice("FEATURE_FLAG_".length).toLowerCase(),

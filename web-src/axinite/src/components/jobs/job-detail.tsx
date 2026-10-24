@@ -35,6 +35,7 @@ import type {
   JobEventInfo,
   ProjectFileEntry,
 } from "@/lib/api/contracts";
+import { isString } from "@/lib/api/json-value";
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
 import { useI18n } from "@/lib/i18n/provider";
 
@@ -69,37 +70,43 @@ function mapLiveEvent(
   }
   const timestamp = new Date().toISOString();
   switch (event.type) {
-    case "job_message":
+    case "job_message": {
       return {
         key,
         kind: "message",
         message: `${event.role}: ${event.content}`,
         timestamp,
       };
-    case "job_tool_use":
+    }
+    case "job_tool_use": {
       return {
         key,
         kind: "tool_use",
         message: `${event.tool_name} — ${truncatePreview(
-          typeof event.input === "string"
+          isString(event.input)
             ? event.input
             : JSON.stringify(event.input ?? {})
         )}`,
         timestamp,
       };
-    case "job_tool_result":
+    }
+    case "job_tool_result": {
       return {
         key,
         kind: "tool_result",
         message: `${event.tool_name} — ${truncatePreview(event.output)}`,
         timestamp,
       };
-    case "job_status":
+    }
+    case "job_status": {
       return { key, kind: "status", message: event.message, timestamp };
-    case "job_result":
+    }
+    case "job_result": {
       return { key, kind: "result", message: event.status, timestamp };
-    default:
+    }
+    default: {
       return null;
+    }
   }
 }
 
@@ -211,7 +218,9 @@ const OverviewTab = (props: OverviewTabProps) => {
               {(transition) => (
                 <li class="jobs-timeline__item">
                   <span
-                    class={STATUS_CLASS[transition.to] ?? "pill pill--neutral"}
+                    class={
+                      STATUS_CLASS.get(transition.to) ?? "pill pill--neutral"
+                    }
                   >
                     {transition.to}
                   </span>
@@ -382,8 +391,8 @@ export const JobDetail = (props: JobDetailProps) => {
   const activity = createMemo<JobActivityRow[]>(() => {
     const persisted = props
       .events()
-      .map(persistedRow)
-      .sort((a, b) => (a.timestamp ?? "").localeCompare(b.timestamp ?? ""));
+      .map((event) => persistedRow(event))
+      .toSorted((a, b) => (a.timestamp ?? "").localeCompare(b.timestamp ?? ""));
     return [...persisted, ...liveRows()];
   });
 
@@ -399,12 +408,14 @@ export const JobDetail = (props: JobDetailProps) => {
         <div class="dashboard-detail__pills">
           <span
             class={
-              SOURCE_CLASS[sourceName(props.job())] ?? "pill pill--neutral"
+              SOURCE_CLASS.get(sourceName(props.job())) ?? "pill pill--neutral"
             }
           >
             {sourceName(props.job())}
           </span>
-          <span class={STATUS_CLASS[props.job().state] ?? "pill pill--neutral"}>
+          <span
+            class={STATUS_CLASS.get(props.job().state) ?? "pill pill--neutral"}
+          >
             {t(`jobs-status-${toKebabSegment(props.job().state)}`)}
           </span>
         </div>

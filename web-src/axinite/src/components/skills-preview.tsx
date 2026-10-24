@@ -34,11 +34,11 @@ type Translate = (
   options?: Record<string, string | number>
 ) => string;
 
-const FORMAT_CLASS: Record<string, string> = {
-  bundle: "pill pill--violet",
-  single: "pill pill--neutral",
-  preview: "pill pill--warning",
-};
+const FORMAT_CLASS = new Map<string, string>([
+  ["bundle", "pill pill--violet"],
+  ["single", "pill pill--neutral"],
+  ["preview", "pill pill--warning"],
+]);
 
 function detectFormat(source: string): string {
   if (source.includes("bundle")) {
@@ -101,7 +101,7 @@ const SkillsSearchSection = (props: SkillsSearchSectionProps) => {
                     </div>
                     <div class="catalogue-detail__pills">
                       <span
-                        class={FORMAT_CLASS[format] ?? "pill pill--neutral"}
+                        class={FORMAT_CLASS.get(format) ?? "pill pill--neutral"}
                       >
                         {props.formatLabel(format)}
                       </span>
@@ -170,7 +170,9 @@ const SkillsInstalledSection = (props: SkillsInstalledSectionProps) => {
                 <div class="catalogue-card__header">
                   <div class="catalogue-card__title-wrap">
                     <h4 class="catalogue-card__title">{skill.name}</h4>
-                    <span class={FORMAT_CLASS[format] ?? "pill pill--neutral"}>
+                    <span
+                      class={FORMAT_CLASS.get(format) ?? "pill pill--neutral"}
+                    >
                       {props.formatLabel(format)}
                     </span>
                   </div>
@@ -241,7 +243,7 @@ const SkillsDetailSection = (props: SkillsDetailSectionProps) => {
         <div class="catalogue-detail__pills">
           <span
             class={
-              FORMAT_CLASS[detectFormat(props.skill.source)] ??
+              FORMAT_CLASS.get(detectFormat(props.skill.source)) ??
               "pill pill--neutral"
             }
           >

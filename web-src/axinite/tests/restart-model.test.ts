@@ -7,8 +7,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   createRestartController,
-  RestartCommandError,
   type RestartPhase,
+  type RestartSendResult,
   type RestartStreamHandlers,
 } from "@/lib/restart";
 import { ObservationModel } from "./support/restart-observation-model";
@@ -29,7 +29,7 @@ type Command = { kind: CommandKind; target: number };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<T>((accept, decline) => {
     resolve = accept;
     reject = decline;
@@ -43,14 +43,14 @@ type Pending<T> = ReturnType<typeof deferred<T>> & {
 };
 
 function latest<T>(items: T[], target: number): T | undefined {
-  return items.length
+  return items.length > 0
     ? items[items.length - 1 - (target % items.length)]
     : undefined;
 }
 
 function harness() {
   const streams: RestartStreamHandlers[] = [];
-  const sends: Pending<unknown>[] = [];
+  const sends: Pending<RestartSendResult>[] = [];
   const polls: Pending<boolean>[] = [];
   const ticks: { owner: number; tick: () => void; cancelled: boolean }[] = [];
   const phases: RestartPhase[] = [];
@@ -70,7 +70,7 @@ function harness() {
     },
     sendRestart: () => {
       const send = {
-        ...deferred<unknown>(),
+        ...deferred<RestartSendResult>(),
         owner: streams.length - 1,
         settled: false,
       };
@@ -144,9 +144,9 @@ function settleSend(
   send.settled = true;
   if (command.kind === "send-failure") {
     model.fail(send.owner);
-    send.reject(new RestartCommandError("transport"));
+    send.resolve({ kind: "failed", category: "transport" });
   } else {
-    send.resolve(undefined);
+    send.resolve({ kind: "accepted" });
   }
 }
 
@@ -200,25 +200,28 @@ const commandActions: Record<
   poll: issuePoll,
 };
 
+const ordinaryCommand = fc.constantFrom<CommandKind>(
+  "start",
+  "ack",
+  "open",
+  "error",
+  "poll",
+  "reachable",
+  "unreachable",
+  "poll-error",
+  "send-success",
+  "send-failure"
+);
+const disposeCommand = fc.constant<CommandKind>("dispose");
+
 const commands = fc.array(
   fc.record({
     kind: fc.oneof(
       {
         weight: 30,
-        arbitrary: fc.constantFrom<CommandKind>(
-          "start",
-          "ack",
-          "open",
-          "error",
-          "poll",
-          "reachable",
-          "unreachable",
-          "poll-error",
-          "send-success",
-          "send-failure"
-        ),
+        arbitrary: ordinaryCommand,
       },
-      { weight: 1, arbitrary: fc.constant<CommandKind>("dispose") }
+      { weight: 1, arbitrary: disposeCommand }
     ),
     target: fc.integer({ min: 0, max: 7 }),
   }),
@@ -232,10 +235,8 @@ describe("restart command histories", () => {
         const real = harness();
         const model = new ObservationModel();
         try {
-          for (const command of [
-            { kind: "start", target: 0 } as Command,
-            ...history,
-          ]) {
+          const initialCommand: Command = { kind: "start", target: 0 };
+          for (const command of [initialCommand, ...history]) {
             commandActions[command.kind](model, real, command);
             await Promise.resolve();
             await Promise.resolve();

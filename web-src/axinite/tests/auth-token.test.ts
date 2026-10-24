@@ -33,7 +33,7 @@ describe("gateway token storage", () => {
 
   it("survives module state through sessionStorage", () => {
     setGatewayToken("persisted");
-    expect(window.sessionStorage.getItem("axinite.gateway-token")).toBe(
+    expect(globalThis.sessionStorage.getItem("axinite.gateway-token")).toBe(
       "persisted"
     );
   });

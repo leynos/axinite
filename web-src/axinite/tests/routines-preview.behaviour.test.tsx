@@ -4,31 +4,30 @@
 
 /**
  * @file Behaviour tests for the routines route (`RoutinesPreview`), covering
- * the routines table and detail view against mocked data. Runs under jsdom
- * rather than the suite's default happy-dom (see above).
+ * the routines table and detail view against in-process gateway responses.
+ * Runs under jsdom rather than the suite's default happy-dom (see above).
  */
 
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { RoutinesPreview } from "@/components/routines-preview";
-import type { RoutineDetailResponse, RoutineInfo } from "@/lib/api/contracts";
+import type {
+  RoutineDetailResponse,
+  RoutineInfo,
+  RoutineRunsResponse,
+} from "@/lib/api/contracts";
+import { isBoolean, isJsonObject } from "@/lib/api/json-value";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
-import { setupI18nTestHarness } from "./support/i18n-test-runtime";
+import { GatewayTestServer } from "./support/gateway-test-server";
+import {
+  setApiRequestHandler,
+  setupI18nTestHarness,
+} from "./support/i18n-test-runtime";
 import { TestProviders } from "./support/test-providers";
 
-const routinesApiMocks = vi.hoisted(() => ({
-  fetchRoutines: vi.fn(),
-  fetchRoutineSummary: vi.fn(),
-  fetchRoutineDetail: vi.fn(),
-  fetchRoutineRuns: vi.fn(),
-  triggerRoutine: vi.fn(),
-  toggleRoutine: vi.fn(),
-  deleteRoutine: vi.fn(),
-}));
-
-vi.mock("@/lib/api/routines", () => routinesApiMocks);
+let gateway: GatewayTestServer;
 
 function makeRoutine(id: string, enabled: boolean): RoutineInfo {
   return {
@@ -66,8 +65,68 @@ function makeDetail(id: string, enabled: boolean): RoutineDetailResponse {
   };
 }
 
-let details: Record<string, RoutineDetailResponse>;
+let details: Map<string, RoutineDetailResponse>;
 let routineList: RoutineInfo[];
+let routineRuns: Map<string, RoutineRunsResponse["runs"]>;
+
+async function listRoutinesResponse(): Promise<Response> {
+  return Response.json({ routines: routineList });
+}
+
+async function showRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-1) ?? "";
+  const detail = details.get(id);
+  return detail
+    ? Response.json(detail)
+    : new Response("Routine not found", { status: 404 });
+}
+
+async function listRoutineRunsResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
+  return Response.json({ runs: routineRuns.get(id) ?? [] });
+}
+
+async function triggerRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
+  routineRuns.set(id, [
+    {
+      id: "new-run",
+      trigger_type: "manual",
+      started_at: "2026-10-01T09:00:00Z",
+      completed_at: null,
+      status: "completed",
+      result_summary: "Fresh manual run",
+      tokens_used: 0,
+      job_id: null,
+    },
+  ]);
+  return Response.json({ success: true, message: "Triggered" });
+}
+
+async function toggleRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
+  const body: unknown = await request.json();
+  if (!isJsonObject(body)) {
+    return new Response("Invalid toggle request", { status: 400 });
+  }
+  if (!isBoolean(body["enabled"])) {
+    return new Response("Invalid toggle request", { status: 400 });
+  }
+
+  const enabled = body["enabled"];
+  details.set(id, makeDetail(id, enabled));
+  routineList = routineList.map((routine) =>
+    routine.id === id ? makeRoutine(id, enabled) : routine
+  );
+  return Response.json({ success: true, message: "Toggled" });
+}
+
+async function deleteRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-1) ?? "";
+  routineList = routineList.filter((routine) => routine.id !== id);
+  details.delete(id);
+  return Response.json({ success: true, message: "Deleted" });
+}
 
 function renderRoutines() {
   return render(() => (
@@ -82,64 +141,78 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  for (const mock of Object.values(routinesApiMocks)) {
-    mock.mockReset();
-  }
-  window.localStorage.clear();
+  globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
 
-  details = {
-    alpha: makeDetail("alpha", true),
-    beta: makeDetail("beta", false),
-  };
+  details = new Map([
+    ["alpha", makeDetail("alpha", true)],
+    ["beta", makeDetail("beta", false)],
+  ]);
   routineList = [makeRoutine("alpha", true), makeRoutine("beta", false)];
-  routinesApiMocks.fetchRoutines.mockImplementation(async () => ({
-    routines: routineList,
-  }));
-  routinesApiMocks.fetchRoutineSummary.mockResolvedValue({
-    total: 2,
-    enabled: 1,
-    disabled: 1,
-    failing: 0,
-    runs_today: 0,
-  });
-  routinesApiMocks.fetchRoutineDetail.mockImplementation(async (id: string) => {
-    const detail = details[id];
-    if (!detail) {
-      throw new Error("Routine not found");
-    }
-    return detail;
-  });
-  routinesApiMocks.fetchRoutineRuns.mockResolvedValue({ runs: [] });
-  routinesApiMocks.triggerRoutine.mockResolvedValue({
-    success: true,
-    message: "Triggered",
-  });
-  routinesApiMocks.toggleRoutine.mockImplementation(
-    async (id: string, request: { enabled: boolean }) => {
-      details[id] = { ...makeDetail(id, request.enabled) };
-      routineList = routineList.map((routine) =>
-        routine.id === id ? makeRoutine(id, request.enabled) : routine
-      );
-      return { success: true, message: "Toggled" };
-    }
-  );
-  routinesApiMocks.deleteRoutine.mockImplementation(async (id: string) => {
-    routineList = routineList.filter((routine) => routine.id !== id);
-    delete details[id];
-    return { success: true, message: "Deleted" };
-  });
+  routineRuns = new Map();
+  gateway = new GatewayTestServer()
+    .route({
+      method: "GET",
+      path: "/api/routines",
+      handler: listRoutinesResponse,
+    })
+    .respond({
+      method: "GET",
+      path: "/api/routines/summary",
+      payload: {
+        total: 2,
+        enabled: 1,
+        disabled: 1,
+        failing: 0,
+        runs_today: 0,
+      },
+    })
+    .route({
+      method: "GET",
+      path: /^\/api\/routines\/[^/]+$/u,
+      handler: showRoutineResponse,
+    })
+    .route({
+      method: "GET",
+      path: /^\/api\/routines\/[^/]+\/runs$/u,
+      handler: listRoutineRunsResponse,
+    })
+    .route({
+      method: "POST",
+      path: /^\/api\/routines\/[^/]+\/trigger$/u,
+      handler: triggerRoutineResponse,
+    })
+    .route({
+      method: "POST",
+      path: /^\/api\/routines\/[^/]+\/toggle$/u,
+      handler: toggleRoutineResponse,
+    })
+    .route({
+      method: "DELETE",
+      path: /^\/api\/routines\/[^/]+$/u,
+      handler: deleteRoutineResponse,
+    });
 });
+
+afterEach(() => setApiRequestHandler(undefined));
 
 describe("routines preview behaviour", () => {
   it("selects the first routine and loads its detail and runs", async () => {
     renderRoutines();
 
     await waitFor(() => {
-      expect(routinesApiMocks.fetchRoutineDetail).toHaveBeenCalledWith("alpha");
+      expect(
+        gateway.requests.some(
+          (request) => request.path === "/api/routines/alpha"
+        )
+      ).toBe(true);
     });
-    expect(routinesApiMocks.fetchRoutineRuns).toHaveBeenCalledWith("alpha");
+    expect(
+      gateway.requests.some(
+        (request) => request.path === "/api/routines/alpha/runs"
+      )
+    ).toBe(true);
     expect(
       await screen.findByRole("heading", { name: "Routine alpha" })
     ).toBeVisible();
@@ -152,7 +225,11 @@ describe("routines preview behaviour", () => {
     await userEvent.click(screen.getByRole("button", { name: "Routine beta" }));
 
     await waitFor(() => {
-      expect(routinesApiMocks.fetchRoutineDetail).toHaveBeenCalledWith("beta");
+      expect(
+        gateway.requests.some(
+          (request) => request.path === "/api/routines/beta"
+        )
+      ).toBe(true);
     });
     expect(
       await screen.findByRole("heading", { name: "Routine beta" })
@@ -161,23 +238,6 @@ describe("routines preview behaviour", () => {
   });
 
   it("triggers the selected routine with Run now", async () => {
-    routinesApiMocks.triggerRoutine.mockImplementation(async () => {
-      routinesApiMocks.fetchRoutineRuns.mockResolvedValue({
-        runs: [
-          {
-            id: "new-run",
-            trigger_type: "manual",
-            started_at: "2026-10-01T09:00:00Z",
-            completed_at: null,
-            status: "completed",
-            result_summary: "Fresh manual run",
-            tokens_used: 0,
-            job_id: null,
-          },
-        ],
-      });
-      return { success: true, message: "Triggered" };
-    });
     renderRoutines();
 
     await userEvent.click(
@@ -185,11 +245,23 @@ describe("routines preview behaviour", () => {
     );
 
     await waitFor(() => {
-      expect(routinesApiMocks.triggerRoutine).toHaveBeenCalledWith("alpha");
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/routines/alpha/trigger"
+        )
+      ).toBe(true);
     });
     expect(await screen.findByText("Fresh manual run")).toBeVisible();
-    expect(routinesApiMocks.fetchRoutines).toHaveBeenCalledTimes(2);
-    expect(routinesApiMocks.fetchRoutineSummary).toHaveBeenCalledTimes(2);
+    expect(
+      gateway.requests.filter((request) => request.path === "/api/routines")
+    ).toHaveLength(2);
+    expect(
+      gateway.requests.filter(
+        (request) => request.path === "/api/routines/summary"
+      )
+    ).toHaveLength(2);
   });
 
   it("disables an enabled routine", async () => {
@@ -200,12 +272,19 @@ describe("routines preview behaviour", () => {
     );
 
     await waitFor(() => {
-      expect(routinesApiMocks.toggleRoutine).toHaveBeenCalledWith("alpha", {
-        enabled: false,
-      });
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/routines/alpha/toggle" &&
+            request.body?.["enabled"] === false
+        )
+      ).toBe(true);
     });
     expect(await screen.findByRole("button", { name: "Enable" })).toBeVisible();
-    expect(routinesApiMocks.fetchRoutines).toHaveBeenCalledTimes(2);
+    expect(
+      gateway.requests.filter((request) => request.path === "/api/routines")
+    ).toHaveLength(2);
   });
 
   it("enables a disabled routine", async () => {
@@ -219,30 +298,46 @@ describe("routines preview behaviour", () => {
     );
 
     await waitFor(() => {
-      expect(routinesApiMocks.toggleRoutine).toHaveBeenCalledWith("beta", {
-        enabled: true,
-      });
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/routines/beta/toggle" &&
+            request.body?.["enabled"] === true
+        )
+      ).toBe(true);
     });
     expect(
       await screen.findByRole("button", { name: "Disable" })
     ).toBeVisible();
-    expect(routinesApiMocks.fetchRoutines).toHaveBeenCalledTimes(2);
+    expect(
+      gateway.requests.filter((request) => request.path === "/api/routines")
+    ).toHaveLength(2);
   });
 
   it("deletes the selected routine and selects its remaining replacement", async () => {
     renderRoutines();
     await screen.findByRole("button", { name: "Delete" });
-    const listCalls = routinesApiMocks.fetchRoutines.mock.calls.length;
+    const listCalls = gateway.requests.filter(
+      (request) => request.path === "/api/routines"
+    ).length;
 
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
-      expect(routinesApiMocks.deleteRoutine).toHaveBeenCalledWith("alpha");
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/api/routines/alpha"
+        )
+      ).toBe(true);
     });
     await waitFor(() => {
-      expect(routinesApiMocks.fetchRoutines.mock.calls.length).toBeGreaterThan(
-        listCalls
-      );
+      expect(
+        gateway.requests.filter((request) => request.path === "/api/routines")
+          .length
+      ).toBeGreaterThan(listCalls);
     });
     expect(
       await screen.findByRole("heading", { name: "Routine beta" })
@@ -272,7 +367,13 @@ describe("routines preview behaviour", () => {
     ["Disable", "toggleRoutine"],
     ["Delete", "deleteRoutine"],
   ] as const)("shows a failed %s action without refreshing or clearing selection", async (button, mutation) => {
-    routinesApiMocks[mutation].mockRejectedValue(new Error("Gateway offline"));
+    const action = {
+      triggerRoutine: ["POST", "/api/routines/alpha/trigger"],
+      toggleRoutine: ["POST", "/api/routines/alpha/toggle"],
+      deleteRoutine: ["DELETE", "/api/routines/alpha"],
+    } as const;
+    const [method, path] = action[mutation];
+    gateway.fail({ method, path, status: 500, message: "Gateway offline" });
     renderRoutines();
     await userEvent.click(await screen.findByRole("button", { name: button }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -281,6 +382,8 @@ describe("routines preview behaviour", () => {
     expect(
       screen.getByRole("heading", { name: "Routine alpha" })
     ).toBeVisible();
-    expect(routinesApiMocks.fetchRoutines).toHaveBeenCalledTimes(1);
+    expect(
+      gateway.requests.filter((request) => request.path === "/api/routines")
+    ).toHaveLength(1);
   });
 });

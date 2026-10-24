@@ -50,7 +50,7 @@ export function toggleRoutine(
   id: string,
   request?: ToggleRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>(
+  return postJson<ActionResponse, ToggleRequest>(
     `/api/routines/${encodeURIComponent(id)}/toggle`,
     request ?? {}
   );

@@ -70,21 +70,21 @@ export const JobsPreview = () => {
   const activeJob = createQuery(() => ({
     queryKey: ["jobs", "detail", activeJobId()],
     queryFn: () => fetchJobDetail(activeJobId() ?? ""),
-    enabled: typeof activeJobId() === "string",
+    enabled: activeJobId() !== undefined,
     placeholderData: keepPreviousData,
   }));
 
   const events = createQuery(() => ({
     queryKey: ["jobs", "events", activeJobId()],
     queryFn: () => fetchJobEvents(activeJobId() ?? ""),
-    enabled: typeof activeJobId() === "string",
+    enabled: activeJobId() !== undefined,
     placeholderData: keepPreviousData,
   }));
 
   const files = createQuery(() => ({
     queryKey: ["jobs", "files", activeJobId()],
     queryFn: () => fetchJobFiles(activeJobId() ?? ""),
-    enabled: typeof activeJobId() === "string",
+    enabled: activeJobId() !== undefined,
     placeholderData: keepPreviousData,
   }));
 
@@ -106,8 +106,7 @@ export const JobsPreview = () => {
   const fileContent = createQuery(() => ({
     queryKey: ["jobs", "file", activeJobId(), activeFilePath()],
     queryFn: () => readJobFile(activeJobId() ?? "", activeFilePath() ?? ""),
-    enabled:
-      typeof activeJobId() === "string" && typeof activeFilePath() === "string",
+    enabled: activeJobId() !== undefined && activeFilePath() !== undefined,
     placeholderData: keepPreviousData,
   }));
 
@@ -223,7 +222,7 @@ export const JobsPreview = () => {
                       <td>
                         <span
                           class={
-                            SOURCE_CLASS[sourceName(job)] ??
+                            SOURCE_CLASS.get(sourceName(job)) ??
                             "pill pill--neutral"
                           }
                         >
@@ -233,7 +232,7 @@ export const JobsPreview = () => {
                       <td>
                         <span
                           class={
-                            STATUS_CLASS[job.state] ?? "pill pill--neutral"
+                            STATUS_CLASS.get(job.state) ?? "pill pill--neutral"
                           }
                         >
                           {t(`jobs-status-${toKebabSegment(job.state)}`)}

@@ -58,14 +58,11 @@ export function unregisterChatStreamHooks(hooks: ChatStreamHooks): void {
  * follow the chat route's mount lifecycle rather than capturing a stale set.
  */
 export function installTestHooks(): void {
-  if (typeof window === "undefined") {
-    return;
-  }
   const hooks: AxiniteTestHooks = {
     version: 1,
     closeChatStream: () => registered?.close(),
     reconnectChatStream: () => registered?.reconnect(),
     emitChatEvent: (event) => registered?.emit(event),
   };
-  window.__axinite = hooks;
+  globalThis.__axinite = hooks;
 }

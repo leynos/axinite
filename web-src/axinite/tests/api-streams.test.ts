@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { connectChatEvents } from "@/lib/api/chat";
 import { createEventStream } from "@/lib/api/client";
+import type { ChatSseEvent } from "@/lib/api/contracts";
 import { connectLogEvents } from "@/lib/api/logs";
 import { clearGatewayToken, setGatewayToken } from "@/lib/auth/token";
 
@@ -113,16 +114,24 @@ describe("chat SSE wire contract", () => {
   });
 
   it("reports malformed frames and connection errors without delivering them", () => {
-    const listener = vi.fn();
-    const error = vi.fn();
+    const delivered: ChatSseEvent[] = [];
+    const errors: string[] = [];
+    const listener = (event: ChatSseEvent) => delivered.push(event);
+    const error = () => errors.push("stream error");
     connectChatEvents(listener, error);
     WireEventSource.latest.frame("response", "{invalid");
-    expect(error).toHaveBeenCalledTimes(1);
+    expect(errors).toHaveLength(1);
     WireEventSource.latest.failConnection();
-    expect(error).toHaveBeenCalledTimes(2);
-    expect(listener).not.toHaveBeenCalled();
-    WireEventSource.latest.frame("response", JSON.stringify(frames[0]));
-    expect(listener).toHaveBeenCalledTimes(1);
+    expect(errors).toHaveLength(2);
+    WireEventSource.latest.frame(
+      "response",
+      JSON.stringify({ type: "response", content: 42, thread_id: "thread" })
+    );
+    expect(errors).toHaveLength(3);
+    expect(delivered).toEqual([]);
+    const validFrame = frames[0];
+    WireEventSource.latest.frame("response", JSON.stringify(validFrame));
+    expect(delivered).toEqual([validFrame]);
   });
 
   it("ignores unrelated event names and tolerates missing error callbacks", () => {
@@ -167,8 +176,14 @@ describe("log SSE wire contract", () => {
     WireEventSource.latest.failConnection();
     expect(error).toHaveBeenCalledTimes(2);
     expect(listener).not.toHaveBeenCalled();
-    WireEventSource.latest.frame("log", '{"message":"recovered"}');
-    expect(listener).toHaveBeenCalledExactlyOnceWith({ message: "recovered" });
+    const recovered = {
+      level: "info",
+      target: "gateway",
+      message: "recovered",
+      timestamp: "2026-10-01T00:00:00Z",
+    };
+    WireEventSource.latest.frame("log", JSON.stringify(recovered));
+    expect(listener).toHaveBeenCalledExactlyOnceWith(recovered);
   });
 
   it("tolerates malformed data when no error callback is supplied", () => {
@@ -181,7 +196,7 @@ describe("log SSE wire contract", () => {
 });
 
 it("creates an inert stream when EventSource is unavailable", () => {
-  vi.stubGlobal("EventSource", undefined);
+  Reflect.deleteProperty(globalThis, "EventSource");
   const source = createEventStream("/api/chat/events?existing=1");
   expect(source.url).toBe(
     "/api/chat/events?existing=1&token=stream%20%2B%2F%3F%23"

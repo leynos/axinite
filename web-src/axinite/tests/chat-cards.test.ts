@@ -32,7 +32,7 @@ describe("openExternalUrl", () => {
   });
 
   it("opens safe http(s) URLs in a new noopener tab", () => {
-    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const open = vi.spyOn(globalThis, "open").mockReturnValue(null);
     expect(openExternalUrl("https://example.test/oauth")).toBe(true);
     expect(open).toHaveBeenCalledWith(
       "https://example.test/oauth",
@@ -42,7 +42,7 @@ describe("openExternalUrl", () => {
   });
 
   it("refuses to open javascript: URLs", () => {
-    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const open = vi.spyOn(globalThis, "open").mockReturnValue(null);
     expect(openExternalUrl("javascript:alert(1)")).toBe(false);
     expect(open).not.toHaveBeenCalled();
   });

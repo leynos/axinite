@@ -9,7 +9,7 @@ describe("mock backend clock", () => {
     let time = SEED_TIME;
     const state = new MockBackendState(() => time);
     expect(state.getGatewayStatus().uptime_secs).toBe(0);
-    time += 5_999;
+    time += 5999;
     expect(state.getGatewayStatus().uptime_secs).toBe(5);
     const timestamp = new Date(time).toISOString();
     state.writeMemory({ path: "clock-test.md", content: "clock test" });

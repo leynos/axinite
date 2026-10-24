@@ -20,7 +20,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  window.localStorage.clear();
+  globalThis.localStorage.clear();
   document.documentElement.lang = "";
   document.documentElement.dir = "";
   const runtime = await import("@/lib/i18n/runtime");
@@ -37,7 +37,7 @@ describe("app shell behaviour", () => {
       </AppProviders>
     ));
 
-    const picker = screen.getByLabelText("Language") as HTMLSelectElement;
+    const picker = screen.getByLabelText<HTMLSelectElement>("Language");
 
     expect([...picker.options].map((option) => option.value)).toEqual(
       AVAILABLE_LOCALES.map((locale) => locale.code)
@@ -45,7 +45,7 @@ describe("app shell behaviour", () => {
   });
 
   it("falls back to the default locale when an incomplete locale is requested", async () => {
-    window.localStorage.setItem("i18nextLng", "fr");
+    globalThis.localStorage.setItem("i18nextLng", "fr");
 
     render(() => (
       <AppProviders>
@@ -94,7 +94,7 @@ describe("app shell behaviour", () => {
   });
 
   it("hides navigation entries whose route flag is overridden off", async () => {
-    window.localStorage.setItem(
+    globalThis.localStorage.setItem(
       "axinite.feature-flag-overrides",
       JSON.stringify({ route_skills: false })
     );

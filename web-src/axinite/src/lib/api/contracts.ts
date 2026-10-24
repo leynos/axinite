@@ -4,6 +4,8 @@
  * are the SPA's statement of the wire contract with the Rust gateway.
  */
 
+import type { JsonObject, JsonValue } from "@/lib/api/json-value";
+
 export type Identifier = string;
 
 export type GatewayStatusResponse = {
@@ -197,7 +199,7 @@ export type ChatSseEvent =
       type: "job_tool_use";
       job_id: string;
       tool_name: string;
-      input: unknown;
+      input: JsonValue;
     }
   | {
       type: "job_tool_result";
@@ -423,10 +425,10 @@ export type RoutineDetailResponse = {
   name: string;
   description: string;
   enabled: boolean;
-  trigger: Record<string, unknown>;
-  action: Record<string, unknown>;
-  guardrails: Record<string, unknown>;
-  notify: Record<string, unknown>;
+  trigger: JsonObject;
+  action: JsonObject;
+  guardrails: JsonObject;
+  notify: JsonObject;
   last_run_at: string | null;
   next_fire_at: string | null;
   run_count: number;
@@ -563,6 +565,10 @@ export type LogEntry = {
 };
 
 export type LogLevelResponse = {
+  level: string;
+};
+
+export type LogLevelRequest = {
   level: string;
 };
 

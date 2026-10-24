@@ -46,7 +46,6 @@ export type MockExtension = {
   setupSecrets: SecretFieldInfo[];
 };
 
-export type MockCatalogueSkill = CatalogueSkillEntry;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const START_TIME = new Date("2026-03-26T11:30:00.000Z");
@@ -275,8 +274,8 @@ const SEED_THREADS: [string, MockThread][] = [
           id: "thread-scrape",
           state: "Idle",
           turn_count: 2,
-          created_at: iso(1_440),
-          updated_at: iso(1_120),
+          created_at: iso(1440),
+          updated_at: iso(1120),
           title: "Documentation scrape",
           thread_type: "thread",
           channel: "gateway",
@@ -288,8 +287,8 @@ const SEED_THREADS: [string, MockThread][] = [
             response:
               "The main browser routes include:\n\n| Area | Endpoints |\n|------|----------|\n| Chat | `/api/chat/send`, `/api/chat/threads`, `/api/chat/history`, `/api/chat/events` |\n| Memory | `/api/memory/tree`, `/api/memory/list`, `/api/memory/read`, `/api/memory/write` |\n| Jobs | `/api/jobs`, `/api/jobs/:id`, `/api/jobs/:id/events` |\n| Routines | `/api/routines`, `/api/routines/:id` |\n| Extensions | `/api/extensions`, `/api/extensions/:name/setup` |\n| Skills | `/api/skills`, `/api/skills/search` |",
             state: "Completed",
-            started_at: iso(1_438),
-            completed_at: iso(1_437),
+            started_at: iso(1438),
+            completed_at: iso(1437),
             tool_calls: [
               {
                 name: "firecrawl_firecrawl_scrape",
@@ -306,8 +305,8 @@ const SEED_THREADS: [string, MockThread][] = [
             response:
               "Forty-three endpoints are in scope for the in-memory Bun gateway, plus logs and gateway status support.",
             state: "Completed",
-            started_at: iso(1_122),
-            completed_at: iso(1_120),
+            started_at: iso(1122),
+            completed_at: iso(1120),
             tool_calls: [],
           },
         ],
@@ -440,7 +439,7 @@ const SEED_JOBS: [string, MockJob][] = [
           created_at: iso(130),
           started_at: iso(126),
           completed_at: null,
-          elapsed_secs: 1_260,
+          elapsed_secs: 1260,
           project_dir: "/workspace/axinite",
           browse_url: "/jobs",
           job_mode: "direct",
@@ -527,7 +526,7 @@ const SEED_JOBS: [string, MockJob][] = [
           created_at: iso(400),
           started_at: iso(395),
           completed_at: null,
-          elapsed_secs: 7_200,
+          elapsed_secs: 7200,
           project_dir: "/workspace/axinite",
           browse_url: "/skills",
           job_mode: "direct",
@@ -623,7 +622,7 @@ const SEED_ROUTINES: [string, MockRoutine][] = [
           guardrails: { approvals_required: false },
           notify: { channel: "chat" },
           last_run_at: iso(150),
-          next_fire_at: iso(-1_140),
+          next_fire_at: iso(-1140),
           run_count: 47,
           consecutive_failures: 0,
           created_at: iso(14 * 24 * 60),
@@ -655,7 +654,7 @@ const SEED_ROUTINES: [string, MockRoutine][] = [
           action: { type: "full_job", template: "deploy-check" },
           guardrails: { approvals_required: true },
           notify: { channel: "logs" },
-          last_run_at: iso(1_100),
+          last_run_at: iso(1100),
           next_fire_at: null,
           run_count: 12,
           consecutive_failures: 0,
@@ -664,11 +663,11 @@ const SEED_ROUTINES: [string, MockRoutine][] = [
             {
               id: "routine-run-deploy-1",
               trigger_type: "event",
-              started_at: iso(1_100),
-              completed_at: iso(1_095),
+              started_at: iso(1100),
+              completed_at: iso(1095),
               status: "completed",
               result_summary: "Preview checks passed for the last demo build.",
-              tokens_used: 2_140,
+              tokens_used: 2140,
               job_id: "job-audit",
             },
           ],
@@ -734,7 +733,7 @@ const SEED_ROUTINES: [string, MockRoutine][] = [
               completed_at: iso(31 * 24 * 60 - 5),
               status: "completed",
               result_summary: "Paused after the last approved report cycle.",
-              tokens_used: 4_108,
+              tokens_used: 4108,
               job_id: "job-docs",
             },
           ],
@@ -1078,7 +1077,7 @@ export function createSeedSkills(): Map<string, SkillInfo> {
   return new Map(structuredClone(SEED_SKILLS));
 }
 
-const SEED_CATALOGUE_SKILLS: [string, MockCatalogueSkill][] = [
+const SEED_CATALOGUE_SKILLS: [string, CatalogueSkillEntry][] = [
     [
       "react-patterns",
       {
@@ -1090,7 +1089,7 @@ const SEED_CATALOGUE_SKILLS: [string, MockCatalogueSkill][] = [
         score: 0.91,
         updatedAt: iso(600),
         stars: 213,
-        downloads: 8_412,
+        downloads: 8412,
         owner: "catalog",
         keywords: ["react", "patterns", "frontend"],
       },
@@ -1104,9 +1103,9 @@ const SEED_CATALOGUE_SKILLS: [string, MockCatalogueSkill][] = [
           "Type-checking and runtime validation patterns for Python service code.",
         version: "2.0.0",
         score: 0.77,
-        updatedAt: iso(1_100),
+        updatedAt: iso(1100),
         stars: 89,
-        downloads: 2_145,
+        downloads: 2145,
         owner: "catalog",
         keywords: ["python", "typing", "mypy"],
       },
@@ -1122,7 +1121,7 @@ const SEED_CATALOGUE_SKILLS: [string, MockCatalogueSkill][] = [
         score: 0.83,
         updatedAt: iso(720),
         stars: 154,
-        downloads: 5_019,
+        downloads: 5019,
         owner: "catalog",
         keywords: ["docker", "compose", "stack"],
       },
@@ -1133,6 +1132,6 @@ const SEED_CATALOGUE_SKILLS: [string, MockCatalogueSkill][] = [
  * Returns a fresh catalogue map with stable fixture scores, usage,
  * ownership and timestamps.
  */
-export function createSeedCatalogueSkills(): Map<string, MockCatalogueSkill> {
+export function createSeedCatalogueSkills(): Map<string, CatalogueSkillEntry> {
   return new Map(structuredClone(SEED_CATALOGUE_SKILLS));
 }

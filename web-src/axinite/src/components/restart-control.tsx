@@ -16,13 +16,12 @@ import { fetchGatewayStatusRaw } from "@/lib/api/gateway";
 import { useI18n } from "@/lib/i18n/provider";
 import {
   createRestartController,
-  RestartCommandError,
   type RestartController,
   type RestartDeps,
   type RestartPhase,
 } from "@/lib/restart";
 
-const STATUS_POLL_MS = 3_000;
+const STATUS_POLL_MS = 3000;
 
 type RestartControlProps = {
   restartEnabled: () => boolean | undefined;
@@ -40,24 +39,27 @@ function defaultDeps(onPhase: (phase: RestartPhase) => void): RestartDeps {
   return {
     sendRestart: async () => {
       try {
-        return await sendMessage({ content: "/restart", images: [] });
+        await sendMessage({ content: "/restart", images: [] });
+        return { kind: "accepted" };
       } catch (error) {
-        throw new RestartCommandError(
-          error instanceof RequestError ? error.category : "transport"
-        );
+        return {
+          kind: "failed",
+          category:
+            error instanceof RequestError ? error.category : "transport",
+        };
       }
     },
     openStream: (handlers) => {
       // A malformed frame is not evidence that the gateway went down.
       const source = connectChatEvents(handlers.onEvent);
       setStreamConnectionErrorHandler(source, handlers.onError);
-      source.onopen = () => handlers.onOpen();
+      source.addEventListener("open", () => handlers.onOpen());
       return { close: () => source.close() };
     },
     checkStatus: async () => (await fetchGatewayStatusRaw()) !== null,
     scheduleStatusPolls: (tick) => {
-      const id = window.setInterval(tick, STATUS_POLL_MS);
-      return () => window.clearInterval(id);
+      const id = globalThis.setInterval(tick, STATUS_POLL_MS);
+      return () => globalThis.clearInterval(id);
     },
     onPhase,
   };

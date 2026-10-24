@@ -30,27 +30,27 @@ import {
 import { useI18n } from "@/lib/i18n/provider";
 import { capitalize, pascalCase } from "@/lib/string-case";
 
-const STATUS_CLASS: Record<string, string> = {
-  active: "pill pill--success",
-  disabled: "pill pill--neutral",
-  failing: "pill pill--danger",
-};
+const STATUS_CLASS = new Map<string, string>([
+  ["active", "pill pill--success"],
+  ["disabled", "pill pill--neutral"],
+  ["failing", "pill pill--danger"],
+]);
 
-const TRIGGER_CLASS: Record<string, string> = {
-  cron: "pill pill--info",
-  event: "pill pill--violet",
-  system_event: "pill pill--warning",
-  manual: "pill pill--neutral",
-};
+const TRIGGER_CLASS = new Map<string, string>([
+  ["cron", "pill pill--info"],
+  ["event", "pill pill--violet"],
+  ["system_event", "pill pill--warning"],
+  ["manual", "pill pill--neutral"],
+]);
 
-const ACTION_CLASS: Record<string, string> = {
-  full_job: "pill pill--violet",
-  lightweight: "pill pill--neutral",
-};
+const ACTION_CLASS = new Map<string, string>([
+  ["full_job", "pill pill--violet"],
+  ["lightweight", "pill pill--neutral"],
+]);
 
 function toKebabSegment(value: string): string {
   return pascalCase(value)
-    .replace(/([A-Z])/g, "-$1")
+    .replaceAll(/([A-Z])/g, "-$1")
     .toLowerCase()
     .replace(/^-/, "");
 }
@@ -145,7 +145,7 @@ const RoutinesTable = (props: {
                   <td>
                     <span
                       class={
-                        TRIGGER_CLASS[routine.trigger_type] ??
+                        TRIGGER_CLASS.get(routine.trigger_type) ??
                         "pill pill--neutral"
                       }
                     >
@@ -155,7 +155,7 @@ const RoutinesTable = (props: {
                   <td>
                     <span
                       class={
-                        ACTION_CLASS[routine.action_type] ??
+                        ACTION_CLASS.get(routine.action_type) ??
                         "pill pill--neutral"
                       }
                     >
@@ -178,7 +178,7 @@ const RoutinesTable = (props: {
                   <td>
                     <span
                       class={
-                        STATUS_CLASS[routine.status] ?? "pill pill--neutral"
+                        STATUS_CLASS.get(routine.status) ?? "pill pill--neutral"
                       }
                     >
                       {t(
@@ -216,6 +216,13 @@ const RoutineDetailPanel = (props: {
   onDelete: () => void;
 }) => {
   const { t } = useI18n();
+  const routineStatus = () => {
+    const routine = props.routine();
+    if (!routine.enabled) {
+      return "disabled";
+    }
+    return routine.consecutive_failures > 0 ? "failing" : "active";
+  };
   return (
     <section class="dashboard-detail">
       <div class="dashboard-detail__header">
@@ -228,22 +235,14 @@ const RoutineDetailPanel = (props: {
         <div class="dashboard-detail__pills">
           <span
             class={
-              TRIGGER_CLASS[String(props.routine().trigger["type"])] ??
+              TRIGGER_CLASS.get(String(props.routine().trigger["type"])) ??
               "pill pill--neutral"
             }
           >
             {String(props.routine().trigger["type"] ?? "manual")}
           </span>
           <span
-            class={
-              STATUS_CLASS[
-                props.routine().enabled
-                  ? props.routine().consecutive_failures > 0
-                    ? "failing"
-                    : "active"
-                  : "disabled"
-              ] ?? "pill pill--neutral"
-            }
+            class={STATUS_CLASS.get(routineStatus()) ?? "pill pill--neutral"}
           >
             {props.routine().enabled
               ? t("routines-enabled-label")
@@ -360,14 +359,14 @@ export const RoutinesPreview = () => {
   const activeRoutine = createQuery(() => ({
     queryKey: ["routines", "detail", activeRoutineId()],
     queryFn: () => fetchRoutineDetail(activeRoutineId() ?? ""),
-    enabled: typeof activeRoutineId() === "string",
+    enabled: activeRoutineId() !== undefined,
     placeholderData: keepPreviousData,
   }));
 
   const runs = createQuery(() => ({
     queryKey: ["routines", "runs", activeRoutineId()],
     queryFn: () => fetchRoutineRuns(activeRoutineId() ?? ""),
-    enabled: typeof activeRoutineId() === "string",
+    enabled: activeRoutineId() !== undefined,
     placeholderData: keepPreviousData,
   }));
 
