@@ -123,6 +123,11 @@ describe("chat SSE wire contract", () => {
     expect(errors).toHaveLength(1);
     WireEventSource.latest.failConnection();
     expect(errors).toHaveLength(2);
+    WireEventSource.latest.frame(
+      "response",
+      JSON.stringify({ type: "response", content: 42, thread_id: "thread" })
+    );
+    expect(errors).toHaveLength(3);
     expect(delivered).toEqual([]);
     const validFrame = frames[0];
     WireEventSource.latest.frame("response", JSON.stringify(validFrame));

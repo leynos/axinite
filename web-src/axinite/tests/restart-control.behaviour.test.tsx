@@ -264,15 +264,21 @@ describe("restart control", () => {
     if (!source) {
       throw new Error("Restart stream was not opened");
     }
-    source.emit("tool_completed", {
+    source.emit({
       type: "tool_completed",
-      name: "restart",
-      success: true,
+      payload: {
+        type: "tool_completed",
+        name: "restart",
+        success: true,
+      },
     });
-    source.frame("response", "{ malformed json");
-    source.emit("error", {
+    source.frame({ type: "response", data: "{ malformed json" });
+    source.emit({
       type: "error",
-      message: "Gateway reported an error",
+      payload: {
+        type: "error",
+        message: "Gateway reported an error",
+      },
     });
     source.open();
     expect(screen.queryByText("Gateway restarted.")).toBeNull();

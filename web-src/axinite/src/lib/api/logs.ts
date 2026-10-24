@@ -16,6 +16,15 @@ import type {
 } from "@/lib/api/contracts";
 import { isJsonObject, isString } from "@/lib/api/json-value";
 
+const LOG_LEVEL_VALUES: readonly LogEntry["level"][] = [
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+];
+const LOG_LEVELS = new Set<string>(LOG_LEVEL_VALUES);
+
 /** GET /api/logs/level: fetch the gateway's current runtime log level. */
 export function fetchLogLevel(): Promise<LogLevelResponse> {
   return requestJson<LogLevelResponse>("/api/logs/level");
@@ -35,17 +44,23 @@ function isLogEntry(value: unknown): value is LogEntry {
   if (!isJsonObject(value)) {
     return false;
   }
-  const level = value["level"];
-  return (
-    (level === "trace" ||
-      level === "debug" ||
-      level === "info" ||
-      level === "warn" ||
-      level === "error") &&
-    isString(value["target"]) &&
-    isString(value["message"]) &&
-    isString(value["timestamp"])
-  );
+  if (!isLogLevel(value["level"])) {
+    return false;
+  }
+  if (!isString(value["target"])) {
+    return false;
+  }
+  if (!isString(value["message"])) {
+    return false;
+  }
+  return isString(value["timestamp"]);
+}
+
+function isLogLevel(value: unknown): value is LogEntry["level"] {
+  if (!isString(value)) {
+    return false;
+  }
+  return LOG_LEVELS.has(value);
 }
 
 /**

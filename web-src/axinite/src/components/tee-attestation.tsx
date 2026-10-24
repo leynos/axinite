@@ -37,7 +37,13 @@ type TeeReportLoader = {
 type ClipboardWriter = Pick<Clipboard, "writeText">;
 
 function isClipboardWriter(value: unknown): value is ClipboardWriter {
-  if (typeof value !== "object" || value === null || !("writeText" in value)) {
+  if (typeof value !== "object") {
+    return false;
+  }
+  if (value === null) {
+    return false;
+  }
+  if (!("writeText" in value)) {
     return false;
   }
   return typeof value.writeText === "function";

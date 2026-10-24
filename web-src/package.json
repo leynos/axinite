@@ -15,7 +15,7 @@
     "check:fmt": "bunx biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false axinite/src axinite/tests scripts docs package.json tsconfig.json tsconfig.declarations.json vite.config.ts playwright.config.ts vitest.config.ts vitest.a11y.config.ts biome.jsonc",
     "lint": "bunx biome lint axinite/src axinite/tests scripts docs && oxlint axinite/src axinite/tests mock-backend scripts",
     "check:types": "node_modules/@typescript/native/bin/tsc --noEmit && node_modules/@typescript/native/bin/tsc -p tsconfig.declarations.json && bun run check:types:6",
-    "check:types:6": "node_modules/typescript/bin/tsc --noEmit && node_modules/typescript/bin/tsc -p tsconfig.declarations.json",
+    "check:types:6": "node_modules/typescript/bin/tsc6 --noEmit && node_modules/typescript/bin/tsc6 -p tsconfig.declarations.json",
     "typecheck": "bun run check:types",
     "test": "vitest --run --config vitest.config.ts",
     "test:a11y": "vitest --run --config vitest.a11y.config.ts",
@@ -65,7 +65,7 @@
     "oxlint": "1.82.0",
     "oxlint-tsgolint": "7.0.2004",
     "stylelint": "^16.25.0",
-    "typescript": "npm:@typescript/typescript6@6.0.3",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^7.1.9",
     "vite-plugin-solid": "^2.11.8",
     "vitest": "^3.2.4"

@@ -69,29 +69,41 @@ export function createFirecrawlGateway(): GatewayTestServer {
   const installedExtensions = [cloneFirecrawlExtension()];
   const registryEntries = [cloneFirecrawlRegistryEntry()];
   const gateway = new GatewayTestServer()
-    .route("GET", "/api/extensions", async () =>
-      Response.json({ extensions: installedExtensions })
-    )
-    .respond("GET", "/api/extensions/tools", { tools: [] })
-    .route("GET", "/api/extensions/registry", async () =>
-      Response.json({ entries: registryEntries })
-    )
-    .route("POST", /^\/api\/extensions\/[^/]+\/remove$/u, async (request) => {
-      const segments = new URL(request.url).pathname.split("/");
-      const name = segments.at(-2) ?? "";
-      const remainingExtensions = installedExtensions.filter(
-        (extension) => extension.name !== name
-      );
-      const remainingEntries = registryEntries.map((entry) =>
-        entry.name === name ? { ...entry, installed: false } : entry
-      );
-      installedExtensions.splice(
-        0,
-        installedExtensions.length,
-        ...remainingExtensions
-      );
-      registryEntries.splice(0, registryEntries.length, ...remainingEntries);
-      return Response.json({ message: "Removed", success: true });
+    .route({
+      method: "GET",
+      path: "/api/extensions",
+      handler: async () => Response.json({ extensions: installedExtensions }),
+    })
+    .respond({
+      method: "GET",
+      path: "/api/extensions/tools",
+      payload: { tools: [] },
+    })
+    .route({
+      method: "GET",
+      path: "/api/extensions/registry",
+      handler: async () => Response.json({ entries: registryEntries }),
+    })
+    .route({
+      method: "POST",
+      path: /^\/api\/extensions\/[^/]+\/remove$/u,
+      handler: async (request) => {
+        const segments = new URL(request.url).pathname.split("/");
+        const name = segments.at(-2) ?? "";
+        const remainingExtensions = installedExtensions.filter(
+          (extension) => extension.name !== name
+        );
+        const remainingEntries = registryEntries.map((entry) =>
+          entry.name === name ? { ...entry, installed: false } : entry
+        );
+        installedExtensions.splice(
+          0,
+          installedExtensions.length,
+          ...remainingExtensions
+        );
+        registryEntries.splice(0, registryEntries.length, ...remainingEntries);
+        return Response.json({ message: "Removed", success: true });
+      },
     });
 
   return gateway;

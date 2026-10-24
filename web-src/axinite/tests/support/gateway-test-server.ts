@@ -21,11 +21,79 @@ type RecordedRequest = {
 
 type RouteHandler = (request: Request) => Promise<Response>;
 
-type Route = {
+type RouteDefinition = {
   handler: RouteHandler;
   method: string;
   path: RegExp | string;
 };
+
+type RouteRequest = {
+  method: string;
+  path: string;
+};
+
+type JsonResponseDefinition = RouteRequest & {
+  payload: JsonValue;
+  status?: number;
+};
+
+type ErrorResponseDefinition = RouteRequest & {
+  message: string;
+  status: number;
+};
+
+type JsonEventFrame = {
+  payload: JsonValue;
+  type: string;
+};
+
+type RawEventFrame = {
+  data: string;
+  type: string;
+};
+
+type RequestBodyResult =
+  | { isValid: false }
+  | { body?: JsonObject; isValid: true };
+
+async function readRequestBody(request: Request): Promise<RequestBodyResult> {
+  if (!request.body) {
+    return { isValid: true };
+  }
+
+  const parsed: unknown = await request.clone().json();
+  if (!isJsonObject(parsed)) {
+    return { isValid: false };
+  }
+
+  return { isValid: true, body: parsed };
+}
+
+function routeMatches(route: RouteDefinition, request: RouteRequest): boolean {
+  if (route.method !== request.method) {
+    return false;
+  }
+
+  if (route.path instanceof RegExp) {
+    return route.path.test(request.path);
+  }
+
+  return route.path === request.path;
+}
+
+function findMatchingRoute(
+  routes: readonly RouteDefinition[],
+  request: RouteRequest
+): RouteDefinition | undefined {
+  return routes.toReversed().find((route) => routeMatches(route, request));
+}
+
+function unmatchedRouteResponse(request: RouteRequest): Response {
+  return Response.json(
+    { error: `No test response for ${request.method} ${request.path}` },
+    { status: 404 }
+  );
+}
 
 /** EventSource implementation whose server frames are emitted by each test. */
 export class GatewayEventSource extends EventTarget {
@@ -53,13 +121,13 @@ export class GatewayEventSource extends EventTarget {
   }
 
   /** Deliver a JSON SSE frame through the same listeners used by browsers. */
-  emit(type: string, payload: JsonValue): void {
-    this.frame(type, JSON.stringify(payload));
+  emit(frame: JsonEventFrame): void {
+    this.frame({ type: frame.type, data: JSON.stringify(frame.payload) });
   }
 
   /** Deliver an SSE frame with raw data for malformed-payload tests. */
-  frame(type: string, data: string): void {
-    this.dispatchEvent(new MessageEvent(type, { data }));
+  frame(frame: RawEventFrame): void {
+    this.dispatchEvent(new MessageEvent(frame.type, { data: frame.data }));
   }
 
   /** Deliver the native EventSource open event. */
@@ -87,7 +155,7 @@ export class GatewayEventSource extends EventTarget {
 /** Mutable gateway responses plus an observable request log for one test. */
 export class GatewayTestServer {
   readonly requests: RecordedRequest[] = [];
-  private routes: Route[] = [];
+  private routes: RouteDefinition[] = [];
 
   constructor() {
     GatewayEventSource.latest = undefined;
@@ -96,66 +164,56 @@ export class GatewayTestServer {
   }
 
   /** Return one JSON response for a method and exact path. */
-  respond(
-    method: string,
-    path: string,
-    payload: JsonValue,
-    status = 200
-  ): this {
-    return this.route(method, path, async () =>
-      Response.json(payload, { status })
-    );
+  respond(definition: JsonResponseDefinition): this {
+    const { method, path, payload, status = 200 } = definition;
+    return this.route({
+      method,
+      path,
+      handler: async () => Response.json(payload, { status }),
+    });
   }
 
   /** Return a plain-text HTTP error for a method and exact path. */
-  fail(method: string, path: string, status: number, message: string): this {
-    return this.route(
+  fail(definition: ErrorResponseDefinition): this {
+    const { method, path, status, message } = definition;
+    return this.route({
       method,
       path,
-      async () => new Response(message, { status })
-    );
+      handler: async () => new Response(message, { status }),
+    });
   }
 
   /** Register a custom response handler; later matching routes take priority. */
-  route(method: string, path: RegExp | string, handler: RouteHandler): this {
-    this.routes.push({ handler, method: method.toUpperCase(), path });
+  route(definition: RouteDefinition): this {
+    this.routes.push({
+      ...definition,
+      method: definition.method.toUpperCase(),
+    });
     return this;
   }
 
   private async handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
-    let body: JsonObject | undefined;
-
-    if (request.body) {
-      const parsed: unknown = await request.clone().json();
-      if (!isJsonObject(parsed)) {
-        return new Response("Request body was not JSON", { status: 400 });
-      }
-      body = parsed;
+    const bodyResult = await readRequestBody(request);
+    if (!bodyResult.isValid) {
+      return new Response("Request body was not JSON", { status: 400 });
     }
 
-    const recordedRequest: RecordedRequest = {
+    const routeRequest: RouteRequest = {
       method,
       path: url.pathname,
+    };
+    const recordedRequest: RecordedRequest = {
+      ...routeRequest,
       search: url.search,
     };
-    if (body) recordedRequest.body = body;
+    if (bodyResult.body) recordedRequest.body = bodyResult.body;
     this.requests.push(recordedRequest);
 
-    for (const route of this.routes.toReversed()) {
-      const pathMatches =
-        route.path instanceof RegExp
-          ? route.path.test(url.pathname)
-          : route.path === url.pathname;
-      if (route.method === method && pathMatches) {
-        return route.handler(request);
-      }
-    }
-
-    return Response.json(
-      { error: `No test response for ${method} ${url.pathname}` },
-      { status: 404 }
-    );
+    const route = findMatchingRoute(this.routes, routeRequest);
+    return route
+      ? route.handler(request)
+      : unmatchedRouteResponse(routeRequest);
   }
 }

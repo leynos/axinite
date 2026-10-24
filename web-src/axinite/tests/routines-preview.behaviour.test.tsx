@@ -69,6 +69,65 @@ let details: Map<string, RoutineDetailResponse>;
 let routineList: RoutineInfo[];
 let routineRuns: Map<string, RoutineRunsResponse["runs"]>;
 
+async function listRoutinesResponse(): Promise<Response> {
+  return Response.json({ routines: routineList });
+}
+
+async function showRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-1) ?? "";
+  const detail = details.get(id);
+  return detail
+    ? Response.json(detail)
+    : new Response("Routine not found", { status: 404 });
+}
+
+async function listRoutineRunsResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
+  return Response.json({ runs: routineRuns.get(id) ?? [] });
+}
+
+async function triggerRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
+  routineRuns.set(id, [
+    {
+      id: "new-run",
+      trigger_type: "manual",
+      started_at: "2026-10-01T09:00:00Z",
+      completed_at: null,
+      status: "completed",
+      result_summary: "Fresh manual run",
+      tokens_used: 0,
+      job_id: null,
+    },
+  ]);
+  return Response.json({ success: true, message: "Triggered" });
+}
+
+async function toggleRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
+  const body: unknown = await request.json();
+  if (!isJsonObject(body)) {
+    return new Response("Invalid toggle request", { status: 400 });
+  }
+  if (!isBoolean(body["enabled"])) {
+    return new Response("Invalid toggle request", { status: 400 });
+  }
+
+  const enabled = body["enabled"];
+  details.set(id, makeDetail(id, enabled));
+  routineList = routineList.map((routine) =>
+    routine.id === id ? makeRoutine(id, enabled) : routine
+  );
+  return Response.json({ success: true, message: "Toggled" });
+}
+
+async function deleteRoutineResponse(request: Request): Promise<Response> {
+  const id = new URL(request.url).pathname.split("/").at(-1) ?? "";
+  routineList = routineList.filter((routine) => routine.id !== id);
+  details.delete(id);
+  return Response.json({ success: true, message: "Deleted" });
+}
+
 function renderRoutines() {
   return render(() => (
     <TestProviders>
@@ -93,61 +152,46 @@ beforeEach(async () => {
   routineList = [makeRoutine("alpha", true), makeRoutine("beta", false)];
   routineRuns = new Map();
   gateway = new GatewayTestServer()
-    .route("GET", "/api/routines", async () =>
-      Response.json({ routines: routineList })
-    )
-    .respond("GET", "/api/routines/summary", {
-      total: 2,
-      enabled: 1,
-      disabled: 1,
-      failing: 0,
-      runs_today: 0,
+    .route({
+      method: "GET",
+      path: "/api/routines",
+      handler: listRoutinesResponse,
     })
-    .route("GET", /^\/api\/routines\/[^/]+$/u, async (request) => {
-      const id = new URL(request.url).pathname.split("/").at(-1) ?? "";
-      const detail = details.get(id);
-      return detail
-        ? Response.json(detail)
-        : new Response("Routine not found", { status: 404 });
+    .respond({
+      method: "GET",
+      path: "/api/routines/summary",
+      payload: {
+        total: 2,
+        enabled: 1,
+        disabled: 1,
+        failing: 0,
+        runs_today: 0,
+      },
     })
-    .route("GET", /^\/api\/routines\/[^/]+\/runs$/u, async (request) => {
-      const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
-      return Response.json({ runs: routineRuns.get(id) ?? [] });
+    .route({
+      method: "GET",
+      path: /^\/api\/routines\/[^/]+$/u,
+      handler: showRoutineResponse,
     })
-    .route("POST", /^\/api\/routines\/[^/]+\/trigger$/u, async (request) => {
-      const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
-      routineRuns.set(id, [
-        {
-          id: "new-run",
-          trigger_type: "manual",
-          started_at: "2026-10-01T09:00:00Z",
-          completed_at: null,
-          status: "completed",
-          result_summary: "Fresh manual run",
-          tokens_used: 0,
-          job_id: null,
-        },
-      ]);
-      return Response.json({ success: true, message: "Triggered" });
+    .route({
+      method: "GET",
+      path: /^\/api\/routines\/[^/]+\/runs$/u,
+      handler: listRoutineRunsResponse,
     })
-    .route("POST", /^\/api\/routines\/[^/]+\/toggle$/u, async (request) => {
-      const id = new URL(request.url).pathname.split("/").at(-2) ?? "";
-      const body: unknown = await request.json();
-      if (!isJsonObject(body) || !isBoolean(body["enabled"])) {
-        return new Response("Invalid toggle request", { status: 400 });
-      }
-      const enabled = body["enabled"];
-      details.set(id, makeDetail(id, enabled));
-      routineList = routineList.map((routine) =>
-        routine.id === id ? makeRoutine(id, enabled) : routine
-      );
-      return Response.json({ success: true, message: "Toggled" });
+    .route({
+      method: "POST",
+      path: /^\/api\/routines\/[^/]+\/trigger$/u,
+      handler: triggerRoutineResponse,
     })
-    .route("DELETE", /^\/api\/routines\/[^/]+$/u, async (request) => {
-      const id = new URL(request.url).pathname.split("/").at(-1) ?? "";
-      routineList = routineList.filter((routine) => routine.id !== id);
-      details.delete(id);
-      return Response.json({ success: true, message: "Deleted" });
+    .route({
+      method: "POST",
+      path: /^\/api\/routines\/[^/]+\/toggle$/u,
+      handler: toggleRoutineResponse,
+    })
+    .route({
+      method: "DELETE",
+      path: /^\/api\/routines\/[^/]+$/u,
+      handler: deleteRoutineResponse,
     });
 });
 
@@ -329,7 +373,7 @@ describe("routines preview behaviour", () => {
       deleteRoutine: ["DELETE", "/api/routines/alpha"],
     } as const;
     const [method, path] = action[mutation];
-    gateway.fail(method, path, 500, "Gateway offline");
+    gateway.fail({ method, path, status: 500, message: "Gateway offline" });
     renderRoutines();
     await userEvent.click(await screen.findByRole("button", { name: button }));
     expect(await screen.findByRole("alert")).toHaveTextContent(

@@ -138,17 +138,23 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   gateway = new GatewayTestServer()
-    .respond("GET", "/api/jobs", { jobs: [] })
-    .respond("GET", "/api/jobs/summary", {
-      total: 0,
-      running: 0,
-      completed: 0,
-      failed: 0,
-      stuck: 0,
+    .respond({ method: "GET", path: "/api/jobs", payload: { jobs: [] } })
+    .respond({
+      method: "GET",
+      path: "/api/jobs/summary",
+      payload: {
+        total: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+        stuck: 0,
+      },
     })
-    .route("POST", /^\/api\/jobs\/[^/]+\/prompt$/u, async () =>
-      Response.json({ success: true, message: "ok" })
-    );
+    .route({
+      method: "POST",
+      path: /^\/api\/jobs\/[^/]+\/prompt$/u,
+      handler: async () => Response.json({ success: true, message: "ok" }),
+    });
   globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
@@ -156,7 +162,12 @@ beforeEach(async () => {
 
 describe("jobs preview error handling", () => {
   it("shows a visible error state when the jobs list request fails", async () => {
-    gateway.fail("GET", "/api/jobs", 500, "Simulated failure for /api/jobs.");
+    gateway.fail({
+      method: "GET",
+      path: "/api/jobs",
+      status: 500,
+      message: "Simulated failure for /api/jobs.",
+    });
 
     render(() => (
       <AppProviders>

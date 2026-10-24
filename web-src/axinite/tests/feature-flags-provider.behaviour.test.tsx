@@ -15,7 +15,11 @@ import { setApiRequestHandler } from "./support/i18n-test-runtime";
 let gateway: GatewayTestServer;
 
 beforeEach(() => {
-  gateway = new GatewayTestServer().respond("GET", "/api/features", {});
+  gateway = new GatewayTestServer().respond({
+    method: "GET",
+    path: "/api/features",
+    payload: {},
+  });
 });
 
 afterEach(() => {
@@ -45,12 +49,12 @@ function FlagsProbe() {
 describe("runtime feature-flag failure", () => {
   it("reports a sanitized failure in production and keeps defaults plus local overrides", async () => {
     vi.stubEnv("DEV", false);
-    gateway.fail(
-      "GET",
-      "/api/features",
-      500,
-      "secret-token and deployment-internal details"
-    );
+    gateway.fail({
+      method: "GET",
+      path: "/api/features",
+      status: 500,
+      message: "secret-token and deployment-internal details",
+    });
     const report = vi.spyOn(console, "error").mockImplementation(() => {});
     localStorage.setItem(
       "axinite.feature-flag-overrides",

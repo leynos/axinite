@@ -75,36 +75,60 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   gateway = new GatewayTestServer()
-    .respond("GET", "/api/chat/threads", {
-      assistant_thread: {
-        id: "thread-1",
-        state: "Idle",
-        turn_count: 0,
-        created_at: "2026-03-26T12:00:00Z",
-        updated_at: "2026-03-26T12:00:00Z",
-        title: "Chat thread",
+    .respond({
+      method: "GET",
+      path: "/api/chat/threads",
+      payload: {
+        assistant_thread: {
+          id: "thread-1",
+          state: "Idle",
+          turn_count: 0,
+          created_at: "2026-03-26T12:00:00Z",
+          updated_at: "2026-03-26T12:00:00Z",
+          title: "Chat thread",
+        },
+        threads: [],
+        active_thread: "thread-1",
       },
-      threads: [],
-      active_thread: "thread-1",
     })
-    .respond("GET", "/api/chat/history", {
-      thread_id: "thread-1",
-      turns: [],
-      has_more: false,
+    .respond({
+      method: "GET",
+      path: "/api/chat/history",
+      payload: {
+        thread_id: "thread-1",
+        turns: [],
+        has_more: false,
+      },
     })
-    .respond("POST", "/api/chat/send", {
-      message_id: "message-1",
-      status: "queued",
+    .respond({
+      method: "POST",
+      path: "/api/chat/send",
+      payload: {
+        message_id: "message-1",
+        status: "queued",
+      },
     })
-    .respond("POST", "/api/chat/auth-token", {
-      success: true,
-      message: "Authentication completed.",
+    .respond({
+      method: "POST",
+      path: "/api/chat/auth-token",
+      payload: {
+        success: true,
+        message: "Authentication completed.",
+      },
     })
-    .respond("POST", "/api/chat/auth-cancel", {
-      success: true,
-      message: "Auth cancelled.",
+    .respond({
+      method: "POST",
+      path: "/api/chat/auth-cancel",
+      payload: {
+        success: true,
+        message: "Auth cancelled.",
+      },
     })
-    .respond("POST", "/api/chat/approval", { success: true, message: "ok" });
+    .respond({
+      method: "POST",
+      path: "/api/chat/approval",
+      payload: { success: true, message: "ok" },
+    });
 
   globalThis.localStorage.clear();
   document.documentElement.lang = "";
@@ -141,10 +165,13 @@ describe("chat preview behaviour", () => {
     expect(screen.getByText("Check the deployment status")).toBeVisible();
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
 
-    GatewayEventSource.latest?.emit("stream_chunk", {
+    GatewayEventSource.latest?.emit({
       type: "stream_chunk",
-      content: "Reviewing the deployment now.",
-      thread_id: "thread-1",
+      payload: {
+        type: "stream_chunk",
+        content: "Reviewing the deployment now.",
+        thread_id: "thread-1",
+      },
     });
 
     await waitFor(() => {
@@ -157,11 +184,14 @@ describe("chat preview behaviour", () => {
     renderPreview();
     await waitForEventSource();
 
-    GatewayEventSource.latest?.emit("image_generated", {
+    GatewayEventSource.latest?.emit({
       type: "image_generated",
-      data_url: "data:image/png;base64,AAAA",
-      path: "workspace/generated/preview.png",
-      thread_id: "thread-1",
+      payload: {
+        type: "image_generated",
+        data_url: "data:image/png;base64,AAAA",
+        path: "workspace/generated/preview.png",
+        thread_id: "thread-1",
+      },
     });
 
     const image = await screen.findByAltText("Generated image");
@@ -173,11 +203,14 @@ describe("chat preview behaviour", () => {
     renderPreview();
     await waitForEventSource();
 
-    GatewayEventSource.latest?.emit("job_started", {
+    GatewayEventSource.latest?.emit({
       type: "job_started",
-      job_id: "abcdef1234567890",
-      title: "Spawned preview job",
-      browse_url: "https://example.test/projects/1/",
+      payload: {
+        type: "job_started",
+        job_id: "abcdef1234567890",
+        title: "Spawned preview job",
+        browse_url: "https://example.test/projects/1/",
+      },
     });
 
     expect(await screen.findByText("Spawned preview job")).toBeVisible();
@@ -196,10 +229,13 @@ describe("chat preview behaviour", () => {
     renderPreview();
     await waitForEventSource();
 
-    GatewayEventSource.latest?.emit("auth_required", {
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
-      auth_url: "https://auth.example.test/oauth",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+        auth_url: "https://auth.example.test/oauth",
+      },
     });
 
     expect(
@@ -231,17 +267,24 @@ describe("chat preview behaviour", () => {
   });
 
   it("keeps the auth card and shows an error when the token is rejected", async () => {
-    gateway.respond("POST", "/api/chat/auth-token", {
-      success: false,
-      message: "Invalid token.",
+    gateway.respond({
+      method: "POST",
+      path: "/api/chat/auth-token",
+      payload: {
+        success: false,
+        message: "Invalid token.",
+      },
     });
     renderPreview();
     await waitForEventSource();
 
-    GatewayEventSource.latest?.emit("auth_required", {
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
-      auth_url: "https://auth.example.test/oauth",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+        auth_url: "https://auth.example.test/oauth",
+      },
     });
 
     await screen.findByText("Authentication required for github");
@@ -264,9 +307,12 @@ describe("chat preview behaviour", () => {
     renderPreview();
     await waitForEventSource();
 
-    GatewayEventSource.latest?.emit("auth_required", {
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+      },
     });
 
     await screen.findByText("Authentication required for github");
@@ -292,17 +338,23 @@ describe("chat preview behaviour", () => {
     renderPreview();
     await waitForEventSource();
 
-    GatewayEventSource.latest?.emit("auth_required", {
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+      },
     });
     await screen.findByText("Authentication required for github");
 
-    GatewayEventSource.latest?.emit("auth_completed", {
+    GatewayEventSource.latest?.emit({
       type: "auth_completed",
-      extension_name: "github",
-      success: true,
-      message: "All set.",
+      payload: {
+        type: "auth_completed",
+        extension_name: "github",
+        success: true,
+        message: "All set.",
+      },
     });
 
     await waitFor(() => {
@@ -361,7 +413,11 @@ describe("chat preview behaviour", () => {
 
   it("keeps images staged while a send is in flight", async () => {
     const pendingSend = deferredResponse();
-    gateway.route("POST", "/api/chat/send", () => pendingSend.promise);
+    gateway.route({
+      method: "POST",
+      path: "/api/chat/send",
+      handler: () => pendingSend.promise,
+    });
     const { container } = renderPreview();
     await screen.findByLabelText("Message composer");
     const input = fileInput(container);
@@ -393,20 +449,24 @@ describe("chat preview behaviour", () => {
   });
 
   it("tags user and assistant turns with data-role markers", async () => {
-    gateway.respond("GET", "/api/chat/history", {
-      thread_id: "thread-1",
-      turns: [
-        {
-          turn_number: 1,
-          user_input: "Ping the daemon",
-          response: "Pong from the daemon.",
-          state: "Complete",
-          started_at: "2026-03-26T12:00:00Z",
-          completed_at: "2026-03-26T12:00:01Z",
-          tool_calls: [],
-        },
-      ],
-      has_more: false,
+    gateway.respond({
+      method: "GET",
+      path: "/api/chat/history",
+      payload: {
+        thread_id: "thread-1",
+        turns: [
+          {
+            turn_number: 1,
+            user_input: "Ping the daemon",
+            response: "Pong from the daemon.",
+            state: "Complete",
+            started_at: "2026-03-26T12:00:00Z",
+            completed_at: "2026-03-26T12:00:01Z",
+            tool_calls: [],
+          },
+        ],
+        has_more: false,
+      },
     });
 
     // TestProviders builds a fresh QueryClient so the non-empty history is not
@@ -426,28 +486,32 @@ describe("chat preview behaviour", () => {
   });
 
   it("offers Approve/Always/Deny on the pending-approval card and disables them while submitting", async () => {
-    gateway.respond("GET", "/api/chat/history", {
-      thread_id: "thread-1",
-      turns: [],
-      has_more: false,
-      pending_approval: {
-        request_id: "req-42",
-        tool_name: "shell",
-        description: "Run a shell command",
-        parameters: '{ "cmd": "ls" }',
+    gateway.respond({
+      method: "GET",
+      path: "/api/chat/history",
+      payload: {
+        thread_id: "thread-1",
+        turns: [],
+        has_more: false,
+        pending_approval: {
+          request_id: "req-42",
+          tool_name: "shell",
+          description: "Run a shell command",
+          parameters: '{ "cmd": "ls" }',
+        },
       },
     });
 
     let resolveApproval: (() => void) | undefined;
-    gateway.route(
-      "POST",
-      "/api/chat/approval",
-      () =>
+    gateway.route({
+      method: "POST",
+      path: "/api/chat/approval",
+      handler: () =>
         new Promise((resolve) => {
           resolveApproval = () =>
             resolve(Response.json({ success: true, message: "ok" }));
-        })
-    );
+        }),
+    });
 
     // Fresh QueryClient (see the data-role test) so the pending_approval
     // history is not masked by the cached empty "thread-1" history.

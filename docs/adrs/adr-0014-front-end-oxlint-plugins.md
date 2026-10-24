@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 014: Apply Oxlint plug-ins to the front end
+# Architectural decision record (ADR) 0014: Apply Oxlint plug-ins to the front end
 
 ## Status
 
@@ -76,7 +76,7 @@ Option B. The `web-src` development dependencies pin the lint toolchain:
 | `ai-deslop`       | `0.4.8`    | Deslop recommended JavaScript plug-in rules |
 | `oxlint-tsgolint` | `7.0.2004` | Type-aware Oxlint backend                   |
 | TypeScript 7      | `7.0.2`    | Native compiler for typecheck and Oxlint    |
-| TypeScript 6      | `6.0.3`    | Compatibility API for compiler-aware tools  |
+| TypeScript 6      | `6.0.2`    | Compatibility API for compiler-aware tools  |
 
 _Table 2: Pinned front-end Oxlint components._
 
@@ -92,6 +92,9 @@ the same tree typechecked cleanly with both compilers. The TypeScript
 configuration removes the deprecated `baseUrl`, makes the existing alias
 project-relative, and enables the ES2023 library declarations used by Unicorn's
 non-mutating array methods.
+
+The compatibility package exposes the `tsc6` binary, which
+`check:types:6` invokes for the compatibility typecheck.
 
 `web-src/.oxlintrc.json` enumerates the supported Unicorn recommended rules and
 the `ai-deslop` recommended rules. Oxlint categories remain off so that
@@ -148,14 +151,27 @@ the rest of the front-end dependency graph. No additional update configuration
 is needed here; proposed version changes must still pass the compatibility and
 front-end gates described in this decision.
 
+## Addendum (2026-10-24): Follow the ADR index convention
+
+This record follows the repository's current ADR index convention: store
+records in `docs/adrs/`, use four-digit sequence numbers, and link each record
+from `docs/contents.md`. The index now lists this decision as ADR 0014.
+
+## Addendum (2026-10-24): Pin an available TypeScript 6 release
+
+The npm registry publishes `@typescript/typescript6` 6.0.2; 6.0.3 is
+unavailable. Pin the `typescript` compatibility alias to 6.0.2 so a clean
+install can reproduce the dual compiler checks.
+
 ## References
 
 - [Oxlint built-in plug-ins](https://oxc.rs/docs/guide/usage/linter/plugins.html)
 - [Oxlint JavaScript plug-ins](https://oxc.rs/docs/guide/usage/linter/js-plugins.html)
 - [TypeScript 7 announcement](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)
+- [TypeScript 6 compatibility package](https://www.npmjs.com/package/@typescript/typescript6)
 - [Unicorn recommended configuration](https://github.com/sindresorhus/eslint-plugin-unicorn#recommended-config)
 - [`ai-deslop` package](https://www.npmjs.com/package/ai-deslop)
 - [Model pull request #121](https://github.com/leynos/simulacat-core/pull/121)
 - [Repository dependency policy, pull request #446](https://github.com/leynos/axinite/pull/446)
-- [Web API reference](web-api-reference.md)
-- [Front-end Oxlint configuration](../web-src/.oxlintrc.json)
+- [Web API reference](../web-api-reference.md)
+- [Front-end Oxlint configuration](../../web-src/.oxlintrc.json)
