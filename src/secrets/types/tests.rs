@@ -65,12 +65,12 @@ fn test_secret_ref_serde_roundtrip() {
 #[test]
 fn test_secret_ref_serde_without_provider() {
     let original = SecretRef::new("bare_token");
-    let json = serde_json::to_string(&original).expect("serialise SecretRef");
+    let json = serde_json::to_string(&original).expect("serialize SecretRef");
     assert!(json.contains("\"provider\":null"));
     assert_json_round_trip_with(&original, |a, b| {
         a.name == b.name && a.provider == b.provider
     });
-    let deserialized: SecretRef = serde_json::from_str(&json).expect("deserialise SecretRef");
+    let deserialized: SecretRef = serde_json::from_str(&json).expect("deserialize SecretRef");
     assert!(deserialized.provider.is_none());
 }
 
@@ -145,9 +145,9 @@ fn test_credential_mapping_header_constructor() {
 fn test_credential_mapping_serde_roundtrip() {
     use crate::secrets::types::CredentialMapping;
     let original = CredentialMapping::bearer("tok", "*.api.com");
-    let json = serde_json::to_string(&original).expect("serialise CredentialMapping");
+    let json = serde_json::to_string(&original).expect("serialize CredentialMapping");
     let back: CredentialMapping =
-        serde_json::from_str(&json).expect("deserialise CredentialMapping");
+        serde_json::from_str(&json).expect("deserialize CredentialMapping");
     assert_eq!(back.secret_name, "tok");
     assert_eq!(back.host_patterns, vec!["*.api.com".to_string()]);
 }

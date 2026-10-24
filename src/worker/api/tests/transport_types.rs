@@ -1,4 +1,4 @@
-//! Transport type serialisation fidelity tests.
+//! Transport type serialization fidelity tests.
 
 use crate::test_support::{ExpectValid, assert_json_round_trip};
 use rstest::rstest;

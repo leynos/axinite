@@ -45,7 +45,7 @@ impl<T> ExpectValid for Option<T> {
     }
 }
 
-/// Serialises `value` to JSON, deserialises it back and returns the copy.
+/// Serializes `value` to JSON, deserializes it back and returns the copy.
 ///
 /// Panics at the calling test location if either direction fails.
 #[track_caller]
@@ -55,18 +55,18 @@ where
 {
     let json = match serde_json::to_string(value) {
         Ok(json) => json,
-        Err(error) => panic!("serialise round-trip value: {error}"),
+        Err(error) => panic!("serialize round-trip value: {error}"),
     };
     match serde_json::from_str::<T>(&json) {
         Ok(back) => (json, back),
-        Err(error) => panic!("deserialise round-trip value from {json}: {error}"),
+        Err(error) => panic!("deserialize round-trip value from {json}: {error}"),
     }
 }
 
-/// Asserts that `value` survives a JSON serialise/deserialise cycle unchanged.
+/// Asserts that `value` survives a JSON serialize/deserialize cycle unchanged.
 ///
 /// Use this for types that derive `PartialEq`. Callers that also pin the wire
-/// format should keep their own assertion on the serialised string.
+/// format should keep their own assertion on the serialized string.
 #[track_caller]
 pub(crate) fn assert_json_round_trip<T>(value: &T)
 where
@@ -82,9 +82,9 @@ where
 /// Like [`assert_json_round_trip`], but compares with `is_same` instead of
 /// `PartialEq`, for types that deliberately do not implement equality.
 ///
-/// A closure is used (rather than comparing re-serialised JSON) so that the
-/// comparison covers the deserialised fields themselves, and a field that
-/// fails to deserialise cannot hide behind an identical default encoding.
+/// A closure is used (rather than comparing re-serialized JSON) so that the
+/// comparison covers the deserialized fields themselves, and a field that
+/// fails to deserialize cannot hide behind an identical default encoding.
 #[track_caller]
 pub(crate) fn assert_json_round_trip_with<T>(value: &T, is_same: impl FnOnce(&T, &T) -> bool)
 where
@@ -94,7 +94,7 @@ where
     assert!(
         is_same(value, &back),
         "value must round-trip without field loss (json: {json}); original: {value:?}, \
-         deserialised: {back:?}"
+         deserialized: {back:?}"
     );
 }
 
