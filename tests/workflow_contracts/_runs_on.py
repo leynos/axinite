@@ -60,17 +60,19 @@ HOSTED_CONDITION_RE: re.Pattern[str] = re.compile(
 )
 
 
+def _depth_change(character: str) -> int:
+    """Return how one character changes the parenthesis depth."""
+    return {"(": 1, ")": -1}.get(character, 0)
+
+
 def _split_chain(body: str) -> list[str]:
     """Split an expression body on the `||` that sit outside parentheses."""
     parts: list[str] = []
     depth = 0
     start = 0
     for index, character in enumerate(body):
-        if character == "(":
-            depth += 1
-        elif character == ")":
-            depth -= 1
-        elif depth == 0 and body.startswith("||", index):
+        depth += _depth_change(character)
+        if depth == 0 and body.startswith("||", index):
             parts.append(body[start:index].strip())
             start = index + 2
     parts.append(body[start:].strip())
