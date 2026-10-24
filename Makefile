@@ -305,7 +305,7 @@ test-workflow-contracts:
 # `miri` interprets the host-runnable boundary and memory paths under a pinned
 # dated nightly. The `miri` component is installed by the dedicated CI job
 # only (`rustup component add miri --toolchain $(MIRI_TOOLCHAIN)` locally).
-# Keep the pin aligned with the nightly the build standard pins. Isolation is
+# The pin is the nightly `rust-toolchain.toml` names. Isolation is
 # disabled so Miri forwards file-system calls; tests that need syscalls Miri
 # cannot model carry `#[cfg_attr(miri, ignore = "...")]` and are listed in
 # docs/rust-boundary-verification.md.
@@ -321,7 +321,7 @@ test-workflow-contracts:
 # Stacked Borrows off, and everything else, the guest logic included, runs
 # with it on. Allocation, bounds, alignment, initialization and leak checks
 # stay on for the round trips.
-MIRI_TOOLCHAIN ?= nightly-2026-10-16
+MIRI_TOOLCHAIN ?= $(shell awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ { print $$2; exit }' $(RUST_TOOLCHAIN_FILE))
 MIRIFLAGS ?= -Zmiri-disable-isolation
 MIRI_ABI_TARGET ?= i686-unknown-linux-gnu
 # Standalone WASM component roots that carry host-runnable unit tests.
