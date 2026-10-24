@@ -57,10 +57,12 @@ async fn successful_reload_invokes_all_dependencies(
 
     let manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
+        HotReloadDeps {
+            config_loader: loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: Some(injector as Arc<dyn SecretInjector>),
+            secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+        },
     );
 
     let result = manager.perform_reload().await;
@@ -135,10 +137,12 @@ async fn address_unchanged_skips_listener_restart(
 
     let manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
+        HotReloadDeps {
+            config_loader: loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: Some(injector as Arc<dyn SecretInjector>),
+            secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+        },
     );
 
     let result = manager.perform_reload().await;
@@ -179,10 +183,12 @@ async fn listener_restart_failure_prevents_secret_update(
 
     let manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
+        HotReloadDeps {
+            config_loader: loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: Some(injector as Arc<dyn SecretInjector>),
+            secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+        },
     );
 
     let result = manager.perform_reload().await;
@@ -211,10 +217,12 @@ async fn readding_same_listener_address_restarts_after_shutdown()
     let remove_loader = Arc::new(StubConfigLoader::new_success(remove_config));
     let remove_manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        remove_loader as Arc<dyn ConfigLoader>,
-        Some(Arc::clone(&controller) as Arc<dyn ListenerController>),
-        Some(Arc::clone(&injector) as Arc<dyn SecretInjector>),
-        vec![Arc::clone(&spy) as Arc<dyn ChannelSecretUpdater>],
+        HotReloadDeps {
+            config_loader: remove_loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(Arc::clone(&controller) as Arc<dyn ListenerController>),
+            secret_injector: Some(Arc::clone(&injector) as Arc<dyn SecretInjector>),
+            secret_updaters: vec![Arc::clone(&spy) as Arc<dyn ChannelSecretUpdater>],
+        },
     );
 
     remove_manager
@@ -232,10 +240,12 @@ async fn readding_same_listener_address_restarts_after_shutdown()
     let readd_loader = Arc::new(StubConfigLoader::new_success(readd_config));
     let readd_manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        readd_loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
+        HotReloadDeps {
+            config_loader: readd_loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: Some(injector as Arc<dyn SecretInjector>),
+            secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+        },
     );
 
     readd_manager
@@ -267,10 +277,12 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
 
     let manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        None,
-        Vec::new(),
+        HotReloadDeps {
+            config_loader: loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: None,
+            secret_updaters: Vec::new(),
+        },
     );
 
     // localhost typically resolves to both 127.0.0.1 and ::1
@@ -302,10 +314,12 @@ async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
 
     let manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        None,
-        Vec::new(),
+        HotReloadDeps {
+            config_loader: loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: None,
+            secret_updaters: Vec::new(),
+        },
     );
 
     manager
