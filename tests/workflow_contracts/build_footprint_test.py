@@ -59,11 +59,14 @@ def test_development_profile_keeps_the_build_footprint_settings(
 
 
 def test_root_dependency_profile_disables_debug_info() -> None:
-    """The root dependency profile sets ``debug = 0``."""
+    """The root dependency profile sets ``debug = 0`` and keeps split debuginfo."""
     manifest = tomllib.loads((ROOT / "Cargo.toml").read_text("utf-8"))
     dependencies = (
         manifest.get("profile", {}).get("dev", {}).get("package", {}).get("*", {})
     )
     assert _is_zero_debug(dependencies.get("debug")), (
         'profile.dev.package."*" must set debug = 0 or false'
+    )
+    assert dependencies.get("split-debuginfo") == "unpacked", (
+        'profile.dev.package."*" must keep split-debuginfo = "unpacked"'
     )
