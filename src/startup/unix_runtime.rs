@@ -88,10 +88,12 @@ fn setup_sighup_reload(
 ) {
     let reload_manager = Arc::new(axinite::reload::create_hot_reload_manager_from_context(
         env_context.clone(),
-        sighup_settings_store.clone(),
-        webhook_server.clone(),
-        secrets_store,
-        secret_updaters.to_vec(),
+        axinite::reload::HotReloadWiring {
+            settings_store: sighup_settings_store.clone(),
+            webhook_server: webhook_server.clone(),
+            secrets_store,
+            secret_updaters: secret_updaters.to_vec(),
+        },
     ));
     spawn_sighup_handler(reload_manager, shutdown_tx);
 }
