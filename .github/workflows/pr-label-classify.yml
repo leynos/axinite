@@ -16,6 +16,9 @@ jobs:
     # takes the smallest ARM shape: on the hosted pool this 13-20 s job
     # waited up to 2,098 s to start (ADR 0013). `pull_request_target` runs in
     # this repository's context for a fork too, so it needs no fork fallback.
+    # dependabot-runner: exempt. A few seconds of labelling on a `pull_request_target`
+    # event; a hosted arm would need a new hosted arm64 label in the registry and
+    # contracts for no measurable saving.
     runs-on: ubicloud-standard-2-arm
     timeout-minutes: 10
     steps:

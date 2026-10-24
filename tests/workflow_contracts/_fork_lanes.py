@@ -20,7 +20,7 @@ import re
 import typing as typ
 
 from _runs_on import EVENT_CONDITION_RE, conditional_runs_on_arms
-from _workflow_policy import FORK_CONDITION, UBICLOUD_LABEL_PREFIX
+from _workflow_policy import FORK_CONDITION, HOSTED_CONDITION, UBICLOUD_LABEL_PREFIX
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from _workflow_policy import Job
@@ -126,7 +126,7 @@ def paid_arms_before_the_fork(declared: str) -> tuple[str, ...]:
     """
     shadowing: list[str] = []
     for condition, label in conditional_runs_on_arms(declared) or ():
-        if condition == FORK_CONDITION:
+        if condition in (FORK_CONDITION, HOSTED_CONDITION):
             break
         if label.startswith(UBICLOUD_LABEL_PREFIX) and _holds_on_a_pull_request(
             condition

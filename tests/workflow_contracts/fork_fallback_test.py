@@ -37,7 +37,7 @@ from _fork_lanes import (
 from _trigger_reading import runs_on_event, triggers
 from _workflow_files import jobs_of
 from _workflow_policy import (
-    FORK_CONDITION,
+    HOSTED_CONDITION,
     UBICLOUD_LABEL_PREFIX,
     Job,
     conditional_runs_on_arms,
@@ -156,10 +156,10 @@ def test_every_pull_request_lane_falls_back_for_a_fork(job: Job) -> None:
     Nothing about the workflow's appearance would show it.
     """
     declared = runs_on_scalar(job)
-    assert FORK_CONDITION in declared, (
+    assert HOSTED_CONDITION in declared, (
         f"{job} can run on a fork's pull request and asks for "
         f"{job.runner_summary} without a fork fallback. Add "
-        f"`{FORK_CONDITION} && '{HOSTED_LABEL}'` ahead of the paid label: a "
+        f"`{HOSTED_CONDITION} && '{HOSTED_LABEL}'` ahead of the paid label: a "
         "fork cannot obtain an Ubicloud runner and its check will hang."
     )
 
@@ -167,7 +167,7 @@ def test_every_pull_request_lane_falls_back_for_a_fork(job: Job) -> None:
 def test_the_fork_arm_selects_a_hosted_runner(job: Job) -> None:
     """The fallback must be free, and it must be the fork arm's own label."""
     declared = runs_on_scalar(job)
-    _, found, arm = declared.partition(FORK_CONDITION)
+    _, found, arm = declared.partition(HOSTED_CONDITION)
     assert found, f"{job} names no fork condition, so there is no fallback arm to read"
     assert arm.lstrip().startswith(f"&& '{HOSTED_LABEL}'"), (
         f"{job} tests the fork field but does not hand a fork "
@@ -186,7 +186,7 @@ def test_no_earlier_arm_hands_a_fork_a_paid_runner(job: Job) -> None:
     shadowing = paid_arms_before_the_fork(runs_on_scalar(job))
     assert not shadowing, (
         f"{job} selects a paid runner for a pull request before its fork arm "
-        f"is reached: {list(shadowing)}. Put `{FORK_CONDITION} && "
+        f"is reached: {list(shadowing)}. Put `{HOSTED_CONDITION} && "
         f"'{HOSTED_LABEL}'` ahead of every arm a pull request can take."
     )
 

@@ -32,6 +32,15 @@ SHA_RE: re.Pattern[str] = re.compile(r"^[0-9a-f]{40}$")
 #: The field that decides whether a pull request came from a fork.
 FORK_CONDITION = "github.event.pull_request.head.repo.fork"
 
+#: The pull request's author, not `github.actor`: the actor is whoever
+#: triggered the run, so a person pushing to a Dependabot branch would flip the
+#: runner. Hosted minutes cost nothing on a public repository, so Dependabot's
+#: pull requests take the hosted arm as a fork's do.
+DEPENDABOT_CONDITION = "github.event.pull_request.user.login == 'dependabot[bot]'"
+
+#: The exact condition of the hosted arm: a fork, or Dependabot.
+HOSTED_CONDITION = f"({FORK_CONDITION} || {DEPENDABOT_CONDITION})"
+
 #: Prefix shared by every Ubicloud runner label. Match on the prefix, not on
 #: one exact label: the migration wave introduces `ubicloud-standard-2`, and a
 #: contract keyed to the current label would wave the new one through.

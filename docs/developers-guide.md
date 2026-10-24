@@ -357,12 +357,18 @@ to this repository and the fork's run does not reach it, so a lane that asks
 for one does not fail: it queues, waits, and is eventually reported as a stuck
 or cancelled check on somebody else's contribution, which reads as this
 repository being broken. Every lane a `pull_request` can dispatch therefore
-names a GitHub-hosted runner for that case:
+names a GitHub-hosted runner for that case. A pull request Dependabot opened
+takes the same hosted arm: hosted minutes cost nothing on a public repository,
+and Dependabot opens many pull requests, which therefore run on the hosted pool
+without Ubicloud's cache store. The condition tests the pull request's author,
+not `github.actor`, because the actor is whoever triggered the run, so a person
+pushing to a Dependabot branch would flip the runner:
 
 ```yaml
     runs-on: >-
-      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
-      || 'ubicloud-standard-4' }}
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-4' }}
 ```
 
 A lane that also serves a cron composes both conditions in one expression, in
@@ -371,33 +377,38 @@ that order, because `runs-on` is the only place either distinction can live:
 ```yaml
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
-      || 'ubicloud-standard-2' }}
+      || (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-2' }}
 ```
+
+The reader splits the chain on the `||` outside parentheses, so the hosted
+condition's own `||` is not a chain separator, and it recognizes that condition
+only as written (the fork field, then the Dependabot author).
 
 `Job.runner_labels` reads a chain of any length and reports every distinct
 label, so a lane still answers `uses_ubicloud` and stays inside the timeout,
 sizing and sccache contracts. `Job.labels_for_event` answers which arm an event
-selects, and it answers a fork condition false on purpose: these contracts ask
-what a lane costs this repository, a fork's run costs nothing here, and reading
-the fork arm as the pull-request answer would report every one of these lanes
-as free while hiding the shape they buy for a branch pull request. A chain the
-helpers cannot read, one with no fallback arm or naming a condition they cannot
-evaluate, stays one opaque label rather than being split into arms nobody
-checked.
+selects, and it answers a fork or Dependabot condition false on purpose: these
+contracts ask what a lane costs this repository, a fork's run costs nothing
+here, and reading the fork arm as the pull-request answer would report every
+one of these lanes as free while hiding the shape they buy for a branch pull
+request. A chain the helpers cannot read, one with no fallback arm or naming a
+condition they cannot evaluate, stays one opaque label rather than being split
+into arms nobody checked.
 
-`tests/workflow_contracts/fork_fallback_test.py` asserts the field rather than
-the shape, because the failure worth stopping looks right. Swapping
-`head.repo.fork` for `head.repo.private` leaves an expression of the same shape
-with the same two labels; it sends every branch pull request to a free runner
-while a fork's still queues for a paid one, and nothing in the workflow shows
-it. The contract also asserts the other direction, that a branch pull request
-still selects the Ubicloud shape, so a lane rewritten to send every pull
-request to `ubuntu-latest` fails rather than passing as a fallback. It reads
-the arms in order, too: an arm ahead of the fork arm that selects Ubicloud on a
-pull request takes a fork's run first, so it fails even though the fork field
-and its hosted label are both present further along. An earlier cron arm is
-fine, since a pull request cannot take it.
+`tests/workflow_contracts/fork_fallback_test.py` asserts the exact hosted
+condition rather than the shape, because the failure worth stopping looks
+right. Swapping `head.repo.fork` for `head.repo.private` leaves an expression
+of the same shape with the same two labels; it sends every branch pull request
+to a free runner while a fork's still queues for a paid one, and nothing in the
+workflow shows it. The contract also asserts the other direction, that a branch
+pull request still selects the Ubicloud shape, so a lane rewritten to send
+every pull request to `ubuntu-latest` fails rather than passing as a fallback.
+It reads the arms in order, too: an arm ahead of the fork arm that selects
+Ubicloud on a pull request takes a fork's run first, so it fails even though
+the fork field and its hosted label are both present further along. An earlier
+cron arm is fine, since a pull request cannot take it.
 
 Reading either expression as one opaque label would drop the job out of the
 placement, timeout, sizing and sccache contracts at once, which is the failure

@@ -44,9 +44,13 @@ jobs:
     # runner, so it falls back to a GitHub-hosted one. Branch
     # pull requests, which are the ones a maintainer waits on,
     # keep the paid shape.
+    # Dependabot pull requests run on the hosted pool too (free on a public
+    # repository). The author is tested, not the actor, which changes when
+    # someone else pushes to the branch.
     runs-on: >-
-      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
-      || 'ubicloud-standard-4' }}
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-4' }}
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -132,8 +136,9 @@ jobs:
     # pull requests, which are the ones a maintainer waits on,
     # keep the paid shape.
     runs-on: >-
-      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
-      || 'ubicloud-standard-4' }}
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-4' }}
     timeout-minutes: 75
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
