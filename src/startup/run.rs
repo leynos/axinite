@@ -240,6 +240,10 @@ pub(crate) fn setup_runtime_management(
         &shutdown_tx,
     );
 
+    // The environment snapshot only feeds the Unix hot-reload handler.
+    #[cfg(not(unix))]
+    let _ = env_context;
+
     shutdown_tx
 }
 
