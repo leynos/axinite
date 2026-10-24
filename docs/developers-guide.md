@@ -525,11 +525,13 @@ small. The root `Cargo.toml` sets `incremental = false` and `debug = 0` in
 `tools-src` and `fuzz` sets the same two keys, so builds keep no incremental
 compilation state and no debug information. The trade-off is that a debugger
 sees no source-level debug information or line tables in a default development
-build and every rebuild recompiles whole crates. To debug, run with
-`CARGO_PROFILE_DEV_DEBUG=true`; to rebuild incrementally, set
-`CARGO_INCREMENTAL=1`. The repository has no `rust-toolchain.toml`, so the rule
-cannot establish which unstable metadata key applies and reports that check as
-indeterminate; this change does not pick a toolchain.
+build and every rebuild recompiles whole crates. To debug workspace crates, run
+with `CARGO_PROFILE_DEV_DEBUG=true`. To debug dependencies, add
+`--config 'profile.dev.package."*".debug=true'`, because the environment
+variable does not override the `"*"` package table. To rebuild incrementally,
+set `CARGO_INCREMENTAL=1`. The repository has no `rust-toolchain.toml`, so the
+rule cannot establish which unstable metadata key applies and reports that
+check as indeterminate; this change does not pick a toolchain.
 `tests/workflow_contracts/build_footprint_test.py` holds the settings.
 
 ### Cache ownership
