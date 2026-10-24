@@ -1,4 +1,4 @@
-"""Contracts for the audited unsafe-boundary allow-list (ADR 015).
+"""Contracts for the audited unsafe-boundary allow-list (ADR 0015).
 
 Every crate the repository builds is inventoried, every safe crate forbids
 unsafe code in all of its targets, and every boundary crate confines unsafe

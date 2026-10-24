@@ -2,7 +2,7 @@
 """Enforce the audited unsafe-boundary inventory and prove it with the compiler.
 
 Axinite confines unsafe Rust to an explicit allow-list of boundary crates
-(ADR 015). Everything else forbids it. Two halves:
+(ADR 0015). Everything else forbids it. Two halves:
 
 * The static half reads manifests and sources and reports every deviation from
   the inventory in `unsafe_boundaries/inventory.py`. It is a pure function of

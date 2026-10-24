@@ -12,7 +12,7 @@ name: Rust Boundaries
       - "scripts/check_unsafe_boundaries.py"
       - "scripts/unsafe_boundaries/**"
       - "tests/workflow_contracts/*unsafe_boundary*"
-      - "docs/adr-015-audited-unsafe-boundaries.md"
+      - "docs/adrs/adr-0015-audited-unsafe-boundaries.md"
       - "docs/rust-boundary-verification.md"
       - "Makefile"
       - ".github/workflows/rust-boundaries.yml"
