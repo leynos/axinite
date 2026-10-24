@@ -22,7 +22,7 @@ mod test_stubs;
 pub use config_loader::{ConfigLoader, DbConfigLoader, EnvConfigLoader};
 pub use error::ReloadError;
 pub use listener_controller::{ListenerController, WebhookListenerController};
-pub use manager::HotReloadManager;
+pub use manager::{HotReloadDeps, HotReloadManager};
 pub use secret_injector::{DbSecretInjector, SecretInjector};
 
 use std::sync::Arc;
@@ -60,21 +60,39 @@ pub fn create_hot_reload_manager(
 ) -> HotReloadManager {
     create_hot_reload_manager_from_context(
         EnvContext::capture_ambient(),
-        settings_store,
-        webhook_server,
-        secrets_store,
-        secret_updaters,
+        HotReloadWiring {
+            settings_store,
+            webhook_server,
+            secrets_store,
+            secret_updaters,
+        },
     )
+}
+
+/// Stores and handles from which [`create_hot_reload_manager_from_context`]
+/// builds the default reload collaborators.
+pub struct HotReloadWiring {
+    /// Settings store; selects the database-backed config loader when present.
+    pub settings_store: Option<Arc<dyn SettingsStore>>,
+    /// Webhook server whose listener is restarted on reload.
+    pub webhook_server: Option<Arc<Mutex<WebhookServer>>>,
+    /// Secrets store; enables secret injection into the reload snapshot.
+    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// Channel instances that support secret swapping.
+    pub secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
 }
 
 /// Create a hot-reload manager using the resolved startup environment snapshot.
 pub fn create_hot_reload_manager_from_context(
     env_context: EnvContext,
-    settings_store: Option<Arc<dyn SettingsStore>>,
-    webhook_server: Option<Arc<Mutex<WebhookServer>>>,
-    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
+    wiring: HotReloadWiring,
 ) -> HotReloadManager {
+    let HotReloadWiring {
+        settings_store,
+        webhook_server,
+        secrets_store,
+        secret_updaters,
+    } = wiring;
     let default_user_id = default_user_id();
 
     // Instantiate config loader based on whether settings store is present
@@ -94,9 +112,11 @@ pub fn create_hot_reload_manager_from_context(
 
     HotReloadManager::new_with_context(
         env_context,
-        config_loader,
-        listener_controller,
-        secret_injector,
-        secret_updaters,
+        HotReloadDeps {
+            config_loader,
+            listener_controller,
+            secret_injector,
+            secret_updaters,
+        },
     )
 }
