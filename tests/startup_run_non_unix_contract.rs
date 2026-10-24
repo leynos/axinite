@@ -39,6 +39,7 @@ mod startup {
 
     pub(crate) struct CoreAgentContext {
         pub(crate) config: axinite::config::Config,
+        pub(crate) env_context: axinite::config::EnvContext,
         pub(crate) components: axinite::app::AppComponents,
         pub(crate) side_effects: axinite::app::RuntimeSideEffects,
         pub(crate) active_tunnel: Option<Box<dyn axinite::tunnel::Tunnel>>,
