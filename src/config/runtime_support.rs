@@ -150,7 +150,14 @@ pub async fn inject_llm_keys_from_secrets(
     let injected = collect_llm_key_injections(
         secrets,
         user_id,
-        |env_var| matches!(std::env::var(env_var), Ok(val) if !val.is_empty()),
+        |env_var| {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "owning ambient secret-injection boundary; callers without a context retain compatibility"
+            )]
+            let value = std::env::var(env_var);
+            matches!(value, Ok(val) if !val.is_empty())
+        },
     )
     .await?;
     merge_injected_vars(injected);
@@ -207,6 +214,15 @@ pub async fn inject_llm_keys_into_context(
         collect_llm_key_injections(secrets, user_id, |env_var| ctx.get(env_var).is_some()).await?;
     ctx.merge_secrets(injected);
     Ok(())
+}
+
+/// Merge a startup snapshot's secrets into the legacy ambient lookup overlay.
+///
+/// This compatibility bridge keeps callers of ambient configuration helpers
+/// working while they migrate to `EnvContext`. New code should use the
+/// snapshot directly.
+pub fn merge_context_secrets_into_legacy_overlay(ctx: &EnvContext) {
+    merge_injected_vars(ctx.secret_values());
 }
 
 /// Load tokens from OS credential stores (no DB required).

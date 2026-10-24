@@ -22,6 +22,27 @@ dependencies are provided as arguments. The `mockable` crate offers a
 convenient set of traits (`Env`, `Clock`, etc.) to implement this pattern for
 common system interactions in Rust.
 
+## Axinite environment policy
+
+Axinite uses `EnvContext` as its environment dependency. Capture the ambient
+environment once at an owning composition boundary, then pass that snapshot to
+configuration and adapters. Tests construct `EnvContext::for_testing(...)` or
+extend `EnvContext::default()` with `with_env(...)`; they must never call
+`std::env::set_var` or `std::env::remove_var` in process.
+
+`clippy.toml` disallows direct environment reads and writes. A remaining legacy
+reader may use a narrowly scoped
+`#[expect(clippy::disallowed_methods, reason =
+"transitional #333: EnvContext")]`.
+The expectation is deliberately stale-detecting: remove it with the direct
+call when the dependency is injected. Owning composition boundaries use the
+same lint expectation with an explanation of why their ambient capture is
+required.
+
+The `mockable` walkthrough below is general Rust background. Axinite code uses
+`EnvContext` instead of introducing `mockable::RealEnv` or `MockEnv` as another
+environment seam.
+
 ______________________________________________________________________
 
 ## ✨ Mocking environment variables

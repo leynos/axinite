@@ -35,7 +35,7 @@ pub mod test_helpers;
 use std::sync::Arc;
 
 use crate::agent::SessionManager;
-use crate::config::GatewayConfig;
+use crate::config::{EnvContext, GatewayConfig};
 use crate::db::Database;
 use crate::extensions::ExtensionManager;
 use crate::orchestrator::job_manager::ContainerJobManager;
@@ -62,6 +62,11 @@ impl GatewayChannel {
     ///
     /// If no auth token is configured, generates a random one and prints it.
     pub fn new(config: GatewayConfig) -> Self {
+        Self::new_from_context(config, EnvContext::capture_ambient())
+    }
+
+    /// Create a gateway channel using an explicit environment snapshot.
+    pub fn new_from_context(config: GatewayConfig, env_context: EnvContext) -> Self {
         let auth_token = config.auth_token.clone().unwrap_or_else(|| {
             use rand::RngCore;
             use rand::rngs::OsRng;
@@ -70,7 +75,9 @@ impl GatewayChannel {
             bytes.iter().map(|b| format!("{b:02x}")).collect()
         });
 
+        let env_flag_overlay = handlers::features::env_flag_overlay(&env_context);
         let state = Arc::new(GatewayState {
+            env_flag_overlay,
             msg_tx: tokio::sync::RwLock::new(None),
             sse: SseManager::new(),
             workspace: None,
@@ -110,6 +117,7 @@ impl GatewayChannel {
     /// Helper to rebuild state, copying existing fields and applying a mutation.
     fn rebuild_state(&mut self, mutate: impl FnOnce(&mut GatewayState)) {
         let mut new_state = GatewayState {
+            env_flag_overlay: self.state.env_flag_overlay.clone(),
             msg_tx: tokio::sync::RwLock::new(None),
             // Preserve the existing broadcast channel so sender handles remain valid.
             sse: SseManager::from_sender(self.state.sse.sender()),

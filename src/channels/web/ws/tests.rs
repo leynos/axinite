@@ -176,6 +176,7 @@ async fn make_test_state(msg_tx: Option<mpsc::Sender<IncomingMessage>>) -> Gatew
     use crate::channels::web::sse::SseManager;
 
     GatewayState {
+        env_flag_overlay: Default::default(),
         msg_tx: tokio::sync::RwLock::new(msg_tx),
         sse: SseManager::new(),
         workspace: None,

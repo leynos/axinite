@@ -5,10 +5,11 @@
 //! focused submodule.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tokio::fs;
 
+use crate::config::EnvContext;
 use crate::secrets::SecretsStore;
 use crate::tools::wasm::{AuthCapabilitySchema, CapabilitiesFile, ValidationEndpointSchema};
 
@@ -20,12 +21,20 @@ mod oauth;
 
 use self::oauth::{auth_tool_oauth, combine_provider_scopes};
 
+struct AuthToolContext<'a> {
+    user_id: &'a str,
+    auth: &'a AuthCapabilitySchema,
+    display_name: &'a str,
+    env_context: &'a EnvContext,
+}
+
 /// Configure authentication for a tool.
 pub(super) async fn auth_tool(
     name: String,
     dir: Option<PathBuf>,
     user_id: String,
 ) -> anyhow::Result<()> {
+    let env_context = EnvContext::capture_ambient();
     validate_tool_name(&name)?;
     let tools_dir = dir.unwrap_or_else(default_tools_dir);
     let caps_path = tools_dir.join(format!("{}.capabilities.json", name));
@@ -83,12 +92,26 @@ pub(super) async fn auth_tool(
         println!();
     }
 
-    if try_auth_from_env(secrets_store.as_ref(), &user_id, &auth, display_name).await? {
+    let context = AuthToolContext {
+        user_id: &user_id,
+        auth: &auth,
+        display_name,
+        env_context: &env_context,
+    };
+    complete_auth_setup(secrets_store.as_ref(), &tools_dir, &context).await
+}
+
+async fn complete_auth_setup(
+    store: &(dyn SecretsStore + Send + Sync),
+    tools_dir: &Path,
+    context: &AuthToolContext<'_>,
+) -> anyhow::Result<()> {
+    if try_auth_from_env(store, context).await? {
         return Ok(());
     }
 
-    if let Some(ref oauth) = auth.oauth {
-        let combined = combine_provider_scopes(&tools_dir, &auth.secret_name, oauth).await;
+    if let Some(ref oauth) = context.auth.oauth {
+        let combined = combine_provider_scopes(tools_dir, &context.auth.secret_name, oauth).await;
         if combined.scopes.len() > oauth.scopes.len() {
             let extra = combined.scopes.len() - oauth.scopes.len();
             println!(
@@ -97,22 +120,20 @@ pub(super) async fn auth_tool(
             );
             println!();
         }
-        return auth_tool_oauth(secrets_store.as_ref(), &user_id, &auth, &combined).await;
+        return auth_tool_oauth(store, context, &combined).await;
     }
 
-    auth_tool_manual(secrets_store.as_ref(), &user_id, &auth).await
+    auth_tool_manual(store, context.user_id, context.auth).await
 }
 
 async fn try_auth_from_env(
     store: &(dyn SecretsStore + Send + Sync),
-    user_id: &str,
-    auth: &AuthCapabilitySchema,
-    display_name: &str,
+    context: &AuthToolContext<'_>,
 ) -> anyhow::Result<bool> {
-    let Some(env_var) = auth.env_var.as_ref() else {
+    let Some(env_var) = context.auth.env_var.as_ref() else {
         return Ok(false);
     };
-    let Ok(token) = std::env::var(env_var) else {
+    let Some(token) = context.env_context.get_owned(env_var) else {
         return Ok(false);
     };
     if token.is_empty() {
@@ -122,24 +143,26 @@ async fn try_auth_from_env(
     println!("  Found {} in environment.", env_var);
     println!();
 
-    if let Some(ref validation) = auth.validation_endpoint {
+    if let Some(ref validation) = context.auth.validation_endpoint {
         print!("  Validating token...");
         std::io::stdout().flush()?;
 
-        match validate_token(&token, validation, &auth.secret_name).await {
+        match validate_token(&token, validation, &context.auth.secret_name).await {
             Ok(()) => println!(" ✓"),
             Err(e) => {
                 println!(" ✗");
                 println!("  Validation failed: {}", e);
                 println!();
                 println!("  Falling back to manual entry...");
-                return auth_tool_manual(store, user_id, auth).await.map(|_| true);
+                return auth_tool_manual(store, context.user_id, context.auth)
+                    .await
+                    .map(|_| true);
             }
         }
     }
 
-    save_token(store, user_id, auth, &token, None, None).await?;
-    print_success(display_name);
+    save_token(store, context.user_id, context.auth, &token, None, None).await?;
+    print_success(context.display_name);
     Ok(true)
 }
 

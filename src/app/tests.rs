@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     channels::web::log_layer::LogBroadcaster,
-    config::Config,
+    config::{Config, EnvContext},
     db::{Database, SettingKey, UserId},
     llm::{LlmProvider, SessionConfig, SessionManager},
     testing::StubLlm,
@@ -63,16 +63,19 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
     let log_broadcaster = Arc::new(LogBroadcaster::new());
     let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
 
-    let mut builder = AppBuilder::new(AppBuilderParams {
-        config,
-        flags: AppBuilderFlags {
-            workspace_import_dir: Some(workspace_import_dir.clone()),
-            ..AppBuilderFlags::default()
+    let mut builder = AppBuilder::new_with_context(
+        AppBuilderParams {
+            config,
+            flags: AppBuilderFlags {
+                workspace_import_dir: Some(workspace_import_dir.clone()),
+                ..AppBuilderFlags::default()
+            },
+            toml_path: None,
+            session,
+            log_broadcaster,
         },
-        toml_path: None,
-        session,
-        log_broadcaster,
-    });
+        EnvContext::default().with_secret("ANTHROPIC_API_KEY", "overlay-only-key"),
+    );
     builder.with_database(db);
     builder.with_llm(llm);
 
@@ -82,7 +85,14 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
-    if std::env::var("AXINITE_APP_MIGRATION_CHILD").ok().as_deref() == Some("1") {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_CHILD")
+    }
+    .ok()
+    .as_deref()
+        == Some("1")
+    {
         run_init_database_migration_child().await?;
         return Ok(());
     }
@@ -130,11 +140,22 @@ async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
 
 #[cfg(feature = "libsql")]
 async fn run_init_database_migration_child() -> anyhow::Result<()> {
-    let axinite_dir = PathBuf::from(std::env::var("AXINITE_BASE_DIR")?);
-    let db_path = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_DB_PATH")?);
-    let skills_dir = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")?);
-    let installed_skills_dir =
-        PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")?);
+    let axinite_dir = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_BASE_DIR")
+    }?);
+    let db_path = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_DB_PATH")
+    }?);
+    let skills_dir = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")
+    }?);
+    let installed_skills_dir = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")
+    }?);
 
     let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
     let session = Arc::new(SessionManager::new(SessionConfig::default()));
@@ -172,7 +193,11 @@ async fn build_components_returns_without_activating_side_effects(
     #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
 ) -> anyhow::Result<()> {
     let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
-    let (components, side_effects) = builder.build_components().await?;
+    let (components, side_effects, env_context) = builder.build_components_with_context().await?;
+    assert_eq!(
+        env_context.get("ANTHROPIC_API_KEY"),
+        Some("overlay-only-key")
+    );
     assert!(components.tools.count() > 0);
     let workspace = components
         .workspace

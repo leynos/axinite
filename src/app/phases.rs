@@ -46,7 +46,14 @@ impl AppBuilder {
         }
 
         let toml_path = self.toml_path.as_deref();
-        match Config::from_db_with_toml(db.as_ref(), "default", toml_path).await {
+        match Config::from_db_from_context_with_toml(
+            db.as_ref(),
+            "default",
+            &self.env_context,
+            toml_path,
+        )
+        .await
+        {
             Ok(db_config) => {
                 self.config = db_config;
                 tracing::debug!("Configuration reloaded from database");
@@ -76,7 +83,14 @@ impl AppBuilder {
         let toml_path = self.toml_path.as_deref();
         if let Err(e) = self
             .config
-            .re_resolve_llm(store, "default", toml_path)
+            .re_resolve_llm_with_context(
+                &self.env_context,
+                crate::config::LlmSettingsSource {
+                    store,
+                    user_id: "default",
+                    toml_path,
+                },
+            )
             .await
         {
             tracing::warn!("Failed to re-resolve LLM config after {context}: {e}");
@@ -87,7 +101,7 @@ impl AppBuilder {
     /// tokens from OS credential stores (e.g., Anthropic OAuth via Claude
     /// Code's macOS Keychain / Linux ~/.claude/.credentials.json) instead.
     async fn init_secrets_from_os_credentials(&mut self) {
-        crate::config::inject_os_credentials();
+        crate::config::inject_os_credentials_into_context(&mut self.env_context);
 
         // Consume unused handles
         self.handles.take();
@@ -124,7 +138,12 @@ impl AppBuilder {
 
         if let Some(ref secrets) = store {
             // Inject LLM API keys from encrypted storage
-            crate::config::inject_llm_keys_from_secrets(secrets.as_ref(), "default").await?;
+            crate::config::inject_llm_keys_into_context(
+                &mut self.env_context,
+                secrets.as_ref(),
+                "default",
+            )
+            .await?;
 
             // Re-resolve only the LLM config with newly available keys.
             self.re_resolve_llm_config("secret injection").await;
@@ -374,17 +393,5 @@ impl AppBuilder {
             },
         ));
         (context_manager, cost_guard)
-    }
-
-    /// Validates that LLM credentials are configured for non-nearai backends.
-    pub(super) fn validate_llm_config(&self) -> Result<(), anyhow::Error> {
-        if self.config.llm.backend != "nearai" && self.config.llm.provider.is_none() {
-            let backend = &self.config.llm.backend;
-            anyhow::bail!(
-                "LLM_BACKEND={backend} is configured but no credentials were found. \
-                 Set the appropriate API key environment variable or run the setup wizard."
-            );
-        }
-        Ok(())
     }
 }

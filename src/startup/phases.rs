@@ -6,7 +6,7 @@ use axinite::{
     app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
     cli::Cli,
-    config::Config,
+    config::{Config, EnvContext},
     hooks::bootstrap_hooks,
     llm::create_session_manager,
 };
@@ -17,7 +17,7 @@ use axinite::setup::{SetupConfig, SetupWizard};
 use crate::startup::channels::{
     ChannelSetup, GatewayContext, GatewaySetup, setup_channels, setup_gateway_channel,
 };
-use crate::startup::{boot, context::*, run};
+use crate::startup::{boot, context::*, orchestrator::setup_orchestrator_context, run};
 
 /// Acquires the optional PID lock and runs first-run onboarding when requested.
 ///
@@ -50,8 +50,16 @@ pub(crate) async fn phase_pid_and_onboard(
 pub(crate) async fn phase_load_config_and_tracing(
     cli: &Cli,
 ) -> anyhow::Result<LoadedConfigContext> {
+    phase_load_config_and_tracing_from(cli, &EnvContext::capture_ambient()).await
+}
+
+/// Load configuration and tracing from an explicit startup environment snapshot.
+pub(crate) async fn phase_load_config_and_tracing_from(
+    cli: &Cli,
+    env: &EnvContext,
+) -> anyhow::Result<LoadedConfigContext> {
     let toml_path = cli.config.clone();
-    let config = load_initial_config(toml_path.as_deref()).await?;
+    let config = load_initial_config_from(env, toml_path.as_deref()).await?;
 
     let session = create_session_manager(config.llm.session.clone()).await;
     let log_broadcaster = Arc::new(LogBroadcaster::new());
@@ -64,10 +72,14 @@ pub(crate) async fn phase_load_config_and_tracing(
 
     Ok(LoadedConfigContext {
         config,
+        env_context: env.clone(),
         toml_path,
         session,
         log_broadcaster,
         log_level_handle,
+        workspace_import_dir: env
+            .get("WORKSPACE_IMPORT_DIR")
+            .map(std::path::PathBuf::from),
     })
 }
 
@@ -77,27 +89,38 @@ pub(crate) async fn phase_build_components(
     cli: &Cli,
     loaded: LoadedConfigContext,
 ) -> anyhow::Result<BuiltComponentsContext> {
+    let LoadedConfigContext {
+        config,
+        env_context,
+        toml_path,
+        session,
+        log_broadcaster,
+        log_level_handle,
+        workspace_import_dir,
+    } = loaded;
     let flags = AppBuilderFlags {
         no_db: cli.no_db,
-        workspace_import_dir: std::env::var("WORKSPACE_IMPORT_DIR")
-            .ok()
-            .map(std::path::PathBuf::from),
+        workspace_import_dir,
     };
-    let (components, side_effects) = AppBuilder::new(AppBuilderParams {
-        config: loaded.config,
-        flags,
-        toml_path: loaded.toml_path,
-        session: loaded.session,
-        log_broadcaster: Arc::clone(&loaded.log_broadcaster),
-    })
-    .build_components()
+    let (components, side_effects, env_context) = AppBuilder::new_with_context(
+        AppBuilderParams {
+            config,
+            flags,
+            toml_path,
+            session,
+            log_broadcaster: Arc::clone(&log_broadcaster),
+        },
+        env_context,
+    )
+    .build_components_with_context()
     .await?;
 
     Ok(BuiltComponentsContext {
         components,
+        env_context,
         side_effects,
-        log_broadcaster: loaded.log_broadcaster,
-        log_level_handle: loaded.log_level_handle,
+        log_broadcaster,
+        log_level_handle,
     })
 }
 
@@ -116,11 +139,12 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
         job_event_tx,
         prompt_queue,
         docker_status,
-    } = setup_orchestrator_context(&config, &components).await;
+    } = setup_orchestrator_context(&config, &components, &built.env_context).await;
 
     AgentRunContext {
         core: CoreAgentContext {
             config,
+            env_context: built.env_context,
             components,
             side_effects: built.side_effects,
             active_tunnel,
@@ -258,6 +282,7 @@ pub(crate) async fn phase_setup_gateway(ctx: &mut GatewayPhaseContext) {
         &ctx.core.config,
         &ctx.core.components,
         &mut GatewayContext {
+            env_context: &ctx.core.env_context,
             container_job_manager: &ctx.core.container_job_manager,
             session_manager: &ctx.session_manager,
             log_broadcaster: &ctx.core.log_broadcaster,
@@ -326,10 +351,16 @@ async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Loads resolved `Config` from environment variables and an optional TOML file
-/// path.
-async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Result<Config> {
-    match Config::from_env_with_toml(toml_path).await {
+async fn load_initial_config_from(
+    env: &EnvContext,
+    toml_path: Option<&std::path::Path>,
+) -> anyhow::Result<Config> {
+    let settings = load_settings_from_context(env);
+    let result = match toml_path {
+        Some(path) => Config::from_context_with_toml(env, &settings, path).await,
+        None => Config::from_context(env, &settings).await,
+    };
+    match result {
         Ok(c) => Ok(c),
         Err(axinite::error::ConfigError::MissingRequired { key, hint }) => {
             anyhow::bail!(
@@ -343,26 +374,9 @@ async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Res
     }
 }
 
-/// Initializes the container job manager, job-event sender, prompt queue, and
-/// Docker status.
-async fn setup_orchestrator_context(
-    config: &Config,
-    components: &AppComponents,
-) -> OrchestratorContext {
-    let orch = axinite::orchestrator::setup_orchestrator(
-        config,
-        &components.llm,
-        &components.tools,
-        components.db.as_ref(),
-        components.secrets_store.as_ref(),
-    )
-    .await;
-    OrchestratorContext {
-        container_job_manager: orch.container_job_manager,
-        job_event_tx: orch.job_event_tx,
-        prompt_queue: orch.prompt_queue,
-        docker_status: orch.docker_status,
-    }
+fn load_settings_from_context(env: &EnvContext) -> axinite::settings::Settings {
+    let settings_path = env.axinite_base_dir().join("settings.json");
+    axinite::settings::Settings::load_from(&settings_path)
 }
 
 #[cfg(test)]

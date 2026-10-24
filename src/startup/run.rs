@@ -30,6 +30,7 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         core:
             CoreAgentContext {
                 config,
+                env_context,
                 components,
                 side_effects,
                 active_tunnel,
@@ -78,6 +79,7 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     let shutdown_tx = setup_runtime_management(
         &components,
         &config,
+        &env_context,
         &container_job_manager,
         #[cfg(unix)]
         &webhook_server,
@@ -219,6 +221,7 @@ async fn prepare_agent(
 pub(crate) fn setup_runtime_management(
     components: &AppComponents,
     config: &Config,
+    env_context: &axinite::config::EnvContext,
     container_job_manager: &Option<Arc<axinite::orchestrator::ContainerJobManager>>,
     #[cfg(unix)] webhook_server: &Option<Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
     #[cfg(unix)] http_channel_state: &Option<Arc<axinite::channels::HttpChannelState>>,
@@ -231,10 +234,15 @@ pub(crate) fn setup_runtime_management(
     #[cfg(unix)]
     crate::startup::unix_runtime::setup_runtime_management_unix(
         components,
+        env_context,
         webhook_server,
         http_channel_state,
         &shutdown_tx,
     );
+
+    // The environment snapshot only feeds the Unix hot-reload handler.
+    #[cfg(not(unix))]
+    let _ = env_context;
 
     shutdown_tx
 }

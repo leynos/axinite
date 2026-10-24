@@ -2,15 +2,14 @@
 
 use super::super::model_catalogue::{
     AnthropicAuth, fetch_anthropic_models, fetch_ollama_models, fetch_openai_models,
-    is_openai_chat_model, resolve_anthropic_auth, sort_openai_models,
+    is_openai_chat_model, openai_api_key, resolve_anthropic_auth, sort_openai_models,
 };
-use super::helpers::{EnvGuard, OverlayGuard};
+use crate::config::EnvContext;
 
 #[tokio::test]
 async fn test_fetch_anthropic_models_static_fallback() {
     // With no API key, should return static defaults
-    let _guard = EnvGuard::clear("ANTHROPIC_API_KEY");
-    let models = fetch_anthropic_models(None).await;
+    let models = fetch_anthropic_models(&EnvContext::default(), None).await;
     assert!(!models.is_empty());
     assert!(
         models.iter().any(|(id, _)| id.contains("claude")),
@@ -20,26 +19,35 @@ async fn test_fetch_anthropic_models_static_fallback() {
 
 #[test]
 fn test_resolve_anthropic_auth_treats_cached_oauth_as_oauth() {
-    let auth = resolve_anthropic_auth(Some("sk-ant-oat01-test-token"));
+    let auth = resolve_anthropic_auth(&EnvContext::default(), Some("sk-ant-oat01-test-token"));
     assert!(matches!(auth, Some(AnthropicAuth::OAuth(_))));
 }
 
 #[test]
-fn test_resolve_anthropic_auth_reads_api_key_from_overlay_helper() {
-    let _guard = OverlayGuard::set("ANTHROPIC_API_KEY", "sk-ant-api-test");
-    let auth = resolve_anthropic_auth(None);
+fn test_resolve_anthropic_auth_reads_api_key_from_context() {
+    let env_context = EnvContext::default().with_env("ANTHROPIC_API_KEY", "sk-ant-api-test");
+    let auth = resolve_anthropic_auth(&env_context, None);
     assert!(matches!(auth, Some(AnthropicAuth::ApiKey(_))));
 }
 
 #[tokio::test]
 async fn test_fetch_openai_models_static_fallback() {
-    let _guard = EnvGuard::clear("OPENAI_API_KEY");
-    let models = fetch_openai_models(None).await;
+    let env_context = EnvContext::default();
+    let models = fetch_openai_models(&env_context, None).await;
     assert!(!models.is_empty());
     assert_eq!(models[0].0, "gpt-5.3-codex");
     assert!(
         models.iter().any(|(id, _)| id.contains("gpt")),
         "static defaults should include a GPT model"
+    );
+}
+
+#[test]
+fn test_openai_api_key_uses_context() {
+    let env_context = EnvContext::default().with_env("OPENAI_API_KEY", "sk-openai-test");
+    assert_eq!(
+        openai_api_key(&env_context, None).as_deref(),
+        Some("sk-openai-test")
     );
 }
 

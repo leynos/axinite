@@ -12,8 +12,6 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::config::INJECTED_VARS;
-#[cfg(any(test, feature = "test-helpers"))]
-use crate::config::helpers::ENV_MUTEX;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
@@ -104,9 +102,18 @@ impl EnvContext {
         self.secrets.insert(key.into(), value.into());
     }
 
+    /// Remove one injected secret without changing process-global state.
+    pub fn remove_secret(&mut self, key: &str) {
+        self.secrets.remove(key);
+    }
+
     /// Merge multiple secret overlay values without mutating global state.
     pub fn merge_secrets(&mut self, secrets: HashMap<String, String>) {
         self.secrets.extend(secrets);
+    }
+
+    pub(crate) fn secret_values(&self) -> HashMap<String, String> {
+        self.secrets.clone()
     }
 
     /// Resolve the effective Axinite base directory from the snapshot.
@@ -114,21 +121,11 @@ impl EnvContext {
         self.base_dir.clone()
     }
 }
-
-#[cfg(any(test, feature = "test-helpers"))]
 fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
-    // EnvMutex::lock is infallible, so the Ok pattern is irrefutable.
-    let Ok(_env_lock) = ENV_MUTEX.lock();
-    let env_vars = collect_utf8_env_vars(std::env::vars_os());
-    let secrets = match INJECTED_VARS.lock() {
-        Ok(map) => map.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
-    };
-    (env_vars, secrets)
-}
-
-#[cfg(not(any(test, feature = "test-helpers")))]
-fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "sole sanctioned ambient environment boundary; all other code reads via EnvContext"
+    )]
     let env_vars = collect_utf8_env_vars(std::env::vars_os());
     let secrets = match INJECTED_VARS.lock() {
         Ok(map) => map.clone(),

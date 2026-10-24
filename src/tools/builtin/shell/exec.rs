@@ -77,7 +77,7 @@ impl ShellTool {
         // session tokens, credentials) is stripped from child processes.
         command.env_clear();
         for var in SAFE_ENV_VARS {
-            if let Ok(val) = std::env::var(var) {
+            if let Some(val) = self.env.get(var) {
                 command.env(var, val);
             }
         }

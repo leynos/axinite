@@ -15,6 +15,7 @@ mod heartbeat;
 pub(crate) mod helpers;
 mod hygiene;
 pub(crate) mod llm;
+mod llm_source;
 pub mod relay;
 mod routines;
 mod runtime_support;
@@ -42,11 +43,13 @@ pub use self::embeddings::EmbeddingsConfig;
 pub use self::heartbeat::HeartbeatConfig;
 pub use self::hygiene::HygieneConfig;
 pub use self::llm::default_session_path;
+pub use self::llm_source::LlmSettingsSource;
 pub use self::relay::RelayConfig;
 pub use self::routines::RoutineConfig;
 pub use self::runtime_support::{
     inject_llm_keys_from_secrets, inject_llm_keys_into_context, inject_os_credentials,
-    inject_os_credentials_into_context, inject_single_var, remove_single_var,
+    inject_os_credentials_into_context, inject_single_var,
+    merge_context_secrets_into_legacy_overlay, remove_single_var,
 };
 pub use self::safety::SafetyConfig;
 pub use self::sandbox::{ClaudeCodeConfig, SandboxModeConfig};
@@ -152,7 +155,32 @@ impl Config {
     ) -> Result<Self, ConfigError> {
         let _ = dotenvy::dotenv();
         crate::bootstrap::load_axinite_env();
+        Self::from_db_from_context_with_toml(
+            store,
+            user_id,
+            &EnvContext::capture_ambient(),
+            toml_path,
+        )
+        .await
+    }
 
+    /// Load database settings using an explicit environment snapshot.
+    pub async fn from_db_from_context(
+        store: &(dyn crate::db::SettingsStore + Sync),
+        user_id: &str,
+        ctx: &EnvContext,
+    ) -> Result<Self, ConfigError> {
+        Self::from_db_from_context_with_toml(store, user_id, ctx, None).await
+    }
+
+    /// Load database settings and an optional TOML overlay using an explicit
+    /// environment snapshot.
+    pub async fn from_db_from_context_with_toml(
+        store: &(dyn crate::db::SettingsStore + Sync),
+        user_id: &str,
+        ctx: &EnvContext,
+        toml_path: Option<&std::path::Path>,
+    ) -> Result<Self, ConfigError> {
         // Load all settings from DB into a Settings struct
         let db_settings = match store
             .get_all_settings(crate::db::UserId::from(user_id))
@@ -165,9 +193,8 @@ impl Config {
             }
         };
 
-        let ctx = EnvContext::capture_ambient();
         let merged = runtime_support::merged_settings_with_toml(&db_settings, toml_path)?;
-        Self::from_context(&ctx, &merged).await
+        Self::from_context(ctx, &merged).await
     }
 
     /// Load configuration from environment variables only (no database).
@@ -192,6 +219,15 @@ impl Config {
         let ctx = EnvContext::capture_ambient();
         let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;
         Self::from_context(&ctx, &merged).await
+    }
+
+    /// Build config from saved settings and an explicit environment snapshot.
+    ///
+    /// Use this at reload boundaries that already own a current [`EnvContext`].
+    pub async fn from_env_from_context(ctx: &EnvContext) -> Result<Self, ConfigError> {
+        let settings = Settings::load();
+        let merged = runtime_support::merged_settings_with_toml(&settings, None)?;
+        Self::from_context(ctx, &merged).await
     }
 
     /// Build config from an explicit environment snapshot and settings.
@@ -286,6 +322,28 @@ impl Config {
         user_id: &str,
         toml_path: Option<&std::path::Path>,
     ) -> Result<(), ConfigError> {
+        self.re_resolve_llm_with_context(
+            &EnvContext::capture_ambient(),
+            LlmSettingsSource {
+                store,
+                user_id,
+                toml_path,
+            },
+        )
+        .await
+    }
+
+    /// Re-resolve only the LLM config from an explicit environment snapshot.
+    pub async fn re_resolve_llm_with_context(
+        &mut self,
+        ctx: &EnvContext,
+        source: LlmSettingsSource<'_>,
+    ) -> Result<(), ConfigError> {
+        let LlmSettingsSource {
+            store,
+            user_id,
+            toml_path,
+        } = source;
         let settings = if let Some(store) = store {
             let mut s = match store
                 .get_all_settings(crate::db::UserId::from(user_id))
@@ -299,7 +357,7 @@ impl Config {
         } else {
             Settings::default()
         };
-        self.llm = LlmConfig::resolve(&settings)?;
+        self.llm = LlmConfig::resolve_from(ctx, &settings)?;
         Ok(())
     }
 
