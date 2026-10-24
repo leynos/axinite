@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from _build_tools_sandbox import make_sandbox
 from _makefile_test_support import _MakeTestContext, shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+#: Environment assignments a recipe may put before the Cargo executable, such as
+#: the release routes' `RUSTFLAGS="${RUSTFLAGS-}"`. They are the subject of
+#: `build_standard_make_test.py`; here the command after them is what counts.
+LEADING_ASSIGNMENTS = re.compile(r"""^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)+""")
+
+
+def without_assignments(line: str) -> str:
+    """Return a recipe line without its leading environment assignments."""
+    return LEADING_ASSIGNMENTS.sub("", line)
 
 
 @pytest.mark.parametrize(
@@ -252,9 +264,9 @@ def test_targets_use_resolved_quoted_cargo_command(
 
     quoted_cargo = shell_quote(str(cargo_path))
     emitted_cargo_commands = [
-        line
+        without_assignments(line)
         for line in result.stdout.splitlines()
-        if line.startswith(f"{quoted_cargo} ")
+        if without_assignments(line).startswith(f"{quoted_cargo} ")
     ]
     expected_cargo_commands = [
         f"{quoted_cargo} {arguments}" for arguments in cargo_arguments
@@ -304,16 +316,22 @@ def test_targets_escape_resolved_cargo_paths(
     cargo_path.write_text("#!/bin/sh\nexit 0\n")
     cargo_path.chmod(0o755)
 
+    # `test-matrix` is a gate target, so it runs `make check-build-tools` for
+    # real. The sandbox supplies stub `mold`, `clang` and `rustup` that satisfy
+    # the pins, so the check passes without the host's tools and the test
+    # still proves what it is about: the Cargo path is executed literally.
+    sandbox = make_sandbox(tmp_path / "build-tools")
     environment = os.environ.copy()
     environment.pop("NEXTEST", None)
     environment.pop("CARGO_TARGET_DIR", None)
     environment.pop("CARGO_AUDIT", None)
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
+    environment.update(sandbox.env())
     environment.update(
         {
             "CARGO": "",
             "HOME": str(fake_home),
-            "PATH": os.pathsep.join((str(fake_bin), str(utility_bin))),
+            "PATH": os.pathsep.join((str(fake_bin), str(utility_bin), str(sandbox.bin))),
         }
     )
     subprocess.run(

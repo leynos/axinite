@@ -12,7 +12,11 @@ echo "Building bundled channels..."
 
 echo ""
 echo "Building Axinite..."
-cargo build --release
+# A release build takes none of the development standard in .cargo/config.toml.
+# An assigned RUSTFLAGS, even an inherited empty one, displaces its `rustflags`
+# tables; the release profile names no codegen backend, so nothing else is
+# needed.
+RUSTFLAGS="${RUSTFLAGS-}" cargo build --release
 
 echo ""
 echo "Done. Binary: target/release/axinite"

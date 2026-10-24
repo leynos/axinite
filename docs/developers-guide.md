@@ -28,9 +28,12 @@ without exposing deployment identifiers, flag names, or database contents.
 
 ## 1. Purpose
 
-Linux continuous integration (CI) on this branch now uses `mold` to reduce
-linker time. The compile-time reduction plan assumes local contributors can
-reproduce that setup before they measure anything or change build defaults.
+The repository's development build standard is the default for every
+development, test, lint and typecheck build: the `mold` linker, the parallel
+`rustc` frontend, on a pinned nightly toolchain. The compile-time reduction
+plan assumes local contributors can reproduce that setup before they measure
+anything or change build defaults, and section 8 describes it, including the
+builds that deliberately do not take it.
 
 This guide documents the required and optional tools for common workflows so
 contributors do not discover missing prerequisites halfway through a build.
@@ -38,8 +41,9 @@ contributors do not discover missing prerequisites halfway through a build.
 ## 2. Supported environments
 
 The repository builds on Linux, macOS, Windows, and Windows Subsystem for Linux
-(WSL). The fastest documented path today is Linux or WSL because the current
-branch already uses `mold` in Linux CI.
+(WSL). The fastest documented path is Linux or WSL, because `mold` ships for
+Linux alone and the standard's linker setting is scoped to it. macOS and
+Windows take the parallel frontend and the platform linker.
 
 For compile-time or CI changes, prefer Linux or WSL so local results line up
 with the current CI setup.
@@ -48,22 +52,29 @@ with the current CI setup.
 
 Install these tools before running the standard repository commands:
 
-1. Rust `1.95` via `rustup`.
-2. `clang` on Linux or WSL.
-3. `mold` on Linux or WSL.
-4. The `wasm32-wasip2` Rust target.
-5. `wasm-tools`.
-6. `cargo-component`.
-7. `cargo-nextest`.
-8. `jq`.
-9. `make`.
-10. Git.
-11. Node.js for `make test-workflow-contracts`; `mdtablefix` requires Node.js
+1. `rustup`, which supplies the dated nightly pinned in `rust-toolchain.toml`
+   with its components and the `wasm32-wasip2` target.
+   `make install-build-tools` installs them, and `make check-build-tools`
+   verifies them. Stable Rust `1.95` is the minimum supported version (MSRV),
+   checked in CI alone; see "Toolchain policy" in section 8.
+2. `clang` on Linux or WSL, the linker driver `.cargo/config.toml` names.
+3. `mold` 2.41.0 on Linux or WSL, the release pinned in `tools/mold/VERSION`.
+   `make install-build-tools` installs it into `~/.local`, verified against
+   `tools/mold/SHA256SUMS`, and the Makefile puts `~/.local/bin` first on
+   `PATH` so the pin wins over a distribution package.
+4. `wasm-tools`.
+5. `cargo-component`.
+6. `cargo-nextest`.
+7. `jq`.
+8. `make`.
+9. Git.
+10. Node.js for `make test-workflow-contracts`; `mdtablefix` requires Node.js
     when the suite runs with its restricted `PATH`.
 
-The root crate declares `rust-version = "1.95"` in `Cargo.toml`. The repository
-also includes standalone WebAssembly (WASM) tool and channel crates, so WASM
-tooling is required for more than release-only workflows.
+The root crate declares `rust-version = "1.95"` in `Cargo.toml`, and every
+workspace member declares the same. The repository also includes standalone
+WebAssembly (WASM) tool and channel crates, so WASM tooling is required for
+more than release-only workflows.
 
 ## 4. Extra tools for the compile-time reduction effort
 
@@ -625,9 +636,9 @@ sccache on the host cannot see it.
 The wiring has three parts, and omitting any one of them is silent. The build
 still succeeds; it just recompiles everything. The shared `setup-rust` action
 now provides all three, pinned to `6cec89bac47a21cf756d68d638a9a510998e57f8`
-(leynos/shared-actions#523; ADR 0005 there), and each job calls it straight
-after its toolchain and `mold` steps. `6cec89ba` is the floor: it is the first
-commit whose sccache server start-up has a 60 s timeout and fails open
+(leynos/shared-actions#523; ADR 0005 there), and each job calls it before
+`make install-build-tools`. `6cec89ba` is the floor: it is the first commit
+whose sccache server start-up has a 60 s timeout and fails open
 (shared-actions#546), where the earlier pin hard-fails the job at `Setup Rust`,
 and the contract rejects any older pin.
 
@@ -650,16 +661,16 @@ and the contract rejects any older pin.
    `cache-backend` output, `ubicloud`, `github` or `local`, because
    `Cache location` reads `ghac` for the proxy and GitHub's own service alike.
 
-Each call passes five inputs besides the pin, and each is load-bearing:
+Each call passes four inputs besides the pin, and each is load-bearing:
 
-- `toolchain: stable`, which `setup-rust` needs to select a toolchain. It
-  installs nothing here that `dtolnay/rust-toolchain` has not already put in
-  place: that step still installs the toolchain, its `wasm32-wasip2` target and
-  its components, and `setup-rust` runs after it.
+- No `toolchain` input, except on the `msrv` job. Without one `setup-rust`
+  installs the toolchain `rust-toolchain.toml` names, with its components and
+  `wasm32-wasip2` target, so every job follows the pin and a Dependabot bump
+  moves the build and CI together. A `toolchain: stable` input would override
+  the file for that job alone, which is how the earlier pin went unobserved.
 - `rustflags: ''`, because the action otherwise exports
-  `RUSTFLAGS=-D warnings`, and `RUSTFLAGS` displaces the
-  `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` that carries the `mold`
-  linker flag.
+  `RUSTFLAGS=-D warnings`, and `RUSTFLAGS` displaces the `rustflags` tables in
+  `.cargo/config.toml` that carry the development standard.
 - `cache-provider: external`, because each job owns its Cargo registry cache.
 - `install-binstall: 'false'`, because the jobs that need `cargo-binstall`
   install their pinned release through `taiki-e/install-action`.
@@ -669,13 +680,10 @@ Each call passes five inputs besides the pin, and each is load-bearing:
   Ubicloud passes `ubicloud`, so a missing proxy fails it rather than letting
   it compile unnoticed against local disk.
 
-The toolchain, its `wasm32-wasip2` target and its components stay with
-`dtolnay/rust-toolchain`, because `setup-rust` has no input for a target.
-
 `tests/workflow_contracts/sccache_test.py` holds every compiling Ubicloud job
 to this. It requires one pinned `setup-rust` call with sccache on, the id
-`setup-rust`, those five inputs and `CARGO_INCREMENTAL: "0"`; that the call
-precedes the first build; that none of the retired pieces survives (a job-level
+`setup-rust`, those inputs and `CARGO_INCREMENTAL: "0"`; that the call precedes
+the first build; that none of the retired pieces survives (a job-level
 `RUSTC_WRAPPER` or backend switch, the export, install or reset steps, or a
 script starting the server); and that the report names the backend. Fixtures
 prove the retired-piece reader both catches each form and leaves the report
@@ -1280,7 +1288,6 @@ On Linux or WSL, install the required system packages first. The exact package
 manager varies by distribution, but the important pieces are:
 
 - `clang`
-- `mold`
 - `pkg-config`
 - OpenSSL development headers
 - `cmake`
@@ -1288,12 +1295,11 @@ manager varies by distribution, but the important pieces are:
 - `jq`
 - `make`
 
-After the system packages are present, install the Rust-side tooling:
+After the system packages are present, install the pinned toolchain and the
+pinned `mold`, then the Rust-side tooling:
 
 ```bash
-rustup toolchain install stable
-rustup default stable
-rustup target add wasm32-wasip2
+make install-build-tools
 cargo install wasm-tools --locked
 cargo install cargo-component --locked
 cargo install cargo-nextest --locked
@@ -1305,28 +1311,293 @@ For local coverage support:
 cargo install cargo-llvm-cov --locked
 ```
 
-## 8. Local mold configuration
+## 8. The development build standard
 
-The repository now checks in Linux linker settings in `.cargo/config.toml`:
+Every development, test, lint and typecheck build uses one standard: the
+parallel `rustc` frontend (`-Zthreads=8`) and, on Linux, the pinned `mold`
+linker, on the dated nightly in `rust-toolchain.toml`. The Cranelift code
+generator is deliberately not part of it; see "Cranelift" below. It is the
+estate's build standard (Concordat rule `rust-build-defaults`), and it is the
+*default*: nothing needs to be selected, wrapped or opted into. Four kinds of
+build deliberately do not take it, and this section says which and how each is
+kept out.
+
+### What a bare Cargo command does
+
+`.cargo/config.toml` is the standard. Cargo discovers it by walking up from the
+working directory, so `cargo build`, `cargo test`, `cargo check`,
+`cargo clippy` and `cargo nextest` take it from any directory in the
+repository, including the standalone crates under `tools-src/` and
+`channels-src/`, which have their own workspaces but no configuration of their
+own.
 
 ```toml
+[build]
+rustflags = ["-Zthreads=8"]
+
+[target.'cfg(target_os = "linux")']
+rustflags = ["-Zthreads=8", "-Clink-arg=-fuse-ld=mold"]
+
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 ```
 
-That means Linux and WSL contributors only need to install `clang` and `mold`
-locally. Cargo will pick up the linker configuration automatically for
-`x86_64-unknown-linux-gnu`.
+Cargo selects one `rustflags` source rather than merging them, and every
+matching `[target.*]` table is joined and replaces `[build]` outright. That is
+why `-Zthreads=8` is written in both the `[build]` table and the Linux table,
+and why the `x86_64-unknown-linux-gnu` table carries a linker but no
+`rustflags`: a second table with its own flags would be one more place to
+forget the frontend flag. `-fuse-ld=mold` is a compiler-driver flag, so the
+linker is `clang`, which understands it on every runner; a `cfg(...)` table
+cannot set `linker`, which is why the triple table exists at all.
 
-Matching shell exports are only needed to override the checked-in defaults. Do
-not assume this setting applies on macOS or Windows.
+The `[env]` table at the top of the file is unrelated to the standard. It holds
+the embedded PostgreSQL settings the tests read; see "Configuration lives in
+`.cargo/config.toml`" in section 5.
 
-A quick verification command is:
+The mold flag is scoped to Linux and the frontend flag is not, because `mold`
+ships for Linux alone and the frontend is part of every nightly. The file names
+no codegen backend.
 
-```bash
-sed -n '1,40p' .cargo/config.toml
+### What Make adds
+
+The Makefile does not restate the flags, because no gate recipe assigns
+`RUSTFLAGS`: an assigned `RUSTFLAGS` replaces every `rustflags` source in the
+configuration, so a gate that set it to deny warnings would silently lose the
+frontend and the linker. The gates deny warnings through Clippy's own
+`-- -D warnings`. A caller who exports `RUSTFLAGS` has chosen to replace the
+standard, for bare Cargo and for Make alike.
+
+What Make does add:
+
+- `make check-build-tools` runs before every `build`, `typecheck`, `lint-*`
+  and `test-*` target. It verifies that `clang` is present, that `mold` on
+  `PATH` reports exactly the version in `tools/mold/VERSION`, and that the
+  pinned toolchain is installed with every component and target
+  `rust-toolchain.toml` lists. A missing or drifted tool stops the run with the
+  command that fixes it; there is no fallback to a slower or different build.
+- `make install-build-tools` provides all of that. It downloads the pinned
+  `mold` release, verifies it against `tools/mold/SHA256SUMS`, unpacks it under
+  `~/.local` (`BUILD_TOOLS_PREFIX`), and runs `rustup toolchain install` for
+  the pin with its components and targets. The Makefile puts `~/.local/bin`
+  first on `PATH` for every target, so the pinned `mold` beats a distribution
+  one for both the check and `-fuse-ld=mold`. Under CI it also appends that
+  directory to `GITHUB_PATH`, for the steps that call Cargo directly.
+- `make build` builds every target of the workspace with the test features,
+  under the standard.
+- The two routes that must exclude the standard assign `RUSTFLAGS` on purpose.
+  `RELEASE_RUSTFLAGS` (`RUSTFLAGS="${RUSTFLAGS-}"`) is in front of
+  `cargo install` and the release WASM build, and Whitaker's recipes assign the
+  literal `RUSTFLAGS="-D warnings"`. A caller's own `RUSTFLAGS` survives the
+  first; the second is a literal.
+
+Both scripts are tested against stub tools in a sandbox
+(`tests/workflow_contracts/build_tools_scripts_test.py`): a missing or drifted
+`mold`, a missing component or target, an unlisted or mismatched checksum, a
+failed download and a failed toolchain install each fail, and none installs
+anything before its digest verifies.
+
+### Installed components and tools
+
+The pin installs `rustfmt`, `clippy`, `rust-analyzer`, `llvm-tools-preview` and
+the `wasm32-wasip2` target. `llvm-tools-preview` is what coverage needs.
+Installed tooling need not be active in every job: the coverage jobs install
+`mold` through `make install-build-tools` and then exclude it from their flags.
+
+### Build routing
+
+Table 2. How each kind of build is routed.
+
+| Build                                                                 | Frontend and linker flags            | Backend                                     | How the route is kept                                                 |
+| --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------- |
+| Bare Cargo, `make build`, typecheck, lint                             | `-Zthreads=8`; `mold` on Linux       | LLVM                                        | `.cargo/config.toml`, preflighted by `make check-build-tools`         |
+| `make test-*`                                                         | as above                             | LLVM                                        | as above                                                              |
+| Coverage (`cargo llvm-cov`, `generate-coverage`)                      | none; the instrumentation flags only | LLVM                                        | step `RUSTFLAGS: ''`                                                  |
+| Release and packaging (`dist`, `cargo install`, release WASM, Docker) | none                                 | LLVM (the release profile names no backend) | `RUSTFLAGS` assigned empty; Docker builds never see the configuration |
+| Whitaker                                                              | none; `-D warnings` only             | LLVM                                        | literal `RUSTFLAGS="-D warnings"` in the recipe                       |
+| MSRV check (`test.yml` `msrv`)                                        | none; the configuration is removed   | LLVM on stable                              | `rm .cargo/config.toml rust-toolchain.toml` before `cargo check`      |
+
+Every exclusion works the same way: an assigned `RUSTFLAGS` displaces the
+`rustflags` tables, and nothing else in the configuration reaches the build.
+`tests/workflow_contracts/build_standard_make_test.py` evaluates every Cargo
+and Whitaker line the Makefile emits (`make --dry-run CARGO=probe-cargo`) and
+checks the matrix; `build_standard_workflows_test.py` does the same for the
+workflows. Each judge is also run against mutated copies and must reject them.
+
+Docker images build on the stable `rust:` base image their `Dockerfile` names,
+the MSRV compiler, and never take the nightly or the standard. `.dockerignore`
+excludes `.cargo/` and `rust-toolchain.toml` so that `Dockerfile.worker`'s
+`COPY . .` cannot hand them to the build.
+
+### Cranelift
+
+**Exception: Cranelift is not the development backend for this repository.**
+The estate standard (`rust-build-defaults` BD-004) makes Cranelift the
+development default where the repository's own suite passes under it, and asks
+a repository whose build or suite fails under it to record the failure here.
+This is axinite's own evidence, reproduced on this repository's workspace; it
+is not netsuke's exception copied across. Approved by the train supervisor on
+2026-10-22 on the reproduced evidence below.
+
+- **Toolchain and target.** `nightly-2026-10-16`
+  (`rustc 1.101.0-nightly (4ebd25825 2026-10-15)`) with
+  `rustc-codegen-cranelift-preview`, on `x86_64-unknown-linux-gnu`. Nothing was
+  measured on macOS or Windows.
+- **Reproduction 1: a Cranelift-compiled workspace does not build.** With
+  `profile.dev` and `profile.test` set to `codegen-backend = "cranelift"` (under
+  `[unstable] codegen-backend = true`),
+  `cargo nextest run -p axinite --lib --features test-helpers,embedded-postgres`
+  fails while compiling `wasmtime` 48.0.6, with the stack-switching code in the
+  `vm` runtime:
+
+  ```text
+  error: asm! and global_asm! sym operands are not yet supported
+    --> wasmtime-48.0.6/src/runtime/vm/stack_switching/stack/unix/x86_64.rs:64:14
+     |
+  64 |         call {fiber_start}
+     |              ^^^^^^^^^^^^^
+  error: could not compile `wasmtime` (lib) due to 1 previous error
+  ```
+
+  `wasmtime` is a dependency of the main binary, so an ordinary `cargo build`
+  fails the same way, not only the tests.
+- **Reproduction 2: a caught panic aborts.** A four-test crate, built the same
+  way, reproduces it with no repository code:
+
+  ```rust
+  #[test]
+  fn catch_unwind_catches() {
+      let r = std::panic::catch_unwind(|| {
+          if std::hint::black_box(true) { panic!("boom"); }
+      });
+      assert!(r.is_err());
+  }
+  // plus: a spawned thread that panics and is joined, a drop that must run
+  // during unwinding, and a bare #[should_panic] test.
+  ```
+
+  Under Cranelift `catch_unwind_catches` and the drop-during-unwind test fail
+  and the process dies with
+  `fatal runtime error: failed to initiate panic, error 5, aborting` (SIGABRT).
+  A bare `#[should_panic]` test passes, which is why one successful panic test
+  is not evidence. The LLVM control passes all four, and so does Cranelift on
+  the `dev` profile with the `test` profile left on LLVM.
+- **Repository tests that would be affected.** Reproduction 1 stops the build
+  before any of them run, so these are what the unwinding fault threatens, not
+  results:
+  `test_select_active_skills_returns_empty_when_registry_lock_is_poisoned`
+  (`src/agent/dispatcher/tests/skills.rs`, which panics in a spawned thread to
+  poison a lock), the four `#[should_panic]` tests
+  (`tests/support_unit_tests/ assertions_tests.rs`, `crates/hyper-rustls`), and
+  `test_cosine_similarity_different_lengths_does_not_panic` (`catch_unwind`),
+  and every code path that turns a panicking task into an error
+  (`JoinError::is_panic` in the tool executors and the skill gating).
+- **Control.** With no Cranelift in the test build, `make -k test` on the same
+  head passes: 4,431 workspace tests run, 4,431 passed, 12 skipped.
+- **Why it is not scoped.** Moving only `wasmtime` and the unwinding callers
+  to LLVM would leave Cranelift on the dependencies and LLVM on the crate a
+  developer edits, which is where the speed-up is wanted.
+- **Tracking.** Issue #461 revisits this in six months (April 2027), as well
+  as on the triggers below.
+- **Revisit when** the pinned nightly's Cranelift supports `asm!` and
+  `global_asm!` `sym` operands *and* unwinds through its own frames, or when a
+  Dependabot toolchain bump changes either. A bump pull request is where to
+  re-measure: set the profile keys on the pull request, run `make test`, and
+  adopt the backend if it passes by removing this exception and adding the
+  keys, the `rustc-codegen-cranelift-preview` component and a contract for them
+  together. The estate's audit accepts either state and rejects an exception
+  that names an older toolchain than the pin, so each bump of `channel` needs a
+  line here saying whether it was measured.
+
+A contract (`build_standard_config_test.py`) holds the configuration and this
+exception in agreement: while the exception stands, no Cargo profile and no
+`rustflags` source may select Cranelift. Whitaker and coverage need nothing
+extra for this: neither sees a backend key.
+
+### Toolchain policy
+
+The repository builds on one dated nightly, `rust-toolchain.toml`'s `channel`,
+and rustup follows that file in every directory of the checkout. The pin is
+exact (Concordat RT-022): a floating `stable` or `nightly` would change the
+build without a commit and leave Dependabot nothing to move.
+
+- **Why a nightly.** The standard's parallel frontend (`-Zthreads=8`) is
+  nightly-only. Issue #396 asked whether stable is the right toolchain for
+  development; the answer is that it is not, and the earlier proposal to pin
+  stable `1.99.0` (#427) could not carry either flag.
+- **Who moves it.** Dependabot's `rust-toolchain` ecosystem raises a daily
+  minor-and-patch pull request for `/`. The estate's audit requires a dated
+  nightly to be at most 56 days old, so a stale pin is a finding rather than a
+  preference. A bump is an ordinary pull request: the suite must pass on the
+  new date, and `make install-build-tools` installs it.
+- **Every job follows the pin.** `setup-rust` is called without a `toolchain`
+  input, so it installs what the file names, with its components and target.
+  Jobs that never call `setup-rust` (the formatter, both audits, the Windows
+  lanes, release orchestration) run
+  `rustup toolchain install --profile minimal`, which does the same.
+  `dtolnay/rust-toolchain` is gone, and a contract rejects its return and any
+  second dated nightly in a workflow.
+- **The stable promise stays.** `rust-version = "1.95"` is the declared MSRV of
+  the root package and of every workspace member; `crates/ambient-fs` used to
+  say `1.93` and now agrees, because it is unpublished (`publish = false`), the
+  one CI job checks the whole workspace on one compiler, and a second floor
+  would need a second job to be honest. The `msrv` job in `test.yml` installs
+  stable `1.95` through `setup-rust`'s `toolchain` input, removes the
+  nightly-only `.cargo/config.toml` and `rust-toolchain.toml` from its
+  throwaway checkout, and runs `cargo check --workspace --all-targets`. It runs
+  no tests, as the estate's cost rule for an MSRV check says. A contract holds
+  the job's toolchain equal to the declared `rust-version`, so raising one
+  without the other fails.
+- **Release artefacts** (the `dist` builds and the WASM extension bundles) are
+  built on the pinned nightly, so that what CI tests is what ships, with the
+  standard excluded as the routing table says. **Docker images** build on the
+  stable `rust:1.95` base images, which are the MSRV compiler.
+
+### Provisioning the build tools in CI
+
+A job that compiles on Linux installs the pinned tools before its first
+compile, in an unconditional step with no `continue-on-error`:
+
+```yaml
+      - name: Install build tools
+        run: make install-build-tools
 ```
+
+Jobs that call `setup-rust` put it directly after that step, so rustup finds
+the toolchain already installed and the script only adds `mold`. Jobs that do
+not (the compile-contract jobs) use it as their toolchain step too. The
+mutation caller runs it in its `setup-commands` before anything builds.
+
+`tests/workflow_contracts/build_standard_workflows_test.py` derives the jobs
+that need it from what they run. A step compiles when it runs `cargo build`,
+`check`, `clippy`, `test`, `nextest` or `llvm-cov`, runs
+`./scripts/build-wasm-extensions.sh`, calls the `generate-coverage` action, or
+runs a `make` target whose evaluated recipe (`make --dry-run`) reaches Cargo.
+Runner forms are read in all their shapes: a label, a list, a mapping, a
+`${{ }}` chain, and a reusable-workflow caller. A job that compiles and neither
+installs first nor removes the configuration fails, and so does a new job that
+compiles without installing, so adding a Linux suite job without the step is
+caught. The `msrv` job is the one exemption, by removal. The Windows lanes need
+none: `mold` is Linux-only and they call `rustup` directly.
+
+The coverage jobs install the tools too, although coverage excludes `mold` from
+its flags: they still run the same suite and the same Make preflights, and a
+tool that is installed but inactive costs a download. They then exclude the
+standard through each coverage step's `RUSTFLAGS: ''`, which displaces the
+rustflags tables while cargo-llvm-cov adds its instrumentation. It is
+step-level on purpose: set at job level it would also reach unrelated Cargo
+steps such as the tool probes, which the estate's `BD-009` reads as gate builds
+that dropped the standard.
+
+### Changing the standard
+
+A change to a flag, a recipe that assigns `RUSTFLAGS` or a workflow's toolchain
+handling touches several files that must agree. Edit the configuration, the
+routes in Table 2 and the contracts in
+`tests/workflow_contracts/build_standard_*_test.py` together, then run
+`make test-workflow-contracts`. To check a route by hand, `cargo build -v`
+prints the exact `rustc` command, and `readelf -p .comment` on a binary names
+the linker that produced it (`mold 2.41.0` on a development build).
 
 ## 9. Repository bootstrap
 
@@ -2461,8 +2732,9 @@ For the compile-time reduction effort:
 
 ## 27. Troubleshooting
 
-- If `cargo` says `wasm32-wasip2` is missing, rerun
-  `rustup target add wasm32-wasip2`.
+- If `cargo` says the pinned toolchain or `wasm32-wasip2` is missing, run
+  `make install-build-tools`; `make check-build-tools` says which part is
+  absent.
 - If builds fail because `wasm-tools` or `cargo-component` is missing,
   reinstall them with `cargo install ... --locked`.
 - If local Linux or WSL timings look much slower than CI, verify that

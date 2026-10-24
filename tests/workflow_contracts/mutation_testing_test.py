@@ -56,7 +56,10 @@ SCAFFOLDING_EXCLUDES = (
 #: Commands the setup block must run so mutants see the same
 #: environment as CI's test job (test.yml).
 REQUIRED_SETUP_FRAGMENTS = (
-    "apt-get install -y clang mold",
+    "apt-get install -y clang",
+    # The pinned mold and the toolchain's components, never the distribution's
+    # mold: `.cargo/config.toml` names mold and `make` checks its version.
+    "make install-build-tools",
     "rustup target add wasm32-wasip2",
     # Fail closed: without an explicit strategy list, cargo-binstall falls
     # back to `cargo install`, which compiles the tool from source.

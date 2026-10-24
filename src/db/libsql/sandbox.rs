@@ -363,7 +363,7 @@ impl NativeSandboxStore for LibSqlBackend {
                 .get::<Option<String>>(0)
                 .map_err(|e| DatabaseError::Query(e.to_string()))?
                 .map(|mode| {
-                    SandboxMode::try_from(mode.as_str())
+                    mode.parse::<SandboxMode>()
                         .map_err(|error| DatabaseError::Serialization(error.to_string()))
                 })
                 .transpose(),

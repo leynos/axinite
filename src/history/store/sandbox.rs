@@ -359,7 +359,7 @@ impl Store {
             .await?;
         row.and_then(|r| r.get::<_, Option<String>>("job_mode"))
             .map(|mode| {
-                SandboxMode::try_from(mode.as_str())
+                mode.parse::<SandboxMode>()
                     .map_err(|error| DatabaseError::Serialization(error.to_string()))
             })
             .transpose()

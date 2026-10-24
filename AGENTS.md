@@ -99,6 +99,17 @@ management.
   - `make check-fmt`
   - `make lint`
   - `make test`
+- The development build standard is the default. `.cargo/config.toml` and
+  `rust-toolchain.toml` give a bare `cargo build`, `cargo test` or
+  `cargo check` the pinned nightly, the parallel frontend (`-Zthreads=8`) and,
+  on Linux, the pinned `mold` linker. Cranelift is refused on recorded
+  evidence. Every build, test, lint and typecheck target runs
+  `make check-build-tools` first and stops with an installation hint when a
+  tool is missing; `make install-build-tools` installs the pins. Release
+  builds, coverage and Whitaker deliberately exclude the standard; see "The
+  development build standard" in `docs/developers-guide.md` before changing a
+  flag or a recipe that assigns `RUSTFLAGS`.
+- `make build` builds every target of the workspace under the standard.
 - Run `make audit` when dependency manifests, lockfiles, audit policy, or CI
   supply-chain gates change. It is intentionally separate from `make all`
   because it fetches the RustSec advisory database and requires network access.

@@ -27,6 +27,31 @@ PG_MAX_CONNECTIONS = "64"
 # clean` removes.
 PG_EMBED_ROOT = { value = "target/pg-embed", relative = true }
 
+# The development build standard (concordat rule `rust-build-defaults`).
+# Cargo auto-discovers this file, so a bare `cargo build`, `cargo test` or
+# `cargo check` takes the standard with no wrapper. The Makefile assigns
+# `RUSTFLAGS` only on the routes that exclude the standard on purpose, because
+# an assigned `RUSTFLAGS` replaces every `rustflags` source here;
+# `tests/workflow_contracts` holds all of it. The toolchain is the dated
+# nightly in `rust-toolchain.toml`.
+#
+# Cargo selects ONE `rustflags` source rather than merging them, and all
+# matching `[target.*]` tables win over `[build]`. Every source below therefore
+# repeats the parallel frontend flag; only the Linux table adds `mold`, which
+# ships for Linux alone.
+#
+# No codegen backend is selected: Cranelift is refused for this repository on
+# recorded evidence. See the "Cranelift" section of docs/developers-guide.md.
+
+[build]
+rustflags = ["-Zthreads=8"]
+
+[target.'cfg(target_os = "linux")']
+rustflags = ["-Zthreads=8", "-Clink-arg=-fuse-ld=mold"]
+
+# `-fuse-ld=mold` is a compiler-driver flag: clang understands it on every
+# runner, where an older system `cc` does not. A `cfg(...)` table cannot set
+# `linker`, so the triple table carries it. It holds no `rustflags`, which
+# would join the table above rather than replace it.
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]

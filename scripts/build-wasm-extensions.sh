@@ -46,7 +46,10 @@ build_extension() {
     fi
 
     echo "  BUILD $name ($crate_name) from $source_dir"
-    if ! cargo component build --release --manifest-path "$source_dir/Cargo.toml" 2>&1; then
+    # A release build takes none of the development standard in
+    # .cargo/config.toml: an assigned RUSTFLAGS, even an inherited empty one,
+    # displaces its `rustflags` tables.
+    if ! RUSTFLAGS="${RUSTFLAGS-}" cargo component build --release --manifest-path "$source_dir/Cargo.toml" 2>&1; then
         echo "  FAIL $name"
         FAILED+=("$name")
         return 1

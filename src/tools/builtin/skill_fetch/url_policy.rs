@@ -12,10 +12,10 @@ impl HttpsUrl {
     }
 }
 
-impl TryFrom<&str> for HttpsUrl {
-    type Error = ToolError;
+impl std::str::FromStr for HttpsUrl {
+    type Err = ToolError;
 
-    fn try_from(url_str: &str) -> Result<Self, Self::Error> {
+    fn from_str(url_str: &str) -> Result<Self, Self::Err> {
         let parsed = reqwest::Url::parse(url_str)
             .map_err(|e| ToolError::ExecutionFailed(format!("Invalid URL: {}", e)))?;
 

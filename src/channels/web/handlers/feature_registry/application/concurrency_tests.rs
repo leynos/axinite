@@ -150,7 +150,7 @@ async fn another_deployment_progresses_while_a_write_is_waiting_on_storage() {
         override_command(&production, &flag, false),
     ));
     assert!(futures::poll!(first.as_mut()).is_pending());
-    let mut independent = Box::pin(set_override(
+    let mut independent = std::pin::pin!(set_override(
         &registry,
         &store,
         override_command(&staging, &flag, true),
@@ -201,7 +201,7 @@ async fn failed_commands_release_deployment_admission(#[case] failure: FailurePo
         })
     );
     assert_eq!(store.writes.load(Ordering::Relaxed), 0);
-    let mut retry = Box::pin(set_override(
+    let mut retry = std::pin::pin!(set_override(
         &registry,
         &store,
         override_command(&deployment, &flag, true),
