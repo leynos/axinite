@@ -144,7 +144,14 @@ async fn re_resolve_llm_with_context_uses_overlay_only_credentials() {
         .expect("initial context should resolve");
 
     config
-        .re_resolve_llm_with_context(&updated_context, None, "default", None)
+        .re_resolve_llm_with_context(
+            &updated_context,
+            super::LlmSettingsSource {
+                store: None,
+                user_id: "default",
+                toml_path: None,
+            },
+        )
         .await
         .expect("updated environment snapshot should resolve");
 

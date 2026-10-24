@@ -15,6 +15,7 @@ mod heartbeat;
 pub(crate) mod helpers;
 mod hygiene;
 pub(crate) mod llm;
+mod llm_source;
 pub mod relay;
 mod routines;
 mod runtime_support;
@@ -42,6 +43,7 @@ pub use self::embeddings::EmbeddingsConfig;
 pub use self::heartbeat::HeartbeatConfig;
 pub use self::hygiene::HygieneConfig;
 pub use self::llm::default_session_path;
+pub use self::llm_source::LlmSettingsSource;
 pub use self::relay::RelayConfig;
 pub use self::routines::RoutineConfig;
 pub use self::runtime_support::{
@@ -320,18 +322,28 @@ impl Config {
         user_id: &str,
         toml_path: Option<&std::path::Path>,
     ) -> Result<(), ConfigError> {
-        self.re_resolve_llm_with_context(&EnvContext::capture_ambient(), store, user_id, toml_path)
-            .await
+        self.re_resolve_llm_with_context(
+            &EnvContext::capture_ambient(),
+            LlmSettingsSource {
+                store,
+                user_id,
+                toml_path,
+            },
+        )
+        .await
     }
 
     /// Re-resolve only the LLM config from an explicit environment snapshot.
     pub async fn re_resolve_llm_with_context(
         &mut self,
         ctx: &EnvContext,
-        store: Option<&(dyn crate::db::SettingsStore + Sync)>,
-        user_id: &str,
-        toml_path: Option<&std::path::Path>,
+        source: LlmSettingsSource<'_>,
     ) -> Result<(), ConfigError> {
+        let LlmSettingsSource {
+            store,
+            user_id,
+            toml_path,
+        } = source;
         let settings = if let Some(store) = store {
             let mut s = match store
                 .get_all_settings(crate::db::UserId::from(user_id))
