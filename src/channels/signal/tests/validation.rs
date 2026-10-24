@@ -23,11 +23,11 @@ fn validate_attachment_paths_accepts_normal_paths() {
     // Create sandbox directory if it doesn't exist (needed for CI)
     let _ = fs::create_dir_all(&base_dir);
 
-    let temp_dir = tempfile::tempdir_in(&base_dir).unwrap();
+    let temp_dir = tempfile::tempdir_in(&base_dir).expect("temp dir should be created in base dir");
     let file1 = temp_dir.path().join("file.txt");
     let file2 = temp_dir.path().join("report.pdf");
-    fs::write(&file1, "test").unwrap();
-    fs::write(&file2, "test").unwrap();
+    fs::write(&file1, "test").expect("file1 should be written");
+    fs::write(&file2, "test").expect("file2 should be written");
 
     let paths = vec![
         file1.to_string_lossy().to_string(),
@@ -78,7 +78,7 @@ fn validate_attachment_paths_rejects_null_byte() {
 
 #[test]
 fn conversation_context_extracts_sender() {
-    let ch = SignalChannel::new(make_config()).unwrap();
+    let ch = make_channel();
     let metadata = serde_json::json!({
         "signal_sender": "+1234567890",
         "signal_sender_uuid": "uuid-123",
@@ -92,7 +92,7 @@ fn conversation_context_extracts_sender() {
 
 #[test]
 fn conversation_context_extracts_group() {
-    let ch = SignalChannel::new(make_config()).unwrap();
+    let ch = make_channel();
     let metadata = serde_json::json!({
         "signal_sender": "+1234567890",
         "signal_target": "group:mygroup"
@@ -104,7 +104,7 @@ fn conversation_context_extracts_group() {
 
 #[test]
 fn conversation_context_empty_for_unknown_channel() {
-    let ch = SignalChannel::new(make_config()).unwrap();
+    let ch = make_channel();
     let metadata = serde_json::json!({
         "unknown_key": "value"
     });

@@ -202,18 +202,44 @@ async fn native_channel_blanket_adapter_produces_correct_futures() {
         .expect("respond should succeed");
 }
 
-/// Minimal secret-updater for blanket-adapter smoke test.
-struct NoopSecretUpdater;
+/// Secret-updater test double that records every secret it receives.
+#[derive(Default)]
+struct RecordingSecretUpdater {
+    received: std::sync::Mutex<Vec<Option<String>>>,
+}
 
-impl NativeChannelSecretUpdater for NoopSecretUpdater {
-    async fn update_secret(&self, _new_secret: Option<secrecy::SecretString>) {}
+impl NativeChannelSecretUpdater for RecordingSecretUpdater {
+    async fn update_secret(&self, new_secret: Option<secrecy::SecretString>) {
+        use secrecy::ExposeSecret;
+        self.received
+            .lock()
+            .expect("recording mutex should not be poisoned")
+            .push(new_secret.map(|secret| secret.expose_secret().to_string()));
+    }
 }
 
 /// Verify the `impl<T: NativeChannelSecretUpdater> ChannelSecretUpdater for T`
-/// blanket adapter boxes the future correctly.
+/// blanket adapter forwards each call, in order, to the native implementation
+/// when invoked through the boxed-future `dyn` interface.
 #[tokio::test]
-async fn native_channel_secret_updater_blanket_adapter_boxes_future() {
-    let updater = NoopSecretUpdater;
+async fn native_channel_secret_updater_blanket_adapter_forwards_secret() {
+    let updater = RecordingSecretUpdater::default();
     let dyn_updater: &dyn ChannelSecretUpdater = &updater;
+
+    dyn_updater
+        .update_secret(Some(secrecy::SecretString::from(
+            "rotated-secret".to_string(),
+        )))
+        .await;
     dyn_updater.update_secret(None).await;
+
+    let received = updater
+        .received
+        .lock()
+        .expect("recording mutex should not be poisoned");
+    assert_eq!(
+        *received,
+        vec![Some("rotated-secret".to_string()), None],
+        "adapter should forward the new secret, then the cleared secret"
+    );
 }
