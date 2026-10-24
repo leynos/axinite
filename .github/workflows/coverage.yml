@@ -91,7 +91,7 @@ jobs:
           - name: libsql-only
             flags: "--no-default-features --features libsql,test-helpers"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -151,7 +151,7 @@ jobs:
           large-packages: true
           docker-images: false
           swap-storage: false
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -405,7 +405,7 @@ jobs:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
