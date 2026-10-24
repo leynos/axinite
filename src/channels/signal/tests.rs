@@ -86,7 +86,7 @@ fn make_config_with_allowed_group(group_id: &str) -> SignalConfig {
 /// Build a channel from a literal test config.
 ///
 /// `SignalChannel::new` only fails if the HTTP client backend cannot
-/// initialise, which does not depend on the config; panic with context.
+/// initialize, which does not depend on the config; panic with context.
 fn make_channel_from_config(config: SignalConfig) -> SignalChannel {
     match SignalChannel::new(config) {
         Ok(channel) => channel,
