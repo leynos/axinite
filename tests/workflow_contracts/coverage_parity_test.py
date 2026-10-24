@@ -79,27 +79,35 @@ def _sides(estate: Estate) -> tuple[dict[str, object], dict[str, object]]:
 
 
 def test_both_sides_measure_with_the_same_toolchain(estate: Estate) -> None:
-    """The toolchain action, its inputs and the `setup-rust` toolchain agree."""
+    """Both sides take one toolchain, from `rust-toolchain.toml`, and agree.
+
+    The build standard pins the toolchain in `rust-toolchain.toml`, so neither
+    side installs one by hand or names a `toolchain` input to `setup-rust`;
+    either would let the two measurements drift apart. The `setup-rust`
+    revision is held equal.
+    """
     lane, publisher = _sides(estate)
-    for fragment, key in (
-        (RUST_TOOLCHAIN_ACTION, "uses"),
-        (RUST_TOOLCHAIN_ACTION, "with"),
-        (SETUP_RUST_ACTION, "uses"),
-    ):
-        lane_step = _uses_step(lane, fragment)
-        publisher_step = _uses_step(publisher, fragment)
-        assert lane_step.get(key) == publisher_step.get(key), (
-            f"the lane and the publisher differ in {fragment!r} {key!r}: "
-            f"{lane_step.get(key)!r} against {publisher_step.get(key)!r}"
+    for side, job in (("lane", lane), ("publisher", publisher)):
+        steps = job.get("steps")
+        assert isinstance(steps, list), "the job must declare steps"
+        installers = [
+            s
+            for s in steps
+            if isinstance(s, dict) and RUST_TOOLCHAIN_ACTION in str(s.get("uses", ""))
+        ]
+        assert not installers, (
+            f"the {side} installs a toolchain by hand; it must come from "
+            "rust-toolchain.toml"
         )
-    lane_toolchain = _with(_uses_step(lane, SETUP_RUST_ACTION)).get("toolchain")
-    publisher_toolchain = _with(_uses_step(publisher, SETUP_RUST_ACTION)).get(
-        "toolchain"
-    )
-    assert lane_toolchain is not None
-    assert lane_toolchain == publisher_toolchain, (
-        f"setup-rust toolchain differs: {lane_toolchain!r} in the lane, "
-        f"{publisher_toolchain!r} in the publisher"
+        assert "toolchain" not in _with(_uses_step(job, SETUP_RUST_ACTION)), (
+            f"the {side} names a setup-rust toolchain; it must follow "
+            "rust-toolchain.toml"
+        )
+    lane_step = _uses_step(lane, SETUP_RUST_ACTION)
+    publisher_step = _uses_step(publisher, SETUP_RUST_ACTION)
+    assert lane_step.get("uses") == publisher_step.get("uses"), (
+        "the lane and the publisher use different setup-rust revisions: "
+        f"{lane_step.get('uses')!r} against {publisher_step.get('uses')!r}"
     )
 
 
