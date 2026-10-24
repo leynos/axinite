@@ -1,4 +1,4 @@
-"""Contracts for the compiler half of the unsafe-boundary contract (ADR 015).
+"""Contracts for the compiler half of the unsafe-boundary contract (ADR 0015).
 
 `make boundary-contract` copies a crate to a scratch workspace, appends each
 deliberate unsafe probe to every target, and requires the compiler to reject

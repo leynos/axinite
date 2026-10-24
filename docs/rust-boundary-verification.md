@@ -3,8 +3,8 @@
 ## Status and scope
 
 This document records the unsafe-code inventory for Axinite before and after
-[ADR 015](adr-015-audited-unsafe-boundaries.md), what the boundary contract
-checks, and exactly what Miri does and does not cover. It concerns Rust
+[ADR 0015](adrs/adr-0015-audited-unsafe-boundaries.md), what the boundary
+contract checks, and exactly what Miri does and does not cover. It concerns Rust
 `unsafe` only. It is anchored to base commit `4841a72a` (the pull request #364
 head, which already removed the test-only environment mutation) and to the
 original measurement on `9290dbc1`.
@@ -49,12 +49,12 @@ trusted, not verified, here.
 
 Table 2. Trusted dependencies that replaced in-tree unsafe code.
 
-| Dependency     | Replaces                                   | What is trusted                                                                                                                                             |
-| -------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rustix` 1.1.4 | `libc::syscall(SYS_openat2)` and `geteuid` | Correct `open_how` layout, syscall number, and `OwnedFd` construction on the `linux_raw` backend.                                                           |
-| `zeroize` 1.8  | The manual volatile-free zeroing in `Drop` | Volatile overwrite of the `String` buffer that the optimizer may not elide, and `ZeroizeOnDrop` coverage.                                                   |
-| `dotenvy`      | (unchanged) `set_var` while loading `.env` | Sound only while no other thread uses the environment. `main` loads before the Tokio runtime, but `Config::from_env*` reloads from async code; see ADR 015. |
-| `wit-bindgen`  | (unchanged) canonical-ABI shims            | Pinned at 0.36 and 0.41 in the component manifests; the host's tests load the built components.                                                             |
+| Dependency     | Replaces                                   | What is trusted                                                                                                                                              |
+| -------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rustix` 1.1.4 | `libc::syscall(SYS_openat2)` and `geteuid` | Correct `open_how` layout, syscall number, and `OwnedFd` construction on the `linux_raw` backend.                                                            |
+| `zeroize` 1.8  | The manual volatile-free zeroing in `Drop` | Volatile overwrite of the `String` buffer that the optimizer may not elide, and `ZeroizeOnDrop` coverage.                                                    |
+| `dotenvy`      | (unchanged) `set_var` while loading `.env` | Sound only while no other thread uses the environment. `main` loads before the Tokio runtime, but `Config::from_env*` reloads from async code; see ADR 0015. |
+| `wit-bindgen`  | (unchanged) canonical-ABI shims            | Pinned at 0.36 and 0.41 in the component manifests; the host's tests load the built components.                                                              |
 
 ## What the boundary contract checks
 

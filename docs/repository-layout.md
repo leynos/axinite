@@ -142,8 +142,8 @@ These paths should usually be considered together when changing extension
 contracts, packaging, or runtime loading behaviour.
 
 Each crate under `channels-src/` and `tools-src/` is an audited unsafe boundary
-(see `docs/adr-015-audited-unsafe-boundaries.md`). Its `src/lib.rs` holds the
-guest logic and declares `mod bindings;` behind one reasoned
+(see `docs/adrs/adr-0015-audited-unsafe-boundaries.md`). Its `src/lib.rs` holds
+the guest logic and declares `mod bindings;` behind one reasoned
 `#[expect(unsafe_code, ...)]`. Its `src/bindings.rs` holds only the
 `wit_bindgen::generate!` and `export!` invocations, which expand to the
 canonical-ABI glue the host calls by symbol name. The crate denies, rather than

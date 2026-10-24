@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 015: Audited unsafe boundaries
+# Architectural decision record (ADR) 0015: Audited unsafe boundaries
 
 ## Status
 
@@ -309,7 +309,7 @@ every component crate that has host tests, so a new test cannot silently miss
 Miri. The root crate is not interpreted: it has no unsafe code, and building it
 for Miri costs hours to run safe tests. What Miri does and does not cover is
 recorded in
-[Rust boundary verification and unsafe inventory](rust-boundary-verification.md).
+[Rust boundary verification and unsafe inventory](../rust-boundary-verification.md).
 Kani and Verus are possible follow-ups; this ADR does not add them.
 
 ## Known risks and limitations

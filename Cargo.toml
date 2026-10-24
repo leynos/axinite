@@ -205,7 +205,7 @@ security-framework = "3"
 libc = "0.2"
 # Safe wrappers over the Linux `openat2` syscall and the effective-user query.
 # These replace handwritten `unsafe` blocks so the root crate can forbid
-# unsafe code; see docs/adr-015-audited-unsafe-boundaries.md.
+# unsafe code; see docs/adrs/adr-0015-audited-unsafe-boundaries.md.
 rustix = { version = "1", default-features = false, features = ["fs", "process", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -270,7 +270,7 @@ docker = ["dep:bollard"]
 # Unsafe policy: this crate and every one of its targets (library, binary,
 # build script, tests, benches, examples) forbid unsafe Rust. `forbid` cannot be
 # relaxed by an inner `allow`/`expect`, so the audited unsafe code lives only in
-# the boundary crates listed in docs/adr-015-audited-unsafe-boundaries.md. When
+# the boundary crates listed in docs/adrs/adr-0015-audited-unsafe-boundaries.md. When
 # the workspace lint table lands, replace this table with `[lints] workspace =
 # true`; never mix the two (Cargo rejects overrides next to `workspace = true`).
 [lints.rust]

@@ -17,7 +17,7 @@ serde_json = "1"
 path = ".."
 
 # Unsafe policy: forbidden in every target. See
-# docs/adr-015-audited-unsafe-boundaries.md.
+# docs/adrs/adr-0015-audited-unsafe-boundaries.md.
 [lints.rust]
 unsafe_code = "forbid"
 

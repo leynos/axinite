@@ -1,4 +1,4 @@
-"""Contracts for the Rust boundary verification workflow (ADR 015).
+"""Contracts for the Rust boundary verification workflow (ADR 0015).
 
 The workflow runs the unsafe-boundary contract and Miri. It is a proof lane,
 so it stays on GitHub-hosted runners (ADR 013), bounds its own runtime, never

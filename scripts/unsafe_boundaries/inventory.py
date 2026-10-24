@@ -1,7 +1,7 @@
 """The audited crate inventory and the constants the contract checks enforce.
 
 Adding, removing or reclassifying a crate is an explicit decision recorded
-here and in `docs/adr-015-audited-unsafe-boundaries.md`.
+here and in `docs/adrs/adr-0015-audited-unsafe-boundaries.md`.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ WASM_BOUNDARIES: tuple[str, ...] = (
 
 #: Every Cargo crate the repository ships or builds in CI. Adding a crate
 #: without an entry here, or removing one, fails the contract: that is the
-#: explicit inventory decision ADR 015 requires.
+#: explicit inventory decision ADR 0015 requires.
 INVENTORY: tuple[Crate, ...] = (
     Crate(".", Role.SAFE),
     Crate("crates/ambient-fs", Role.SAFE),

@@ -4436,8 +4436,8 @@ serving contract. The Make targets are:
 ## 40. Unsafe code and audited boundaries
 
 Axinite forbids unsafe Rust everywhere except the generated WebAssembly
-component glue. [ADR 015](adr-015-audited-unsafe-boundaries.md) records the
-decision, and
+component glue. [ADR 0015](adrs/adr-0015-audited-unsafe-boundaries.md) records
+the decision, and
 [Rust boundary verification and unsafe inventory](rust-boundary-verification.md)
 records the inventory and what Miri covers.
 
@@ -4481,8 +4481,8 @@ records the inventory and what Miri covers.
 1. Add the crate and its entry to `INVENTORY` in
    `scripts/unsafe_boundaries/inventory.py`, choosing `SAFE` unless it hosts an
    ABI that has no safe form. A boundary entry also needs the table row in
-   `docs/adr-015-audited-unsafe-boundaries.md` and a new ADR if the boundary is
-   not a WebAssembly component.
+   `docs/adrs/adr-0015-audited-unsafe-boundaries.md` and a new ADR if the
+   boundary is not a WebAssembly component.
 2. Give it the lint table and crate-root attribute for its role.
 3. For a root-workspace member, add it to `[workspace] members`. For a
    standalone root, give it its own `[workspace]` table and add it to `exclude`

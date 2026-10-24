@@ -173,7 +173,7 @@ management.
   `unsafe_code` in every target. The only unsafe code in the repository is the
   generated WebAssembly component glue in each component crate's
   `src/bindings.rs`. If a new operation needs unsafe code, add an audited
-  boundary crate as `docs/adr-015-audited-unsafe-boundaries.md` describes
+  boundary crate as `docs/adrs/adr-0015-audited-unsafe-boundaries.md` describes
   rather than lowering a lint, and document each unsafe block with a `SAFETY`
   comment.
 - Adding a Cargo crate, or changing a crate's unsafe role, requires an entry in

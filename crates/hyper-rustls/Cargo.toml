@@ -168,6 +168,6 @@ version = "1.6.0"
 
 # Unsafe policy: this vendored fork contains no unsafe code, and the table
 # keeps it that way for every target. See
-# docs/adr-015-audited-unsafe-boundaries.md.
+# docs/adrs/adr-0015-audited-unsafe-boundaries.md.
 [lints.rust]
 unsafe_code = "forbid"
