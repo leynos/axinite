@@ -274,8 +274,12 @@ required-features = ["test-helpers"]
 name = "html_to_markdown"
 required-features = ["html-to-markdown"]
 
+[profile.dev]
+incremental = false
+debug = 0
+
 [profile.dev.package."*"]
-debug = "line-tables-only"    # Faster linking; full info via CARGO_PROFILE_DEV_DEBUG=2
+debug = 0                   # Reduce intermediate artefact storage
 split-debuginfo = "unpacked"  # Avoid bundling debug info into binaries
 
 [profile.release]

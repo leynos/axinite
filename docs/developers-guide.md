@@ -516,6 +516,22 @@ binary, not to read a version string.
 `tests/workflow_contracts/workflow_tooling_test.py` enforces all of the above,
 including that each installer precedes the first step that uses its command.
 
+### Development build footprint
+
+The Concordat `rust-dev-build-footprint` rule keeps default development builds
+small. The root `Cargo.toml` sets `incremental = false` and `debug = 0` in
+`[profile.dev]` and `debug = 0` for dependencies in
+`[profile.dev.package."*"]`, and each standalone workspace under `channels-src`,
+`tools-src` and `fuzz` sets the same two keys, so builds keep no incremental
+compilation state and no debug information. The trade-off is that a debugger
+sees no source-level debug information or line tables in a default development
+build and every rebuild recompiles whole crates. To debug, run with
+`CARGO_PROFILE_DEV_DEBUG=true`; to rebuild incrementally, set
+`CARGO_INCREMENTAL=1`. The repository has no `rust-toolchain.toml`, so the rule
+cannot establish which unstable metadata key applies and reports that check as
+indeterminate; this change does not pick a toolchain.
+`tests/workflow_contracts/build_footprint_test.py` holds the settings.
+
 ### Cache ownership
 
 Each mutable cache path has exactly one owner and one explainable key.

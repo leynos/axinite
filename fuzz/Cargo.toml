@@ -43,3 +43,7 @@ doc = false
 
 [patch.crates-io]
 hyper-rustls = { path = "../crates/hyper-rustls" }
+
+[profile.dev]
+incremental = false
+debug = 0
