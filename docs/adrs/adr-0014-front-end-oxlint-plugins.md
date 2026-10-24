@@ -93,8 +93,8 @@ configuration removes the deprecated `baseUrl`, makes the existing alias
 project-relative, and enables the ES2023 library declarations used by Unicorn's
 non-mutating array methods.
 
-The compatibility package exposes the `tsc6` binary, which
-`check:types:6` invokes for the compatibility typecheck.
+The compatibility package exposes the `tsc6` binary, which `check:types:6`
+invokes for the compatibility typecheck.
 
 `web-src/.oxlintrc.json` enumerates the supported Unicorn recommended rules and
 the `ai-deslop` recommended rules. Oxlint categories remain off so that
