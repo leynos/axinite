@@ -141,12 +141,25 @@ normal root-workspace member.
 These paths should usually be considered together when changing extension
 contracts, packaging, or runtime loading behaviour.
 
+Each crate under `channels-src/` and `tools-src/` is an audited unsafe boundary
+(see `docs/adrs/adr-0015-audited-unsafe-boundaries.md`). Its `src/lib.rs` holds
+the guest logic and declares `mod bindings;` behind one reasoned
+`#[expect(unsafe_code, ...)]`. Its `src/bindings.rs` holds only the
+`wit_bindgen::generate!` and `export!` invocations, which expand to the
+canonical-ABI glue the host calls by symbol name. The crate denies, rather than
+forbids, `unsafe_code` in its own `[lints.rust]` table. Every other crate in
+the repository forbids unsafe code; `scripts/check_unsafe_boundaries.py`
+enforces the allow-list.
+
 ## Generated and unusual paths
 
 Several paths need extra care because they are generated, environment-specific,
 or operational rather than source-of-truth code.
 
 - `target/` is generated build output and shared artefact cache content.
+- `scripts/unsafe_boundaries/` and `scripts/check_unsafe_boundaries.py` are the
+  unsafe-boundary contract; `.github/workflows/rust-boundaries.yml` runs it and
+  Miri.
 - `image_out/` is generated local output, not hand-maintained repository
   source.
 - `tests/e2e/` uses a browser-driven test harness and therefore has different

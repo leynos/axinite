@@ -32,6 +32,9 @@
   recommends where proof-oriented checks, model checking, and generated
   property tests should land first, and why those targets have the highest
   return.
+- [Rust boundary verification and unsafe inventory](rust-boundary-verification.md)
+  records the unsafe-site inventory before and after ADR 0015, what the
+  boundary contract checks, and what Miri does and does not cover.
 - [Webhook server design](webhook-server-design.md) describes the unified
   webhook listener, route composition model, and rollback-focused restart
   behaviour.
@@ -265,3 +268,7 @@
 - [ADR 0013: Place CI jobs by rule](adrs/adr-0013-place-ci-jobs-by-rule.md)
   records the rule-based runner placement, including the utility-job rule that
   moves short jobs off the hosted pool only when it makes them wait.
+- [ADR 0015: Audited unsafe boundaries](adrs/adr-0015-audited-unsafe-boundaries.md)
+  records why the root workspace forbids unsafe code, why the fourteen
+  WebAssembly component crates confine generated bindings to one audited
+  module, and how the allow-list contract and Miri enforce and verify that.

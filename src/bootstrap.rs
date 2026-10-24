@@ -105,10 +105,11 @@ pub fn axinite_env_path() -> PathBuf {
 /// extracts `DATABASE_URL` from it and writes the `.env` file (one-time
 /// upgrade from the old config format).
 ///
-/// After loading the `.env` file, auto-detects the libsql backend: if
-/// `DATABASE_BACKEND` is still unset and `~/.axinite/axinite.db` (or the
-/// pre-rename `~/.axinite/ironclaw.db`) exists, defaults to `libsql` so
-/// cloud instances work out of the box without any manual configuration.
+/// The libsql backend default for cloud instances (`DATABASE_BACKEND` unset
+/// and `~/.axinite/axinite.db`, or the pre-rename `ironclaw.db`, present) is
+/// not applied here. It is part of the `EnvContext` snapshot instead, so no
+/// code mutates the process environment after startup; see
+/// [`EnvContext::capture_ambient`].
 pub fn load_axinite_env() {
     let path = axinite_env_path();
 
@@ -119,31 +120,6 @@ pub fn load_axinite_env() {
 
     if path.exists() {
         let _ = dotenvy::from_path(&path);
-    }
-
-    // Auto-detect libsql: if DATABASE_BACKEND is still unset after loading
-    // all env files, and the local SQLite DB exists, default to libsql.
-    // This avoids the chicken-and-egg problem on cloud instances where no
-    // DATABASE_URL is configured but axinite.db is already present.
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_BACKEND")
-    }
-    .is_err()
-    {
-        // The default path falls back to the pre-rename `ironclaw.db` when
-        // only the legacy file exists, keeping migrated installs working.
-        let default_db = crate::config::default_libsql_path();
-        if default_db.exists() {
-            // SAFETY: `load_axinite_env` is called from a synchronous `fn main()`
-            // before the Tokio runtime is started, so no other threads exist yet.
-            unsafe {
-                {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                    std::env::set_var("DATABASE_BACKEND", "libsql")
-                }
-            };
-        }
     }
 }
 

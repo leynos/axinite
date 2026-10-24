@@ -12,6 +12,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::config::INJECTED_VARS;
+use crate::config::database::autodetect_libsql_backend;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
@@ -31,9 +32,14 @@ impl Default for EnvContext {
 
 impl EnvContext {
     /// Capture the current process environment and injected secret overlay.
+    ///
+    /// When `DATABASE_BACKEND` is unset and a local libSQL database file
+    /// exists, the snapshot also defaults the backend to `libsql`, so the
+    /// process environment never needs to be mutated to carry that default.
     pub fn capture_ambient() -> Self {
-        let (env_vars, secrets) = capture_ambient_inputs();
+        let (mut env_vars, secrets) = capture_ambient_inputs();
         let base_dir = resolve_base_dir_snapshot(&env_vars);
+        autodetect_libsql_backend(&mut env_vars, &base_dir);
         Self {
             env_vars,
             secrets,

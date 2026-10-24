@@ -20,4 +20,14 @@ lto = true
 strip = true
 codegen-units = 1
 
+# Unsafe policy: `deny`, not `forbid`, because the generated component
+# bindings in src/bindings.rs are an irreducible ABI boundary and `forbid`
+# cannot be overridden (E0453). Only that module may carry
+# `#[expect(unsafe_code)]`. This is the complete lint table; when the
+# estate lint configuration lands it must keep `unsafe_code = "deny"`
+# here and must not use `[lints] workspace = true`. See
+# docs/adrs/adr-0015-audited-unsafe-boundaries.md.
+[lints.rust]
+unsafe_code = "deny"
+
 [workspace]

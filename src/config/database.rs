@@ -1,6 +1,7 @@
 //! Database configuration: backend selection and connection settings
 //! resolved from the environment.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use secrecy::{ExposeSecret, SecretString};
@@ -218,6 +219,42 @@ impl SslMode {
     }
 }
 
+/// Environment key that selects the database backend.
+const DATABASE_BACKEND_ENV: &str = "DATABASE_BACKEND";
+
+/// Default the backend to libSQL when a local database file already exists.
+///
+/// This is the cloud-instance fallback: with no `DATABASE_URL` configured but
+/// `axinite.db` (or the pre-rename `ironclaw.db`) present under `base_dir`,
+/// libSQL is the only backend that can work. An explicit `DATABASE_BACKEND`,
+/// even an empty one, always wins. The default lives in the captured snapshot
+/// rather than in the process environment so that the host never has to call
+/// the unsafe `std::env::set_var`.
+pub(crate) fn autodetect_libsql_backend(env_vars: &mut HashMap<String, String>, base_dir: &Path) {
+    if env_vars.contains_key(DATABASE_BACKEND_ENV) {
+        return;
+    }
+    if default_libsql_path_in(base_dir).exists() {
+        env_vars.insert(DATABASE_BACKEND_ENV.to_string(), "libsql".to_string());
+    }
+}
+
+/// Name of the backend the ambient environment selects, defaulting to
+/// `postgres`.
+///
+/// Used by lightweight CLI tools (status, doctor) that do not run the full
+/// config pipeline. It reads the same snapshot, including the libSQL
+/// autodetection, that `Config` resolution does.
+pub(crate) fn ambient_backend_name() -> String {
+    backend_name_from(&EnvContext::capture_ambient())
+}
+
+/// Name of the backend `ctx` selects, defaulting to `postgres`.
+pub(crate) fn backend_name_from(ctx: &EnvContext) -> String {
+    ctx.get_owned(DATABASE_BACKEND_ENV)
+        .unwrap_or_else(|| "postgres".to_string())
+}
+
 /// Default libSQL database path (~/.axinite/axinite.db).
 ///
 /// Falls back to the pre-rename `ironclaw.db` when only the legacy file
@@ -245,6 +282,7 @@ mod tests {
     //! Unit tests for database configuration parsing and defaults.
 
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn ssl_mode_default_is_prefer() {
@@ -300,5 +338,48 @@ mod tests {
             default_libsql_path_in(dir.path()),
             dir.path().join("axinite.db")
         );
+    }
+
+    #[rstest]
+    #[case::preferred_file("axinite.db")]
+    #[case::legacy_file("ironclaw.db")]
+    fn autodetect_selects_libsql_when_a_database_file_exists(#[case] file: &str) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        ambient_fs::write(dir.path().join(file), "").expect("write");
+        let mut env = HashMap::new();
+        autodetect_libsql_backend(&mut env, dir.path());
+        assert_eq!(
+            env.get("DATABASE_BACKEND").map(String::as_str),
+            Some("libsql")
+        );
+    }
+
+    #[test]
+    fn autodetect_leaves_backend_unset_without_a_database_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut env = HashMap::new();
+        autodetect_libsql_backend(&mut env, dir.path());
+        assert!(!env.contains_key("DATABASE_BACKEND"));
+    }
+
+    #[test]
+    fn autodetect_never_overrides_an_explicit_backend() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        ambient_fs::write(dir.path().join("axinite.db"), "").expect("write");
+        for explicit in ["postgres", ""] {
+            let mut env = HashMap::from([("DATABASE_BACKEND".to_string(), explicit.to_string())]);
+            autodetect_libsql_backend(&mut env, dir.path());
+            assert_eq!(
+                env.get("DATABASE_BACKEND").map(String::as_str),
+                Some(explicit)
+            );
+        }
+    }
+
+    #[test]
+    fn backend_name_defaults_to_postgres_and_honours_the_snapshot() {
+        assert_eq!(backend_name_from(&EnvContext::default()), "postgres");
+        let ctx = EnvContext::default().with_env("DATABASE_BACKEND", "libsql");
+        assert_eq!(backend_name_from(&ctx), "libsql");
     }
 }

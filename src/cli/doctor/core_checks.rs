@@ -94,12 +94,7 @@ pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Setting
 
 // ── Database ────────────────────────────────────────────────
 pub(super) async fn check_database() -> CheckResult {
-    let backend = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_BACKEND")
-    }
-    .ok()
-    .unwrap_or_else(|| "postgres".into());
+    let backend = crate::config::ambient_backend_name();
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => check_libsql_database(),
@@ -185,12 +180,7 @@ async fn try_pg_connect() -> Result<(), String> {
 
 // ── Workspace search ────────────────────────────────────────
 pub(super) async fn check_workspace_search() -> CheckResult {
-    let backend = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_BACKEND")
-    }
-    .ok()
-    .unwrap_or_else(|| "postgres".into());
+    let backend = crate::config::ambient_backend_name();
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => {
