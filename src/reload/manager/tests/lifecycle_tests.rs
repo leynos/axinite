@@ -40,10 +40,12 @@ impl LifecycleFixture {
 
         let manager = HotReloadManager::new_with_context(
             EnvContext::default(),
-            loader,
-            Some(controller as Arc<dyn ListenerController>),
-            Some(injector as Arc<dyn SecretInjector>),
-            vec![spy as Arc<dyn ChannelSecretUpdater>],
+            HotReloadDeps {
+                config_loader: loader,
+                listener_controller: Some(controller as Arc<dyn ListenerController>),
+                secret_injector: Some(injector as Arc<dyn SecretInjector>),
+                secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+            },
         );
 
         Self {
@@ -64,10 +66,12 @@ async fn reload_uses_startup_context_and_injected_secrets() -> Result<(), Box<dy
         Arc::new(StubSecretInjector::new().with_secret("HTTP_WEBHOOK_SECRET", "reloaded-secret"));
     let manager = HotReloadManager::new_with_context(
         EnvContext::default().with_secret("ANTHROPIC_API_KEY", "startup-key"),
-        loader.clone(),
-        None,
-        Some(injector),
-        Vec::new(),
+        HotReloadDeps {
+            config_loader: loader.clone(),
+            listener_controller: None,
+            secret_injector: Some(injector),
+            secret_updaters: Vec::new(),
+        },
     );
 
     manager.perform_reload().await?;

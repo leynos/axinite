@@ -25,6 +25,22 @@ pub struct HotReloadManager {
     reload_lock: tokio::sync::Mutex<()>,
 }
 
+/// The collaborators a [`HotReloadManager`] orchestrates.
+///
+/// Bundles the four reload boundaries so that
+/// [`HotReloadManager::new_with_context`] takes the environment snapshot plus
+/// one dependency set.
+pub struct HotReloadDeps {
+    /// Loads configuration from the database or the environment.
+    pub config_loader: Arc<dyn ConfigLoader>,
+    /// Restarts HTTP listeners, when one is managed.
+    pub listener_controller: Option<Arc<dyn ListenerController>>,
+    /// Injects secrets into the reload snapshot, when secrets are available.
+    pub secret_injector: Option<Arc<dyn SecretInjector>>,
+    /// Channel instances that support secret swapping.
+    pub secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
+}
+
 impl HotReloadManager {
     /// Create a new hot-reload manager with the given dependencies.
     ///
@@ -40,21 +56,23 @@ impl HotReloadManager {
     ) -> Self {
         Self::new_with_context(
             EnvContext::capture_ambient(),
-            config_loader,
-            listener_controller,
-            secret_injector,
-            secret_updaters,
+            HotReloadDeps {
+                config_loader,
+                listener_controller,
+                secret_injector,
+                secret_updaters,
+            },
         )
     }
 
     /// Create a hot-reload manager with an explicit environment snapshot.
-    pub fn new_with_context(
-        env_context: EnvContext,
-        config_loader: Arc<dyn ConfigLoader>,
-        listener_controller: Option<Arc<dyn ListenerController>>,
-        secret_injector: Option<Arc<dyn SecretInjector>>,
-        secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
-    ) -> Self {
+    pub fn new_with_context(env_context: EnvContext, deps: HotReloadDeps) -> Self {
+        let HotReloadDeps {
+            config_loader,
+            listener_controller,
+            secret_injector,
+            secret_updaters,
+        } = deps;
         Self {
             env_context,
             config_loader,

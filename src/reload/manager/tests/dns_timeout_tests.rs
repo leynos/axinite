@@ -79,10 +79,12 @@ async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls()
 
     let manager = HotReloadManager::new_with_context(
         EnvContext::default(),
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        Vec::new(),
+        HotReloadDeps {
+            config_loader: loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: Some(injector as Arc<dyn SecretInjector>),
+            secret_updaters: Vec::new(),
+        },
     );
 
     let reload = tokio::spawn(async move { manager.perform_reload().await });
@@ -116,10 +118,12 @@ async fn reload_lock_is_released_after_dns_timeout() -> Result<(), Box<dyn std::
 
     let manager = Arc::new(HotReloadManager::new_with_context(
         EnvContext::default(),
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        Vec::new(),
+        HotReloadDeps {
+            config_loader: loader as Arc<dyn ConfigLoader>,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: Some(injector as Arc<dyn SecretInjector>),
+            secret_updaters: Vec::new(),
+        },
     ));
 
     let first_reload = tokio::spawn({

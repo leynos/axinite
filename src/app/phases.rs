@@ -83,7 +83,14 @@ impl AppBuilder {
         let toml_path = self.toml_path.as_deref();
         if let Err(e) = self
             .config
-            .re_resolve_llm_with_context(&self.env_context, store, "default", toml_path)
+            .re_resolve_llm_with_context(
+                &self.env_context,
+                crate::config::LlmSettingsSource {
+                    store,
+                    user_id: "default",
+                    toml_path,
+                },
+            )
             .await
         {
             tracing::warn!("Failed to re-resolve LLM config after {context}: {e}");
