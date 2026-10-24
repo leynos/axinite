@@ -37,10 +37,14 @@ jobs:
     # fork cannot obtain an Ubicloud runner, so it runs
     # GitHub-hosted. A branch pull request, which is the one a
     # maintainer waits on, keeps the paid shape.
+    # Dependabot pull requests run on the hosted pool too (free on a public
+    # repository). The author is tested, not the actor, which changes when
+    # someone else pushes to the branch.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
-      || 'ubicloud-standard-4' }}
+      || (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-4' }}
     timeout-minutes: 30
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
@@ -147,8 +151,9 @@ jobs:
     # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
-      || 'ubicloud-standard-2' }}
+      || (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-2' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false

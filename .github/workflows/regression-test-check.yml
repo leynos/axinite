@@ -25,9 +25,13 @@ jobs:
     # the smallest ARM shape: on the hosted pool this 6-8 s job waited up to
     # 734 s to start (ADR 0013). A fork's pull request cannot obtain an
     # Ubicloud runner, so it falls back to a hosted one.
+    # Dependabot pull requests run on the hosted pool too (free on a public
+    # repository). The author is tested, not the actor, which changes when
+    # someone else pushes to the branch.
     runs-on: >-
-      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
-      || 'ubicloud-standard-2-arm' }}
+      ${{ (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-2-arm' }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository

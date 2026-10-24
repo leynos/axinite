@@ -50,6 +50,33 @@ HEAD_REPO_CONDITION_RE: re.Pattern[str] = re.compile(
     r"^github\.event\.pull_request\.head\.repo\.(?P<field>[a-z_]+)$"
 )
 
+#: The hosted arm's exact condition, parenthesized: a fork, or a pull request
+#: Dependabot opened. Compared as written, because its inner `||` must not be
+#: read as the chain's own separator and a looser pattern would accept a sibling
+#: field or `github.actor` as the author.
+HOSTED_CONDITION_RE: re.Pattern[str] = re.compile(
+    r"^\(github\.event\.pull_request\.head\.repo\.fork\s*\|\|\s*"
+    r"github\.event\.pull_request\.user\.login\s*==\s*'dependabot\[bot\]'\)$"
+)
+
+
+def _split_chain(body: str) -> list[str]:
+    """Split an expression body on the `||` that sit outside parentheses."""
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for index, character in enumerate(body):
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        elif depth == 0 and body.startswith("||", index):
+            parts.append(body[start:index].strip())
+            start = index + 2
+    parts.append(body[start:].strip())
+    return parts
+
+
 def _expression_body(declared: str) -> str | None:
     """Return the inside of a `${{ ... }}` scalar, or None if it is not one.
 
@@ -123,7 +150,7 @@ def _runs_on_chain(declared: str) -> tuple[tuple[str | None, str], ...] | None:
     body = _expression_body(declared)
     if body is None:
         return None
-    parts = [part.strip() for part in body.split("||")]
+    parts = _split_chain(body)
     if len(parts) < 2:
         return None
     arms = [
@@ -204,6 +231,7 @@ def _recognized_condition(condition: str) -> bool:
     return (
         EVENT_CONDITION_RE.match(condition) is not None
         or HEAD_REPO_CONDITION_RE.match(condition) is not None
+        or HOSTED_CONDITION_RE.match(condition) is not None
     )
 
 
