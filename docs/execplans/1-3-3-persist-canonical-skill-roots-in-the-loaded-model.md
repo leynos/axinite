@@ -327,7 +327,7 @@ current runtime shape. The requested `docs/axinite-architecture-summary.md`
 does not exist in this checkout.
 
 The governing feature documents are `docs/roadmap.md` and
-`docs/rfcs/0003-skill-bundle-installation.md`. Roadmap item `1.3.3` says to
+`docs/rfcs/rfc-0003-skill-bundle-installation.md`. Roadmap item `1.3.3` says to
 persist canonical skill roots in the loaded skill model. RFC 0003 says the
 loaded model must retain the canonical skill identifier exposed to the model,
 the canonical skill root directory on disk, and whether the skill was installed

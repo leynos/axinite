@@ -5,7 +5,7 @@
 - **RFC number:** 0017
 - **Status:** Proposed
 - **Created:** 2026-03-18
-- **Depends on:** RFC 0015, RFC 0016, and ADR 005
+- **Depends on:** RFC 0015, RFC 0016, and ADR 0005
 - **Amends:** RFC 0007 `Recall`
 - **Related:** RFC 0014
 
@@ -210,7 +210,7 @@ through the middle of an evidence chain.
 
 ### Uncertainty and gain estimation
 
-Stage II needs a gating signal. The chosen decision is defined in ADR 005:
+Stage II needs a gating signal. The chosen decision is defined in ADR 0005:
 
 - use model-assisted uncertainty scoring when the selected profile and local
   runtime allow it
@@ -393,12 +393,12 @@ retrieval layer is willing to use the structure it built.
 ## References
 
 [^1]: RFC 0015: Hierarchical memory materialization for `memoryd`. See
-    `docs/rfcs/0015-hierarchical-memory-materialization-for-memoryd.md`.
+    `docs/rfcs/rfc-0015-hierarchical-memory-materialization-for-memoryd.md`.
 [^2]: RFC 0007: Secure memory sidecar design for axinite. See
-    `docs/rfcs/0007-secure-memory-sidecar-design.md`.
+    `docs/rfcs/rfc-0007-secure-memory-sidecar-design.md`.
 [^3]: Beyond RAG for Agent Memory: Retrieval by Decoupling and Aggregation.
     See <https://arxiv.org/abs/2602.02007>.
 [^4]: RFC 0016: Theme detection and sparsity rebalancing for `memoryd`. See
-    `docs/rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md`.
+    `docs/rfcs/rfc-0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md`.
 [^5]: RFC 0014: Memory projection tiers and promotion rules. See
-    `docs/rfcs/0014-memory-projection-tiers-and-promotion-rules.md`.
+    `docs/rfcs/rfc-0014-memory-projection-tiers-and-promotion-rules.md`.

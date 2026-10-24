@@ -13,7 +13,7 @@ scheduled `audit` job waited one or two seconds and stays hosted.
 build or test step, and requires each to hold the smallest shape named here.
 `runner_sizing_test.py` exempts them from the resource sampler, whose purpose
 is to decide a resize, because a job pinned to the smallest shape has no
-smaller one to move to. See ADR 013.
+smaller one to move to. See ADR 0013.
 """
 
 from __future__ import annotations

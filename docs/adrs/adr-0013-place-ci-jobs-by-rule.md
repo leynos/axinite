@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 013: Place CI jobs by rule
+# Architectural decision record (ADR) 0013: Place CI jobs by rule
 
 ## Status
 

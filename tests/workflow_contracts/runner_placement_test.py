@@ -6,7 +6,7 @@ compares upstream results consumes that shape for API calls, so placement is
 a cost contract, not a preference. These tests pin the rule: a job may use an
 Ubicloud runner only when it builds or tests the product, or when it is one of
 the named utility jobs the hosted pool made wait, which then hold the smallest
-shape (ADR 013); Windows lanes stay on GitHub-hosted runners because Ubicloud
+shape (ADR 0013); Windows lanes stay on GitHub-hosted runners because Ubicloud
 offers Linux only, and every Ubicloud job bounds its own runtime.
 
 Run via ``make test-workflow-contracts``.
@@ -245,7 +245,7 @@ def test_roll_up_and_administrative_jobs_are_github_hosted() -> None:
     # These are the jobs the Tier 2 preparation moved off Ubicloud. Listing
     # them explicitly means a revert fails here rather than on the invoice.
     # The scheduled audit stays: it waits one or two seconds for a hosted
-    # runner, so moving it would buy nothing (ADR 013).
+    # runner, so moving it would buy nothing (ADR 0013).
     github_hosted = {
         ("audit.yml", "audit"),
         ("code_style.yml", "code-style"),

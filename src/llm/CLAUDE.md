@@ -148,7 +148,7 @@ Configure via `NearAiConfig.max_retries` (env: `NEARAI_MAX_RETRIES`; default:
 
 ## LlmProvider Trait
 
-Uses the ADR 006 dual-trait pattern. `LlmProvider` is the dyn-safe object
+Uses the ADR 0006 dual-trait pattern. `LlmProvider` is the dyn-safe object
 boundary (used as `Arc<dyn LlmProvider>`). `NativeLlmProvider` is the ergonomic
 sibling for concrete implementations. A blanket adapter bridges
 `NativeLlmProvider` into `LlmProvider` automatically.

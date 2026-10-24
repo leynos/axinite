@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 008: Mutation testing with cargo-mutants
+# Architectural decision record (ADR) 0008: Mutation testing with cargo-mutants
 
 ## Status
 

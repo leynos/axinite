@@ -83,7 +83,7 @@ keep a clean seam between the SPA build and the Rust host that will eventually
 serve it.
 
 The feature-flag design target is documented in
-`docs/rfcs/0009-feature-flags-frontend.md`. The SPA must therefore be built
+`docs/rfcs/rfc-0009-feature-flags-frontend.md`. The SPA must therefore be built
 around a typed flag registry fetched from `GET /api/features`, with
 deployment-scoped values, and any surface that is present in the mock-up but
 missing in the backend must stay behind explicit flags. The plan below adds a
@@ -141,7 +141,8 @@ the broader browser application validation surface, including `test:a11y`,
   each one before continuing.
 - Backend contract drift: if the backend integration requires API semantics not
   present in `docs/front-end-architecture.md` or
-  `docs/rfcs/0009-feature-flags-frontend.md`, stop and align the contract first.
+  `docs/rfcs/rfc-0009-feature-flags-frontend.md`, stop and align the contract
+  first.
 - Accessibility waivers: if any flow appears to require an accessibility
   exception or a disabled rule to ship, stop and escalate instead of carrying a
   waiver by default.
@@ -550,7 +551,7 @@ following are true:
 - [x] 2026-03-25 19:18 GMT: Reviewed the backend design reference in
   `docs/front-end-architecture.md`.
 - [x] 2026-03-25 19:19 GMT: Reviewed the frontend feature-flag RFC in
-  `docs/rfcs/0009-feature-flags-frontend.md`.
+  `docs/rfcs/rfc-0009-feature-flags-frontend.md`.
 - [x] 2026-03-25 19:24 GMT: Reviewed validation patterns in
   `../corbusier-mockup` and `../wildside-mockup-v2a`.
 - [x] 2026-03-25 19:31 GMT: Verified the current `axinite/` route inventory and
@@ -713,9 +714,9 @@ following are true:
 ## Surprises & Discoveries
 
 - The corrected feature-flag RFC path is
-  `docs/rfcs/0009-feature-flags-frontend.md` (in the originating repository it
-  was `../axinite/docs/rfcs/...`, not `../docs/rfcs/...`). The plan should keep
-  that exact path to avoid future confusion.
+  `docs/rfcs/rfc-0009-feature-flags-frontend.md` (in the originating repository
+  it was `../axinite/docs/rfcs/...`, not `../docs/rfcs/...`). The plan should
+  keep that exact path to avoid future confusion.
 - The current mock-up is not one page with internal tabs. It is six separate
   route directories under `axinite/`, each with its own HTML document. The SPA
   migration therefore replaces the runtime architecture rather than simply

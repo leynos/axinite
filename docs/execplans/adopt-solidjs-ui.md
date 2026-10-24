@@ -29,9 +29,9 @@ After this change:
   transitional.
 
 This implements Stages 1–3 (and part of 5) of RFC 0018
-(`docs/rfcs/0018-solidjs-front-end-adoption.md`), using the mock backend as the
-daemon-free stub runtime, and a minimal environment-variable subset of RFC 0009
-(`docs/rfcs/0009-feature-flags-frontend.md`) for `GET /api/features`.
+(`docs/rfcs/rfc-0018-solidjs-front-end-adoption.md`), using the mock backend as
+the daemon-free stub runtime, and a minimal environment-variable subset of RFC
+0009 (`docs/rfcs/rfc-0009-feature-flags-frontend.md`) for `GET /api/features`.
 
 ## Constraints
 
@@ -145,9 +145,9 @@ daemon-free stub runtime, and a minimal environment-variable subset of RFC 0009
 - Observation: the repo already contains RFC 0018 — a full staged adoption
   plan for exactly this migration — plus RFC 0009 (feature flags) and
   `docs/solidjs-pwa-gap-analysis.md` (a precise inventory of contract breaks).
-  Evidence: `docs/rfcs/0018-solidjs-front-end-adoption.md`. Impact: this plan
-  follows RFC 0018's stages and treats the gap analysis as the contract-fix
-  backlog.
+  Evidence: `docs/rfcs/rfc-0018-solidjs-front-end-adoption.md`. Impact: this
+  plan follows RFC 0018's stages and treats the gap analysis as the
+  contract-fix backlog.
 - Observation: `GET /api/jobs/{id}/events` is documented as SSE in module
   docs but is actually paginated JSON; live job events arrive on the global
   `/api/chat/events` stream. Evidence:

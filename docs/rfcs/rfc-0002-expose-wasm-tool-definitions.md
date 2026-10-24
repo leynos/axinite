@@ -237,7 +237,7 @@ to "required interface guarantee."
 ### 4. Reuse the remote-tool catalogue for orchestrator-owned WASM tools
 
 The companion RFC
-[0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-definitions.md)
+[0001-expose-mcp-tool-definitions.md](rfc-0001-expose-mcp-tool-definitions.md)
 proposes a worker-authenticated hosted tool catalogue plus generic remote tool
 execution endpoint.
 

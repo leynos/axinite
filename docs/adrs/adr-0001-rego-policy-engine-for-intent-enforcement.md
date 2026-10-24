@@ -1,5 +1,5 @@
 <!-- markdownlint-disable-next-line MD013 -->
-# Architectural decision record (ADR) 001: OPA Rego as the policy engine for intent enforcement
+# Architectural decision record (ADR) 0001: OPA Rego as the policy engine for intent enforcement
 
 ## Status
 
@@ -233,7 +233,7 @@ ______________________________________________________________________
 [^2]: Safety layer. See `SafetyLayer` in `src/safety/`.
 
 [^3]: RFC 0006: Provenance-based, zero-knowledge intent plugins. See
-    `docs/rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md`.
+    `docs/rfcs/rfc-0006-provenance-based-zero-knowledge-intent-plugins.md`.
 
 [^4]: OWASP Top 10 for LLM Applications 2025. LLM06:2025 (Excessive
     Agency). See <https://genai.owasp.org/llm-top-10/>.

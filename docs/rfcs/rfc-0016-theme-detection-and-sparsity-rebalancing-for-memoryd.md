@@ -5,8 +5,8 @@
 - **RFC number:** 0016
 - **Status:** Proposed
 - **Created:** 2026-03-18
-- **Depends on:** RFC 0015 and ADR 003
-- **Related:** RFC 0017 and ADR 005
+- **Depends on:** RFC 0015 and ADR 0003
+- **Related:** RFC 0017 and ADR 0005
 
 ## Summary
 
@@ -50,7 +50,7 @@ into durable memory structure.
 
 RFC 0015 defines semantic carriers and optional theme nodes as materialized
 structures owned by `memoryd`, and explicitly limits themes to derived
-navigation status rather than a new epistemic class.[^1] ADR 003 places theme
+navigation status rather than a new epistemic class.[^1] ADR 0003 places theme
 management in `memoryd`, not in Chutoro, so the sidecar owns stable IDs,
 lineage, and balancing policy.[^4]
 
@@ -426,12 +426,12 @@ clustering crate into a policy swamp.
 ## References
 
 [^1]: RFC 0015: Hierarchical memory materialization for `memoryd`. See
-    `docs/rfcs/0015-hierarchical-memory-materialization-for-memoryd.md`.
+    `docs/rfcs/rfc-0015-hierarchical-memory-materialization-for-memoryd.md`.
 [^2]: Chutoro design document, section 12: incremental clustering. See
     <https://raw.githubusercontent.com/leynos/chutoro/main/docs/chutoro-design.md>.
 [^3]: Beyond RAG for Agent Memory: Retrieval by Decoupling and Aggregation.
     See <https://arxiv.org/abs/2602.02007>.
-[^4]: ADR 003: Theme management belongs in `memoryd`. See
-    `docs/adr-003-theme-management-belongs-in-memoryd.md`.
+[^4]: ADR 0003: Theme management belongs in `memoryd`. See
+    `docs/adrs/adr-0003-theme-management-belongs-in-memoryd.md`.
 [^5]: RFC 0014: Memory projection tiers and promotion rules. See
-    `docs/rfcs/0014-memory-projection-tiers-and-promotion-rules.md`.
+    `docs/rfcs/rfc-0014-memory-projection-tiers-and-promotion-rules.md`.

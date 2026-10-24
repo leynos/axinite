@@ -9,8 +9,8 @@
 - **Related:** RFC 0014: Memory projection tiers and promotion rules; RFC 0016:
   Theme detection and sparsity rebalancing for `memoryd`; RFC 0017:
   Hierarchical recall for `memoryd`
-- **Companion ADRs:** ADR 003: Theme management belongs in `memoryd`;
-  ADR 004: Dual-path semantic extraction with validated provenance; ADR 005:
+- **Companion ADRs:** ADR 0003: Theme management belongs in `memoryd`;
+  ADR 0004: Dual-path semantic extraction with validated provenance; ADR 0005:
   Dual-mode uncertainty gating for hierarchical recall
 
 ## Summary
@@ -253,7 +253,7 @@ remain stable.
 - Should retraction trigger summary regeneration immediately, or mark
   summaries stale for asynchronous refresh?
 - How much of theme balancing should remain runtime policy rather than fixed
-  by RFC 0016 and ADR 003?
+  by RFC 0016 and ADR 0003?
 
 ## Recommendation
 

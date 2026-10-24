@@ -65,10 +65,10 @@ The following files are the core orientation points for this feature.
 - `docs/roadmap.md` defines `1.2.2`, its dependency on `1.1.1` and `1.2.1`,
   and the success condition that hosted workers receive proactive WASM
   definitions through the same catalogue path as MCP tools.
-- `docs/rfcs/0002-expose-wasm-tool-definitions.md` is the design authority for
-  why proactive schemas are the normal contract and why hosted mode must reuse
-  the existing remote catalogue rather than rediscovering schemas from failure
-  hints.
+- `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` is the design authority
+  for why proactive schemas are the normal contract and why hosted mode must
+  reuse the existing remote catalogue rather than rediscovering schemas from
+  failure hints.
 - `src/orchestrator/api/remote_tools.rs` owns the current adapter-level source
   allowlist through `HOSTED_REMOTE_TOOL_SOURCES`. It currently projects only
   `HostedToolCatalogSource::Mcp`, which is the narrow seam this roadmap item
@@ -275,9 +275,9 @@ schema fidelity and fail-closed behaviour.
 
 Update the documents that describe the hosted remote-tool contract.
 
-1. Update `docs/rfcs/0002-expose-wasm-tool-definitions.md` so its implementation
-   status reflects `1.2.2` completion and its migration notes align with the
-   implemented catalogue reuse.
+1. Update `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` so its
+   implementation status reflects `1.2.2` completion and its migration notes
+   align with the implemented catalogue reuse.
 2. Update `docs/users-guide.md` to explain that hosted workers now advertise
    orchestrator-owned WASM tools through the same remote catalogue path as MCP
    tools, while preserving the visibility rules for approval-gated and other
@@ -322,7 +322,7 @@ Use the repository's documented gates and retain logs.
    bunx markdownlint-cli2 \
      docs/execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md \
      docs/roadmap.md \
-     docs/rfcs/0002-expose-wasm-tool-definitions.md \
+     docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md \
      docs/users-guide.md \
      docs/worker-orchestrator-contract.md \
      docs/axinite-architecture-overview.md \
@@ -447,7 +447,7 @@ documentation all match the hosted WASM catalogue contract.
   - `bunx markdownlint-cli2`
     `docs/execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md`
     `docs/roadmap.md`
-    `docs/rfcs/0002-expose-wasm-tool-definitions.md`
+    `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md`
     `docs/users-guide.md`
     `docs/worker-orchestrator-contract.md`
     `docs/axinite-architecture-overview.md`

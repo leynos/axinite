@@ -31,7 +31,7 @@ clear, diagnostic message.
 
 This plan tracks the worker-orchestrator parity portion of
 [Issue #16](https://github.com/leynos/axinite/issues/16) and addresses
-[RFC 0001 §Migration Plan](../rfcs/0001-expose-mcp-tool-definitions.md#migration-plan)
+[RFC 0001 §Migration Plan](../rfcs/rfc-0001-expose-mcp-tool-definitions.md#migration-plan)
 step 5.
 
 ## Approval gates
@@ -53,7 +53,7 @@ step 5.
   commit.
 - Docs synced
   Acceptance criteria: `docs/roadmap.md` marks `1.1.4` done,
-  `docs/rfcs/0001-expose-mcp-tool-definitions.md` implementation status
+  `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` implementation status
   reflects the completed test matrix, `docs/contents.md` indexes this ExecPlan,
   and `docs/users-guide.md` is reviewed for accuracy against the tested
   behaviour. Sign-off: implementer completes documentation sync as the final
@@ -129,7 +129,7 @@ plan must lock down with tests. All paths are relative to the repository root.
 
 ### Design authority
 
-- `docs/rfcs/0001-expose-mcp-tool-definitions.md` is the design authority.
+- `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` is the design authority.
   Its §Testing Strategy names three test families (unit tests, behavioural
   tests, and a regression test target) and its §Migration Plan step 5 names the
   deliverable: "targeted tests for definition fidelity, execution routing, and
@@ -611,7 +611,7 @@ cover the same properties.
 Update the project documentation so the described behaviour matches the tested
 behaviour.
 
-1. Update `docs/rfcs/0001-expose-mcp-tool-definitions.md` implementation
+1. Update `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` implementation
    status to reflect that `1.1.4` is complete and the test matrix is in place.
    Note which test families were delivered and which (if any) were deferred.
 
@@ -664,7 +664,7 @@ set -o pipefail && bunx markdownlint-cli2 \
   docs/roadmap.md \
   docs/users-guide.md \
   docs/axinite-architecture-overview.md \
-  docs/rfcs/0001-expose-mcp-tool-definitions.md \
+  docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md \
   docs/execplans/1-1-4-tests-for-schema-fidelity-and-execution-routing.md \
   docs/contents.md \
   | tee /tmp/markdownlint-axinite-1-1-4.out
@@ -835,8 +835,8 @@ addressed in a subsequent pass (see progress checklist above).
 **Documentation files modified:**
 
 - `docs/roadmap.md`: marked roadmap item `1.1.4` complete.
-- `docs/rfcs/0001-expose-mcp-tool-definitions.md`: updated implementation status
-  to reflect that all roadmap items in section `1.1` are complete.
+- `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md`: updated implementation
+  status to reflect that all roadmap items in section `1.1` are complete.
 - `docs/contents.md`: added ExecPlan
   `1-1-4-tests-for-schema-fidelity-and-execution-routing.md` to the ExecPlans
   directory listing.

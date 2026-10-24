@@ -83,7 +83,7 @@ table of survivors.
 - [x] Draft ExecPlan.
 - [x] Obtain approval.
 - [x] Create `.github/workflows/mutation-testing.yml`.
-- [x] Update Architecture Decision Record (ADR) 008 status from `Proposed` to
+- [x] Update Architecture Decision Record (ADR) 0008 status from `Proposed` to
       `Accepted` and record the
       nightly + changed-files design decision.
 - [x] Update `docs/contents.md` if the ADR is not already listed.
@@ -98,7 +98,7 @@ table of survivors.
 - The MD013 line-length rule applied to the Stage D validation command listed
   in the plan body. Rephrased to keep lines within 80 columns.
 - During rebase onto `main`, `ac20fe4` ("Feature-gate Docker sandbox support
-  cleanly") was found to have added a separate ADR 007 ("Stable capability
+  cleanly") was found to have added a separate ADR 0007 ("Stable capability
   probes must ignore ambient `RUSTC_WRAPPER`"). The mutation-testing ADR was
   renumbered to 008 to avoid a collision: the file was renamed, its heading
   updated, and all references corrected.
@@ -137,11 +137,11 @@ table of survivors.
 Implementation completed on 2026-03-22. Three files were created or modified:
 
 - `.github/workflows/mutation-testing.yml` — new workflow file.
-- `docs/adr-008-mutation-testing-with-cargo-mutants.md` — status promoted to
-  Accepted, workflow design updated, outstanding decisions resolved. Renumbered
-  from 007 to 008 during rebase to avoid collision with the capability-probes
-  ADR added concurrently on `main`.
-- `docs/contents.md` — ADR 008 added to the ADR index.
+- `docs/adrs/adr-0008-mutation-testing-with-cargo-mutants.md` — status promoted
+  to Accepted, workflow design updated, outstanding decisions resolved.
+  Renumbered from 007 to 008 during rebase to avoid collision with the
+  capability-probes ADR added concurrently on `main`.
+- `docs/contents.md` — ADR 0008 added to the ADR index.
 
 `make all` (fmt, lint, 3300 tests) passed without change. No Rust source was
 touched. Markdown linting passed after fixing blank-line-around-fences and
@@ -291,7 +291,7 @@ Steps:
 
 ### Stage B: update the ADR
 
-In `docs/adr-008-mutation-testing-with-cargo-mutants.md`:
+In `docs/adrs/adr-0008-mutation-testing-with-cargo-mutants.md`:
 
 - Change status from `Proposed` to `Accepted`.
 - Refine the workflow design section to reflect the nightly + 24-hour diff
@@ -303,7 +303,7 @@ In `docs/adr-008-mutation-testing-with-cargo-mutants.md`:
 
 ### Stage C: update the documentation index
 
-If ADR 008 is not yet listed in `docs/contents.md`, add it in the appropriate
+If ADR 0008 is not yet listed in `docs/contents.md`, add it in the appropriate
 ADR group.
 
 ### Stage D: validate and commit
@@ -330,7 +330,7 @@ Stage B — update the ADR:
 
 ```bash
 # The file is edited by the agent using the Edit tool.
-# Path: docs/adr-008-mutation-testing-with-cargo-mutants.md
+# Path: docs/adrs/adr-0008-mutation-testing-with-cargo-mutants.md
 ```
 
 Stage C — update the contents file (if needed):
@@ -344,7 +344,7 @@ Stage D — validate:
 
 ```bash
 bunx markdownlint-cli2 \
-  docs/adr-008-mutation-testing-with-cargo-mutants.md \
+  docs/adrs/adr-0008-mutation-testing-with-cargo-mutants.md \
   docs/execplans/mutation-testing.md
 ```
 
@@ -379,7 +379,7 @@ Quality criteria:
   the computed file list.
 - `mutants.out/` is uploaded as a 14-day artefact named `mutants-report`.
 - A Markdown summary of surviving mutants is written to `$GITHUB_STEP_SUMMARY`.
-- ADR 008 status is `Accepted` with the outstanding decisions resolved.
+- ADR 0008 status is `Accepted` with the outstanding decisions resolved.
 - `bunx markdownlint-cli2` reports no violations on changed Markdown files.
 - `make all` passes.
 

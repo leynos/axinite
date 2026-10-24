@@ -82,9 +82,9 @@ insufficient.
   `src/orchestrator/api/tests/remote_tools_param_aware.rs`, and
   `src/worker/container/tests.rs` already cover most of the current hosted
   catalogue path and should receive the first regression updates.
-- `docs/rfcs/0001-expose-mcp-tool-definitions.md` is the design authority for
-  this task. Its "Filter the catalogue to hosted-executable tools" section and
-  migration plan must stay aligned with implementation.
+- `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` is the design authority
+  for this task. Its "Filter the catalogue to hosted-executable tools" section
+  and migration plan must stay aligned with implementation.
 - `docs/axinite-architecture-summary.md`, named in the user request, does not
   exist in this checkout. Use `docs/axinite-architecture-overview.md` as the
   current component-architecture reference instead.
@@ -108,9 +108,9 @@ insufficient.
   start with MCP-focused rules, but it must not hard-code assumptions that make
   orchestrator-owned WebAssembly (WASM) tools impossible to add through the
   same seam later. The companion WASM schema-advertising design in
-  `docs/rfcs/0002-expose-wasm-tool-definitions.md` must explicitly reference
-  this canonical `1.1.2` seam so later work is required to reuse it rather than
-  rebuilding hosted visibility logic elsewhere.
+  `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` must explicitly
+  reference this canonical `1.1.2` seam so later work is required to reuse it
+  rather than rebuilding hosted visibility logic elsewhere.
 - Avoid widening approval semantics in hosted mode. If a tool currently needs an
   interactive approval flow, it must remain hidden until the product has a real
   hosted approval-grant path.
@@ -122,7 +122,7 @@ insufficient.
   in-process `rstest` integration test.
 - Update the relevant design and user documentation in the same implementation
   pass. At minimum, that means checking
-  `docs/rfcs/0001-expose-mcp-tool-definitions.md`,
+  `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md`,
   `docs/axinite-architecture-overview.md`, `docs/users-guide.md`, and
   `docs/roadmap.md`.
 
@@ -304,10 +304,10 @@ in a plain `rstest` integration test instead.
 
 Implementation is not complete until the docs say the same thing as the code.
 
-1. Update `docs/rfcs/0001-expose-mcp-tool-definitions.md` if the final
+1. Update `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` if the final
    canonical-filter seam or MCP-specific rule is narrower or more explicit than
    the current RFC text.
-2. Update `docs/rfcs/0002-expose-wasm-tool-definitions.md` so roadmap item
+2. Update `docs/rfcs/rfc-0002-expose-wasm-tool-definitions.md` so roadmap item
    `1.2.2` explicitly references the canonical hosted-visible filter introduced
    by `1.1.2`, not only the shared worker-orchestrator transport.
 3. Update `docs/axinite-architecture-overview.md` to say that hosted-catalogue
@@ -347,7 +347,7 @@ Expected validation sequence for docs changed during implementation:
 set -o pipefail
 bunx markdownlint-cli2 \
   docs/execplans/1-1-2-filter-the-hosted-visible-catalogue.md \
-  docs/rfcs/0001-expose-mcp-tool-definitions.md \
+  docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md \
   docs/axinite-architecture-overview.md \
   docs/users-guide.md \
   docs/roadmap.md \
@@ -393,7 +393,7 @@ When the implementation is ready, the final evidence bundle should include:
   hidden-path, unhappy-path, param-aware, and determinism cases.
 - [x] 2026-03-21 10:58Z: Updated `docs/users-guide.md`,
   `docs/axinite-architecture-overview.md`,
-  `docs/rfcs/0001-expose-mcp-tool-definitions.md`, and `docs/roadmap.md` to
+  `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md`, and `docs/roadmap.md` to
   describe the canonical hosted-visible filter and mark roadmap item `1.1.2`
   done after implementation.
 - [x] 2026-03-21 11:03Z: Passed `make check-fmt`, `make test`, and
@@ -406,7 +406,8 @@ When the implementation is ready, the final evidence bundle should include:
 - [x] 2026-03-21 11:06Z: Passed Markdown validation for
   `docs/execplans/1-1-2-filter-the-hosted-visible-catalogue.md`,
   `docs/users-guide.md`, `docs/axinite-architecture-overview.md`,
-  `docs/rfcs/0001-expose-mcp-tool-definitions.md`, and `docs/roadmap.md`. Log:
+  `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md`, and `docs/roadmap.md`.
+  Log:
   `/tmp/markdownlint-axinite-1-1-2-filter-the-hosted-visible-catalogue.out`.
 - [x] 2026-03-21 11:08Z: Passed `git diff --check`.
 - [ ] Commit and push the validated implementation branch.

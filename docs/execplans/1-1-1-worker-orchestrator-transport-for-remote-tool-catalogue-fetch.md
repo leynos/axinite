@@ -310,9 +310,9 @@ maximalism.
 
 Update the design and user-facing documents in the same change.
 
-- Update `docs/rfcs/0001-expose-mcp-tool-definitions.md` to record the chosen
-  shared boundary module, the generic execution path, and any decision about
-  how much catalogue policy belongs in `1.1.1` versus `1.1.2`.
+- Update `docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md` to record the
+  chosen shared boundary module, the generic execution path, and any decision
+  about how much catalogue policy belongs in `1.1.1` versus `1.1.2`.
 - Update `docs/axinite-architecture-overview.md` so the orchestrator and
   worker sections describe the new catalogue and generic execution routes.
 - Update the module-level `//!` documentation in `src/orchestrator/mod.rs` and
@@ -369,7 +369,7 @@ set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 bunx markdownlint-cli2 \
   docs/execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md \
-  docs/rfcs/0001-expose-mcp-tool-definitions.md \
+  docs/rfcs/rfc-0001-expose-mcp-tool-definitions.md \
   docs/axinite-architecture-overview.md \
   docs/users-guide.md \
   docs/roadmap.md \

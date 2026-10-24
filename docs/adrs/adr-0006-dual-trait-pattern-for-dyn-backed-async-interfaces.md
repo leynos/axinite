@@ -1,5 +1,5 @@
 <!-- markdownlint-disable-next-line MD013 -->
-# Architectural decision record (ADR) 006: Dual-trait pattern for dyn-backed async interfaces
+# Architectural decision record (ADR) 0006: Dual-trait pattern for dyn-backed async interfaces
 
 ## Status
 
@@ -371,7 +371,7 @@ not the correct tool for the remaining dyn-backed surfaces in this repository.
    `SoftwareBuilder`. Those follow-on conversions showed that the sibling-trait
    pattern scales beyond the transport layer while keeping existing dyn-backed
    consumers intact.
-4. Completed the ADR 006 broad rollout across all remaining dyn-backed
+4. Completed the ADR 0006 broad rollout across all remaining dyn-backed
    families via the approval-gated plan in
    `docs/execplans/adr-006-broad-rollout.md`. In order: 7 narrow internal
    traits (Milestone 2), 6 infrastructure extension seams (Milestone 3), and

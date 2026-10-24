@@ -124,10 +124,10 @@
   written in the Codex ExecPlan format for roadmap-scoped work.
   - [Migrate from async-trait to native async traits](execplans/migrate-async-trait.md)
     records the completed staged migration away from `async-trait`, including
-    the ADR 006 pilot results, the broad rollout across all dyn-backed
+    the ADR 0006 pilot results, the broad rollout across all dyn-backed
     families, and the final dependency removal.
-  - [Roll out ADR 006 across the remaining dyn-backed async trait families](execplans/adr-006-broad-rollout.md)
-    records the completed broad refactor that scaled the ADR 006 pilot
+  - [Roll out ADR 0006 across the remaining dyn-backed async trait families](execplans/adr-006-broad-rollout.md)
+    records the completed broad refactor that scaled the ADR 0006 pilot
     pattern across all remaining async interfaces.
   - [Give the test harness an embedded PostgreSQL](execplans/adopt-pg-embed-setup-unpriv.md)
     plans the `pg-embed-setup-unpriv` adoption that would give every lane a
@@ -172,94 +172,96 @@
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
   that need technical review before acceptance.
-  - [RFC 0001: Expose Model Context Protocol (MCP) tool definitions](rfcs/0001-expose-mcp-tool-definitions.md)
+  - [RFC 0001: Expose Model Context Protocol (MCP) tool definitions](rfcs/rfc-0001-expose-mcp-tool-definitions.md)
     describes how MCP tool schemas should be surfaced to the runtime and model.
-  - [RFC 0002: Expose WebAssembly (WASM) tool definitions](rfcs/0002-expose-wasm-tool-definitions.md)
+  - [RFC 0002: Expose WebAssembly (WASM) tool definitions](rfcs/rfc-0002-expose-wasm-tool-definitions.md)
     proposes how WebAssembly tool schemas should be exported and consumed.
-  - [RFC 0003: Skill bundle installation](rfcs/0003-skill-bundle-installation.md)
+  - [RFC 0003: Skill bundle installation](rfcs/rfc-0003-skill-bundle-installation.md)
     proposes the packaging and installation model for skill bundles.
-  - [RFC 0004: Tokenized delegated authorized endpoint requests](rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md)
+  - [RFC 0004: Tokenized delegated authorized endpoint requests](rfcs/rfc-0004-tokenized-delegated-authorized-endpoint-requests.md)
     proposes a delegated endpoint model that keeps configured service URLs out
     of agent-visible and extension-visible surfaces.
-  - [RFC 0005: Monty code execution environment](rfcs/0005-monty-code-execution-environment.md)
+  - [RFC 0005: Monty code execution environment](rfcs/rfc-0005-monty-code-execution-environment.md)
     proposes a Monty-backed Python automation environment for saved scripts and
     ephemeral code execution.
-  - [RFC 0006: Provenance-based zero-knowledge intent plugins](rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md)
+  - [RFC 0006: Provenance-based zero-knowledge intent plugins](rfcs/rfc-0006-provenance-based-zero-knowledge-intent-plugins.md)
     proposes intent-plugin boundaries driven by provenance-aware controls.
-  - [RFC 0007: Secure memory sidecar design](rfcs/0007-secure-memory-sidecar-design.md)
+  - [RFC 0007: Secure memory sidecar design](rfcs/rfc-0007-secure-memory-sidecar-design.md)
     proposes a sidecar-based design for protected memory handling.
-  - [RFC 0008: WebSocket Responses API](rfcs/0008-websocket-responses-api.md)
+  - [RFC 0008: WebSocket Responses API](rfcs/rfc-0008-websocket-responses-api.md)
     proposes a WebSocket-based Responses API surface for axinite.
-  - [RFC 0009: Feature flags for the web front end](rfcs/0009-feature-flags-frontend.md)
+  - [RFC 0009: Feature flags for the web front end](rfcs/rfc-0009-feature-flags-frontend.md)
     proposes a mechanism for passing feature flags from the backend to the
     browser front end.
-  - [RFC 0010: Intent contracts and fail-closed runtime gates](rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md)
+  - [RFC 0010: Intent contracts and fail-closed runtime gates](rfcs/rfc-0010-intent-contracts-and-fail-closed-runtime-gates.md)
     proposes explicit intent contracts and fail-closed runtime policy gates.
-  - [RFC 0011: Execution truth ledger and action provenance](rfcs/0011-execution-truth-ledger-and-action-provenance.md)
+  - [RFC 0011: Execution truth ledger and action provenance](rfcs/rfc-0011-execution-truth-ledger-and-action-provenance.md)
     proposes an append-only ledger for approvals, tool calls, and system
     actions.
-  - [RFC 0012: Delegated child jobs with isolated context](rfcs/0012-delegated-child-jobs-with-isolated-context.md)
+  - [RFC 0012: Delegated child jobs with isolated context](rfcs/rfc-0012-delegated-child-jobs-with-isolated-context.md)
     proposes bounded delegation with isolated context, budgets, and evidence
     bundles.
-  - [RFC 0013: Auxiliary provider profiles and stable-prefix prompt assembly](rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md)
+  - [RFC 0013: Auxiliary provider profiles and stable-prefix prompt assembly](rfcs/rfc-0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md)
     proposes named provider profiles and stable prompt-prefix construction.
-  - [RFC 0014: Memory projection tiers and promotion rules](rfcs/0014-memory-projection-tiers-and-promotion-rules.md)
+  - [RFC 0014: Memory projection tiers and promotion rules](rfcs/rfc-0014-memory-projection-tiers-and-promotion-rules.md)
     proposes projection classes, epistemic status, and promotion rules for
     memory.
-  - [RFC 0015: Hierarchical memory materialization for memoryd](rfcs/0015-hierarchical-memory-materialization-for-memoryd.md)
+  - [RFC 0015: Hierarchical memory materialization for memoryd](rfcs/rfc-0015-hierarchical-memory-materialization-for-memoryd.md)
     outlines how `memoryd` can materialize episode, semantic-carrier, and theme
     structures without replacing RFC 0014's projection taxonomy.
-  - [RFC 0016: Theme detection and sparsity rebalancing for memoryd](rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md)
+  - [RFC 0016: Theme detection and sparsity rebalancing for memoryd](rfcs/rfc-0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md)
     defines how `memoryd` maintains stable theme identities, balancing, and
     lineage over semantic carriers without promoting themes into a new truth
     class.
-  - [RFC 0017: Hierarchical recall for memoryd](rfcs/0017-hierarchical-recall-for-memoryd.md)
+  - [RFC 0017: Hierarchical recall for memoryd](rfcs/rfc-0017-hierarchical-recall-for-memoryd.md)
     proposes the theme-aware, budget-aware read path that expands to episodes
     and messages only when the extra evidence is worth the token cost.
-  - [RFC 0018: Adopt the SolidJS browser front end](rfcs/0018-solidjs-front-end-adoption.md)
+  - [RFC 0018: Adopt the SolidJS browser front end](rfcs/rfc-0018-solidjs-front-end-adoption.md)
     proposes the staged migration from the Rust-embedded browser shell to the
     new SolidJS application proven out in `axinite-mockup`.
 
 ## ADRs
 
-- [ADR 001: OPA Rego as the policy engine for intent enforcement](adr-001-rego-policy-engine-for-intent-enforcement.md)
+- [ADR directory](adrs/) stores the architectural decision records that capture
+  accepted decisions, their context, and the rationale behind them.
+- [ADR 0001: OPA Rego as the policy engine for intent enforcement](adrs/adr-0001-rego-policy-engine-for-intent-enforcement.md)
   records the proposed policy-engine choice for deterministic,
   machine-auditable intent gates.
-- [ADR 002: Authoritative intent state must remain human-auditable](adr-002-authoritative-intent-state-must-remain-human-auditable.md)
+- [ADR 0002: Authoritative intent state must remain human-auditable](adrs/adr-0002-authoritative-intent-state-must-remain-human-auditable.md)
   records that provider-owned continuation state may optimize execution but
   must never become the sole source of truth for intent or decision history.
-- [ADR 003: Theme management belongs in memoryd](adr-003-theme-management-belongs-in-memoryd.md)
+- [ADR 0003: Theme management belongs in memoryd](adrs/adr-0003-theme-management-belongs-in-memoryd.md)
   records that stable theme IDs, balancing policy, and lineage belong in the
   memory sidecar rather than in the clustering substrate.
-- [ADR 004: Dual-path semantic extraction with validated provenance](adr-004-dual-path-semantic-extraction-with-validated-provenance.md)
+- [ADR 0004: Dual-path semantic extraction with validated provenance](adrs/adr-0004-dual-path-semantic-extraction-with-validated-provenance.md)
   records that `memoryd` should support both structured LLM extraction and
   encoder-only extraction behind one provenance-validated schema.
-- [ADR 005: Dual-mode uncertainty gating for hierarchical recall](adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
+- [ADR 0005: Dual-mode uncertainty gating for hierarchical recall](adrs/adr-0005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
   records that hierarchical recall should support both proxy-based and
   model-assisted gain estimation behind one expansion-gating interface.
-- [ADR 006: Dual-trait pattern for dyn-backed async interfaces](adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+- [ADR 0006: Dual-trait pattern for dyn-backed async interfaces](adrs/adr-0006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
   records the accepted migration pattern for dyn-backed async traits, balancing
   compilation speed against implementation maintainability. The pattern has
   been applied to all dyn-backed trait families in the repository.
-- [ADR 007: Stable capability probes must ignore ambient `RUSTC_WRAPPER`](adr-007-stable-capability-probes-must-ignore-ambient-rustc-wrapper.md)
+- [ADR 0007: Stable capability probes must ignore ambient `RUSTC_WRAPPER`](adrs/adr-0007-stable-capability-probes-must-ignore-ambient-rustc-wrapper.md)
   records why the repository temporarily carried a narrow vendored `cap-*`
   probe patch chain, which non-patch alternatives existed, and what evidence
   retired the workaround.
-- [ADR 008: Mutation testing with cargo-mutants](adr-008-mutation-testing-with-cargo-mutants.md)
+- [ADR 0008: Mutation testing with cargo-mutants](adrs/adr-0008-mutation-testing-with-cargo-mutants.md)
   records the adoption of `cargo-mutants` for nightly mutation testing, scoped
   to files changed in the past 24 hours, with manual dispatch support.
-- [ADR 009: Borrowed newtypes for schema helper arguments](adr-009-borrowed-newtypes-for-schema-helper-arguments.md)
+- [ADR 0009: Borrowed newtypes for schema helper arguments](adrs/adr-0009-borrowed-newtypes-for-schema-helper-arguments.md)
   records the schema-helper newtypes that make parameter names, schema paths,
   and tool names explicit at helper call sites.
-- [ADR 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`](adr-010-consolidate-bootstrap-rename-helpers.md)
+- [ADR 0010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`](adrs/adr-0010-consolidate-bootstrap-rename-helpers.md)
   records the single-helper migration decision for `.migrated` rename behaviour
   and explicit non-fatal call-site handling.
-- [ADR 011: Extract register_wasm helpers to reduce cyclomatic complexity](adr-011-extract-register-wasm-helpers.md)
+- [ADR 0011: Extract register_wasm helpers to reduce cyclomatic complexity](adrs/adr-0011-extract-register-wasm-helpers.md)
   records the helper split that keeps the WASM registration path within the
   repository's complexity threshold.
-- [ADR 012: Monotonic clock seam for build duration measurement](adr-012-monotonic-clock-seam-for-build-duration.md)
+- [ADR 0012: Monotonic clock seam for build duration measurement](adrs/adr-0012-monotonic-clock-seam-for-build-duration.md)
   records why `BuildSoftwareTool` uses an `Instant`-backed duration seam
   instead of `mockable::Clock` for elapsed-time assertions.
-- [ADR 013: Place CI jobs by rule](adr-013-place-ci-jobs-by-rule.md) records
-  the rule-based runner placement, including the utility-job rule that moves
-  short jobs off the hosted pool only when it makes them wait.
+- [ADR 0013: Place CI jobs by rule](adrs/adr-0013-place-ci-jobs-by-rule.md)
+  records the rule-based runner placement, including the utility-job rule that
+  moves short jobs off the hosted pool only when it makes them wait.

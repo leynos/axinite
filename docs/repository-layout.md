@@ -52,7 +52,7 @@ Table 1. Major repository paths and their current responsibilities.
 | `crates/`                   | Internal workspace crates, including the `ambient-fs` boundary crate for deliberately-ambient filesystem access     | The `ambient-fs` crate is excluded from the Whitaker `no_std_fs_operations` lint via `dylint.toml`; see `crates/ambient-fs/src/lib.rs` for the rationale |
 | `deploy/`                   | Service-unit examples, deployment environment templates, and setup scripts                                          | Intended for operational setup rather than local development logic                                                                                       |
 | `docker/` and `Dockerfile*` | Container build material for host, test, and worker runtimes                                                        | The worker image and sandbox image are part of the execution-isolation story, not just packaging                                                         |
-| `docs/`                     | Long-lived maintainer and design documentation, including plans and RFCs                                            | `plans/` and `rfcs/` are durable reference subtrees rather than scratch notes                                                                            |
+| `docs/`                     | Long-lived maintainer and design documentation, including ADRs, plans, and RFCs                                     | `adrs/`, `plans/`, and `rfcs/` are durable reference subtrees rather than scratch notes                                                                  |
 | `fuzz/`                     | Fuzzing harnesses, corpora, and fuzz-specific Cargo manifest                                                        | Kept outside the main workspace member set                                                                                                               |
 | `migrations/`               | Database schema migrations and backend-specific schema baselines                                                    | Includes both numbered migrations and `libsql_schema.sql`                                                                                                |
 | `registry/`                 | Embedded extension manifests, bundles, and catalogue metadata                                                       | Feeds runtime discovery and installation of tools and channels                                                                                           |
@@ -115,6 +115,7 @@ Table 3. Documentation subtrees and their roles.
 | Path              | Role                                                                                   |
 | ----------------- | -------------------------------------------------------------------------------------- |
 | `docs/*.md`       | Stable guides, specifications, and overview documents for the current repository state |
+| `docs/adrs/`      | Architectural decision records (ADRs) that capture accepted decisions and rationale    |
 | `docs/execplans/` | Approval-gated execution plans written in the Codex ExecPlan format                    |
 | `docs/plans/`     | Execution plans and implementation tracking documents that may describe in-flight work |
 | `docs/rfcs/`      | Request for Comments (RFC) documents for proposed or recently accepted changes         |

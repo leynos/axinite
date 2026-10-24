@@ -332,4 +332,4 @@ ______________________________________________________________________
 
 [^4]: RFC 0004: Tokenized delegated authorized endpoint requests. See
     [RFC 0004: Tokenized delegated authorized endpoint
-    requests](0004-tokenized-delegated-authorized-endpoint-requests.md).
+    requests](rfc-0004-tokenized-delegated-authorized-endpoint-requests.md).

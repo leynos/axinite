@@ -9,9 +9,9 @@ For the current system architecture and subsystem boundaries, see
 Feature flags use authenticated `GET /api/features` and
 `PUT /api/settings/feature_flag:<name>` endpoints. Their headers, persistence,
 and error behaviour are documented in
-[RFC 0009](rfcs/0009-feature-flags-frontend.md). The framework-independent flag
-identifiers and resolution policy live in `src/feature_flags/`, while gateway
-commands and queries live in
+[RFC 0009](rfcs/rfc-0009-feature-flags-frontend.md). The framework-independent
+flag identifiers and resolution policy live in `src/feature_flags/`, while
+gateway commands and queries live in
 `src/channels/web/handlers/feature_registry/application.rs`. The HTTP header
 and settings-store adapter is its sibling,
 `src/channels/web/handlers/feature_registry.rs`. See the
@@ -169,12 +169,12 @@ hosted pool makes wait. Everything else is GitHub-hosted. Windows lanes stay on
 GitHub-hosted runners because Ubicloud publishes Linux images only.
 
 The utility exception is the user's ruling of 25 September 2026, recorded in
-[ADR 013](adr-013-place-ci-jobs-by-rule.md). Contention is the only reason to
-move such a job, so each moved job carries its measured wait, and it takes the
-smallest shape: `ubicloud-standard-2-arm` when it does not depend on the CPU
-architecture, `ubicloud-standard-2` when it does. The two labelling jobs and
-`regression-test` moved: on the hosted pool they took 4 to 20 seconds to run
-and waited up to 1,495, 2,098 and 734 seconds to start. The scheduled
+[ADR 0013](adrs/adr-0013-place-ci-jobs-by-rule.md). Contention is the only
+reason to move such a job, so each moved job carries its measured wait, and it
+takes the smallest shape: `ubicloud-standard-2-arm` when it does not depend on
+the CPU architecture, `ubicloud-standard-2` when it does. The two labelling
+jobs and `regression-test` moved: on the hosted pool they took 4 to 20 seconds
+to run and waited up to 1,495, 2,098 and 734 seconds to start. The scheduled
 `audit.yml` `audit` waited one or two seconds, so it stays hosted.
 `tests/workflow_contracts/_utility_jobs.py` names the moved jobs with their
 measurements, and `runner_placement_test.py` requires each to hold its smallest
@@ -1775,7 +1775,7 @@ two cooperating background tasks:
   metadata carried on each notification.
 
 The implementation lives in `src/agent/self_repair/` and follows the
-[architecture decision record (ADR) 006](./adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+[architecture decision record (ADR) 0006](./adrs/adr-0006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
 dual-trait pattern already used elsewhere in the repository:
 
 - `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async
@@ -2624,8 +2624,8 @@ from runtime preparation or component validation failures.
   then attaches runtime-scoped secrets and OAuth configuration. `None` values
   leave the wrapper state unchanged.
 
-See [ADR 011](adr-011-extract-register-wasm-helpers.md) for the refactoring
-rationale and the maintenance rule behind this helper split.
+See [ADR 0011](adrs/adr-0011-extract-register-wasm-helpers.md) for the
+refactoring rationale and the maintenance rule behind this helper split.
 
 #### Registration flow
 
@@ -2880,7 +2880,7 @@ silently swallowing errors inside the helper.
 | `rename_to_migrated`            | `pub(super)`       | Low-level rename helper used by all migration paths.                                                                                                                       |
 
 For the rationale behind consolidating the rename helpers, see
-[ADR-010](adr-010-consolidate-bootstrap-rename-helpers.md).
+[ADR-0010](adrs/adr-0010-consolidate-bootstrap-rename-helpers.md).
 
 ## 32. Expected follow-up changes
 

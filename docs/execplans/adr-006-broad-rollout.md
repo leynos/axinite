@@ -1,4 +1,4 @@
-# Roll out ADR 006 across the remaining dyn-backed async trait families
+# Roll out ADR 0006 across the remaining dyn-backed async trait families
 
 This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`, `Decision log`,
@@ -10,7 +10,7 @@ Status: COMPLETE
 
 The earlier async-trait migration work proved two things. First, the easy wins
 were small: only `WasmChannelStore` and `SuccessEvaluator` could move directly
-to native async traits. Second, Architectural Decision Record (ADR) 006's
+to native async traits. Second, Architectural Decision Record (ADR) 0006's
 dual-trait pattern works for dyn-backed interfaces: `McpTransport`,
 `SettingsStore`, and `SoftwareBuilder` now preserve existing `Arc<dyn Trait>`
 consumers while letting implementations move off `#[async_trait]`.
@@ -34,9 +34,9 @@ API surfaces for callers. Success is observable in three ways:
 
 The work already done on this branch is documented in
 `docs/execplans/migrate-async-trait.md` and
-`docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`. The first
-file captures the audit history, the pilot families, and the remaining blocked
-traits. The ADR records the accepted migration shape: keep the existing
+`docs/adrs/adr-0006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`. The
+first file captures the audit history, the pilot families, and the remaining
+blocked traits. The ADR records the accepted migration shape: keep the existing
 dyn-facing trait name on the object-safe boundary, add a `Native*` sibling for
 implementation ergonomics, and bridge the two with a blanket adapter.
 
@@ -58,8 +58,8 @@ Most of the remaining migration surface sits in four clusters:
   `Channel`, `Tool`, `LlmProvider`, and `Database`.
 - The supporting documentation set in
   `docs/execplans/migrate-async-trait.md`,
-  `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`, and
-  `docs/contents.md`.
+  `docs/adrs/adr-0006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`,
+  and `docs/contents.md`.
 
 The repository rules for this branch remain strict: keep the dyn-facing public
 surfaces stable where possible, update the docs in the same branch as the code
@@ -73,7 +73,7 @@ changes, and gate every commit.
   broad call-site rewrites.
 - Do not change the repository minimum toolchain or Rust edition. The plan is
   constrained to Rust 1.94 and Edition 2024.
-- Avoid new dependencies. The accepted path is the local ADR 006 dual-trait
+- Avoid new dependencies. The accepted path is the local ADR 0006 dual-trait
   pattern, not `trait_variant` or a new helper crate.
 - Keep each migration wave small enough to validate independently. No single
   commit should span unrelated trait families.
@@ -237,8 +237,8 @@ After each conversion wave, update the docs. At the end of the series:
 - refresh `docs/execplans/migrate-async-trait.md` with the new completed waves,
   remaining blocked families, and current verified usage count;
 - update
-  `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md` if the
-  broad rollout reveals refinements to the accepted pattern;
+  `docs/adrs/adr-0006-dual-trait-pattern-for-dyn-backed-async-interfaces.md` if
+  the broad rollout reveals refinements to the accepted pattern;
 - keep `docs/contents.md` synchronized with any new execplans or related docs;
   and
 - re-check whether `async-trait` is still needed as a direct dependency.
@@ -444,8 +444,8 @@ Progress notes:
   `repl/formatting.rs` carries `make_skin`, `print_help`, and
   `format_json_params`; `repl/mod.rs` retains `ReplChannel`, its
   `NativeChannel` impl, and the existing unit test. This is unrelated to the
-  ADR 006 migration but was performed concurrently and gated with the same ship
-  checklist.
+  ADR 0006 migration but was performed concurrently and gated with the same
+  ship checklist.
 
 - 2026-03-24: Completed Milestone 5 (dependency and documentation cleanup).
   Removed `async-trait` from the direct `[dependencies]` in `Cargo.toml`. Fresh
@@ -462,7 +462,7 @@ Progress notes:
   Updated docs:
   - `docs/execplans/migrate-async-trait.md`: status set to Complete, Phase 4
     cleanup marked done, final audit and removal recorded in progress notes.
-  - `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`:
+  - `docs/adrs/adr-0006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`:
     migration plan step 5 updated to reflect completed removal.
   - `docs/contents.md`: entry descriptions updated to reflect completed state.
 
@@ -477,7 +477,7 @@ Progress notes:
   debating the migration mechanism again.
 - 2026-03-22: Starting Milestone 2 inside the agent subsystem was cheaper than
   the original cross-subsystem bundle. `LoopDelegate`, `SelfRepair`, and
-  `TaskHandler` shared the same ADR 006 shape, while their dyn-backed call
+  `TaskHandler` shared the same ADR 0006 shape, while their dyn-backed call
   sites stayed stable as `&dyn LoopDelegate`, `Arc<dyn SelfRepair>`, and
   `Arc<dyn TaskHandler>`.
 - 2026-03-23: When both `HttpInterceptor` (dyn-safe, boxed-future) and

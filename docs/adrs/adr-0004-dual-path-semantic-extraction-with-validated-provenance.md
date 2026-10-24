@@ -1,5 +1,5 @@
 <!-- markdownlint-disable-next-line MD013 -->
-# Architectural decision record (ADR) 004: Dual-path semantic extraction with validated provenance
+# Architectural decision record (ADR) 0004: Dual-path semantic extraction with validated provenance
 
 ## Status
 
@@ -126,6 +126,6 @@ actually happened in the source evidence.
 ## References
 
 [^1]: RFC 0015: Hierarchical memory materialization for `memoryd`. See
-    `docs/rfcs/0015-hierarchical-memory-materialization-for-memoryd.md`.
+    `docs/rfcs/rfc-0015-hierarchical-memory-materialization-for-memoryd.md`.
 [^2]: RFC 0014: Memory projection tiers and promotion rules. See
-    `docs/rfcs/0014-memory-projection-tiers-and-promotion-rules.md`.
+    `docs/rfcs/rfc-0014-memory-projection-tiers-and-promotion-rules.md`.
