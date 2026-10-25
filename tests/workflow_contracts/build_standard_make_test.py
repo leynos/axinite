@@ -120,7 +120,7 @@ def test_every_invocation_follows_the_routing_matrix(
             label=f"make {target}: {invocation.tool} {invocation.verb}",
         )
     ]
-    assert problems == []
+    assert problems == [], f"make {target} violates the routing matrix: {problems}"
 
 
 @pytest.mark.parametrize("target", TARGETS, ids=TARGETS)
@@ -129,7 +129,11 @@ def test_the_build_tools_check_precedes_the_first_development_compile(
 ) -> None:
     """A missing tool reports an installation hint before Cargo runs."""
     lines, invocations = emitted[target]
-    assert preflight_violations(lines, invocations) == []
+    violations = preflight_violations(lines, invocations)
+    assert violations == [], (
+        f"make {target} has build-tools preflight violations: {violations}; "
+        f"recipe lines: {lines}"
+    )
 
 
 def test_release_routes_were_seen_and_assign_rustflags(
@@ -141,8 +145,13 @@ def test_release_routes_were_seen_and_assign_rustflags(
         for target in ("install", "build-github-tool-wasm")
         for invocation in emitted[target][1]
     ]
-    assert len(release) == 2
-    assert all("RUSTFLAGS" in invocation.assignments for invocation in release)
+    assert len(release) == 2, f"expected both release invocations, got: {release}"
+    missing_assignments = [
+        invocation for invocation in release if "RUSTFLAGS" not in invocation.assignments
+    ]
+    assert not missing_assignments, (
+        f"release invocations missing RUSTFLAGS: {missing_assignments}"
+    )
 
 
 def test_whitaker_has_a_literal_boundary(
@@ -154,8 +163,9 @@ def test_whitaker_has_a_literal_boundary(
     else in the configuration reaches Whitaker's installer-managed toolchain.
     """
     whitaker = [i for i in emitted["lint-whitaker"][1] if i.tool == "whitaker"]
-    assert len(whitaker) == 2
-    assert {i.assignments.get("RUSTFLAGS") for i in whitaker} == {"-D warnings"}
+    assert len(whitaker) == 2, f"expected both Whitaker invocations, got: {whitaker}"
+    flags = {invocation.assignments.get("RUSTFLAGS") for invocation in whitaker}
+    assert flags == {"-D warnings"}, f"unexpected Whitaker RUSTFLAGS: {flags}"
 
 
 @pytest.mark.parametrize(
@@ -298,12 +308,18 @@ def test_the_unmutated_copy_is_clean(
     for target in ("typecheck", "lint-whitaker", "install", "build"):
         lines = dry_run(target, root=tmp_path)
         invocations, unparsed = parse_invocations(lines)
-        assert not unparsed
-        assert invocations
-        assert preflight_violations(lines, invocations) == []
-        assert [
+        assert not unparsed, f"make {target} emitted unparsed lines: {unparsed}"
+        assert invocations, f"make {target} emitted no Cargo or Whitaker commands: {lines}"
+        preflight_problems = preflight_violations(lines, invocations)
+        assert preflight_problems == [], (
+            f"make {target} preflight violations: {preflight_problems}"
+        )
+        routing_problems = [
             m for i in invocations for m in make_violations(i, config, label=target)
-        ] == []
+        ]
+        assert routing_problems == [], (
+            f"make {target} routing violations: {routing_problems}"
+        )
 
 
 def test_the_mutations_executed() -> None:

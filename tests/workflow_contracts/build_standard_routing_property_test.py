@@ -26,7 +26,7 @@ ARGUMENT = st.sampled_from(("--release", "-r", "--all-targets", "--features", "x
 
 
 @st.composite
-def _invocations(draw) -> Invocation:
+def _invocations(draw: st.DrawFn) -> Invocation:
     """Build safe argument sequences, including paired profile and target flags."""
     tool = draw(st.sampled_from(TOOLS))
     verb = draw(st.sampled_from(VERBS))

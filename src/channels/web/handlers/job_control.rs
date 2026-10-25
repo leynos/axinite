@@ -165,7 +165,7 @@ pub async fn jobs_restart_handler(
 }
 
 #[cfg(test)]
-mod parse_error_contract_tests {
+mod tests {
     //! Compile-time guard for the sandbox job status parse error type.
 
     use super::SandboxJobStatus;

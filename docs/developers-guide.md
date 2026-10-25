@@ -1393,20 +1393,22 @@ standard, for bare Cargo and for Make alike.
 What Make does add:
 
 - `make check-build-tools` runs before every `build`, `typecheck`, `lint-*`
-  and `test-*` target. It verifies that `clang` is present, that `mold` on
-  `PATH` reports exactly the version in `tools/mold/VERSION`, and that the
-  pinned toolchain is installed with every component and target
-  `rust-toolchain.toml` lists. A missing or drifted tool stops the run with the
-  command that fixes it; there is no fallback to a slower or different build.
-- `make install-build-tools` provides all of that. It downloads the pinned
-  `mold` release, verifies it against `tools/mold/SHA256SUMS`, unpacks it under
-  `~/.local` (`BUILD_TOOLS_PREFIX`), and runs `rustup toolchain install` for
-  the pin with its components and targets. The Makefile puts `~/.local/bin`
-  first on `PATH` for every target, so the pinned `mold` beats a distribution
-  one for both the check and `-fuse-ld=mold`. Under CI it also appends that
-  directory to `GITHUB_PATH`, for the steps that call Cargo directly. This
-  `PATH` change is scoped to Make recipes; a shell running bare Cargo commands
-  must add `~/.local/bin` to its own `PATH`.
+  and `test-*` target. On Linux it verifies that `clang` is present; it also
+  checks that `mold` on `PATH` reports exactly the version in
+  `tools/mold/VERSION`, and that the pinned toolchain is installed with every
+  component and target `rust-toolchain.toml` lists. A missing or drifted tool
+  stops the run with the command that fixes it; there is no fallback to a
+  slower or different build.
+- `make install-build-tools` installs the pinned `mold` release and the pinned
+  rustup toolchain with its components and targets. It verifies `mold` against
+  `tools/mold/SHA256SUMS` and installs it under `BUILD_TOOLS_PREFIX`, which
+  defaults to `$HOME/.local`. It does not install `clang`; on Linux, install
+  that system prerequisite with your package manager. The Makefile prepends
+  `${BUILD_TOOLS_PREFIX}/bin` to `PATH` for its recipes, so the pinned `mold`
+  wins over a distribution copy for both the check and `-fuse-ld=mold`. Under
+  CI it also appends that directory to `GITHUB_PATH` for steps that call Cargo
+  directly. The Makefile's `PATH` change is recipe-local; a shell running bare
+  Cargo commands must add `${BUILD_TOOLS_PREFIX}/bin` to its own `PATH`.
 - `make build` builds every target of the workspace with the test features,
   under the standard.
 - The two routes that must exclude the standard assign `RUSTFLAGS` on purpose.

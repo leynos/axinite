@@ -179,7 +179,7 @@ fn is_link_local_ip(ip: &IpAddr) -> bool {
 }
 
 #[cfg(test)]
-mod parse_error_contract_tests {
+mod tests {
     //! Compile-time guard for the URL parser's tool error boundary.
 
     use super::HttpsUrl;

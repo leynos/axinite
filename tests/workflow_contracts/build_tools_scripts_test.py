@@ -114,8 +114,11 @@ def test_the_check_refuses_an_incomplete_toolchain(
 ) -> None:
     """A missing toolchain, component or target is named, not left to Cargo."""
     result = sandbox.run(CHECK, **env)
-    assert result.returncode == 1
-    assert fragment in result.stderr
+    assert result.returncode == 1, (
+        f"check exited {result.returncode}; expected diagnostic {fragment!r}; "
+        f"stderr: {result.stderr!r}"
+    )
+    assert fragment in result.stderr, f"missing {fragment!r}; stderr: {result.stderr!r}"
 
 
 def test_toolchain_matching_rejects_a_longer_prefix_name(sandbox: Sandbox) -> None:
@@ -146,16 +149,21 @@ def test_every_problem_is_reported_in_one_pass(sandbox: Sandbox) -> None:
     """A developer sees the linker and the toolchain faults together."""
     (sandbox.bin / "mold").unlink()
     result = sandbox.run(CHECK, STUB_TOOLCHAINS=f"stable-{HOST_TRIPLE}")
-    assert result.returncode == 1
-    assert "mold not found" in result.stderr and "is not installed" in result.stderr
+    assert result.returncode == 1, (
+        f"check exited {result.returncode}; stderr: {result.stderr!r}"
+    )
+    assert "mold not found" in result.stderr, result.stderr
+    assert "is not installed" in result.stderr, result.stderr
 
 
 def test_an_unreadable_pin_stops_the_check(sandbox: Sandbox) -> None:
     """A missing pin file aborts instead of reporting a nonsensical drift."""
     (sandbox.root / "VERSION").unlink()
     result = sandbox.run(CHECK)
-    assert result.returncode == 1
-    assert "missing version pin" in result.stderr
+    assert result.returncode == 1, (
+        f"check exited {result.returncode}; stderr: {result.stderr!r}"
+    )
+    assert "missing version pin" in result.stderr, result.stderr
 
 
 # -- installation -------------------------------------------------------------
@@ -232,9 +240,12 @@ def test_an_unverifiable_release_is_never_installed(
     """A bad or ambiguous digest stops the install before extraction."""
     release = _publish_mold(sandbox, **kwargs)
     result = _install(sandbox, release)
-    assert result.returncode == 1
-    assert fragment in result.stderr
-    assert not (sandbox.root / "prefix" / "bin" / "mold").exists()
+    assert result.returncode == 1, (
+        f"installer exited {result.returncode}; stderr: {result.stderr!r}"
+    )
+    assert fragment in result.stderr, f"missing {fragment!r}; stderr: {result.stderr!r}"
+    installed_mold = sandbox.root / "prefix" / "bin" / "mold"
+    assert not installed_mold.exists(), f"unverified mold was installed at {installed_mold}"
     assert not sandbox.log.exists(), (
         "the toolchain must not be fetched after a failed verification"
     )
@@ -245,8 +256,10 @@ def test_an_unlisted_artefact_is_a_hard_failure(sandbox: Sandbox) -> None:
     release = _publish_mold(sandbox)
     (sandbox.root / "SHA256SUMS").write_text("", encoding="utf-8")
     result = _install(sandbox, release)
-    assert result.returncode == 1
-    assert "no checksum recorded" in result.stderr
+    assert result.returncode == 1, (
+        f"installer exited {result.returncode}; stderr: {result.stderr!r}"
+    )
+    assert "no checksum recorded" in result.stderr, result.stderr
 
 
 def test_a_failed_download_fails_the_install(sandbox: Sandbox) -> None:
@@ -255,16 +268,20 @@ def test_a_failed_download_fails_the_install(sandbox: Sandbox) -> None:
     result = _install(
         sandbox, sandbox.root / "no-such-release", CURL_CONNECT_TIMEOUT="2"
     )
-    assert result.returncode == 1
-    assert "failed to download" in result.stderr
+    assert result.returncode == 1, (
+        f"installer exited {result.returncode}; stderr: {result.stderr!r}"
+    )
+    assert "failed to download" in result.stderr, result.stderr
 
 
 def test_a_failed_toolchain_install_fails_the_install(sandbox: Sandbox) -> None:
     """rustup failing is reported, not ignored."""
     release = _publish_mold(sandbox)
     result = _install(sandbox, release, STUB_INSTALL_STATUS="1")
-    assert result.returncode == 1
-    assert "failed to install toolchain" in result.stderr
+    assert result.returncode == 1, (
+        f"installer exited {result.returncode}; stderr: {result.stderr!r}"
+    )
+    assert "failed to install toolchain" in result.stderr, result.stderr
 
 
 def test_the_environment_is_isolated_from_the_host(sandbox: Sandbox) -> None:

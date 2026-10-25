@@ -57,6 +57,14 @@ impl std::str::FromStr for SandboxMode {
     }
 }
 
+impl std::convert::TryFrom<&str> for SandboxMode {
+    type Error = SandboxModeParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
 /// Strongly typed sandbox job event discriminator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SandboxEventType(String);
@@ -301,7 +309,7 @@ impl fmt::Display for SandboxJobStatus {
 }
 
 #[cfg(test)]
-mod parse_error_contract_tests {
+mod tests {
     //! Compile-time guard for the sandbox mode parse error type.
 
     use super::{SandboxMode, SandboxModeParseError};

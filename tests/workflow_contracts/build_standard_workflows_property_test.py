@@ -17,7 +17,7 @@ COMPILE_TARGETS = {"property-compile"}
 
 
 @st.composite
-def _jobs(draw) -> tuple[dict[str, object], list[tuple[str, bool]], bool]:
+def _jobs(draw: st.DrawFn) -> tuple[dict[str, object], list[tuple[str, bool]], bool]:
     """Generate Linux and non-Linux steps with meaningful workflow roles."""
     host = draw(st.sampled_from(("linux", "non-linux")))
     kinds = draw(
