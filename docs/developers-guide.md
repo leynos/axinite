@@ -538,6 +538,24 @@ binary, not to read a version string.
 `tests/workflow_contracts/workflow_tooling_test.py` enforces all of the above,
 including that each installer precedes the first step that uses its command.
 
+### Development build footprint
+
+The Concordat `rust-dev-build-footprint` rule keeps default development builds
+small. The root `Cargo.toml` sets `incremental = false` and `debug = 0` in
+`[profile.dev]` and `debug = 0` for dependencies in
+`[profile.dev.package."*"]`, and each standalone workspace under `channels-src`,
+`tools-src` and `fuzz` sets the same two keys, so builds keep no incremental
+compilation state and no debug information. The trade-off is that a debugger
+sees no source-level debug information or line tables in a default development
+build and every rebuild recompiles whole crates. To debug workspace crates, run
+with `CARGO_PROFILE_DEV_DEBUG=true`. To debug dependencies, add
+`--config 'profile.dev.package."*".debug=true'`, because the environment
+variable does not override the `"*"` package table. To rebuild incrementally,
+set `CARGO_INCREMENTAL=1`. The workspace toolchain is pinned to
+`nightly-2026-10-16` in `rust-toolchain.toml`; see "Toolchain policy" in
+section 8. `tests/workflow_contracts/build_footprint_test.py` holds the
+settings.
+
 ### Cache ownership
 
 Each mutable cache path has exactly one owner and one explainable key.
@@ -1340,16 +1358,20 @@ rustflags = ["-Zthreads=8", "-Clink-arg=-fuse-ld=mold"]
 
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
+
+[target.aarch64-unknown-linux-gnu]
+linker = "clang"
 ```
 
 Cargo selects one `rustflags` source rather than merging them, and every
 matching `[target.*]` table is joined and replaces `[build]` outright. That is
 why `-Zthreads=8` is written in both the `[build]` table and the Linux table,
-and why the `x86_64-unknown-linux-gnu` table carries a linker but no
-`rustflags`: a second table with its own flags would be one more place to
-forget the frontend flag. `-fuse-ld=mold` is a compiler-driver flag, so the
-linker is `clang`, which understands it on every runner; a `cfg(...)` table
-cannot set `linker`, which is why the triple table exists at all.
+and why the `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` tables
+carry a linker but no `rustflags`: a second table with its own flags would be
+one more place to forget the frontend flag. `-fuse-ld=mold` is a
+compiler-driver flag, so both Linux triples select `clang`, which understands
+it on every runner; a `cfg(...)` table cannot set `linker`, which is why the
+triple tables exist at all.
 
 The `[env]` table at the top of the file is unrelated to the standard. It holds
 the embedded PostgreSQL settings the tests read; see "Configuration lives in
@@ -1382,7 +1404,9 @@ What Make does add:
   the pin with its components and targets. The Makefile puts `~/.local/bin`
   first on `PATH` for every target, so the pinned `mold` beats a distribution
   one for both the check and `-fuse-ld=mold`. Under CI it also appends that
-  directory to `GITHUB_PATH`, for the steps that call Cargo directly.
+  directory to `GITHUB_PATH`, for the steps that call Cargo directly. This
+  `PATH` change is scoped to Make recipes; a shell running bare Cargo commands
+  must add `~/.local/bin` to its own `PATH`.
 - `make build` builds every target of the workspace with the test features,
   under the standard.
 - The two routes that must exclude the standard assign `RUSTFLAGS` on purpose.
@@ -1436,32 +1460,21 @@ The estate standard (`rust-build-defaults` BD-004) makes Cranelift the
 development default where the repository's own suite passes under it, and asks
 a repository whose build or suite fails under it to record the failure here.
 This is axinite's own evidence, reproduced on this repository's workspace; it
-is not netsuke's exception copied across. Approved by the train supervisor on
-2026-10-22 on the reproduced evidence below.
+is not netsuke's exception copied across. The train supervisor approved the
+exception on 2026-10-22. It was rechecked against the current Wasmtime lock on
+2026-10-25; the current decision rests on the unwinding failure below.
 
 - **Toolchain and target.** `nightly-2026-10-16`
   (`rustc 1.101.0-nightly (4ebd25825 2026-10-15)`) with
   `rustc-codegen-cranelift-preview`, on `x86_64-unknown-linux-gnu`. Nothing was
   measured on macOS or Windows.
-- **Reproduction 1: a Cranelift-compiled workspace does not build.** With
-  `profile.dev` and `profile.test` set to `codegen-backend = "cranelift"` (under
-  `[unstable] codegen-backend = true`),
-  `cargo nextest run -p axinite --lib --features test-helpers,embedded-postgres`
-  fails while compiling `wasmtime` 48.0.6, with the stack-switching code in the
-  `vm` runtime:
-
-  ```text
-  error: asm! and global_asm! sym operands are not yet supported
-    --> wasmtime-48.0.6/src/runtime/vm/stack_switching/stack/unix/x86_64.rs:64:14
-     |
-  64 |         call {fiber_start}
-     |              ^^^^^^^^^^^^^
-  error: could not compile `wasmtime` (lib) due to 1 previous error
-  ```
-
-  `wasmtime` is a dependency of the main binary, so an ordinary `cargo build`
-  fails the same way, not only the tests.
-- **Reproduction 2: a caught panic aborts.** A four-test crate, built the same
+- **The earlier Wasmtime compile failure is resolved.** The previous lock used
+  Wasmtime 48.0.6, whose stack-switching assembly failed to compile under
+  Cranelift because `asm!` and `global_asm!` `sym` operands were unsupported.
+  The current lock uses 48.0.7, and an isolated `cargo check` of that version
+  completes with Cranelift on this toolchain. That proves this dependency now
+  compiles in isolation; it does not prove the workspace or its tests pass.
+- **Reproduction: a caught panic aborts.** A four-test crate, built the same
   way, reproduces it with no repository code:
 
   ```rust
@@ -1482,9 +1495,8 @@ is not netsuke's exception copied across. Approved by the train supervisor on
   A bare `#[should_panic]` test passes, which is why one successful panic test
   is not evidence. The LLVM control passes all four, and so does Cranelift on
   the `dev` profile with the `test` profile left on LLVM.
-- **Repository tests that would be affected.** Reproduction 1 stops the build
-  before any of them run, so these are what the unwinding fault threatens, not
-  results:
+- **Repository tests that the unwinding fault threatens.** These are affected
+  paths, not results from a Cranelift workspace run:
   `test_select_active_skills_returns_empty_when_registry_lock_is_poisoned`
   (`src/agent/dispatcher/tests/skills.rs`, which panics in a spawned thread to
   poison a lock), the four `#[should_panic]` tests
@@ -1499,15 +1511,16 @@ is not netsuke's exception copied across. Approved by the train supervisor on
   developer edits, which is where the speed-up is wanted.
 - **Tracking.** Issue #461 revisits this in six months (April 2027), as well
   as on the triggers below.
-- **Revisit when** the pinned nightly's Cranelift supports `asm!` and
-  `global_asm!` `sym` operands *and* unwinds through its own frames, or when a
-  Dependabot toolchain bump changes either. A bump pull request is where to
-  re-measure: set the profile keys on the pull request, run `make test`, and
-  adopt the backend if it passes by removing this exception and adding the
-  keys, the `rustc-codegen-cranelift-preview` component and a contract for them
-  together. The estate's audit accepts either state and rejects an exception
-  that names an older toolchain than the pin, so each bump of `channel` needs a
-  line here saying whether it was measured.
+- **Revisit when** the pinned nightly's Cranelift unwinds through its own
+  frames and the repository's `make test` passes with both development and test
+  profiles selecting Cranelift, or when a Dependabot toolchain bump changes
+  that evidence. A bump pull request is where to re-measure: set the profile
+  keys on the pull request, run `make test`, and adopt the backend if it passes
+  by removing this exception and adding the keys, the
+  `rustc-codegen-cranelift-preview` component and a contract for them together.
+  The estate's audit accepts either state and rejects an exception that names
+  an older toolchain than the pin, so each bump of `channel` needs a line here
+  saying whether it was measured.
 
 A contract (`build_standard_config_test.py`) holds the configuration and this
 exception in agreement: while the exception stands, no Cargo profile and no

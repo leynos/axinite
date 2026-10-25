@@ -1,8 +1,9 @@
 """Contracts for the pinned toolchain and the stable MSRV promise it sits beside.
 
-The repository builds on a dated nightly, because the development standard's
-parallel frontend and Cranelift backend are nightly-only, and it publishes a
-stable promise, ``rust-version``. Both have to stay true, so they are held by
+The repository builds on a dated nightly because the development standard's
+parallel frontend is nightly-only; Cranelift remains excluded by recorded
+evidence. The repository also publishes a stable ``rust-version`` promise.
+Both have to stay true, so they are held by
 separate checks that agree on one derivation: the declared versions come from
 the manifests, not from constants in this file.
 
@@ -184,12 +185,14 @@ def estate() -> dict[str, typ.Any]:
 
 
 def _judge(estate: dict[str, typ.Any]) -> list[str]:
+    """Return every policy violation in one estate snapshot."""
     return policy_violations(estate)
 
 
 def test_the_repository_conforms(estate: dict[str, typ.Any]) -> None:
     """The pin, its Dependabot entry and the MSRV evidence agree."""
-    assert _judge(estate) == []
+    problems = _judge(estate)
+    assert problems == [], f"toolchain policy violations: {problems}"
 
 
 def test_the_msrv_was_derived(estate: dict[str, typ.Any]) -> None:
@@ -197,44 +200,65 @@ def test_the_msrv_was_derived(estate: dict[str, typ.Any]) -> None:
     assert len(estate["msrvs"]) >= 3, (
         f"expected the root and both members: {estate['msrvs']}"
     )
-    assert len(set(estate["msrvs"].values())) == 1
+    declared = estate["msrvs"]
+    assert len(set(declared.values())) == 1, (
+        f"workspace members must share one MSRV: {declared}"
+    )
 
 
 def test_the_msrv_job_checks_and_never_tests(estate: dict[str, typ.Any]) -> None:
     """The estate's cost rule: `cargo check --all-targets` on the MSRV, no suite."""
     job = estate["documents"]["test.yml"]["jobs"]["msrv"]
     runs = "\n".join(step.run for step in steps_of(job))
-    assert "cargo check" in runs and "--all-targets" in runs
-    assert not re.search(r"\bcargo\s+(test|nextest|llvm-cov)\b|\bmake\s+test", runs)
-    removal = next(
-        i for i, s in enumerate(steps_of(job)) if "rm .cargo/config.toml" in s.run
+    assert "cargo check" in runs, f"MSRV job has no cargo check command: {runs}"
+    assert "--all-targets" in runs, f"MSRV job skips targets: {runs}"
+    runs_tests = re.search(
+        r"\bcargo\s+(test|nextest|llvm-cov)\b|\bmake\s+test", runs
     )
-    check = next(i for i, s in enumerate(steps_of(job)) if "cargo check" in s.run)
+    assert runs_tests is None, f"MSRV job must check without running suites: {runs}"
+    steps = steps_of(job)
+    removal = next(
+        (i for i, step in enumerate(steps) if "rm .cargo/config.toml" in step.run),
+        None,
+    )
+    check = next(
+        (i for i, step in enumerate(steps) if "cargo check" in step.run), None
+    )
+    assert removal is not None, "MSRV job must remove the nightly Cargo config"
+    assert check is not None, "MSRV job must run its stable cargo check"
     assert removal < check, (
-        "the nightly-only configuration must go before the stable compile"
+        f"nightly Cargo config must be removed before cargo check: {steps}"
     )
 
 
 def test_the_msrv_toolchain_is_the_declared_version(estate: dict[str, typ.Any]) -> None:
     """The one setup-rust toolchain input is the root package's rust-version."""
     named = setup_rust_toolchains(estate["documents"])
-    assert [job for job, _ in named] == ["test.yml:msrv"], named
-    assert {toolchain for _, toolchain in named} == set(estate["msrvs"].values())
+    assert [job for job, _ in named] == ["test.yml:msrv"], (
+        f"only the MSRV job may select stable explicitly: {named}"
+    )
+    tested = {toolchain for _, toolchain in named}
+    declared = set(estate["msrvs"].values())
+    assert tested == declared, (
+        f"toolchains {tested} do not cover declared MSRVs {declared}"
+    )
 
 
 def _mutate(
-    estate: dict[str, typ.Any], change: typ.Callable[[dict[str, typ.Any]], None]
+    estate: dict[str, typ.Any], change: cabc.Callable[[dict[str, typ.Any]], None]
 ) -> list[str]:
+    """Judge a changed deep copy without altering the shared fixture."""
     mutated = copy.deepcopy(estate)
     change(mutated)
     return _judge(mutated)
 
 
 def _forget_the_dockerignore(estate: dict[str, typ.Any]) -> None:
+    """Drop the nightly config exclusions from a mutated image context."""
     estate["dockerignore"] = "target/\n"
 
 
-MUTATIONS: dict[str, tuple[typ.Callable[[dict[str, typ.Any]], None], str]] = {
+MUTATIONS: dict[str, tuple[cabc.Callable[[dict[str, typ.Any]], None], str]] = {
     "channel-floats": (
         lambda e: e["pin"]["toolchain"].update(channel="nightly"),
         "RT-022",

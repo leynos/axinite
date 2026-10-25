@@ -8,10 +8,12 @@ jobs that opt out of it. These contracts derive both from what a job runs:
   through a Make target whose evaluated recipe reaches Cargo, through the WASM
   builder, through the coverage action, or through a reusable workflow's
   ``setup-commands``;
-* coverage jobs exclude the standard with ``RUSTFLAGS`` and, because that does
-  not reach the profile's backend, with the two LLVM backend variables;
+* coverage jobs use step-level ``RUSTFLAGS: ''``, which keeps the parallel
+  frontend and Linux linker flag out of those builds;
 * release jobs exclude it with ``RUSTFLAGS``;
-* the Whitaker job installs the Cranelift component through the action's input.
+* the Whitaker job installs the rolling suite through the shared action without
+  pinning it, then runs ``make lint-whitaker``; no Whitaker-related workflow
+  step assigns ``RUSTFLAGS``.
 
 The Make half is evaluated rather than assumed. Each judge is also run against
 mutated copies of the real workflows, and must reject every one.

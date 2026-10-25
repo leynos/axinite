@@ -163,3 +163,16 @@ pub async fn jobs_restart_handler(
 
     Err((StatusCode::NOT_FOUND, "Job not found".to_string()))
 }
+
+#[cfg(test)]
+mod parse_error_contract_tests {
+    //! Compile-time guard for the sandbox job status parse error type.
+
+    use super::SandboxJobStatus;
+
+    #[test]
+    fn sandbox_job_status_keeps_its_string_parse_error() {
+        fn assert_error_type<T: std::str::FromStr<Err = String>>() {}
+        assert_error_type::<SandboxJobStatus>();
+    }
+}

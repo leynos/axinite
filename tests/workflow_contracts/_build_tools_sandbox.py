@@ -13,12 +13,15 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import typing as typ
 from pathlib import Path
 
 CHANNEL = "nightly-2099-01-01"
+HOST_ARCH = platform.machine().replace("amd64", "x86_64").replace("arm64", "aarch64")
+HOST_TRIPLE = f"{HOST_ARCH}-unknown-linux-gnu"
 COMPONENTS = ("rustfmt", "clippy", "llvm-tools-preview")
 UTILITIES = (
     "awk",
@@ -53,6 +56,10 @@ RUSTUP_STUB = r"""#!/usr/bin/env bash
 printf '%s\n' "$*" >>"$SANDBOX_LOG"
 case "$1 $2" in
   "toolchain list") printf '%s\n' "$STUB_TOOLCHAINS" ;;
+  "show ")
+    printf 'Default host: %s\n' "$STUB_HOST_TRIPLE"
+    exit "${STUB_RUSTUP_SHOW_STATUS:-0}"
+    ;;
   "component list") printf '%s\n' "$STUB_COMPONENTS" ;;
   "target list") printf '%s\n' "$STUB_TARGETS" ;;
   "toolchain install") exit "${STUB_INSTALL_STATUS:-0}" ;;
@@ -84,12 +91,12 @@ class Sandbox(typ.NamedTuple):
             "MOLD_SHA256SUMS_FILE": str(self.root / "SHA256SUMS"),
             "RUST_TOOLCHAIN_FILE": str(self.root / "rust-toolchain.toml"),
             "BUILD_TOOLS_PREFIX": str(self.root / "prefix"),
-            "STUB_TOOLCHAINS": f"stable-x86_64-unknown-linux-gnu\n{CHANNEL}-x86_64-unknown-linux-gnu",
+            "STUB_TOOLCHAINS": f"stable-{HOST_TRIPLE}\n{CHANNEL}-{HOST_TRIPLE}",
+            "STUB_HOST_TRIPLE": HOST_TRIPLE,
             "STUB_COMPONENTS": "\n".join(
-                f"{c.removesuffix('-preview')}-x86_64-unknown-linux-gnu"
-                for c in COMPONENTS
+                f"{c.removesuffix('-preview')}-{HOST_TRIPLE}" for c in COMPONENTS
             ),
-            "STUB_TARGETS": "x86_64-unknown-linux-gnu\nwasm32-wasip2",
+            "STUB_TARGETS": f"{HOST_TRIPLE}\nwasm32-wasip2",
         }
         base.update(extra)
         return base

@@ -24,7 +24,14 @@ from pathlib import Path
 import pytest
 
 from _build_standard import REPOSITORY_ROOT
-from _build_tools_sandbox import CHANNEL, COMPONENTS, Sandbox, fake_mold, make_sandbox
+from _build_tools_sandbox import (
+    CHANNEL,
+    COMPONENTS,
+    HOST_TRIPLE,
+    Sandbox,
+    fake_mold,
+    make_sandbox,
+)
 
 pytestmark = pytest.mark.skipif(
     platform.system() != "Linux",
@@ -84,22 +91,24 @@ def test_the_check_refuses_with_an_actionable_message(
     ("env", "fragment"),
     [
         (
-            {"STUB_TOOLCHAINS": "stable-x86_64-unknown-linux-gnu"},
+            {"STUB_TOOLCHAINS": f"stable-{HOST_TRIPLE}"},
             f"toolchain {CHANNEL} is not installed",
         ),
         (
             {
-                "STUB_COMPONENTS": "rustfmt-x86_64-unknown-linux-gnu\nclippy-x86_64-unknown-linux-gnu"
+                "STUB_COMPONENTS": f"rustfmt-{HOST_TRIPLE}\nclippy-{HOST_TRIPLE}"
             },
             "component llvm-tools-preview is missing",
         ),
         (
-            {"STUB_TARGETS": "x86_64-unknown-linux-gnu"},
+            {"STUB_TARGETS": HOST_TRIPLE},
             "target wasm32-wasip2 is missing",
         ),
     ],
     ids=("toolchain-missing", "llvm-tools-component-missing", "wasm-target-missing"),
 )
+
+
 def test_the_check_refuses_an_incomplete_toolchain(
     sandbox: Sandbox, env: dict[str, str], fragment: str
 ) -> None:
@@ -109,10 +118,34 @@ def test_the_check_refuses_an_incomplete_toolchain(
     assert fragment in result.stderr
 
 
+def test_toolchain_matching_rejects_a_longer_prefix_name(sandbox: Sandbox) -> None:
+    """A similarly prefixed toolchain is not the exact pin for this host."""
+    result = sandbox.run(
+        CHECK, STUB_TOOLCHAINS=f"{CHANNEL}-extra-{HOST_TRIPLE}"
+    )
+    assert result.returncode == 1, result.stderr
+    assert f"toolchain {CHANNEL} is not installed" in result.stderr
+
+
+def test_toolchain_matching_handles_a_large_toolchain_list(sandbox: Sandbox) -> None:
+    """A large rustup listing does not fail when its exact match is first."""
+    names = [f"unused-{index}-{HOST_TRIPLE}" for index in range(1800)]
+    toolchains = "\n".join((f"{CHANNEL}-{HOST_TRIPLE}", *names))
+    result = sandbox.run(CHECK, STUB_TOOLCHAINS=toolchains)
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_check_refuses_when_rustup_cannot_report_its_host(sandbox: Sandbox) -> None:
+    """An unavailable rustup host report fails with an actionable message."""
+    result = sandbox.run(CHECK, STUB_RUSTUP_SHOW_STATUS="1")
+    assert result.returncode == 1, result.stderr
+    assert "rustup could not report the host triple" in result.stderr
+
+
 def test_every_problem_is_reported_in_one_pass(sandbox: Sandbox) -> None:
     """A developer sees the linker and the toolchain faults together."""
     (sandbox.bin / "mold").unlink()
-    result = sandbox.run(CHECK, STUB_TOOLCHAINS="stable-x86_64-unknown-linux-gnu")
+    result = sandbox.run(CHECK, STUB_TOOLCHAINS=f"stable-{HOST_TRIPLE}")
     assert result.returncode == 1
     assert "mold not found" in result.stderr and "is not installed" in result.stderr
 
@@ -155,6 +188,7 @@ def _publish_mold(
 def _install(
     sandbox: Sandbox, release: Path, **extra: str
 ) -> subprocess.CompletedProcess[str]:
+    """Run the installer against a local mold release fixture."""
     return sandbox.run(INSTALL, MOLD_RELEASE_BASE_URL=f"file://{release}", **extra)
 
 

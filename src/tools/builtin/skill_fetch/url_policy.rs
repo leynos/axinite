@@ -177,3 +177,17 @@ fn is_link_local_ip(ip: &IpAddr) -> bool {
         }
     }
 }
+
+#[cfg(test)]
+mod parse_error_contract_tests {
+    //! Compile-time guard for the URL parser's tool error boundary.
+
+    use super::HttpsUrl;
+    use crate::tools::tool::ToolError;
+
+    #[test]
+    fn https_url_keeps_its_tool_error_parse_boundary() {
+        fn assert_error_type<T: std::str::FromStr<Err = ToolError>>() {}
+        assert_error_type::<HttpsUrl>();
+    }
+}

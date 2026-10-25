@@ -19,6 +19,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import re
 import typing as typ
 
@@ -173,8 +174,8 @@ def make_targets_in(documents: Mapping[str, Mapping[str, object]]) -> set[str]:
     return named
 
 
-def _first_index(sequence: list[Step], test: typ.Callable[[Step], bool]) -> int | None:
-    """Return the index of the first step satisfying `test`, if any."""
+def _first_index(sequence: list[Step], test: cabc.Callable[[Step], bool]) -> int | None:
+    """Return the first index whose workflow step satisfies ``test``."""
     return next((i for i, step in enumerate(sequence) if test(step)), None)
 
 

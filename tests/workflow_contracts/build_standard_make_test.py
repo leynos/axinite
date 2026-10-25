@@ -19,6 +19,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import re
 import shutil
 import typing as typ
@@ -172,7 +173,7 @@ def test_the_executable_is_substituted_on_every_cargo_line(cargo: str) -> None:
 
 
 def _mutated_dry_run(
-    tmp_path: Path, target: str, edit: typ.Callable[[str], str]
+    tmp_path: Path, target: str, edit: cabc.Callable[[str], str]
 ) -> list[str]:
     """Return a target's dry run against a Makefile copy that `edit` altered."""
     text = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
@@ -185,7 +186,7 @@ def _mutated_dry_run(
 def _judge(
     tmp_path: Path,
     target: str,
-    edit: typ.Callable[[str], str],
+    edit: cabc.Callable[[str], str],
     config: dict[str, typ.Any],
 ) -> list[str]:
     """Return every violation a mutated Makefile's target raises."""
@@ -198,7 +199,7 @@ def _judge(
     return problems
 
 
-MUTATIONS: dict[str, tuple[str, typ.Callable[[str], str]]] = {
+MUTATIONS: dict[str, tuple[str, cabc.Callable[[str], str]]] = {
     "typecheck-assigns-warnings-only": (
         "typecheck",
         lambda t: t.replace(

@@ -233,6 +233,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "format": "lcov",
         "output-path": "lcov.info",
         "with-ratchet": "true",
+        "baseline-rust-file": ".coverage-baseline.rust.nightly-2026-10-16",
         "publish-artefact": "false",
         "cache-provider": "external",
     }, (

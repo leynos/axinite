@@ -71,14 +71,35 @@ component_installed() {
 # Any absence is fatal: the parallel frontend is nightly-only, and a missing
 # component fails deep inside Cargo with an opaque message.
 check_toolchain() {
-  local toolchain=$1 component target status=0 targets
+  local toolchain=$1 component target status=0 targets installed_toolchains rustup_state host installed_name
   if ! command -v rustup >/dev/null 2>&1; then
     note 'rustup not found on PATH; it is required to select the pinned nightly'
     note 'install it from https://rustup.rs'
     return 1
   fi
-  if ! rustup toolchain list | grep -q "^$toolchain"; then
-    note "toolchain $toolchain is not installed"
+  if ! installed_toolchains=$(rustup toolchain list 2>/dev/null); then
+    note 'rustup could not list installed toolchains'
+    return 1
+  fi
+  if ! rustup_state=$(rustup show 2>/dev/null); then
+    note 'rustup could not report the host triple'
+    return 1
+  fi
+  host=$(awk -F': ' '$1 == "Default host" { print $2; exit }' <<< "$rustup_state")
+  if [ -z "$host" ]; then
+    note 'rustup did not report the default host triple'
+    return 1
+  fi
+  while IFS= read -r installed_name; do
+    installed_name=${installed_name%%[[:space:]]*}
+    if [ "$installed_name" = "$toolchain" ] ||
+      [ "$installed_name" = "$toolchain-$host" ]; then
+      break
+    fi
+    installed_name=
+  done <<< "$installed_toolchains"
+  if [ -z "$installed_name" ]; then
+    note "toolchain $toolchain is not installed for host $host"
     note 'install it with: make install-build-tools'
     return 1
   fi

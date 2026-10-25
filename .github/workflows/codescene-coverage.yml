@@ -181,6 +181,8 @@ jobs:
       # leaves the registry to the restore step above and compiler output to
       # sccache. The report stays on the runner: nothing downstream reads an
       # artefact from a pull request.
+      # This versioned path starts the ratchet from the pinned nightly's first
+      # main-owned baseline; dispatches compare but never publish it.
       - name: Generate coverage
         # The coverage profile leaves compile-contract compilation to the
         # separate job above. The action has no profile input; nextest reads
@@ -208,6 +210,7 @@ jobs:
           format: lcov
           output-path: lcov.info
           with-ratchet: 'true'
+          baseline-rust-file: .coverage-baseline.rust.nightly-2026-10-16
           publish-artefact: 'false'
           cache-provider: external
       # Report the hit rate so a wrapper that is silently doing nothing shows

@@ -15,6 +15,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import collections.abc as cabc
 import copy
 import typing as typ
 
@@ -83,19 +84,20 @@ def test_the_environment_block_is_preserved(config: dict[str, typ.Any]) -> None:
         assert name in environment, f"[env] lost {name}"
 
 
-def test_a_triple_table_cannot_split_the_sources(config: dict[str, typ.Any]) -> None:
-    """The x86_64 Linux table joins the cfg table, so it holds no rustflags.
+def test_linux_triple_tables_select_clang(config: dict[str, typ.Any]) -> None:
+    """Both supported Linux host architectures use the compiler-driver linker."""
+    target_tables = config["target"]
+    for triple in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"):
+        table = target_tables[triple]
+        assert "rustflags" not in table, (
+            f"keep {triple} flags in the cfg(target_os) table only"
+        )
+        assert table.get("linker") == "clang", (
+            f"-fuse-ld=mold is a compiler-driver flag for {triple}"
+        )
 
-    Cargo joins every matching ``[target.*]`` table. A triple table with its
-    own rustflags would still work, but it is a second place the frontend flag
-    must be repeated, and the one place it was forgotten before.
-    """
-    triple = config["target"]["x86_64-unknown-linux-gnu"]
-    assert "rustflags" not in triple, "keep rustflags in the cfg(target_os) table only"
-    assert triple.get("linker") == "clang", "-fuse-ld=mold is a compiler-driver flag"
 
-
-Mutation = typ.Callable[[dict[str, typ.Any], dict[str, typ.Any]], None]
+Mutation = cabc.Callable[[dict[str, typ.Any], dict[str, typ.Any]], None]
 LINUX = 'cfg(target_os = "linux")'
 
 

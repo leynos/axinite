@@ -18,3 +18,7 @@ lto = true
 strip = true
 
 [workspace]
+
+[profile.dev]
+incremental = false
+debug = 0

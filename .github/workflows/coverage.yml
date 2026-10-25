@@ -287,6 +287,9 @@ jobs:
       # the ratchet baseline this saves on a push to `main` measures the same
       # thing the pull requests are compared on. The action saves the
       # baseline only for a push to `main`, never for a dispatch.
+      # The versioned path bootstraps the ratchet after the toolchain change:
+      # the old stable-era baseline remains untouched, and this main-owned
+      # push writes the first baseline for nightly-2026-10-16.
       - name: Generate coverage and the ratchet baseline
         if: matrix.name == 'libsql-only'
         # The coverage profile leaves compile-contract binaries to the
@@ -315,6 +318,7 @@ jobs:
           format: lcov
           output-path: lcov.info
           with-ratchet: 'true'
+          baseline-rust-file: .coverage-baseline.rust.nightly-2026-10-16
           publish-artefact: 'false'
           cache-provider: external
 

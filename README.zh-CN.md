@@ -33,6 +33,7 @@ Axinite 是这个分支的名称，当前的 crate、可执行文件与初始化
 
 ```bash
 make install-build-tools
+export PATH="$HOME/.local/bin:$PATH"
 cargo build
 target/debug/axinite onboard --quick
 ```
@@ -40,7 +41,9 @@ target/debug/axinite onboard --quick
 源码构建使用 `rust-toolchain.toml` 中固定日期的 nightly 工具链；在 Linux
 上还需要 `clang` 链接驱动与固定版本的 `mold` 链接器。运行
 `make install-build-tools` 会安装工具链和 `mold`；`clang`
-请通过系统包管理器安装。构建标准的细节见开发者指南。
+请通过系统包管理器安装。安装命令不会修改当前 shell 的 `PATH`，因此需要
+像上面那样加入安装目录，才能让直接运行的 Cargo 命令找到固定版本的链接器。
+构建标准的细节见开发者指南。
 
 > **从 IronClaw 迁移？** 如果你之前使用的是 `ironclaw` 命名的构建版本，
 > 请先将 `~/.ironclaw` 移动到 `~/.axinite`，并将所有 `IRONCLAW_*` 环境

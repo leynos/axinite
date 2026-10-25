@@ -299,3 +299,16 @@ impl fmt::Display for SandboxJobStatus {
         write!(f, "{}", self.0)
     }
 }
+
+#[cfg(test)]
+mod parse_error_contract_tests {
+    //! Compile-time guard for the sandbox mode parse error type.
+
+    use super::{SandboxMode, SandboxModeParseError};
+
+    #[test]
+    fn sandbox_mode_keeps_its_parse_error_type() {
+        fn assert_error_type<T: std::str::FromStr<Err = SandboxModeParseError>>() {}
+        assert_error_type::<SandboxMode>();
+    }
+}
