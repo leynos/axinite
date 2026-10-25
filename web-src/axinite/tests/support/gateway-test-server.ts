@@ -145,16 +145,6 @@ export class GatewayEventSource extends EventTarget {
   fail(): void {
     this.dispatchEvent(new Event("error"));
   }
-
-  override dispatchEvent(event: Event): boolean {
-    const dispatched = super.dispatchEvent(event);
-    if (event.type === "open") this.onopen?.call(this, event);
-    if (event.type === "error") this.onerror?.call(this, event);
-    if (event.type === "message" && event instanceof MessageEvent) {
-      this.onmessage?.call(this, event);
-    }
-    return dispatched;
-  }
 }
 
 /** Mutable gateway responses plus an observable request log for one test. */
