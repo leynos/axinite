@@ -71,7 +71,10 @@ component_installed() {
 # Any absence is fatal: the parallel frontend is nightly-only, and a missing
 # component fails deep inside Cargo with an opaque message.
 check_toolchain() {
-  local toolchain=$1 component target status=0 targets installed_toolchains rustup_state host installed_name
+  local toolchain=$1 component target status=0 components requested_targets installed_targets
+  local installed_toolchains rustup_state host installed_name
+  components=$(toolchain_components) || return 1
+  requested_targets=$(toolchain_targets) || return 1
   if ! command -v rustup >/dev/null 2>&1; then
     note 'rustup not found on PATH; it is required to select the pinned nightly'
     note 'install it from https://rustup.rs'
@@ -110,16 +113,17 @@ check_toolchain() {
       note 'install it with: make install-build-tools'
       status=1
     fi
-  done < <(toolchain_components)
-  targets=$(rustup target list --toolchain "$toolchain" --installed 2>/dev/null) || targets=
+  done <<< "$components"
+  installed_targets=$(rustup target list --toolchain "$toolchain" --installed 2>/dev/null) ||
+    installed_targets=
   while IFS= read -r target; do
     [ -n "$target" ] || continue
-    if ! printf '%s\n' "$targets" | grep -qx "$target"; then
+    if ! printf '%s\n' "$installed_targets" | grep -qx "$target"; then
       note "target $target is missing from toolchain $toolchain"
       note 'install it with: make install-build-tools'
       status=1
     fi
-  done < <(toolchain_targets)
+  done <<< "$requested_targets"
   [ "$status" -ne 0 ] || note "toolchain $toolchain available with its components and targets"
   return "$status"
 }

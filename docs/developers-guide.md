@@ -1430,6 +1430,25 @@ the `wasm32-wasip2` target. `llvm-tools-preview` is what coverage needs.
 Installed tooling need not be active in every job: the coverage jobs install
 `mold` through `make install-build-tools` and then exclude it from their flags.
 
+### Clippy changes at string boundaries
+
+The pinned Clippy adds `try_from_instead_of_from_str` and `unnecessary_box_pin`;
+`make lint` denies both. The parser changes below preserve the accepted
+strings and error types. Use `.parse::<Type>()` at these boundaries;
+`SandboxMode` retains `TryFrom<&str>` for compatibility.
+
+| Type               | Accepted strings                               | Parse error             |
+| ------------------ | ---------------------------------------------- | ----------------------- |
+| `SandboxMode`      | `worker`, `claude_code`                        | `SandboxModeParseError` |
+| `SandboxJobStatus` | `creating`, `running`, `failed`, `interrupted` | `String`                |
+| `HttpsUrl`         | A valid HTTPS URL with a host                  | `ToolError`             |
+
+The two `unnecessary_box_pin` fixes are confined to tests: those futures and
+streams are pinned locally with `std::pin::pin!` instead of allocating a `Box`.
+The `SandboxMode` public integration test checks both variants and the
+invalid-value error; the private status parser has the same value and error
+coverage in its owning module.
+
 ### Build routing
 
 Table 2. How each kind of build is routed.

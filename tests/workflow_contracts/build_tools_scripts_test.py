@@ -41,11 +41,95 @@ pytestmark = pytest.mark.skipif(
 CHECK = REPOSITORY_ROOT / "scripts" / "check-build-tools.sh"
 INSTALL = REPOSITORY_ROOT / "scripts" / "install-build-tools.sh"
 
+INVALID_TOOLCHAIN_ARRAYS = [
+    pytest.param("components", None, "key is missing", id="components-missing"),
+    pytest.param("components", "components = []", "must not be empty", id="components-empty"),
+    pytest.param(
+        "components",
+        'components = ["rustfmt",',
+        "unterminated array",
+        id="components-unterminated",
+    ),
+    pytest.param(
+        "components",
+        'components = ["rustfmt" "clippy"]',
+        "expected comma or closing bracket",
+        id="components-missing-separator",
+    ),
+    pytest.param("targets", None, "key is missing", id="targets-missing"),
+    pytest.param("targets", "targets = []", "must not be empty", id="targets-empty"),
+    pytest.param(
+        "targets",
+        'targets = ["wasm32-wasip2",',
+        "unterminated array",
+        id="targets-unterminated",
+    ),
+    pytest.param(
+        "targets",
+        'targets = [wasm32-wasip2]',
+        "quoted component or target name",
+        id="targets-unquoted-entry",
+    ),
+]
+
 
 @pytest.fixture
 def sandbox(tmp_path: Path) -> Sandbox:
     """Build a sandbox where every tool is present and correct."""
     return make_sandbox(tmp_path)
+
+
+def _toolchain_file_with_array(
+    sandbox: Sandbox, key: str, declaration: str | None
+) -> Path:
+    """Write a toolchain fixture with one selected array declaration."""
+    declarations = {
+        "components": 'components = ["rustfmt", "clippy"]',
+        "targets": 'targets = ["wasm32-wasip2"]',
+    }
+    if declaration is None:
+        declarations.pop(key)
+    else:
+        declarations[key] = declaration
+    path = sandbox.root / "toolchain-array-fixture.toml"
+    lines = ["[toolchain]", f'channel = "{CHANNEL}"']
+    lines.extend(declarations.values())
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("key", "declaration", "diagnostic"), INVALID_TOOLCHAIN_ARRAYS
+)
+def test_the_check_rejects_missing_or_malformed_toolchain_arrays(
+    sandbox: Sandbox, key: str, declaration: str | None, diagnostic: str
+) -> None:
+    """Missing or invalid pin arrays cannot make a partial toolchain look ready."""
+    toolchain_file = _toolchain_file_with_array(sandbox, key, declaration)
+    result = sandbox.run(CHECK, RUST_TOOLCHAIN_FILE=str(toolchain_file))
+    assert result.returncode == 1, result.stderr
+    assert f"invalid {key} array" in result.stderr
+    assert diagnostic in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("key", "declaration", "diagnostic"), INVALID_TOOLCHAIN_ARRAYS
+)
+def test_the_installer_rejects_invalid_arrays_before_installing_tools(
+    sandbox: Sandbox, key: str, declaration: str | None, diagnostic: str
+) -> None:
+    """A malformed pin fails before mold or a partial rustup toolchain installs."""
+    toolchain_file = _toolchain_file_with_array(sandbox, key, declaration)
+    result = sandbox.run(
+        INSTALL,
+        RUST_TOOLCHAIN_FILE=str(toolchain_file),
+        MOLD_RELEASE_BASE_URL=f"file://{sandbox.root / 'missing-release'}",
+    )
+    assert result.returncode == 1, result.stderr
+    assert f"invalid {key} array" in result.stderr
+    assert diagnostic in result.stderr
+    assert not sandbox.log.exists(), "rustup must not be asked to install a partial pin"
+    assert not (sandbox.root / "prefix" / "bin" / "mold").exists()
 
 
 def test_a_complete_environment_passes(sandbox: Sandbox) -> None:

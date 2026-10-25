@@ -110,16 +110,16 @@ export_path_to_ci() {
 # toolchain rust-toolchain.toml selects, installed eagerly so a missing one is
 # reported here rather than mid-build.
 install_toolchain() {
-  local toolchain=$1 component target
+  local toolchain=$1 components=$2 targets=$3 component target
   local -a args=()
   command -v rustup >/dev/null 2>&1 ||
     fail 'rustup not found on PATH; install it from https://rustup.rs'
   while IFS= read -r component; do
     [ -n "$component" ] && args+=(--component "$component")
-  done < <(toolchain_components)
+  done <<< "$components"
   while IFS= read -r target; do
     [ -n "$target" ] && args+=(--target "$target")
-  done < <(toolchain_targets)
+  done <<< "$targets"
   note "installing toolchain $toolchain"
   rustup toolchain install "$toolchain" --profile minimal "${args[@]}" ||
     fail "failed to install toolchain $toolchain"
@@ -128,15 +128,17 @@ install_toolchain() {
 # Install both halves. The linker step runs first so a checksum failure aborts
 # before spending time on a toolchain download.
 main() {
-  local mold_pin toolchain_pin
+  local mold_pin toolchain_pin components targets
   # Resolve the pins into variables first: `fail` exits, but inside a command
   # substitution that exit kills only the subshell, so an unreadable pin would
   # otherwise reach the installer as an empty string and be built into a
   # download URL.
   mold_pin=$(mold_version) || return 1
   toolchain_pin=$(pinned_toolchain) || return 1
+  components=$(toolchain_components) || return 1
+  targets=$(toolchain_targets) || return 1
   install_mold "$mold_pin"
-  install_toolchain "$toolchain_pin"
+  install_toolchain "$toolchain_pin" "$components" "$targets"
   note 'ready; verify with: make check-build-tools'
 }
 

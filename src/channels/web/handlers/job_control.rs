@@ -166,9 +166,28 @@ pub async fn jobs_restart_handler(
 
 #[cfg(test)]
 mod tests {
-    //! Compile-time guard for the sandbox job status parse error type.
+    //! Behavioural and compile-time contracts for stored sandbox job statuses.
 
     use super::SandboxJobStatus;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::creating("creating", SandboxJobStatus::Creating)]
+    #[case::running("running", SandboxJobStatus::Running)]
+    #[case::failed("failed", SandboxJobStatus::Failed)]
+    #[case::interrupted("interrupted", SandboxJobStatus::Interrupted)]
+    fn parses_known_sandbox_job_statuses(#[case] input: &str, #[case] expected: SandboxJobStatus) {
+        assert_eq!(input.parse::<SandboxJobStatus>(), Ok(expected));
+    }
+
+    #[test]
+    fn reports_the_unexpected_sandbox_job_status() {
+        let error = "queued"
+            .parse::<SandboxJobStatus>()
+            .expect_err("unknown sandbox job statuses should fail to parse");
+
+        assert_eq!(error, "unexpected sandbox job status 'queued'");
+    }
 
     #[test]
     fn sandbox_job_status_keeps_its_string_parse_error() {

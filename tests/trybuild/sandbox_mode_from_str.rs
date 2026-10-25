@@ -14,5 +14,6 @@ where
 fn main() {
     assert_public_parser_types::<SandboxMode>();
     let _: Result<SandboxMode, SandboxModeParseError> = "worker".parse::<SandboxMode>();
+    let _: Result<SandboxMode, SandboxModeParseError> = "unknown".parse::<SandboxMode>();
     let _: Result<SandboxMode, SandboxModeParseError> = SandboxMode::try_from("worker");
 }
