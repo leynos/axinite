@@ -45,8 +45,25 @@ describe("gateway token storage", () => {
     });
 
     expect(getGatewayToken()).toBeNull();
-    expect(() => setGatewayToken("secret-token")).not.toThrow();
-    expect(() => clearGatewayToken()).not.toThrow();
+    setGatewayToken("secret-token");
+    expect(getGatewayToken()).toBe("secret-token");
+    clearGatewayToken();
+    expect(getGatewayToken()).toBeNull();
+  });
+
+  it("uses the latest token after a denied write and clears it after a denied removal", () => {
+    setGatewayToken("stale-token");
+    vi.spyOn(globalThis.sessionStorage, "setItem").mockImplementation(() => {
+      throw new Error("Storage writes are denied");
+    });
+    setGatewayToken("accepted-token");
+    expect(getGatewayToken()).toBe("accepted-token");
+
+    vi.spyOn(globalThis.sessionStorage, "removeItem").mockImplementation(() => {
+      throw new Error("Storage removal is denied");
+    });
+    clearGatewayToken();
+    expect(getGatewayToken()).toBeNull();
   });
 });
 

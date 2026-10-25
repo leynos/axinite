@@ -4,6 +4,7 @@
  * `/api/chat/events` SSE subscription. Used by the `/chat` surface.
  */
 
+import { recordBoundaryFailure } from "@/lib/api/boundary-diagnostics";
 import { isChatSseEvent } from "@/lib/api/chat-event-parser";
 import {
   createEventStream,
@@ -94,6 +95,7 @@ function reportUnexpectedChatEvent(
   if (eventType === "error") {
     return;
   }
+  recordBoundaryFailure("chat-stream", "invalid-payload");
   onError?.();
 }
 
@@ -108,6 +110,8 @@ function handleChatEventFrame(
     return;
   }
   if (!isString(rawEvent.data)) {
+    recordBoundaryFailure("chat-stream", "invalid-payload");
+    onError?.();
     return;
   }
 
@@ -116,10 +120,12 @@ function handleChatEventFrame(
   try {
     payload = JSON.parse(rawEvent.data);
   } catch {
+    recordBoundaryFailure("chat-stream", "invalid-json");
     onError?.();
     return;
   }
   if (!isChatSseEvent(payload)) {
+    recordBoundaryFailure("chat-stream", "invalid-payload");
     onError?.();
     return;
   }
@@ -164,9 +170,10 @@ export function connectChatEvents(
     );
   }
 
-  if (onError) {
-    setStreamConnectionErrorHandler(source, onError);
-  }
+  setStreamConnectionErrorHandler(source, () => {
+    recordBoundaryFailure("chat-stream", "connection");
+    onError?.();
+  });
 
   return source;
 }

@@ -3,6 +3,7 @@
  * `/api/logs/events` SSE tail. Used by the `/logs` surface.
  */
 
+import { recordBoundaryFailure } from "@/lib/api/boundary-diagnostics";
 import {
   createEventStream,
   putJson,
@@ -78,21 +79,26 @@ function parseLogEvent(
   onError?: () => void
 ): LogEntry | undefined {
   if (!(rawEvent instanceof MessageEvent) || !isString(rawEvent.data)) {
+    recordBoundaryFailure("log-stream", "invalid-payload");
+    onError?.();
     return undefined;
   }
   let payload: unknown;
   try {
     payload = JSON.parse(rawEvent.data);
   } catch {
+    recordBoundaryFailure("log-stream", "invalid-json");
     onError?.();
     return undefined;
   }
   if (!isJsonObject(payload)) {
+    recordBoundaryFailure("log-stream", "invalid-payload");
     onError?.();
     return undefined;
   }
   const entry = parseLogEntry(payload);
   if (entry === undefined) {
+    recordBoundaryFailure("log-stream", "invalid-payload");
     onError?.();
     return undefined;
   }
@@ -115,8 +121,9 @@ export function connectLogEvents(
     }
     listener(entry);
   });
-  if (onError) {
-    setStreamConnectionErrorHandler(source, onError);
-  }
+  setStreamConnectionErrorHandler(source, () => {
+    recordBoundaryFailure("log-stream", "connection");
+    onError?.();
+  });
   return source;
 }

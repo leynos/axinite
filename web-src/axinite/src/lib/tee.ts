@@ -7,6 +7,7 @@
  * sibling host exists.
  */
 
+import { recordBoundaryFailure } from "@/lib/api/boundary-diagnostics";
 import { withRequestTimeout } from "@/lib/api/client";
 import {
   isJsonObject,
@@ -75,14 +76,24 @@ export function teeInstanceName(hostname: string = currentHostname()): string {
   return hostname.split(".")[0] ?? "";
 }
 
-function fetchJson(url: string): Promise<JsonValue> {
+function fetchJson(
+  url: string,
+  operation: "tee-status" | "tee-report"
+): Promise<JsonValue> {
   return withRequestTimeout(async (signal) => {
     const response = await fetch(url, { signal });
     if (!response.ok) {
       throw new Error(`TEE request failed for ${url} with ${response.status}`);
     }
-    const payload: unknown = await response.json();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error: unknown) {
+      recordBoundaryFailure(operation, "invalid-json");
+      throw error;
+    }
     if (!isJsonValue(payload)) {
+      recordBoundaryFailure(operation, "invalid-payload");
       throw new TypeError("TEE response is not a valid JSON value");
     }
     return payload;
@@ -91,11 +102,13 @@ function fetchJson(url: string): Promise<JsonValue> {
 
 function parseTeeStatus(payload: JsonValue) {
   if (!isJsonObject(payload)) {
+    recordBoundaryFailure("tee-status", "invalid-payload");
     throw new TypeError("TEE attestation response must be an object");
   }
 
   const imageDigest = payload["image_digest"];
   if (!isString(imageDigest)) {
+    recordBoundaryFailure("tee-status", "invalid-payload");
     throw new TypeError("TEE attestation response is missing image_digest");
   }
 
@@ -105,6 +118,7 @@ function parseTeeStatus(payload: JsonValue) {
 
 function parseTeeReport(payload: JsonValue) {
   if (!isJsonObject(payload)) {
+    recordBoundaryFailure("tee-report", "invalid-payload");
     throw new TypeError("TEE report response must be an object");
   }
 
@@ -119,6 +133,7 @@ function parseTeeReport(payload: JsonValue) {
     const value = payload[field];
     if (value !== undefined) {
       if (!isString(value)) {
+        recordBoundaryFailure("tee-report", "invalid-payload");
         throw new TypeError(`TEE report field ${field} must be a string`);
       }
       report[field] = value;
@@ -140,7 +155,8 @@ export async function checkTeeStatus(): Promise<TeeStatus | null> {
 
   const name = teeInstanceName();
   const payload = await fetchJson(
-    `${base}/instances/${encodeURIComponent(name)}/attestation`
+    `${base}/instances/${encodeURIComponent(name)}/attestation`,
+    "tee-status"
   );
   return parseTeeStatus(payload);
 }
@@ -158,7 +174,7 @@ export async function fetchTeeReport(): Promise<TeeReport> {
     throw new Error("TEE attestation is unavailable on this host");
   }
 
-  const payload = await fetchJson(`${base}/attestation/report`);
+  const payload = await fetchJson(`${base}/attestation/report`, "tee-report");
   const report = parseTeeReport(payload);
   reportCache = report;
   return report;

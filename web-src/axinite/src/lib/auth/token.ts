@@ -6,6 +6,11 @@
 
 const STORAGE_KEY = "axinite.gateway-token";
 
+// A denied write must not discard an accepted token. The fallback lasts only
+// for this page lifetime; successful storage operations resume session storage.
+let fallbackToken: string | null = null;
+let usesFallback = false;
+
 function storage(): Storage | undefined {
   try {
     return globalThis.sessionStorage;
@@ -14,19 +19,30 @@ function storage(): Storage | undefined {
   }
 }
 
-/** Return the stored gateway token, or `null` when none is stored. */
+/** Return the session token, using page memory when browser storage is denied. */
 export function getGatewayToken(): string | null {
+  if (usesFallback) return fallbackToken;
   try {
-    return storage()?.getItem(STORAGE_KEY) ?? null;
+    const currentStorage = storage();
+    if (currentStorage) {
+      fallbackToken = currentStorage.getItem(STORAGE_KEY);
+    }
+    return fallbackToken;
   } catch {
-    return null;
+    return fallbackToken;
   }
 }
 
 /** Store the gateway token for the browser session. */
 export function setGatewayToken(token: string): void {
+  fallbackToken = token;
+  usesFallback = true;
   try {
-    storage()?.setItem(STORAGE_KEY, token);
+    const currentStorage = storage();
+    if (currentStorage) {
+      currentStorage.setItem(STORAGE_KEY, token);
+      usesFallback = false;
+    }
   } catch {
     // Session storage is optional and can be denied by browser privacy settings.
   }
@@ -34,8 +50,14 @@ export function setGatewayToken(token: string): void {
 
 /** Remove the stored gateway token. */
 export function clearGatewayToken(): void {
+  fallbackToken = null;
+  usesFallback = true;
   try {
-    storage()?.removeItem(STORAGE_KEY);
+    const currentStorage = storage();
+    if (currentStorage) {
+      currentStorage.removeItem(STORAGE_KEY);
+      usesFallback = false;
+    }
   } catch {
     // Session storage is optional and can be denied by browser privacy settings.
   }

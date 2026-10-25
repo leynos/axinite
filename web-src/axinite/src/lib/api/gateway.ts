@@ -4,6 +4,7 @@
  * Status polling falls back when unreachable; flag requests remain fallible.
  */
 
+import { recordBoundaryFailure } from "@/lib/api/boundary-diagnostics";
 import { requestJson } from "@/lib/api/client";
 import type {
   FeatureFlagsResponse,
@@ -51,11 +52,16 @@ export async function fetchRuntimeFeatureFlags(): Promise<
   const payload = await requestJson<JsonValue>("/api/features");
   const root = isJsonObject(payload) ? payload : null;
   const source = root && isJsonObject(root["flags"]) ? root["flags"] : root;
+  if (source === null) {
+    recordBoundaryFailure("feature-flags", "invalid-payload");
+  }
   const flags: FeatureFlagsResponse = {};
 
   for (const [name, value] of Object.entries(source ?? {})) {
     if (isBoolean(value)) {
       flags[name] = value;
+    } else {
+      recordBoundaryFailure("feature-flags", "invalid-payload");
     }
   }
 

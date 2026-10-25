@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { boundaryFailureCount } from "@/lib/api/boundary-diagnostics";
 
 import {
   checkTeeStatus,
@@ -64,6 +65,18 @@ describe("teeInstanceName", () => {
 });
 
 describe("checkTeeStatus", () => {
+  it("counts malformed JSON responses without recording their content", async () => {
+    setLocation("https://sub.example.com/");
+    const failures = boundaryFailureCount("tee-status", "invalid-json");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("{malformed", { status: 200 })
+    );
+    await expect(checkTeeStatus()).rejects.toThrow(SyntaxError);
+    expect(boundaryFailureCount("tee-status", "invalid-json")).toBe(
+      failures + 1
+    );
+  });
+
   it("returns null on localhost without fetching", async () => {
     setLocation("http://localhost:3000/");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -92,15 +105,31 @@ describe("checkTeeStatus", () => {
   });
 
   it("rejects when image_digest is absent", async () => {
+    const failures = boundaryFailureCount("tee-status", "invalid-payload");
     setLocation("https://sub.example.com/");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json({}, { status: 200 })
     );
     await expect(checkTeeStatus()).rejects.toThrow(/image_digest/u);
+    expect(boundaryFailureCount("tee-status", "invalid-payload")).toBe(
+      failures + 1
+    );
   });
 });
 
 describe("fetchTeeReport", () => {
+  it("counts rejected report fields", async () => {
+    setLocation("https://sub.example.com/");
+    const failures = boundaryFailureCount("tee-report", "invalid-payload");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ report_data: 42 })
+    );
+    await expect(fetchTeeReport()).rejects.toThrow(/report_data/u);
+    expect(boundaryFailureCount("tee-report", "invalid-payload")).toBe(
+      failures + 1
+    );
+  });
+
   it("fetches the report once and caches it", async () => {
     setLocation("https://sub.example.com/");
     const payload = {

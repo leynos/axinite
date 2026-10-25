@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { boundaryFailureCount } from "@/lib/api/boundary-diagnostics";
 import { connectChatEvents } from "@/lib/api/chat";
 import { createEventStream } from "@/lib/api/client";
 import type { ChatSseEvent } from "@/lib/api/contracts";
@@ -209,9 +209,17 @@ describe("log SSE wire contract", () => {
   it("tolerates malformed data when no error callback is supplied", () => {
     const listener = vi.fn();
     connectLogEvents(listener);
+    const invalidFrames = boundaryFailureCount("log-stream", "invalid-json");
+    const failedConnections = boundaryFailureCount("log-stream", "connection");
     expect(() => WireEventSource.latest.frame("log", "broken")).not.toThrow();
     expect(() => WireEventSource.latest.failConnection()).not.toThrow();
     expect(listener).not.toHaveBeenCalled();
+    expect(boundaryFailureCount("log-stream", "invalid-json")).toBe(
+      invalidFrames + 1
+    );
+    expect(boundaryFailureCount("log-stream", "connection")).toBe(
+      failedConnections + 1
+    );
   });
 });
 
