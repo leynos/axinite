@@ -20,6 +20,12 @@ on current toolchains. The build script registers `privileged_unix_platform`
 and emits it for Linux, Android, FreeBSD, OpenBSD, and DragonFly targets
 without suppressing the warning.
 
+Repeated cache, cleanup, extension, startup-lock, password-tracing, and
+singleton model-test setup is consolidated into shared fixtures and case
+tables. Template rollback also uses one cleanup path while retaining the
+distinction between returned setup errors and resumed panics. These local
+refactors preserve the upstream test scenarios and failure behaviour.
+
 This local source patch is selected through the root `[patch.crates-io]`
 section. Remove it when an upstream release includes the guarded sweep and
 claim sequence, and emits the platform cfg without compiler warnings.

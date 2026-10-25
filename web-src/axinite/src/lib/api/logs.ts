@@ -73,6 +73,32 @@ function parseLogLevel(
   return LOG_LEVELS.get(value.toLowerCase());
 }
 
+function parseLogEvent(
+  rawEvent: Event,
+  onError?: () => void
+): LogEntry | undefined {
+  if (!(rawEvent instanceof MessageEvent) || !isString(rawEvent.data)) {
+    return undefined;
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawEvent.data);
+  } catch {
+    onError?.();
+    return undefined;
+  }
+  if (!isJsonObject(payload)) {
+    onError?.();
+    return undefined;
+  }
+  const entry = parseLogEntry(payload);
+  if (entry === undefined) {
+    onError?.();
+    return undefined;
+  }
+  return entry;
+}
+
 /**
  * GET /api/logs/events: open the log SSE stream and pass each `log` entry to
  * `listener`; malformed frames and stream errors are reported to `onError`.
@@ -83,23 +109,8 @@ export function connectLogEvents(
 ): EventSource {
   const source = createEventStream("/api/logs/events");
   source.addEventListener("log", (rawEvent) => {
-    if (!(rawEvent instanceof MessageEvent) || !isString(rawEvent.data)) {
-      return;
-    }
-    let payload: unknown;
-    try {
-      payload = JSON.parse(rawEvent.data);
-    } catch {
-      onError?.();
-      return;
-    }
-    if (!isJsonObject(payload)) {
-      onError?.();
-      return;
-    }
-    const entry = parseLogEntry(payload);
+    const entry = parseLogEvent(rawEvent, onError);
     if (entry === undefined) {
-      onError?.();
       return;
     }
     listener(entry);

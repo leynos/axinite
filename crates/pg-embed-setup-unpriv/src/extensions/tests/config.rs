@@ -109,36 +109,18 @@ fn malformed_declaration_is_config_invalid(
     assert!(err.to_string().contains(needle), "{err}");
 }
 
-/// An HTTPS manifest with a digest becomes a `Url` source.
-#[test]
-fn https_manifest_with_digest_is_url_source() {
-    let request = ExtensionRequest::from_config(&cfg(
-        Some("vector"),
-        Some("https://example.invalid/manifest.json"),
-        Some(DIGEST),
-    ))
-    .expect("valid")
-    .expect("declared");
-    match request.manifest {
-        ManifestSource::Url { url, sha256 } => {
-            assert_eq!(url, "https://example.invalid/manifest.json");
-            assert_eq!(sha256.as_str(), DIGEST);
-        }
-        ManifestSource::Path { .. } => panic!("expected a URL source"),
-    }
-}
-
-/// A loopback `http://` manifest is a URL source, as loopback archives are.
+/// HTTPS and loopback `http://` manifests with digests become `Url` sources.
 ///
 /// `is_permitted_url` is the one rule both the manifest and the archives it
 /// names go through, so a local mirror can serve both. The digest stays
 /// mandatory here: it is what pins the archives, and a loopback origin does
 /// not make the manifest bytes any more trustworthy.
 #[rstest]
+#[case::https("https://example.invalid/manifest.json")]
 #[case::ip_literal("http://127.0.0.1:8000/manifest.json")]
 #[case::localhost("http://localhost:8000/manifest.json")]
 #[case::ipv6_literal("http://[::1]:8000/manifest.json")]
-fn loopback_http_manifest_with_digest_is_url_source(#[case] location: &str) {
+fn url_manifest_with_digest_is_url_source(#[case] location: &str) {
     let request = ExtensionRequest::from_config(&cfg(Some("vector"), Some(location), Some(DIGEST)))
         .expect("valid")
         .expect("declared");

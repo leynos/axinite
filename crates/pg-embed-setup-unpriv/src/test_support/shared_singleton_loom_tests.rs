@@ -33,7 +33,7 @@ impl LoomSharedState {
         }
     }
 
-    fn get_success(&self) -> Result<usize, usize> {
+    fn get(&self, initialization: Result<usize, (usize, usize)>) -> Result<usize, usize> {
         let mut state = self
             .state
             .lock()
@@ -42,22 +42,7 @@ impl LoomSharedState {
             &mut state,
             || {
                 self.initializations.fetch_add(1, Ordering::SeqCst);
-                Ok(7)
-            },
-            |cached| *cached,
-        )
-    }
-
-    fn get_failure(&self) -> Result<usize, usize> {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        get_or_try_init_shared(
-            &mut state,
-            || {
-                self.initializations.fetch_add(1, Ordering::SeqCst);
-                Err((CACHED_FAILURE, FIRST_FAILURE))
+                initialization
             },
             |cached| *cached,
         )
@@ -75,16 +60,17 @@ where
     builder.check(f);
 }
 
-#[test]
-#[ignore = "requires Loom model checking"]
-fn shared_singleton_initializes_once_for_concurrent_callers() {
-    run_loom_model(|| {
+fn assert_two_callers_share_initialization(
+    initialization: Result<usize, (usize, usize)>,
+    assert_results: fn(Result<usize, usize>, Result<usize, usize>),
+) {
+    run_loom_model(move || {
         let state = Arc::new(LoomSharedState::new());
         let first = Arc::clone(&state);
         let second = Arc::clone(&state);
 
-        let first_thread = thread::spawn(move || first.get_success());
-        let second_thread = thread::spawn(move || second.get_success());
+        let first_thread = thread::spawn(move || first.get(initialization));
+        let second_thread = thread::spawn(move || second.get(initialization));
 
         let Ok(first_result) = first_thread.join() else {
             panic!("first thread should join");
@@ -93,33 +79,29 @@ fn shared_singleton_initializes_once_for_concurrent_callers() {
             panic!("second thread should join");
         };
 
-        assert_eq!(first_result, Ok(7));
-        assert_eq!(second_result, Ok(7));
+        assert_results(first_result, second_result);
         assert_eq!(state.initializations.load(Ordering::SeqCst), 1);
     });
+}
+
+fn assert_success_results(first: Result<usize, usize>, second: Result<usize, usize>) {
+    assert_eq!(first, Ok(7));
+    assert_eq!(second, Ok(7));
+}
+
+#[test]
+#[ignore = "requires Loom model checking"]
+fn shared_singleton_initializes_once_for_concurrent_callers() {
+    assert_two_callers_share_initialization(Ok(7), assert_success_results);
 }
 
 #[test]
 #[ignore = "requires Loom model checking"]
 fn shared_singleton_caches_failed_initialization() {
-    run_loom_model(|| {
-        let state = Arc::new(LoomSharedState::new());
-        let first = Arc::clone(&state);
-        let second = Arc::clone(&state);
-
-        let first_thread = thread::spawn(move || first.get_failure());
-        let second_thread = thread::spawn(move || second.get_failure());
-
-        let Ok(first_result) = first_thread.join() else {
-            panic!("first thread should join");
-        };
-        let Ok(second_result) = second_thread.join() else {
-            panic!("second thread should join");
-        };
-
-        assert_cached_failure_translation(first_result, second_result);
-        assert_eq!(state.initializations.load(Ordering::SeqCst), 1);
-    });
+    assert_two_callers_share_initialization(
+        Err((CACHED_FAILURE, FIRST_FAILURE)),
+        assert_cached_failure_translation,
+    );
 }
 
 fn assert_cached_failure_translation(

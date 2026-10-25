@@ -54,68 +54,76 @@ fn cleanup_in_process_respects_mode(
     );
 }
 
-// A full cleanup of one cluster must not pull the install tree from under
-// another cluster that is still running from it (ADR 005).
-#[rstest]
-#[case::peer_running(true, true)]
-#[case::alone(false, false)]
-fn full_cleanup_keeps_an_install_tree_that_a_peer_runs_from(
-    #[case] has_peer: bool,
-    #[case] expect_install_exists: bool,
+#[derive(Clone, Copy, Debug)]
+enum CleanupDataDir {
+    Slot,
+    Explicit,
+}
+
+fn assert_full_cleanup_preserves_install_tree(
+    data_dir_kind: CleanupDataDir,
+    has_peer: bool,
+    guard_unavailable: bool,
+    expect_install_exists: bool,
 ) {
-    let sandbox = tempdir().expect("tempdir");
-    let slots = sandbox.path().join("data");
-    let own = slots.join("1-1-0");
-    let install_dir = sandbox.path().join("install");
-    fs::create_dir_all(&own).expect("own slot");
+    let root = tempdir().expect("tempdir");
+    let slots = root.path().join("data");
+    let install_dir = root.path().join("install");
+    let own_slot = slots.join("1-1-0");
+    let explicit_data = root.path().join("elsewhere");
+    fs::create_dir_all(&slots).expect("slot parent");
     fs::create_dir_all(&install_dir).expect("install dir");
-    fs::write(slots.join("1-1-0.lock"), b"").expect("own lock file");
+    let data_dir = match data_dir_kind {
+        CleanupDataDir::Slot => {
+            fs::create_dir_all(&own_slot).expect("own slot");
+            fs::write(slots.join("1-1-0.lock"), b"").expect("own lock file");
+            own_slot
+        }
+        CleanupDataDir::Explicit => {
+            fs::create_dir_all(&explicit_data).expect("explicit data dir");
+            explicit_data
+        }
+    };
     let peer_lock = fs::File::create(slots.join("2-2-0.lock")).expect("peer lock file");
     if has_peer {
         fs4::FileExt::lock(&peer_lock).expect("hold the peer's lock");
     }
+    if guard_unavailable {
+        // A directory where the guard file belongs makes opening it fail.
+        fs::create_dir_all(slots.join(".claim-guard")).expect("obstruct the guard");
+    }
     let settings = Settings {
-        data_dir: own,
+        data_dir,
         installation_dir: install_dir,
         ..Settings::default()
     };
 
-    cleanup_in_process(CleanupMode::Full, &settings, "peer-test");
+    cleanup_in_process(CleanupMode::Full, &settings, "shared-install-test");
 
     assert!(!settings.data_dir.exists(), "the cluster's own data goes");
     assert_eq!(settings.installation_dir.exists(), expect_install_exists);
 }
 
-// An explicit data directory can still share the derived install tree with
-// slotted clusters, so a full cleanup leaves it while one is running.
+// A full cleanup must keep the install tree while a peer is running, or when
+// the slot guard cannot rule out a concurrent claim (ADR 005).
 #[rstest]
-#[case::slot_running(true, true)]
-#[case::none_running(false, false)]
-fn full_cleanup_of_an_explicit_data_dir_respects_slots_on_its_install_tree(
+#[case::slot_peer_running(CleanupDataDir::Slot, true, false, true)]
+#[case::slot_alone(CleanupDataDir::Slot, false, false, false)]
+#[case::explicit_data_with_slot_running(CleanupDataDir::Explicit, true, false, true)]
+#[case::explicit_data_alone(CleanupDataDir::Explicit, false, false, false)]
+#[case::slot_guard_unavailable(CleanupDataDir::Slot, false, true, true)]
+fn full_cleanup_preserves_shared_install_tree(
+    #[case] data_dir_kind: CleanupDataDir,
     #[case] has_peer: bool,
+    #[case] guard_unavailable: bool,
     #[case] expect_install_exists: bool,
 ) {
-    let root = tempdir().expect("tempdir");
-    let slots = root.path().join("data");
-    let install_dir = root.path().join("install");
-    let explicit = root.path().join("elsewhere");
-    fs::create_dir_all(&slots).expect("slot parent");
-    fs::create_dir_all(&install_dir).expect("install dir");
-    fs::create_dir_all(&explicit).expect("explicit data dir");
-    let peer_lock = fs::File::create(slots.join("2-2-0.lock")).expect("peer lock file");
-    if has_peer {
-        fs4::FileExt::lock(&peer_lock).expect("hold the peer's lock");
-    }
-    let settings = Settings {
-        data_dir: explicit,
-        installation_dir: install_dir,
-        ..Settings::default()
-    };
-
-    cleanup_in_process(CleanupMode::Full, &settings, "explicit-test");
-
-    assert!(!settings.data_dir.exists(), "the explicit data goes");
-    assert_eq!(settings.installation_dir.exists(), expect_install_exists);
+    assert_full_cleanup_preserves_install_tree(
+        data_dir_kind,
+        has_peer,
+        guard_unavailable,
+        expect_install_exists,
+    );
 }
 
 // With no slot parent yet, a full cleanup creates it and holds its guard, so a
@@ -158,31 +166,6 @@ fn full_cleanupguards_a_slot_parent_that_does_not_exist_yet() {
         .join()
         .expect("join the claimant")
         .expect("take the guard");
-}
-
-// A full cleanup that cannot take the root's claim guard cannot rule out a
-// cluster claiming a slot mid-cleanup, so it leaves the install tree.
-#[test]
-fn full_cleanup_keeps_the_install_tree_when_theguard_is_unavailable() {
-    let sandbox = tempdir().expect("tempdir");
-    let slots = sandbox.path().join("data");
-    let own = slots.join("1-1-0");
-    let install_dir = sandbox.path().join("install");
-    fs::create_dir_all(&own).expect("own slot");
-    fs::create_dir_all(&install_dir).expect("install dir");
-    fs::write(slots.join("1-1-0.lock"), b"").expect("own lock file");
-    // A directory where the guard file belongs makes opening it fail.
-    fs::create_dir_all(slots.join(".claim-guard")).expect("obstruct the guard");
-    let settings = Settings {
-        data_dir: own,
-        installation_dir: install_dir,
-        ..Settings::default()
-    };
-
-    cleanup_in_process(CleanupMode::Full, &settings, "guard-test");
-
-    assert!(!settings.data_dir.exists(), "the cluster's own data goes");
-    assert!(settings.installation_dir.exists(), "the install tree stays");
 }
 
 // A data directory whose slot lock cannot be looked up, because its parent

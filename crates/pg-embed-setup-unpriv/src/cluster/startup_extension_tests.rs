@@ -16,6 +16,7 @@ mod fixtures;
 #[cfg(unix)]
 use fixtures::manifest_observing_the_lock;
 use fixtures::{
+    LifecycleCase,
     PROBE_FILES,
     failing_bootstrap,
     lifecycle_case,
@@ -23,6 +24,33 @@ use fixtures::{
     ordering_bootstrap,
     seed_cache_hit,
 };
+
+#[derive(Clone, Copy)]
+enum RootStartApi {
+    Synchronous,
+    #[cfg(feature = "async-api")]
+    Asynchronous,
+}
+
+fn start_root_lifecycle(
+    case: LifecycleCase,
+    api: RootStartApi,
+) -> crate::BootstrapResult<StartupOutcome> {
+    let LifecycleCase {
+        hook: _hook,
+        bootstrap,
+        env_vars,
+        cache_config,
+        runtime,
+    } = case;
+    match api {
+        RootStartApi::Synchronous => start_postgres(&runtime, bootstrap, &env_vars, &cache_config),
+        #[cfg(feature = "async-api")]
+        RootStartApi::Asynchronous => {
+            runtime.block_on(start_postgres_async(bootstrap, &env_vars, &cache_config))
+        }
+    }
+}
 
 fn assert_installed_between_setup_and_start(
     operations: &Mutex<Vec<String>>,
@@ -69,6 +97,46 @@ fn assert_stopped_before_start(
     Ok(())
 }
 
+fn assert_root_lifecycle_stops_on_hook_failure(
+    paths: &RootSetupPaths,
+    api: RootStartApi,
+) -> Result<()> {
+    let case = lifecycle_case(paths, failing_bootstrap)?;
+    let hook = Arc::clone(&case.hook.operations);
+    let err = start_root_lifecycle(case, api)
+        .err()
+        .ok_or_else(|| eyre!("a broken manifest must stop the lifecycle"))?;
+    assert_stopped_before_start(&hook, &err)
+}
+
+fn assert_root_lifecycle_installs_between_setup_and_start(
+    paths: &RootSetupPaths,
+    api: RootStartApi,
+) -> Result<()> {
+    let case = lifecycle_case(paths, ordering_bootstrap)?;
+    let hook = Arc::clone(&case.hook.operations);
+    let outcome = start_root_lifecycle(case, api)?;
+    assert_installed_between_setup_and_start(&hook, &outcome.bootstrap)
+}
+
+#[cfg(unix)]
+fn assert_root_hook_holds_setup_lock(paths: &RootSetupPaths, api: RootStartApi) -> Result<()> {
+    seed_cache_hit(&paths.cache_dir)?;
+    let case = lifecycle_case(paths, ordering_bootstrap)?;
+    let observer = manifest_observing_the_lock(&case.bootstrap, &paths.install_dir)?;
+    start_root_lifecycle(case, api)?;
+
+    let held = observer
+        .join()
+        .map_err(|_| eyre!("the observer thread panicked"))??;
+    ensure!(held, "the hook must hold the setup lock while it installs");
+    ensure!(
+        lock_is_free(&paths.install_dir),
+        "the setup lock is free once the start returns"
+    );
+    Ok(())
+}
+
 /// The synchronous root lifecycle stops when the hook fails.
 #[rstest]
 #[serial(worker_hook)]
@@ -76,16 +144,7 @@ fn root_lifecycle_stops_when_the_extension_hook_fails(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    let case = lifecycle_case(&paths, failing_bootstrap)?;
-    let err = start_postgres(
-        &case.runtime,
-        case.bootstrap,
-        &case.env_vars,
-        &case.cache_config,
-    )
-    .err()
-    .ok_or_else(|| eyre!("a broken manifest must stop the lifecycle"))?;
-    assert_stopped_before_start(&case.hook.operations, &err)
+    assert_root_lifecycle_stops_on_hook_failure(&paths, RootStartApi::Synchronous)
 }
 
 /// After a cache hit with an extension declared, the hook retakes the setup
@@ -99,16 +158,7 @@ fn a_cache_hit_with_extensions_retakes_the_setup_lock_for_the_hook(
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
     seed_cache_hit(&paths.cache_dir)?;
-    let case = lifecycle_case(&paths, ordering_bootstrap)?;
-
-    let outcome = start_postgres(
-        &case.runtime,
-        case.bootstrap,
-        &case.env_vars,
-        &case.cache_config,
-    )?;
-
-    assert_installed_between_setup_and_start(&case.hook.operations, &outcome.bootstrap)?;
+    assert_root_lifecycle_installs_between_setup_and_start(&paths, RootStartApi::Synchronous)?;
     ensure!(
         lock_is_free(&paths.install_dir),
         "the setup lock is free once the start returns"
@@ -127,26 +177,7 @@ fn the_hook_holds_the_setup_lock_while_it_installs_after_a_cache_hit(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    seed_cache_hit(&paths.cache_dir)?;
-    let case = lifecycle_case(&paths, ordering_bootstrap)?;
-    let observer = manifest_observing_the_lock(&case.bootstrap, &paths.install_dir)?;
-
-    start_postgres(
-        &case.runtime,
-        case.bootstrap,
-        &case.env_vars,
-        &case.cache_config,
-    )?;
-
-    let held = observer
-        .join()
-        .map_err(|_| eyre!("the observer thread panicked"))??;
-    ensure!(held, "the hook must hold the setup lock while it installs");
-    ensure!(
-        lock_is_free(&paths.install_dir),
-        "the setup lock is free once the start returns"
-    );
-    Ok(())
+    assert_root_hook_holds_setup_lock(&paths, RootStartApi::Synchronous)
 }
 
 /// The asynchronous start holds the lock through the same install.
@@ -157,25 +188,7 @@ fn the_async_hook_holds_the_setup_lock_while_it_installs_after_a_cache_hit(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    seed_cache_hit(&paths.cache_dir)?;
-    let case = lifecycle_case(&paths, ordering_bootstrap)?;
-    let observer = manifest_observing_the_lock(&case.bootstrap, &paths.install_dir)?;
-
-    case.runtime.block_on(start_postgres_async(
-        case.bootstrap,
-        &case.env_vars,
-        &case.cache_config,
-    ))?;
-
-    let held = observer
-        .join()
-        .map_err(|_| eyre!("the observer thread panicked"))??;
-    ensure!(held, "the hook must hold the setup lock while it installs");
-    ensure!(
-        lock_is_free(&paths.install_dir),
-        "the setup lock is free once the start returns"
-    );
-    Ok(())
+    assert_root_hook_holds_setup_lock(&paths, RootStartApi::Asynchronous)
 }
 
 /// The asynchronous root lifecycle stops on the same failure.
@@ -186,17 +199,7 @@ fn async_root_lifecycle_stops_when_the_extension_hook_fails(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    let case = lifecycle_case(&paths, failing_bootstrap)?;
-    let err = case
-        .runtime
-        .block_on(start_postgres_async(
-            case.bootstrap,
-            &case.env_vars,
-            &case.cache_config,
-        ))
-        .err()
-        .ok_or_else(|| eyre!("a broken manifest must stop the lifecycle"))?;
-    assert_stopped_before_start(&case.hook.operations, &err)
+    assert_root_lifecycle_stops_on_hook_failure(&paths, RootStartApi::Asynchronous)
 }
 
 /// The setup-only lifecycle reports the failure and completes nothing.
@@ -225,14 +228,7 @@ fn root_lifecycle_installs_extensions_between_setup_and_start(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    let case = lifecycle_case(&paths, ordering_bootstrap)?;
-    let outcome = start_postgres(
-        &case.runtime,
-        case.bootstrap,
-        &case.env_vars,
-        &case.cache_config,
-    )?;
-    assert_installed_between_setup_and_start(&case.hook.operations, &outcome.bootstrap)
+    assert_root_lifecycle_installs_between_setup_and_start(&paths, RootStartApi::Synchronous)
 }
 
 /// The asynchronous root lifecycle keeps the same ordering.
@@ -243,13 +239,7 @@ fn async_root_lifecycle_installs_extensions_between_setup_and_start(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    let case = lifecycle_case(&paths, ordering_bootstrap)?;
-    let outcome = case.runtime.block_on(start_postgres_async(
-        case.bootstrap,
-        &case.env_vars,
-        &case.cache_config,
-    ))?;
-    assert_installed_between_setup_and_start(&case.hook.operations, &outcome.bootstrap)
+    assert_root_lifecycle_installs_between_setup_and_start(&paths, RootStartApi::Asynchronous)
 }
 
 /// The CLI setup-only lifecycle installs extensions after Setup without starting.

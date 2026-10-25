@@ -50,43 +50,38 @@ fn sole_reuse_event(logs: &[String]) -> Result<String> {
     }
 }
 
-/// Runs one reuse with `explicit`, capturing info-level lines.
+#[derive(Clone, Copy)]
+enum CaptureLevel {
+    Info,
+    Warn,
+}
+
+/// Runs one reuse with `explicit`, capturing at the requested level.
 ///
 /// The helper arranges and runs; it does not decide. Whether the call was
 /// meant to succeed is the calling test's verdict, so the result travels out
 /// rather than being unwrapped here.
-fn info_logs_of(
+fn logs_of(
     scratch: &Scratch,
     explicit: bool,
+    level: CaptureLevel,
 ) -> (Vec<String>, BootstrapResult<PasswordReuseOutcome>) {
     let mut settings = Settings {
         password: "fresh".into(),
         ..Settings::default()
     };
-    capture_info_logs(|| {
+    let reuse = || {
         reuse_existing_password(
             &mut settings,
             &scratch.data_dir,
             &scratch.password_file,
             explicit,
         )
-    })
-}
-
-/// Runs one reuse with no explicit password, capturing warning-level lines.
-fn warn_logs_of(scratch: &Scratch) -> (Vec<String>, BootstrapResult<PasswordReuseOutcome>) {
-    let mut settings = Settings {
-        password: "fresh".into(),
-        ..Settings::default()
     };
-    capture_warn_logs(|| {
-        reuse_existing_password(
-            &mut settings,
-            &scratch.data_dir,
-            &scratch.password_file,
-            false,
-        )
-    })
+    match level {
+        CaptureLevel::Info => capture_info_logs(reuse),
+        CaptureLevel::Warn => capture_warn_logs(reuse),
+    }
 }
 
 /// Every success branch emits one `password_reuse` event naming its outcome.
@@ -97,7 +92,7 @@ fn warn_logs_of(scratch: &Scratch) -> (Vec<String>, BootstrapResult<PasswordReus
 fn each_success_branch_emits_its_outcome(scratch: Result<Scratch>, #[case] case: TracingCase) {
     let dir = scratch.expect("scratch");
     arrange(&dir, case.with_cluster, case.stored).expect("arrange");
-    let (logs, outcome) = info_logs_of(&dir, case.explicit);
+    let (logs, outcome) = logs_of(&dir, case.explicit, CaptureLevel::Info);
     outcome.expect("the reuse must succeed");
     let event = sole_reuse_event(&logs).expect("one event");
     assert!(
@@ -122,7 +117,7 @@ fn each_failure_branch_warns_with_its_outcome(
 ) {
     let dir = scratch.expect("scratch");
     arrange(&dir, true, stored).expect("arrange");
-    let (logs, outcome) = warn_logs_of(&dir);
+    let (logs, outcome) = logs_of(&dir, false, CaptureLevel::Warn);
     outcome.expect_err("the reuse must fail");
     let event = sole_reuse_event(&logs).expect("one event");
     assert!(
@@ -140,7 +135,7 @@ fn each_failure_branch_warns_with_its_outcome(
 fn a_successful_reuse_is_not_a_warning(scratch: Result<Scratch>) {
     let dir = scratch.expect("scratch");
     arrange(&dir, true, Some("kept-secret")).expect("arrange");
-    let (logs, outcome) = warn_logs_of(&dir);
+    let (logs, outcome) = logs_of(&dir, false, CaptureLevel::Warn);
     outcome.expect("the reuse must succeed");
     assert!(
         reuse_events(&logs).is_empty(),
@@ -158,9 +153,9 @@ fn a_successful_reuse_is_not_a_warning(scratch: Result<Scratch>) {
 fn the_stored_password_is_never_logged(scratch: Result<Scratch>) {
     let dir = scratch.expect("scratch");
     arrange(&dir, true, Some("kept-secret")).expect("arrange");
-    let (info, adopted) = info_logs_of(&dir, false);
+    let (info, adopted) = logs_of(&dir, false, CaptureLevel::Info);
     adopted.expect("the reuse must succeed");
-    let (warnings, repeated) = warn_logs_of(&dir);
+    let (warnings, repeated) = logs_of(&dir, false, CaptureLevel::Warn);
     repeated.expect("the reuse must succeed again");
     for line in info.iter().chain(warnings.iter()) {
         assert!(

@@ -5,7 +5,7 @@
 //! `ClusterHandle`.
 #![cfg(unix)]
 
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 use camino::Utf8PathBuf;
 use color_eyre::eyre::{Context, Result, ensure, eyre};
@@ -232,17 +232,11 @@ const POSTMASTER_SHUTDOWN_ERROR: &str =
     "postmaster.pid should be removed once cluster stops (waited 10s)";
 
 fn wait_for_postmaster_shutdown(data_dir: &Utf8PathBuf) -> Result<()> {
-    use std::time::Instant;
-
-    let pid = data_dir.join("postmaster.pid");
-    let deadline = Instant::now() + POSTMASTER_SHUTDOWN_TIMEOUT;
-
-    while pid.exists() && Instant::now() < deadline {
-        thread::sleep(POSTMASTER_POLL_INTERVAL);
-    }
-
-    ensure!(!pid.exists(), POSTMASTER_SHUTDOWN_ERROR);
-    Ok(())
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .context("create postmaster shutdown wait runtime")?;
+    runtime.block_on(wait_for_postmaster_shutdown_async(data_dir))
 }
 
 /// Async version of shutdown wait for use within tokio runtime.
@@ -250,7 +244,6 @@ fn wait_for_postmaster_shutdown(data_dir: &Utf8PathBuf) -> Result<()> {
 /// The guard's `Drop` spawns a fire-and-forget cleanup task. We must poll
 /// for completion inside the async context so the spawned task can execute
 /// before the runtime is dropped.
-#[cfg(feature = "async-api")]
 async fn wait_for_postmaster_shutdown_async(
     data_dir: &Utf8PathBuf,
 ) -> std::result::Result<(), color_eyre::Report> {

@@ -82,6 +82,152 @@ fn observed(recorded: &Mutex<Vec<String>>) -> Vec<String> {
         .clone()
 }
 
+#[derive(Clone, Copy)]
+enum StartApi {
+    Synchronous,
+    #[cfg(feature = "async-api")]
+    Asynchronous,
+}
+
+struct RootStartInvocation<'a> {
+    runtime: &'a tokio::runtime::Runtime,
+    bootstrap: TestBootstrapSettings,
+    env_vars: &'a [(String, Option<String>)],
+    cache_config: &'a BinaryCacheConfig,
+}
+
+fn start_with_api(
+    api: StartApi,
+    invocation: RootStartInvocation<'_>,
+) -> crate::BootstrapResult<StartupOutcome> {
+    let RootStartInvocation {
+        runtime,
+        bootstrap,
+        env_vars,
+        cache_config,
+    } = invocation;
+    match api {
+        StartApi::Synchronous => start_postgres(runtime, bootstrap, env_vars, cache_config),
+        #[cfg(feature = "async-api")]
+        StartApi::Asynchronous => {
+            runtime.block_on(start_postgres_async(bootstrap, env_vars, cache_config))
+        }
+    }
+}
+
+struct ConfiguredRootStart {
+    bootstrap: TestBootstrapSettings,
+    env_vars: Vec<(String, Option<String>)>,
+    cache_config: BinaryCacheConfig,
+    runtime: tokio::runtime::Runtime,
+    recorded: Arc<Mutex<Vec<String>>>,
+    install_dir: camino::Utf8PathBuf,
+    cache_hit: bool,
+    _guard: crate::test_support::HookGuard,
+}
+
+fn configure_root_start(paths: &RootSetupPaths, cache_hit: bool) -> Result<ConfiguredRootStart> {
+    if cache_hit {
+        seed_cache_hit(&paths.cache_dir)?;
+    }
+    let (recorded, guard) = recording_hook(&paths.install_dir)?;
+    let mut bootstrap = dummy_settings(ExecutionPrivileges::Root);
+    configure_root_bootstrap(
+        &mut bootstrap,
+        &paths.install_dir,
+        &paths.data_dir,
+        &paths.scoped_cache_home,
+    )?;
+    let env_vars = bootstrap.environment.to_env();
+    let cache_config = BinaryCacheConfig::with_dir(paths.cache_dir.clone());
+    let runtime = test_runtime()?;
+    Ok(ConfiguredRootStart {
+        bootstrap,
+        env_vars,
+        cache_config,
+        runtime,
+        recorded,
+        install_dir: paths.install_dir.clone(),
+        cache_hit,
+        _guard: guard,
+    })
+}
+
+fn run_configured_root_start<T>(
+    configured: ConfiguredRootStart,
+    start: impl FnOnce(
+        &tokio::runtime::Runtime,
+        TestBootstrapSettings,
+        &[(String, Option<String>)],
+        &BinaryCacheConfig,
+    ) -> crate::BootstrapResult<T>,
+) -> Result<T> {
+    let ConfiguredRootStart {
+        bootstrap,
+        env_vars,
+        cache_config,
+        runtime,
+        recorded,
+        install_dir,
+        cache_hit,
+        _guard,
+    } = configured;
+    let outcome = start(&runtime, bootstrap, &env_vars, &cache_config)?;
+    ensure!(
+        observed(&recorded) == expected_operations(cache_hit),
+        "recorded {:?}",
+        observed(&recorded)
+    );
+    ensure!(
+        lock_is_free(&install_dir),
+        "the lock is free once the start returns"
+    );
+    Ok(outcome)
+}
+
+fn assert_cache_lock_behavior(
+    paths: &RootSetupPaths,
+    cache_hit: bool,
+    api: StartApi,
+) -> Result<()> {
+    run_configured_root_start(
+        configure_root_start(paths, cache_hit)?,
+        |runtime, bootstrap, env_vars, cache_config| {
+            start_with_api(
+                api,
+                RootStartInvocation {
+                    runtime,
+                    bootstrap,
+                    env_vars,
+                    cache_config,
+                },
+            )
+        },
+    )?;
+    Ok(())
+}
+
+fn assert_start_timing_events(paths: &RootSetupPaths, api: StartApi) -> Result<()> {
+    let (_, logs) = run_configured_root_start(
+        configure_root_start(paths, true)?,
+        |runtime, bootstrap, env, cache| {
+            let (logs, outcome) = crate::test_support::capture_debug_logs(|| {
+                start_with_api(
+                    api,
+                    RootStartInvocation {
+                        runtime,
+                        bootstrap,
+                        env_vars: env,
+                        cache_config: cache,
+                    },
+                )
+            });
+            outcome.map(|outcome| (outcome, logs))
+        },
+    )?;
+    ensure_timing_events(&logs)
+}
+
 /// The synchronous start releases the lock before `Setup` after a cache hit
 /// and holds it through `Setup` on a miss.
 #[rstest]
@@ -93,33 +239,7 @@ fn the_sync_start_keeps_the_setup_lock_only_on_a_cache_miss(
     #[case] cache_hit: bool,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    if cache_hit {
-        seed_cache_hit(&paths.cache_dir)?;
-    }
-    let (recorded, _guard) = recording_hook(&paths.install_dir)?;
-    let mut bootstrap = dummy_settings(ExecutionPrivileges::Root);
-    configure_root_bootstrap(
-        &mut bootstrap,
-        &paths.install_dir,
-        &paths.data_dir,
-        &paths.scoped_cache_home,
-    )?;
-    let env_vars = bootstrap.environment.to_env();
-    let cache_config = BinaryCacheConfig::with_dir(paths.cache_dir.clone());
-    let runtime = test_runtime()?;
-
-    start_postgres(&runtime, bootstrap, &env_vars, &cache_config)?;
-
-    ensure!(
-        observed(&recorded) == expected_operations(cache_hit),
-        "recorded {:?}",
-        observed(&recorded)
-    );
-    ensure!(
-        lock_is_free(&paths.install_dir),
-        "the lock is free once the start returns"
-    );
-    Ok(())
+    assert_cache_lock_behavior(&paths, cache_hit, StartApi::Synchronous)
 }
 
 /// The asynchronous start makes the same decision.
@@ -133,33 +253,7 @@ fn the_async_start_keeps_the_setup_lock_only_on_a_cache_miss(
     #[case] cache_hit: bool,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    if cache_hit {
-        seed_cache_hit(&paths.cache_dir)?;
-    }
-    let (recorded, _guard) = recording_hook(&paths.install_dir)?;
-    let mut bootstrap = dummy_settings(ExecutionPrivileges::Root);
-    configure_root_bootstrap(
-        &mut bootstrap,
-        &paths.install_dir,
-        &paths.data_dir,
-        &paths.scoped_cache_home,
-    )?;
-    let env_vars = bootstrap.environment.to_env();
-    let cache_config = BinaryCacheConfig::with_dir(paths.cache_dir.clone());
-    let runtime = test_runtime()?;
-
-    runtime.block_on(start_postgres_async(bootstrap, &env_vars, &cache_config))?;
-
-    ensure!(
-        observed(&recorded) == expected_operations(cache_hit),
-        "recorded {:?}",
-        observed(&recorded)
-    );
-    ensure!(
-        lock_is_free(&paths.install_dir),
-        "the lock is free once the start returns"
-    );
-    Ok(())
+    assert_cache_lock_behavior(&paths, cache_hit, StartApi::Asynchronous)
 }
 
 /// Counts the captured lines that contain every one of `needles`.
@@ -205,25 +299,7 @@ fn the_sync_start_logs_the_lock_wait_and_each_step_once(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    seed_cache_hit(&paths.cache_dir)?;
-    let (_recorded, _guard) = recording_hook(&paths.install_dir)?;
-    let mut bootstrap = dummy_settings(ExecutionPrivileges::Root);
-    configure_root_bootstrap(
-        &mut bootstrap,
-        &paths.install_dir,
-        &paths.data_dir,
-        &paths.scoped_cache_home,
-    )?;
-    let env_vars = bootstrap.environment.to_env();
-    let cache_config = BinaryCacheConfig::with_dir(paths.cache_dir.clone());
-    let runtime = test_runtime()?;
-
-    let (logs, outcome) = crate::test_support::capture_debug_logs(|| {
-        start_postgres(&runtime, bootstrap, &env_vars, &cache_config)
-    });
-
-    outcome?;
-    ensure_timing_events(&logs)
+    assert_start_timing_events(&paths, StartApi::Synchronous)
 }
 
 /// The asynchronous start logs the same events, the lock wait from the
@@ -235,23 +311,5 @@ fn the_async_start_logs_the_lock_wait_and_each_step_once(
     #[from(root_setup_paths)] root_setup_paths_res: Result<Arc<RootSetupPaths>>,
 ) -> Result<()> {
     let paths = root_setup_paths_res?;
-    seed_cache_hit(&paths.cache_dir)?;
-    let (_recorded, _guard) = recording_hook(&paths.install_dir)?;
-    let mut bootstrap = dummy_settings(ExecutionPrivileges::Root);
-    configure_root_bootstrap(
-        &mut bootstrap,
-        &paths.install_dir,
-        &paths.data_dir,
-        &paths.scoped_cache_home,
-    )?;
-    let env_vars = bootstrap.environment.to_env();
-    let cache_config = BinaryCacheConfig::with_dir(paths.cache_dir.clone());
-    let runtime = test_runtime()?;
-
-    let (logs, outcome) = crate::test_support::capture_debug_logs(|| {
-        runtime.block_on(start_postgres_async(bootstrap, &env_vars, &cache_config))
-    });
-
-    outcome?;
-    ensure_timing_events(&logs)
+    assert_start_timing_events(&paths, StartApi::Asynchronous)
 }

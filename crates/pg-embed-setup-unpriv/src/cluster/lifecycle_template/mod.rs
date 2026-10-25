@@ -114,51 +114,48 @@ where
 {
     match catch_unwind(AssertUnwindSafe(setup_fn)) {
         Ok(Ok(())) => Ok(()),
-        Ok(Err(setup_error)) => {
-            rollback_after_setup_error(template_name, setup_error, drop_database)
+        Ok(Err(setup_error)) => rollback_after_setup_failure(
+            template_name,
+            SetupFailure::Error(setup_error),
+            drop_database,
+        ),
+        Err(payload) => {
+            rollback_after_setup_failure(template_name, SetupFailure::Panic(payload), drop_database)
         }
-        Err(payload) => resume_or_report_rollback_failure(template_name, payload, drop_database),
     }
 }
 
-fn rollback_after_setup_error<Drop>(
+enum SetupFailure {
+    Error(BootstrapError),
+    Panic(Box<dyn Any + Send>),
+}
+
+fn rollback_after_setup_failure<Drop>(
     template_name: &str,
-    setup_error: BootstrapError,
+    failure: SetupFailure,
     drop_database: &mut Drop,
 ) -> BootstrapResult<()>
 where
     Drop: FnMut() -> BootstrapResult<()>,
 {
-    match rollback_and_log(
-        template_name,
-        drop_database,
-        "template setup failed and rollback completed",
-        false,
-    ) {
-        Ok(()) => Err(setup_error),
-        Err(rollback_error) => Err(template_setup_rollback_error(setup_error, rollback_error)),
-    }
-}
+    let (message, is_panic_path) = match &failure {
+        SetupFailure::Error(_) => ("template setup failed and rollback completed", false),
+        SetupFailure::Panic(_) => ("template setup panicked and rollback completed", true),
+    };
+    let rollback_result = rollback_and_log(template_name, drop_database, message, is_panic_path);
 
-fn resume_or_report_rollback_failure<Drop>(
-    template_name: &str,
-    payload: Box<dyn Any + Send>,
-    drop_database: &mut Drop,
-) -> BootstrapResult<()>
-where
-    Drop: FnMut() -> BootstrapResult<()>,
-{
-    match rollback_and_log(
-        template_name,
-        drop_database,
-        "template setup panicked and rollback completed",
-        true,
-    ) {
-        Ok(()) => resume_unwind(payload),
-        Err(rollback_error) => Err(template_setup_panic_rollback_error(
-            payload.as_ref(),
-            rollback_error,
-        )),
+    match failure {
+        SetupFailure::Error(setup_error) => match rollback_result {
+            Ok(()) => Err(setup_error),
+            Err(rollback_error) => Err(template_setup_rollback_error(setup_error, rollback_error)),
+        },
+        SetupFailure::Panic(payload) => match rollback_result {
+            Ok(()) => resume_unwind(payload),
+            Err(rollback_error) => Err(template_setup_panic_rollback_error(
+                payload.as_ref(),
+                rollback_error,
+            )),
+        },
     }
 }
 

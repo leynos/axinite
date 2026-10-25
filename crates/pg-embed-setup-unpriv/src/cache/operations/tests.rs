@@ -67,35 +67,24 @@ fn cache_fixture() -> io::Result<(TempDir, camino::Utf8PathBuf)> {
 }
 
 #[rstest]
-fn check_cache_returns_miss_for_empty_directory(
+#[case::empty(None)]
+#[case::without_marker(Some((true, false)))]
+#[case::without_bin_directory(Some((false, true)))]
+fn check_cache_returns_miss_for_incomplete_entries(
+    #[case] entry_parts: Option<(bool, bool)>,
     cache_fixture: io::Result<(TempDir, camino::Utf8PathBuf)>,
 ) {
     let (_temp, cache_dir) = cache_fixture.expect("cache fixture");
-
-    let result = check_cache(&cache_dir, "17.4.0");
-    assert!(matches!(result, CacheLookupResult::Miss));
-}
-
-#[rstest]
-fn check_cache_returns_miss_without_marker(
-    cache_fixture: io::Result<(TempDir, camino::Utf8PathBuf)>,
-) {
-    let (_temp, cache_dir) = cache_fixture.expect("cache fixture");
-    let version_dir = cache_dir.join("17.4.0");
-    create_mock_binaries(&version_dir).expect("create mock binaries");
-
-    let result = check_cache(&cache_dir, "17.4.0");
-    assert!(matches!(result, CacheLookupResult::Miss));
-}
-
-#[rstest]
-fn check_cache_returns_miss_without_bin_directory(
-    cache_fixture: io::Result<(TempDir, camino::Utf8PathBuf)>,
-) {
-    let (_temp, cache_dir) = cache_fixture.expect("cache fixture");
-    let version_dir = cache_dir.join("17.4.0");
-    fs::create_dir_all(&version_dir).expect("create version dir");
-    fs::write(version_dir.join(COMPLETION_MARKER), "").expect("write marker");
+    if let Some((has_binaries, has_marker)) = entry_parts {
+        let version_dir = cache_dir.join("17.4.0");
+        fs::create_dir_all(&version_dir).expect("create version dir");
+        if has_binaries {
+            create_mock_binaries(&version_dir).expect("create mock binaries");
+        }
+        if has_marker {
+            fs::write(version_dir.join(COMPLETION_MARKER), "").expect("write marker");
+        }
+    }
 
     let result = check_cache(&cache_dir, "17.4.0");
     assert!(matches!(result, CacheLookupResult::Miss));
@@ -117,16 +106,25 @@ fn check_cache_returns_hit_with_marker_and_bin(
     }
 }
 
-#[test]
-fn copy_from_cache_copies_files() {
-    let source_temp = tempdir().expect("source tempdir");
-    let target_temp = tempdir().expect("target tempdir");
-    let source = Utf8Path::from_path(source_temp.path()).expect("utf8 source");
-    let target = Utf8Path::from_path(target_temp.path()).expect("utf8 target");
+#[fixture]
+fn cache_copy_paths() -> io::Result<(TempDir, TempDir, camino::Utf8PathBuf, camino::Utf8PathBuf)> {
+    let source_temp = tempdir()?;
+    let target_temp = tempdir()?;
+    let source = camino::Utf8PathBuf::from_path_buf(source_temp.path().to_path_buf())
+        .map_err(|path| io::Error::other(format!("non-UTF-8 source path: {}", path.display())))?;
+    let target = camino::Utf8PathBuf::from_path_buf(target_temp.path().to_path_buf())
+        .map_err(|path| io::Error::other(format!("non-UTF-8 target path: {}", path.display())))?;
+    create_mock_binaries(&source)?;
+    Ok((source_temp, target_temp, source, target))
+}
 
-    create_mock_binaries(source).expect("create mock binaries");
+#[rstest]
+fn copy_from_cache_copies_files(
+    cache_copy_paths: io::Result<(TempDir, TempDir, camino::Utf8PathBuf, camino::Utf8PathBuf)>,
+) {
+    let (_source_temp, _target_temp, source, target) = cache_copy_paths.expect("cache copy paths");
 
-    copy_from_cache(source, target).expect("copy from cache");
+    copy_from_cache(&source, &target).expect("copy from cache");
 
     assert!(target.join("bin/postgres").exists());
     assert!(target.join("bin/pg_ctl").exists());
@@ -135,20 +133,18 @@ fn copy_from_cache_copies_files() {
 /// A file the target already holds at the cached size is left alone, because
 /// a server from another process may be running it; one cut short is copied
 /// again.
-#[test]
-fn copy_from_cache_leaves_an_installed_file_alone() {
-    let source_temp = tempdir().expect("source tempdir");
-    let target_temp = tempdir().expect("target tempdir");
-    let source = Utf8Path::from_path(source_temp.path()).expect("utf8 source");
-    let target = Utf8Path::from_path(target_temp.path()).expect("utf8 target");
-    create_mock_binaries(source).expect("create mock binaries");
+#[rstest]
+fn copy_from_cache_leaves_an_installed_file_alone(
+    cache_copy_paths: io::Result<(TempDir, TempDir, camino::Utf8PathBuf, camino::Utf8PathBuf)>,
+) {
+    let (_source_temp, _target_temp, source, target) = cache_copy_paths.expect("cache copy paths");
     fs::create_dir_all(target.join("bin")).expect("target bin");
     // Same size as "mock postgres binary" but different bytes, so a rewrite
     // is visible; the other is shorter than its cached original.
     fs::write(target.join("bin/postgres"), "MOCK POSTGRES BINARY").expect("installed file");
     fs::write(target.join("bin/pg_ctl"), "mock").expect("truncated file");
 
-    copy_from_cache(source, target).expect("copy from cache");
+    copy_from_cache(&source, &target).expect("copy from cache");
 
     assert_eq!(
         fs::read_to_string(target.join("bin/postgres")).expect("read"),
@@ -162,63 +158,38 @@ fn copy_from_cache_leaves_an_installed_file_alone() {
     );
 }
 
-/// Two temporary trees, the source holding a mock install with a symbolic link
-/// `bin/postgres-link` to `postgres`.
-#[cfg(unix)]
-#[fixture]
-fn linked_source_and_target() -> io::Result<(TempDir, TempDir)> {
-    let source_temp = tempdir()?;
-    let target_temp = tempdir()?;
-    let source = Utf8Path::from_path(source_temp.path())
-        .ok_or_else(|| io::Error::other("non-UTF-8 tempdir"))?;
-    create_mock_binaries(source)?;
-    std::os::unix::fs::symlink("postgres", source.join("bin/postgres-link"))?;
-    Ok((source_temp, target_temp))
-}
-
 /// Returns what `bin/postgres-link` points at under `target`.
 #[cfg(unix)]
 fn link_target(target: &Utf8Path) -> io::Result<std::path::PathBuf> {
     fs::read_link(target.join("bin/postgres-link"))
 }
 
-/// A second copy into a warm tree succeeds, symbolic links included. The
-/// first attempt at this failed with "File exists" on every link, which sent
-/// every later start down the slow path (#289).
+/// A cached symbolic link survives a warm copy, and a stale target is replaced.
 #[cfg(unix)]
 #[rstest]
-fn copy_from_cache_into_a_warm_tree_keeps_its_symlinks(
-    linked_source_and_target: io::Result<(TempDir, TempDir)>,
+#[case::warm_target(false)]
+#[case::stale_target_link(true)]
+fn copy_from_cache_restores_source_symlinks(
+    cache_copy_paths: io::Result<(TempDir, TempDir, camino::Utf8PathBuf, camino::Utf8PathBuf)>,
+    #[case] has_stale_target: bool,
 ) {
-    let (source_temp, target_temp) = linked_source_and_target.expect("a linked source");
-    let source = Utf8Path::from_path(source_temp.path()).expect("utf8 source");
-    let target = Utf8Path::from_path(target_temp.path()).expect("utf8 target");
+    let (_source_temp, _target_temp, source, target) = cache_copy_paths.expect("cache copy paths");
+    std::os::unix::fs::symlink("postgres", source.join("bin/postgres-link"))
+        .expect("source symlink");
+    if has_stale_target {
+        fs::create_dir_all(target.join("bin")).expect("target bin");
+        std::os::unix::fs::symlink("stale", target.join("bin/postgres-link")).expect("stale link");
+    }
 
-    copy_from_cache(source, target).expect("first copy");
-    copy_from_cache(source, target).expect("a copy into a warm tree");
+    copy_from_cache(&source, &target).expect("first copy");
+    if !has_stale_target {
+        // Repeating this copy used to fail with "File exists" on the link
+        // and send later starts down the slow path (#289).
+        copy_from_cache(&source, &target).expect("copy into a warm tree");
+    }
 
     assert_eq!(
-        link_target(target).expect("the link exists"),
-        std::path::Path::new("postgres")
-    );
-}
-
-/// A link that points elsewhere is replaced by the cached one.
-#[cfg(unix)]
-#[rstest]
-fn copy_from_cache_replaces_a_link_that_points_elsewhere(
-    linked_source_and_target: io::Result<(TempDir, TempDir)>,
-) {
-    let (source_temp, target_temp) = linked_source_and_target.expect("a linked source");
-    let source = Utf8Path::from_path(source_temp.path()).expect("utf8 source");
-    let target = Utf8Path::from_path(target_temp.path()).expect("utf8 target");
-    fs::create_dir_all(target.join("bin")).expect("target bin");
-    std::os::unix::fs::symlink("stale", target.join("bin/postgres-link")).expect("stale link");
-
-    copy_from_cache(source, target).expect("copy over a stale link");
-
-    assert_eq!(
-        link_target(target).expect("the link exists"),
+        link_target(&target).expect("the link exists"),
         std::path::Path::new("postgres")
     );
 }
@@ -294,27 +265,20 @@ fn find_matching_cached_version_scenarios(
 }
 
 #[rstest]
-fn find_matching_cached_version_ignores_non_matching(
+#[case::complete_but_non_matching("16.0.0", true)]
+#[case::matching_but_incomplete("17.4.0", false)]
+fn find_matching_cached_version_ignores_ineligible_entries(
+    #[case] version: &str,
+    #[case] is_complete: bool,
     cache_fixture: io::Result<(TempDir, camino::Utf8PathBuf)>,
 ) {
     let (_temp, cache_dir) = cache_fixture.expect("cache fixture");
-    create_complete_cache_entry(&cache_dir, "16.0.0").expect("create cache entry");
-
-    let version_req = VersionReq::parse("^17").expect("parse version req");
-    let result = find_matching_cached_version(&cache_dir, &version_req);
-
-    assert!(result.is_none());
-}
-
-#[rstest]
-fn find_matching_cached_version_ignores_incomplete_entries(
-    cache_fixture: io::Result<(TempDir, camino::Utf8PathBuf)>,
-) {
-    let (_temp, cache_dir) = cache_fixture.expect("cache fixture");
-
-    // Create an incomplete cache entry (no marker)
-    let version_dir = cache_dir.join("17.4.0");
-    create_mock_binaries(&version_dir).expect("create mock binaries");
+    if is_complete {
+        create_complete_cache_entry(&cache_dir, version).expect("create cache entry");
+    } else {
+        // A matching version is still unusable until its completion marker exists.
+        create_mock_binaries(&cache_dir.join(version)).expect("create mock binaries");
+    }
 
     let version_req = VersionReq::parse("^17").expect("parse version req");
     let result = find_matching_cached_version(&cache_dir, &version_req);
