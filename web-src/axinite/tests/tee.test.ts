@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { boundaryFailureCount } from "@/lib/api/boundary-diagnostics";
 
 import {
   checkTeeStatus,
@@ -14,10 +15,10 @@ import {
   teeInstanceName,
 } from "@/lib/tee";
 
-const originalLocation = window.location;
+const originalLocation = globalThis.location;
 
 function setLocation(href: string): void {
-  Object.defineProperty(window, "location", {
+  Object.defineProperty(globalThis, "location", {
     configurable: true,
     value: new URL(href),
   });
@@ -28,7 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  Object.defineProperty(window, "location", {
+  Object.defineProperty(globalThis, "location", {
     configurable: true,
     value: originalLocation,
   });
@@ -38,7 +39,7 @@ afterEach(() => {
 describe("teeApiBase", () => {
   it("derives the sibling api host from a multi-label domain", () => {
     expect(teeApiBase("sub.example.com")).toBe(
-      `${window.location.protocol}//api.example.com`
+      `${globalThis.location.protocol}//api.example.com`
     );
   });
 
@@ -64,6 +65,18 @@ describe("teeInstanceName", () => {
 });
 
 describe("checkTeeStatus", () => {
+  it("counts malformed JSON responses without recording their content", async () => {
+    setLocation("https://sub.example.com/");
+    const failures = boundaryFailureCount("tee-status", "invalid-json");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("{malformed", { status: 200 })
+    );
+    await expect(checkTeeStatus()).rejects.toThrow(SyntaxError);
+    expect(boundaryFailureCount("tee-status", "invalid-json")).toBe(
+      failures + 1
+    );
+  });
+
   it("returns null on localhost without fetching", async () => {
     setLocation("http://localhost:3000/");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -74,9 +87,12 @@ describe("checkTeeStatus", () => {
   it("fetches the instance attestation and requires image_digest", async () => {
     setLocation("https://sub.example.com/");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ image_digest: "sha256:abc" }), {
-        status: 200,
-      })
+      Response.json(
+        { image_digest: "sha256:abc" },
+        {
+          status: 200,
+        }
+      )
     );
 
     await expect(checkTeeStatus()).resolves.toEqual({
@@ -89,15 +105,31 @@ describe("checkTeeStatus", () => {
   });
 
   it("rejects when image_digest is absent", async () => {
+    const failures = boundaryFailureCount("tee-status", "invalid-payload");
     setLocation("https://sub.example.com/");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({}), { status: 200 })
+      Response.json({}, { status: 200 })
     );
     await expect(checkTeeStatus()).rejects.toThrow(/image_digest/u);
+    expect(boundaryFailureCount("tee-status", "invalid-payload")).toBe(
+      failures + 1
+    );
   });
 });
 
 describe("fetchTeeReport", () => {
+  it("counts rejected report fields", async () => {
+    setLocation("https://sub.example.com/");
+    const failures = boundaryFailureCount("tee-report", "invalid-payload");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ report_data: 42 })
+    );
+    await expect(fetchTeeReport()).rejects.toThrow(/report_data/u);
+    expect(boundaryFailureCount("tee-report", "invalid-payload")).toBe(
+      failures + 1
+    );
+  });
+
   it("fetches the report once and caches it", async () => {
     setLocation("https://sub.example.com/");
     const payload = {
@@ -107,12 +139,12 @@ describe("fetchTeeReport", () => {
     };
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(JSON.stringify(payload), { status: 200 })
-      );
+      .mockResolvedValue(Response.json(payload, { status: 200 }));
 
-    await expect(fetchTeeReport()).resolves.toEqual(payload);
-    await expect(fetchTeeReport()).resolves.toEqual(payload);
+    const first = await fetchTeeReport();
+    const second = await fetchTeeReport();
+    expect(first).toEqual(payload);
+    expect(second).toEqual(payload);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://api.example.com/attestation/report",

@@ -3,13 +3,32 @@
  * `/api/logs/events` SSE tail. Used by the `/logs` surface.
  */
 
+import { recordBoundaryFailure } from "@/lib/api/boundary-diagnostics";
 import {
   createEventStream,
   putJson,
   requestJson,
   setStreamConnectionErrorHandler,
 } from "@/lib/api/client";
-import type { LogEntry, LogLevelResponse } from "@/lib/api/contracts";
+import type {
+  LogEntry,
+  LogLevelRequest,
+  LogLevelResponse,
+} from "@/lib/api/contracts";
+import {
+  isJsonObject,
+  isString,
+  type JsonObject,
+  type JsonValue,
+} from "@/lib/api/json-value";
+
+const LOG_LEVELS = new Map<string, LogEntry["level"]>([
+  ["trace", "trace"],
+  ["debug", "debug"],
+  ["info", "info"],
+  ["warn", "warn"],
+  ["error", "error"],
+]);
 
 /** GET /api/logs/level: fetch the gateway's current runtime log level. */
 export function fetchLogLevel(): Promise<LogLevelResponse> {
@@ -21,7 +40,81 @@ export function fetchLogLevel(): Promise<LogLevelResponse> {
  * failures propagate so the caller can reflect the confirmed server value.
  */
 export function setLogLevel(level: string): Promise<LogLevelResponse> {
-  return putJson<LogLevelResponse>("/api/logs/level", { level });
+  return putJson<LogLevelResponse, LogLevelRequest>("/api/logs/level", {
+    level,
+  });
+}
+
+function parseLogEntry(value: JsonObject): LogEntry | undefined {
+  const level = parseLogLevel(value["level"]);
+  if (level === undefined) {
+    return undefined;
+  }
+  const target = value["target"];
+  if (!isString(target)) {
+    return undefined;
+  }
+  const message = value["message"];
+  if (!isString(message)) {
+    return undefined;
+  }
+  const timestamp = value["timestamp"];
+  if (!isString(timestamp)) {
+    return undefined;
+  }
+  return { level, target, message, timestamp };
+}
+
+function parseLogLevel(
+  value: JsonValue | undefined
+): LogEntry["level"] | undefined {
+  if (!isString(value)) {
+    return undefined;
+  }
+  return LOG_LEVELS.get(value.toLowerCase());
+}
+
+type LogEventFailure = "invalid-json" | "invalid-payload";
+
+type LogEventParseResult =
+  | { status: "parsed"; entry: LogEntry }
+  | { status: "rejected"; reason: LogEventFailure };
+
+function rejectLogEvent(reason: LogEventFailure, onError?: () => void): void {
+  recordBoundaryFailure("log-stream", reason);
+  onError?.();
+}
+
+function parseLogEventPayload(serializedJson: string): LogEventParseResult {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(serializedJson);
+  } catch {
+    return { status: "rejected", reason: "invalid-json" };
+  }
+  if (!isJsonObject(payload)) {
+    return { status: "rejected", reason: "invalid-payload" };
+  }
+  const entry = parseLogEntry(payload);
+  return entry === undefined
+    ? { status: "rejected", reason: "invalid-payload" }
+    : { status: "parsed", entry };
+}
+
+function parseLogEvent(
+  rawEvent: Event,
+  onError?: () => void
+): LogEntry | undefined {
+  if (!(rawEvent instanceof MessageEvent)) {
+    rejectLogEvent("invalid-payload", onError);
+    return undefined;
+  }
+  const result = parseLogEventPayload(rawEvent.data);
+  if (result.status === "rejected") {
+    rejectLogEvent(result.reason, onError);
+    return undefined;
+  }
+  return result.entry;
 }
 
 /**
@@ -34,21 +127,15 @@ export function connectLogEvents(
 ): EventSource {
   const source = createEventStream("/api/logs/events");
   source.addEventListener("log", (rawEvent) => {
-    const messageEvent = rawEvent as MessageEvent<unknown>;
-    if (typeof messageEvent.data !== "string") {
-      return;
-    }
-    let entry: LogEntry;
-    try {
-      entry = JSON.parse(messageEvent.data) as LogEntry;
-    } catch {
-      onError?.();
+    const entry = parseLogEvent(rawEvent, onError);
+    if (entry === undefined) {
       return;
     }
     listener(entry);
   });
-  if (onError) {
-    setStreamConnectionErrorHandler(source, onError);
-  }
+  setStreamConnectionErrorHandler(source, () => {
+    recordBoundaryFailure("log-stream", "connection");
+    onError?.();
+  });
   return source;
 }

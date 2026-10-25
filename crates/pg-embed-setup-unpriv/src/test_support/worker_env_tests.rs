@@ -1,0 +1,297 @@
+//! Tests for worker binary staging logic.
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
+
+use color_eyre::eyre::ensure;
+use rstest::rstest;
+
+use super::*;
+
+/// Guard that cleans up a staged directory when dropped.
+#[cfg(unix)]
+struct StagedDirCleanup(Option<PathBuf>);
+
+#[cfg(unix)]
+impl StagedDirCleanup {
+    /// Creates a new cleanup guard for the staged path's parent directory.
+    fn new(staged_path: &std::path::Path) -> Self {
+        Self(staged_path.parent().map(std::path::Path::to_path_buf))
+    }
+}
+
+#[cfg(unix)]
+impl Drop for StagedDirCleanup {
+    fn drop(&mut self) {
+        if let Some(ref staged_dir) = self.0 {
+            drop(fs::remove_dir_all(staged_dir));
+        }
+    }
+}
+
+/// Creates a temporary directory with a fake target/debug structure for testing.
+#[cfg(unix)]
+fn debug_target_dir() -> color_eyre::Result<tempfile::TempDir> {
+    let dir = tempfile::tempdir()?;
+    let debug_dir = dir.path().join("target").join("debug");
+    fs::create_dir_all(&debug_dir)?;
+    Ok(dir)
+}
+
+#[cfg(all(unix, privileged_unix_platform))]
+#[rstest]
+fn staged_worker_is_world_executable_and_in_temp_dir() -> color_eyre::Result<()> {
+    let debug_target_dir = debug_target_dir()?;
+    let debug_dir = debug_target_dir.path().join("target").join("debug");
+    let source = debug_dir.join("pg_worker");
+    fs::write(&source, b"#!/bin/sh\nexit 0\n")?;
+    let mut perms = fs::metadata(&source)?.permissions();
+    perms.set_mode(0o700);
+    fs::set_permissions(&source, perms)?;
+
+    let staged = try_stage_worker_binary(&source.into_os_string())?;
+    let staged_path = PathBuf::from(&staged);
+    let _cleanup = StagedDirCleanup::new(&staged_path);
+
+    // Verify staged path is in the system temp directory
+    let temp_dir = std::env::temp_dir();
+    ensure!(
+        staged_path.starts_with(&temp_dir),
+        "staged worker should be in temp dir {}, got: {}",
+        temp_dir.display(),
+        staged_path.display()
+    );
+
+    // Verify path follows expected pattern {temp_dir}/pg-worker-{profile}-{hash}/
+    let parent = staged_path.parent().ok_or_else(|| {
+        color_eyre::eyre::eyre!(
+            "staged worker path missing parent: {}",
+            staged_path.display()
+        )
+    })?;
+    let parent_name = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    ensure!(
+        parent_name.starts_with("pg-worker-debug-"),
+        "staging dir should match pg-worker-debug-{{hash}}, got: {parent_name}"
+    );
+
+    // Verify binary is world-executable
+    let mode = fs::metadata(&staged)?.permissions().mode();
+    ensure!(
+        mode & 0o001 != 0,
+        "staged worker should be executable by others"
+    );
+
+    // The system temp directory (typically /tmp) is usually world-writable with sticky bit
+    // (mode 1777). We only assert world-executable (0o001) since that's what's required
+    // for the nobody user to traverse the directory and access the staged binary.
+    let tmp_meta = fs::metadata(&temp_dir)?;
+    ensure!(tmp_meta.is_dir(), "temp dir must be a directory");
+    let tmp_mode = tmp_meta.permissions().mode();
+
+    ensure!(
+        tmp_mode & 0o001 != 0,
+        "temp dir must be world-executable for nobody to access staged binary"
+    );
+
+    Ok(())
+}
+
+/// Asserts that `find_staging_directory` produces the expected results for a given profile.
+fn assert_staging_directory_for_profile(
+    input_path: &str,
+    expected_profile: &str,
+    expected_target_dir: &str,
+) {
+    let path = PathBuf::from(input_path);
+    let (staged_dir, target_dir) = find_staging_directory(&path);
+
+    let temp_dir = std::env::temp_dir();
+    assert!(
+        staged_dir.starts_with(&temp_dir),
+        "staged dir should be in temp dir {}, got: {}",
+        temp_dir.display(),
+        staged_dir.display()
+    );
+
+    let staged_name = staged_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    let expected_prefix = format!("pg-worker-{expected_profile}-");
+    assert!(
+        staged_name.starts_with(&expected_prefix),
+        "staged dir should match {expected_prefix}*, got: {staged_name}"
+    );
+
+    assert_eq!(
+        target_dir,
+        Some(PathBuf::from(expected_target_dir)),
+        "target dir should match expected path"
+    );
+}
+
+#[rstest]
+#[case::debug(
+    "/project/target/debug/deps/pg_worker-abc123",
+    "debug",
+    "/project/target/debug"
+)]
+#[case::release(
+    "/project/target/release/pg_worker",
+    "release",
+    "/project/target/release"
+)]
+fn find_staging_directory_detects_profile(
+    #[case] source_path: &str,
+    #[case] expected_profile: &str,
+    #[case] expected_target_dir: &str,
+) {
+    assert_staging_directory_for_profile(source_path, expected_profile, expected_target_dir);
+}
+
+#[rstest]
+fn pointer_file_writer_records_staged_path_bytes() -> color_eyre::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let target_dir = dir.path().join("target").join("debug");
+    fs::create_dir_all(&target_dir)?;
+    let staged_path = dir.path().join("staged").join("pg_worker");
+
+    write_pointer_file(&target_dir, &staged_path)?;
+
+    let pointer_path = target_dir.join("pg_worker_staged.path");
+    let pointer_content = fs::read(&pointer_path)?;
+    ensure!(
+        pointer_content == staged_path.as_os_str().as_encoded_bytes(),
+        "pointer file should contain staged path bytes"
+    );
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[rstest]
+fn should_restage_returns_true_for_missing_staged() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = dir.path().join("source");
+    fs::write(&source, b"content").expect("write source");
+    let staged = dir.path().join("staged");
+
+    assert!(should_restage(&source, &staged).expect("should_restage"));
+}
+
+#[cfg(unix)]
+#[rstest]
+fn should_restage_returns_false_when_staged_is_newer() {
+    use std::time::{Duration, SystemTime};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = dir.path().join("source");
+    let staged = dir.path().join("staged");
+
+    fs::write(&source, b"content").expect("write source");
+    fs::write(&staged, b"content").expect("write staged");
+
+    // Set source mtime to 1 hour ago to ensure staged is newer.
+    // This avoids flaky tests due to filesystem mtime resolution.
+    let past = SystemTime::now() - Duration::from_hours(1);
+    let past_filetime = filetime::FileTime::from_system_time(past);
+    filetime::set_file_mtime(&source, past_filetime).expect("set source mtime");
+
+    assert!(!should_restage(&source, &staged).expect("should_restage"));
+}
+
+#[cfg(unix)]
+#[rstest]
+fn pointer_file_written_to_target_dir() -> color_eyre::Result<()> {
+    let debug_target_dir = debug_target_dir()?;
+    let debug_dir = debug_target_dir.path().join("target").join("debug");
+    let source = debug_dir.join("pg_worker");
+    fs::write(&source, b"#!/bin/sh\nexit 0\n")?;
+    let mut perms = fs::metadata(&source)?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&source, perms)?;
+
+    let staged = try_stage_worker_binary(&source.into_os_string())?;
+    let staged_path = PathBuf::from(&staged);
+    let _cleanup = StagedDirCleanup::new(&staged_path);
+
+    // Verify pointer file was created
+    let pointer_path = debug_dir.join("pg_worker_staged.path");
+    ensure!(
+        pointer_path.exists(),
+        "pointer file should exist at {}",
+        pointer_path.display()
+    );
+
+    // Verify pointer file contains the staged path
+    let pointer_content = fs::read(&pointer_path)?;
+    let staged_path_bytes = staged_path.as_os_str().as_bytes();
+    ensure!(
+        pointer_content == staged_path_bytes,
+        "pointer file should contain staged path"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn is_worker_binary_accepts_regular_worker_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("pg_worker");
+    fs::write(&path, b"x").expect("write worker file");
+    assert!(
+        is_worker_binary(&path),
+        "a regular pg_worker file is accepted"
+    );
+}
+
+#[test]
+fn is_worker_binary_rejects_dep_files_and_non_workers() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let dep_file = dir.path().join("pg_worker.d");
+    fs::write(&dep_file, b"x").expect("write dep file");
+    assert!(
+        !is_worker_binary(&dep_file),
+        "dependency files are rejected"
+    );
+
+    let other = dir.path().join("something-else");
+    fs::write(&other, b"x").expect("write other file");
+    assert!(!is_worker_binary(&other), "non-worker names are rejected");
+
+    let missing = dir.path().join("pg_worker");
+    assert!(!is_worker_binary(&missing), "missing files are rejected");
+}
+
+#[test]
+fn find_staging_directory_returns_no_target_without_profile() {
+    let (staged, target) = find_staging_directory(std::path::Path::new("/no/profile/pg_worker"));
+    assert!(
+        staged.starts_with(std::env::temp_dir()),
+        "staged dir should live under the temp directory"
+    );
+    assert_eq!(target, None, "no profile directory should be discovered");
+}
+
+#[test]
+fn find_staging_directory_handles_custom_profile_under_deps() {
+    let (staged, target) =
+        find_staging_directory(std::path::Path::new("/build/custom/deps/pg_worker-a1b2"));
+    // A non-standard profile name is intentionally coerced to "unknown" by
+    // `profile_name_to_static`, so the staged directory is `pg-worker-unknown-*`.
+    // Asserting the staged name pins that mapping and fails if the name is
+    // dropped or malformed while the profile directory is still selected.
+    let staged_name = staged.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    assert!(
+        staged_name.starts_with("pg-worker-unknown-"),
+        "staged dir should be named pg-worker-unknown-*, got: {staged_name}"
+    );
+    assert_eq!(
+        target,
+        Some(PathBuf::from("/build/custom")),
+        "the deps parent should be treated as the profile directory"
+    );
+}

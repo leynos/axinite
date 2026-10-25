@@ -21,14 +21,20 @@ export function fetchSkills(): Promise<SkillListResponse> {
 export function searchSkills(
   request: SkillSearchRequest
 ): Promise<SkillSearchResponse> {
-  return postJson<SkillSearchResponse>("/api/skills/search", request);
+  return postJson<SkillSearchResponse, SkillSearchRequest>(
+    "/api/skills/search",
+    request
+  );
 }
 
 /** POST /api/skills/install: install a skill. */
 export function installSkill(
   request: SkillInstallRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>("/api/skills/install", request);
+  return postJson<ActionResponse, SkillInstallRequest>(
+    "/api/skills/install",
+    request
+  );
 }
 
 /** DELETE /api/skills/{name}: remove an installed skill. */

@@ -52,8 +52,16 @@ function flagRow(name: string) {
   return within(screen.getByRole("row", { name: new RegExp(`^${name}\\b`) }));
 }
 
+function flagRowAt(rows: HTMLElement[], index: number) {
+  const row = rows[index];
+  if (!row) {
+    throw new Error(`Missing rendered feature flag row at index ${index}`);
+  }
+  return within(row);
+}
+
 function storedOverrides(): Record<string, boolean> {
-  return JSON.parse(window.localStorage.getItem(storageKey) ?? "{}");
+  return JSON.parse(globalThis.localStorage.getItem(storageKey) ?? "{}");
 }
 
 async function openPanel() {
@@ -61,10 +69,12 @@ async function openPanel() {
     await screen.findByRole("button", { name: "Toggle overrides" })
   );
   await screen.findByRole("table", { name: "Feature flag overrides" });
+  const rows = screen.getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(FEATURE_FLAGS.length);
   await waitFor(() => {
-    for (const flag of FEATURE_FLAGS) {
+    for (const [index, flag] of FEATURE_FLAGS.entries()) {
       expect(
-        flagRow(flag.name).getByText(runtimeFlags[flag.name] ? "On" : "Off")
+        flagRowAt(rows, index).getByText(runtimeFlags[flag.name] ? "On" : "Off")
       ).toBeVisible();
     }
   });
@@ -76,13 +86,13 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   vi.stubEnv("DEV", false);
-  window.localStorage.clear();
-  window.history.replaceState(null, "", "/?debug-flags=1");
+  globalThis.localStorage.clear();
+  globalThis.history.replaceState(null, "", "/?debug-flags=1");
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/features") {
-        return Promise.resolve(new Response(JSON.stringify(runtimeFlags)));
+        return Promise.resolve(Response.json(runtimeFlags));
       }
       return originalFetch(input, init);
     })
@@ -91,15 +101,15 @@ beforeEach(async () => {
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
 });
 afterEach(() => {
-  window.localStorage.clear();
-  window.history.replaceState(null, "", "/");
+  globalThis.localStorage.clear();
+  globalThis.history.replaceState(null, "", "/");
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe("debug flag panel with the real runtime", () => {
   it("is absent in production unless the exact debug query opt-in is present", () => {
-    window.history.replaceState(null, "", "/?debug-flags=0");
+    globalThis.history.replaceState(null, "", "/?debug-flags=0");
     mountPanel();
     expect(screen.queryByRole("heading", { name: "Feature flags" })).toBeNull();
     expect(
@@ -113,9 +123,11 @@ describe("debug flag panel with the real runtime", () => {
       await screen.findByRole("heading", { name: "Feature flags" })
     ).toBeVisible();
     await openPanel();
-    expect(screen.getAllByRole("row")).toHaveLength(FEATURE_FLAGS.length + 1);
-    for (const flag of FEATURE_FLAGS) {
-      const row = flagRow(flag.name);
+    const rows = screen.getAllByRole("row");
+    expect(rows).toHaveLength(FEATURE_FLAGS.length + 1);
+    const flagRows = rows.slice(1);
+    for (const [index, flag] of FEATURE_FLAGS.entries()) {
+      const row = flagRowAt(flagRows, index);
       expect(
         row.getByText(`${flag.owner} · ${flag.backendContract}`)
       ).toBeVisible();

@@ -24,13 +24,14 @@ type ProbeResult = "ok" | "unauthorized" | "unreachable";
 // A probe that exceeds the shared request timeout counts as unreachable.
 async function probeGateway(token: string | null): Promise<ProbeResult> {
   try {
+    const headers = new Headers({ Accept: "application/json" });
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
     const response = await withRequestTimeout((signal) =>
       fetch("/api/gateway/status", {
         signal,
-        headers: {
-          Accept: "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers,
       })
     );
     if (response.ok) {
@@ -82,13 +83,13 @@ export const AuthGate = (props: AuthGateProps) => {
     // as a `?token=` query parameter. Consume it before probing: store it,
     // then strip it from the URL so it does not linger in history, referrers,
     // or copied links. The path and any other query parameters are preserved.
-    const url = new URL(window.location.href);
+    const url = new URL(globalThis.location.href);
     const queryToken = url.searchParams.get("token");
     if (queryToken) {
       setGatewayToken(queryToken);
       url.searchParams.delete("token");
       const stripped = `${url.pathname}${url.search}${url.hash}`;
-      window.history.replaceState(window.history.state, "", stripped);
+      globalThis.history.replaceState(globalThis.history.state, "", stripped);
     }
 
     // The boot probe always passes `hadToken = false`, whether or not a token

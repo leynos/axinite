@@ -23,12 +23,12 @@ export function resolveFeatureFlags(
     const serverValue = serverFlags[flag.name];
     const overrideValue = overrides[flag.name];
 
-    if (typeof overrideValue === "boolean") {
+    if (overrideValue !== undefined) {
       defaults[flag.name] = overrideValue;
       continue;
     }
 
-    if (typeof serverValue === "boolean") {
+    if (serverValue !== undefined) {
       defaults[flag.name] = serverValue;
     }
   }

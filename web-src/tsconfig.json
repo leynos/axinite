@@ -3,12 +3,14 @@
     "target": "ES2022",
     "useDefineForClassFields": true,
     "module": "ESNext",
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
+    "stableTypeOrdering": true,
+    "rootDir": ".",
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -20,9 +22,8 @@
     "noEmit": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["axinite/src/*"]
+      "@/*": ["./axinite/src/*"]
     },
     "types": ["vite/client", "bun-types", "@testing-library/jest-dom"]
   },

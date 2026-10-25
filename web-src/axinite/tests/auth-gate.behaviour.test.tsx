@@ -10,6 +10,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AppProviders } from "@/app/providers";
 import { AuthGate } from "@/components/auth-gate";
+import { requestJson } from "@/lib/api/client";
+import type { JsonValue } from "@/lib/api/json-value";
 import { clearGatewayToken, getGatewayToken } from "@/lib/auth/token";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
 
@@ -18,20 +20,71 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   clearGatewayToken();
   vi.unstubAllGlobals();
   // Reset the URL so a `?token=` boot test cannot leak into later cases.
-  window.history.replaceState({}, "", "/");
+  globalThis.history.replaceState({}, "", "/");
 });
 
-function jsonResponse(status: number, body: unknown = {}): Response {
-  return new Response(JSON.stringify(body), {
+function jsonResponse(status: number, body: JsonValue = {}): Response {
+  return Response.json(body, {
     status,
     headers: { "Content-Type": "application/json" },
   });
 }
 
 describe("auth gate behaviour", () => {
+  it.each([
+    "access",
+    "write",
+  ])("keeps later requests authenticated when session storage %s is denied", async (denial) => {
+    if (denial === "access") {
+      vi.spyOn(globalThis, "sessionStorage", "get").mockImplementation(() => {
+        throw new Error("Storage access is denied");
+      });
+    } else {
+      vi.spyOn(globalThis.sessionStorage, "setItem").mockImplementation(() => {
+        throw new Error("Storage writes are denied");
+      });
+    }
+    const authorizations: (string | null)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (_input === "/api/features") return jsonResponse(200);
+        const authorization = new Headers(init?.headers).get("Authorization");
+        authorizations.push(authorization);
+        return jsonResponse(
+          authorization === "Bearer accepted-token" ? 200 : 401
+        );
+      }
+    );
+
+    render(() => (
+      <AppProviders>
+        <AuthGate>
+          <div>Protected content</div>
+        </AuthGate>
+      </AppProviders>
+    ));
+    await userEvent.type(
+      await screen.findByLabelText("Access token"),
+      "accepted-token"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() =>
+      expect(screen.getByText("Protected content")).toBeVisible()
+    );
+
+    await requestJson("/api/threads");
+    expect(authorizations).toEqual([
+      null,
+      "Bearer accepted-token",
+      "Bearer accepted-token",
+    ]);
+  });
+
   it("renders children when the gateway accepts anonymous access", async () => {
     vi.stubGlobal(
       "fetch",
@@ -54,7 +107,7 @@ describe("auth gate behaviour", () => {
   });
 
   it("consumes a ?token= boot parameter, strips it, and unlocks", async () => {
-    window.history.replaceState({}, "", "/?token=abc&view=chat");
+    globalThis.history.replaceState({}, "", "/?token=abc&view=chat");
 
     let seenAuth: string | null = null;
     vi.stubGlobal(
@@ -81,8 +134,10 @@ describe("auth gate behaviour", () => {
     expect(getGatewayToken()).toBe("abc");
     expect(seenAuth).toBe("Bearer abc");
     // It is stripped from the URL while other parameters and the path survive.
-    expect(window.location.search).toBe("?view=chat");
-    expect(new URL(window.location.href).searchParams.has("token")).toBe(false);
+    expect(globalThis.location.search).toBe("?view=chat");
+    expect(new URL(globalThis.location.href).searchParams.has("token")).toBe(
+      false
+    );
   });
 
   it("prompts for a token when the gateway returns 401 and unlocks on success", async () => {

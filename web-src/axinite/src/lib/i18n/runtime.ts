@@ -6,6 +6,9 @@
  */
 
 import i18n from "i18next";
+
+export { default } from "i18next";
+
 import LanguageDetector from "i18next-browser-languagedetector";
 import Fluent from "i18next-fluent";
 import FluentBackend from "i18next-fluent-backend";
@@ -97,9 +100,7 @@ export function applyDocumentLocale(language: string | undefined): void {
   document.documentElement.lang = locale.code;
   document.documentElement.dir = direction;
   document.documentElement.dataset["direction"] = direction;
-  if (document.body) {
-    document.body.dataset["direction"] = direction;
-  }
+  document.body.dataset["direction"] = direction;
 }
 
 const i18nReady = i18n
@@ -108,9 +109,7 @@ const i18nReady = i18n
   .use(Fluent)
   .init({
     backend: {
-      loadPath: buildFluentLoadPath(
-        import.meta.env.BASE_URL as string | undefined
-      ),
+      loadPath: buildFluentLoadPath(import.meta.env.BASE_URL),
       ajax: fetchAjax,
     },
     fallbackLng: DEFAULT_LOCALE,
@@ -135,19 +134,15 @@ const i18nReady = i18n
     },
   });
 
-void i18nReady
-  .then(() => {
-    applyDocumentLocale(
-      i18n.resolvedLanguage ?? i18n.language ?? DEFAULT_LOCALE
-    );
-  })
-  .catch((error) => {
-    console.error("[i18n] Failed to initialize runtime locale", error);
-  });
+try {
+  await i18nReady;
+  applyDocumentLocale(i18n.resolvedLanguage || i18n.language || DEFAULT_LOCALE);
+} catch (error) {
+  console.error("[i18n] Failed to initialize runtime locale", error);
+}
 
 i18n.on("languageChanged", (nextLanguage) => {
   applyDocumentLocale(nextLanguage);
 });
 
 export { i18nReady };
-export default i18n;

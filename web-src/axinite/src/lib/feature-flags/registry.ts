@@ -120,11 +120,11 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
 
 /** Build a map of every registered flag to its default value. */
 export function getFeatureFlagDefaults(): Record<FeatureFlagName, boolean> {
-  return FEATURE_FLAGS.reduce(
-    (accumulator, flag) => {
-      accumulator[flag.name] = flag.defaultValue;
-      return accumulator;
-    },
-    {} as Record<FeatureFlagName, boolean>
-  );
+  // SAFETY: FEATURE_FLAGS is the source for every FeatureFlagName; the
+  // feature-flag contract test checks the registry is complete.
+  const defaults = {} as Record<FeatureFlagName, boolean>;
+  for (const flag of FEATURE_FLAGS) {
+    defaults[flag.name] = flag.defaultValue;
+  }
+  return defaults;
 }

@@ -9,7 +9,7 @@ import {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
+  let reject!: (cause: unknown) => void;
   const promise = new Promise<T>((accept, decline) => {
     resolve = accept;
     reject = decline;

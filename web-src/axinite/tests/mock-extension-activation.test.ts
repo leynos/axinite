@@ -25,7 +25,7 @@ describe("mock extension activation", () => {
     const events: ChatSseEvent[] = [];
     const unsubscribe = state.subscribeToChat({
       send: (event) => events.push(event),
-      close: () => undefined,
+      close: () => {},
     });
     const result = state.activateExtension(name);
     expect(result).toMatchObject({ awaiting_token: true, activated: false });
@@ -56,7 +56,7 @@ describe("mock extension activation", () => {
     const events: ChatSseEvent[] = [];
     const unsubscribe = state.subscribeToChat({
       send: (event) => events.push(event),
-      close: () => undefined,
+      close: () => {},
     });
     expect(state.activateExtension("slack")).toMatchObject({ activated: true });
     expect(events).toContainEqual(

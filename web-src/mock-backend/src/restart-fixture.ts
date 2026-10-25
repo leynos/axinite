@@ -7,7 +7,7 @@
 /** Delay after the restart tool acknowledgement before the simulated outage. */
 export const RESTART_OUTAGE_DELAY_MS = 650;
 /** Five seconds spans a full three-second status poll interval. */
-export const RESTART_OUTAGE_DURATION_MS = 5_000;
+export const RESTART_OUTAGE_DURATION_MS = 5000;
 
 type RestartFixturePhase = "idle" | "announced" | "unavailable" | "disposed";
 

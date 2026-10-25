@@ -82,7 +82,7 @@ caching benefits from serial execution).
 
 - `make fmt` — format with Biome.
 - `make check-fmt` — check formatting.
-- `make lint` — lint with Biome.
+- `make lint` — lint with Biome and Oxlint.
 - `make typecheck` — TypeScript type checking.
 - `make test` — Vitest unit and behaviour tests.
 - `make test-a11y` — accessibility tests.

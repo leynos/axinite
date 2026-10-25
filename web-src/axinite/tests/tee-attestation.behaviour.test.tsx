@@ -28,18 +28,18 @@ const REPORT = {
   vm_config: "sev-snp/v4",
 };
 
-const originalLocation = window.location;
+const originalLocation = globalThis.location;
 let harnessFetch: typeof globalThis.fetch;
 
 function setLocation(href: string): void {
-  Object.defineProperty(window, "location", {
+  Object.defineProperty(globalThis, "location", {
     configurable: true,
     value: new URL(href),
   });
 }
 
 function enableFlag(): void {
-  window.localStorage.setItem(
+  globalThis.localStorage.setItem(
     "axinite.feature-flag-overrides",
     JSON.stringify({ surface_tee_attestation: true })
   );
@@ -51,44 +51,32 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  window.localStorage.clear();
+  globalThis.localStorage.clear();
   resetTeeReportCache();
   document.documentElement.lang = "";
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
 
-  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input.toString();
-    if (url.includes("/instances/") && url.endsWith("/attestation")) {
-      return Promise.resolve(
-        new Response(JSON.stringify(STATUS), { status: 200 })
-      );
-    }
-    if (url.endsWith("/attestation/report")) {
-      return Promise.resolve(
-        new Response(JSON.stringify(REPORT), { status: 200 })
-      );
-    }
-    return harnessFetch(input, init);
-  }) as typeof globalThis.fetch;
+  const attestationFetch = Object.assign(
+    (...args: Parameters<typeof globalThis.fetch>) => {
+      const [input, init] = args;
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes("/instances/") && url.endsWith("/attestation")) {
+        return Promise.resolve(Response.json(STATUS, { status: 200 }));
+      }
+      if (url.endsWith("/attestation/report")) {
+        return Promise.resolve(Response.json(REPORT, { status: 200 }));
+      }
+      return harnessFetch(input, init);
+    },
+    { preconnect: () => {} }
+  );
+  globalThis.fetch = attestationFetch;
 });
 
-// Captured once so the clipboard override below can be undone after each test;
-// under happy-dom the property may live on the prototype, in which case there
-// is no own descriptor and removing the override restores the original.
-const originalClipboard = Object.getOwnPropertyDescriptor(
-  navigator,
-  "clipboard"
-);
-
 afterEach(() => {
-  if (originalClipboard) {
-    Object.defineProperty(navigator, "clipboard", originalClipboard);
-  } else {
-    Reflect.deleteProperty(navigator, "clipboard");
-  }
   globalThis.fetch = harnessFetch;
-  Object.defineProperty(window, "location", {
+  Object.defineProperty(globalThis, "location", {
     configurable: true,
     value: originalLocation,
   });
@@ -130,11 +118,9 @@ describe("TEE attestation surface", () => {
   it("renders attestation fields and copies the merged report", async () => {
     setLocation("https://sub.example.com/");
     enableFlag();
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
+    const writeText = vi
+      .spyOn(globalThis.navigator.clipboard, "writeText")
+      .mockImplementation(() => Promise.resolve());
 
     render(() => (
       <TestProviders>
@@ -160,7 +146,7 @@ describe("TEE attestation surface", () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledTimes(1);
     });
-    const payload = writeText.mock.calls[0]?.[0] as string;
+    const payload = writeText.mock.calls[0]?.[0];
     expect(payload).toContain("sha256:cafef00d");
     expect(payload).toContain("AA:BB:CC:DD");
   });

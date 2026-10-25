@@ -52,7 +52,7 @@ describe("HTTP wrapper wire contracts", () => {
     const payload = entry.response ?? { wire: true };
     const fetchMock = vi.fn(
       async (_url: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify(payload))
+        Response.json(payload)
     );
     vi.stubGlobal("fetch", fetchMock);
     await expect(entry.call()).resolves.toEqual(entry.result ?? payload);
@@ -80,14 +80,14 @@ describe("HTTP wrapper wire contracts", () => {
         async () => new Response("Gateway rejected request", { status: 429 })
       )
     );
-    if ("fallback" in entry) {
-      await expect(entry.call()).resolves.toEqual(entry.fallback);
-    } else {
-      await expect(entry.call()).rejects.toMatchObject({
-        category: "http",
-        message: "Gateway rejected request",
-      });
-    }
+    const assertion =
+      "fallback" in entry
+        ? expect(entry.call()).resolves.toEqual(entry.fallback)
+        : expect(entry.call()).rejects.toMatchObject({
+            category: "http",
+            message: "Gateway rejected request",
+          });
+    await assertion;
   });
 
   it.each(
@@ -99,13 +99,13 @@ describe("HTTP wrapper wire contracts", () => {
         throw new TypeError("Network unreachable");
       })
     );
-    if ("fallback" in entry) {
-      await expect(entry.call()).resolves.toEqual(entry.fallback);
-    } else {
-      await expect(entry.call()).rejects.toMatchObject({
-        category: "transport",
-      });
-    }
+    const assertion =
+      "fallback" in entry
+        ? expect(entry.call()).resolves.toEqual(entry.fallback)
+        : expect(entry.call()).rejects.toMatchObject({
+            category: "transport",
+          });
+    await assertion;
   });
 
   it.each(
@@ -181,7 +181,7 @@ describe("shared HTTP helper contracts", () => {
     const payload = { accepted: true };
     const fetchMock = vi.fn(
       async (_url: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify(payload), { status: 201 })
+        Response.json(payload, { status: 201 })
     );
     vi.stubGlobal("fetch", fetchMock);
     for (const write of [postJson, putJson]) {
@@ -212,7 +212,7 @@ describe("shared HTTP helper contracts", () => {
     const payload = { accepted: true };
     const fetchMock = vi.fn(
       async (_url: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify(payload), { status: 202 })
+        Response.json(payload, { status: 202 })
     );
     vi.stubGlobal("fetch", fetchMock);
     const supplied = {
@@ -260,11 +260,8 @@ describe("shared HTTP helper contracts", () => {
   it("filters non-boolean feature payloads and accepts the flags envelope", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({ flags: { route_jobs: false, unknown: 9 } })
-          )
+      vi.fn(async () =>
+        Response.json({ flags: { route_jobs: false, unknown: 9 } })
       )
     );
     await expect(fetchRuntimeFeatureFlags()).resolves.toEqual({

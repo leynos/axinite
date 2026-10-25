@@ -16,13 +16,13 @@ import * as skills from "@/lib/api/skills";
 
 export type WireCase = {
   name: string;
-  call: () => Promise<unknown>;
+  call: () => Promise<object | null>;
   path: string;
   method?: string;
-  body?: unknown;
-  response?: unknown;
-  result?: unknown;
-  fallback?: unknown;
+  body?: object;
+  response?: object;
+  result?: object | null;
+  fallback?: object | null;
 };
 
 const id = "a/b ?#";

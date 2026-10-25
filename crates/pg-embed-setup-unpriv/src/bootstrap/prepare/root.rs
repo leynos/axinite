@@ -1,0 +1,296 @@
+//! Root-privileged bootstrap preparation.
+//!
+//! Prepares filesystem state when running as root: paths are handed to the
+//! unprivileged `nobody` user so the bundled `PostgreSQL` binaries can
+//! initialize safely after privileges drop.
+
+use std::net::TcpListener;
+
+use camino::{Utf8Path, Utf8PathBuf};
+use color_eyre::eyre::{Context, eyre};
+use nix::unistd::User;
+use postgresql_embedded::Settings;
+
+use super::{
+    PreparedBootstrap,
+    ensure_parents_for_paths,
+    log_sanitized_settings,
+    prepare_xdg_dirs,
+    resolve_settings_paths_for_uid,
+    unix_user::{ensure_install_dir_for_user, ensure_pgpass_for_user},
+};
+use crate::{
+    PgEnvCfg,
+    bootstrap::env::{TestBootstrapEnvironment, XdgDirs, prepare_timezone_env},
+    error::{BootstrapError, BootstrapResult},
+    privileges::{ensure_dir_for_user, ensure_tree_owned_by_user, make_data_dir_private},
+};
+
+pub(super) fn bootstrap_with_root(
+    mut settings: Settings,
+    cfg: &PgEnvCfg,
+    layout: super::DataLayout,
+) -> BootstrapResult<PreparedBootstrap> {
+    // Worker subprocesses drop after each operation; keep the data dir so start can
+    // proceed after setup.
+    settings.temporary = false;
+    ensure_root_port(&mut settings)?;
+
+    let nobody_user = User::from_name("nobody")
+        .context("failed to resolve user 'nobody'")?
+        .ok_or_else(|| color_eyre::eyre::eyre!("user 'nobody' not found"))?;
+
+    let mut paths = resolve_settings_paths_for_uid(&mut settings, cfg, nobody_user.uid)?;
+    let has_slot = super::claim_derived_slot(&mut settings, &mut paths, layout)?;
+    super::reuse_existing_password(
+        &mut settings,
+        &paths.data_dir,
+        &paths.password_file,
+        cfg.password.is_some(),
+    )?;
+    log_sanitized_settings(&settings);
+
+    ensure_parents_for_paths(&paths, |path| ensure_parent_for_user(path, &nobody_user))?;
+
+    ensure_install_dir_for_user(&paths.install_dir, &nobody_user)?;
+    make_data_dir_private(&paths.data_dir, &nobody_user)?;
+
+    let timezone = prepare_timezone_env()?;
+    let xdg = prepare_xdg_dirs(&paths.install_dir)?;
+    ensure_xdg_dirs_owned_by_user(&xdg, &nobody_user)?;
+
+    super::stale_password::discard_orphaned_password_file(&paths.data_dir, &paths.password_file)?;
+    ensure_pgpass_for_user(&paths.password_file, &nobody_user)?;
+    if has_slot {
+        ensure_slot_lock_owned_by_user(&paths.data_dir, &nobody_user)?;
+    }
+
+    ensure_tree_owned_by_user(&paths.install_dir, &nobody_user)?;
+    if paths.data_default {
+        ensure_tree_owned_by_user(&paths.data_dir, &nobody_user)?;
+    }
+
+    let environment = TestBootstrapEnvironment::from_components(xdg, paths.password_file, timezone);
+    Ok(PreparedBootstrap {
+        settings,
+        environment,
+    })
+}
+
+/// Hands a claimed slot's lock file to `user`.
+///
+/// The claim runs as root, so the lock file is root's, and a later bootstrap
+/// running as `user` could not open it to try the sweep. The held kernel lock
+/// belongs to the open descriptor, not to the file's owner, so the chown does
+/// not disturb it.
+///
+/// # Errors
+///
+/// Returns an error when the lock file cannot be handed over.
+fn ensure_slot_lock_owned_by_user(data_dir: &Utf8Path, user: &User) -> BootstrapResult<()> {
+    let lock = super::cluster_slot::lock_path(data_dir);
+    nix::unistd::chown(lock.as_std_path(), Some(user.uid), Some(user.gid))
+        .with_context(|| format!("failed to hand the slot lock {lock} to {}", user.name))
+        .map_err(BootstrapError::from)
+}
+
+fn ensure_root_port(settings: &mut Settings) -> BootstrapResult<()> {
+    if settings.port > 0 {
+        return Ok(());
+    }
+
+    let host = root_bind_host(settings);
+    let listener = TcpListener::bind((host, 0))
+        .map_err(|err| BootstrapError::from(eyre!("failed to allocate port: {err}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|err| BootstrapError::from(eyre!("failed to read allocated port: {err}")))?
+        .port();
+    settings.port = port;
+    Ok(())
+}
+
+fn root_bind_host(settings: &Settings) -> &str {
+    let host = settings.host.as_str();
+    if host.is_empty() || host.starts_with('/') {
+        "127.0.0.1"
+    } else {
+        host
+    }
+}
+
+pub(super) fn ensure_xdg_dirs_owned_by_user(xdg: &XdgDirs, user: &User) -> BootstrapResult<()> {
+    // The cache/run directories are created by the root worker, so explicitly
+    // hand them to the unprivileged user to keep custom install dirs usable.
+    ensure_dir_for_user(&xdg.cache, user, 0o755)?;
+    ensure_dir_for_user(&xdg.runtime, user, 0o700)?;
+    Ok(())
+}
+
+pub(super) fn ensure_parent_for_user(path: &Utf8PathBuf, user: &User) -> BootstrapResult<()> {
+    if let Some(parent) = path.parent() {
+        ensure_dir_for_user(parent, user, 0o755)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for root bootstrap port allocation.
+
+    use std::{ffi::CString, os::unix::fs::MetadataExt, path::PathBuf};
+
+    use nix::unistd::{getegid, geteuid};
+    use rstest::rstest;
+
+    use super::*;
+
+    /// Builds a synthetic `User` for the current identity without a passwd
+    /// lookup, so ownership tests run in minimal containers that lack an NSS
+    /// entry for the current UID.
+    fn current_user() -> User {
+        User {
+            name: String::from("pg-embed-test"),
+            passwd: CString::default(),
+            uid: geteuid(),
+            gid: getegid(),
+            #[cfg(not(all(target_os = "android", target_pointer_width = "32")))]
+            gecos: CString::default(),
+            dir: PathBuf::from("/nonexistent"),
+            shell: PathBuf::from("/nonexistent"),
+            #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "dragonfly"))]
+            class: CString::default(),
+            #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "dragonfly"))]
+            change: 0,
+            #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "dragonfly"))]
+            expire: 0,
+        }
+    }
+
+    /// A claimed slot's lock file is handed to the user the cluster runs as.
+    #[test]
+    fn a_slot_lock_is_handed_to_the_cluster_user() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_dir = camino::Utf8PathBuf::from_path_buf(temp.path().join("1-1-0")).expect("utf8");
+        let lock = super::super::cluster_slot::lock_path(&data_dir);
+        std::fs::write(&lock, b"").expect("lock file");
+        let user = current_user();
+
+        ensure_slot_lock_owned_by_user(&data_dir, &user).expect("hand over the lock");
+
+        let metadata = std::fs::metadata(lock.as_std_path()).expect("lock metadata");
+        assert_eq!(metadata.uid(), user.uid.as_raw());
+        assert_eq!(metadata.gid(), user.gid.as_raw());
+    }
+
+    /// As root, the lock goes to `nobody`, which a non-root host cannot prove
+    /// by chowning to itself; the root lane in CI runs this case.
+    #[test]
+    fn a_slot_lock_is_handed_to_nobody_when_root() {
+        if !geteuid().is_root() {
+            return;
+        }
+        let nobody = User::from_name("nobody")
+            .expect("look up nobody")
+            .expect("nobody exists");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let data_dir = camino::Utf8PathBuf::from_path_buf(temp.path().join("1-1-0")).expect("utf8");
+        let lock = super::super::cluster_slot::lock_path(&data_dir);
+        std::fs::write(&lock, b"").expect("lock file");
+
+        ensure_slot_lock_owned_by_user(&data_dir, &nobody).expect("hand over the lock");
+
+        let metadata = std::fs::metadata(lock.as_std_path()).expect("lock metadata");
+        assert_eq!(metadata.uid(), nobody.uid.as_raw());
+    }
+
+    /// As root, `bootstrap_with_root` adopts the password stored beside an
+    /// existing cluster instead of minting a fresh one. The staging needs the
+    /// `nobody` user and chown rights, so a non-root host reports a skip.
+    #[test]
+    fn bootstrap_with_root_reuses_stored_password() {
+        if !geteuid().is_root() {
+            return; // the root lane in CI runs this; unprivileged hosts cannot stage it
+        }
+        let temp = tempfile::tempdir().expect("tempdir");
+        let base = camino::Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).expect("utf8");
+        let install = base.join("install");
+        let data = base.join("data");
+        std::fs::create_dir_all(&install).expect("install dir");
+        std::fs::create_dir_all(&data).expect("data dir");
+        std::fs::write(data.join("PG_VERSION"), "17\n").expect("marker");
+        std::fs::write(install.join(".pgpass"), "stored-secret\n").expect("password file");
+        let cfg = PgEnvCfg {
+            runtime_dir: Some(install),
+            data_dir: Some(data),
+            ..PgEnvCfg::default()
+        };
+        let settings = cfg.to_settings().expect("settings");
+        let prepared = bootstrap_with_root(settings, &cfg, super::super::DataLayout::PerCluster)
+            .expect("root bootstrap");
+        assert_eq!(prepared.settings.password, "stored-secret");
+    }
+
+    #[rstest]
+    #[case("", "127.0.0.1")]
+    #[case("/var/run/pg.sock", "127.0.0.1")]
+    #[case("db.internal", "db.internal")]
+    fn root_bind_host_falls_back_for_socket_or_empty(#[case] host: &str, #[case] expected: &str) {
+        let settings = Settings {
+            host: host.to_owned(),
+            ..Settings::default()
+        };
+        assert_eq!(root_bind_host(&settings), expected);
+    }
+
+    #[test]
+    fn ensure_root_port_allocates_when_zero() {
+        let mut settings = Settings {
+            host: String::new(),
+            port: 0,
+            ..Settings::default()
+        };
+        ensure_root_port(&mut settings).expect("allocate ephemeral port");
+        assert!(settings.port > 0, "an ephemeral port should be assigned");
+    }
+
+    #[test]
+    fn ensure_root_port_keeps_existing_port() {
+        let mut settings = Settings {
+            port: 5599,
+            ..Settings::default()
+        };
+        ensure_root_port(&mut settings).expect("existing port retained");
+        assert_eq!(settings.port, 5599);
+    }
+
+    #[test]
+    fn ensure_parent_for_user_creates_missing_parent() {
+        // Ownership is assigned to the current user, which needs no privilege.
+        // Use a synthetic identity to avoid a passwd lookup that fails in
+        // minimal containers lacking an NSS entry for the current UID.
+        let user = current_user();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let base = camino::Utf8Path::from_path(temp.path()).expect("utf8 tempdir");
+        let child = base.join("parent/child");
+
+        ensure_parent_for_user(&child, &user).expect("prepare parent directory");
+
+        let parent = base.join("parent");
+        assert!(parent.is_dir(), "the parent directory should be created");
+
+        // The directory must be owned by the requested user, not merely created:
+        // a chown to the wrong UID/GID would otherwise pass silently.
+        let metadata = std::fs::metadata(parent.as_std_path()).expect("parent directory metadata");
+        assert_eq!(
+            metadata.uid(),
+            user.uid.as_raw(),
+            "parent directory should be owned by the requested user"
+        );
+        assert_eq!(
+            metadata.gid(),
+            user.gid.as_raw(),
+            "parent directory should be group-owned by the requested user"
+        );
+    }
+}

@@ -19,26 +19,25 @@ import "./styles/index.css";
 // surface then register/unregisters the concrete stream controls as it mounts.
 installTestHooks();
 
-const mountNode = document.getElementById("app");
+const mountNode = document.querySelector("#app");
 
 if (!mountNode) {
   throw new Error("Missing #app mount node");
 }
 
-void i18nReady
-  .catch((error) => {
-    console.error("[i18n] App bootstrap locale initialization failed", error);
-    return undefined;
-  })
-  .then(() => {
-    render(
-      () => (
-        <AppProviders>
-          <AuthGate>
-            <AppRouter />
-          </AuthGate>
-        </AppProviders>
-      ),
-      mountNode
-    );
-  });
+try {
+  await i18nReady;
+} catch (error) {
+  console.error("[i18n] App bootstrap locale initialization failed", error);
+}
+
+render(
+  () => (
+    <AppProviders>
+      <AuthGate>
+        <AppRouter />
+      </AuthGate>
+    </AppProviders>
+  ),
+  mountNode
+);

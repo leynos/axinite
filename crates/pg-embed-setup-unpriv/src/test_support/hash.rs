@@ -1,0 +1,261 @@
+//! Directory hashing utilities for template naming.
+
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
+
+use cap_std::{ambient_authority, fs::Dir};
+use sha2::{Digest, Sha256};
+
+use crate::error::BootstrapResult;
+
+/// Computes a SHA-256 hash of a directory's contents for use in template names.
+///
+/// This function walks the directory tree, hashing file names and contents
+/// in a deterministic order. It can be used to create migration-versioned
+/// template names that automatically invalidate when migrations change.
+///
+/// # Errors
+///
+/// Returns an error if the directory cannot be read or if file I/O fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// use pg_embedded_setup_unpriv::test_support::hash_directory;
+///
+/// # fn main() -> pg_embedded_setup_unpriv::BootstrapResult<()> {
+/// let hash = hash_directory("migrations")?;
+/// let template_name = format!("template_{}", &hash[..8]);
+/// # Ok(())
+/// # }
+/// ```
+pub fn hash_directory(dir_path: impl AsRef<Path>) -> BootstrapResult<String> {
+    let base = dir_path.as_ref();
+    let dir = Dir::open_ambient_dir(base, ambient_authority()).map_err(|e| {
+        color_eyre::eyre::eyre!("failed to open directory '{}': {e}", base.display())
+    })?;
+    let mut hasher = Sha256::new();
+
+    hash_directory_recursive(&dir, base, Path::new(""), &mut hasher)?;
+
+    let result = hasher.finalize();
+    let mut encoded = String::with_capacity(result.len() * 2);
+    for byte in result {
+        encoded.push(lower_hex_digit(byte >> 4));
+        encoded.push(lower_hex_digit(byte & 0x0f));
+    }
+    Ok(encoded)
+}
+
+fn lower_hex_digit(nibble: u8) -> char {
+    debug_assert!(nibble < 16);
+    if nibble < 10 {
+        char::from(b'0' + nibble)
+    } else {
+        char::from(b'a' + nibble - 10)
+    }
+}
+
+fn hash_directory_recursive(
+    base_dir: &Dir,
+    base_path: &Path,
+    relative: &Path,
+    hasher: &mut Sha256,
+) -> BootstrapResult<()> {
+    let current_path = join_path(base_path, relative);
+    let read_dir_path = if relative.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        relative
+    };
+    let read_dir = base_dir.read_dir(read_dir_path).map_err(|e| {
+        color_eyre::eyre::eyre!("failed to read directory '{}': {e}", current_path.display())
+    })?;
+
+    let mut entries: Vec<_> = read_dir
+        .map(|entry| {
+            entry.map_err(|e| {
+                color_eyre::eyre::eyre!(
+                    "failed to read directory entry in '{}': {e}",
+                    current_path.display()
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Sort entries for deterministic ordering
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().into_owned());
+
+    for entry in entries {
+        let entry_name = entry.file_name();
+        let entry_relative = relative.join(&entry_name);
+        let entry_path = join_path(base_path, &entry_relative);
+        let relative_str = entry_relative.to_string_lossy();
+
+        // Hash the relative path
+        hasher.update(relative_str.as_bytes());
+
+        let file_type = entry.file_type().map_err(|e| {
+            color_eyre::eyre::eyre!(
+                "failed to read directory entry type in '{}': {e}",
+                entry_path.display()
+            )
+        })?;
+
+        if file_type.is_dir() {
+            hash_directory_recursive(base_dir, base_path, &entry_relative, hasher)?;
+        } else if file_type.is_file() {
+            hash_file_contents(base_dir, &entry_relative, &entry_path, hasher)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Hashes file contents using chunked streaming I/O.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bytes_read is always <= buffer.len()"
+)]
+fn hash_file_contents(
+    base_dir: &Dir,
+    relative: &Path,
+    display_path: &Path,
+    hasher: &mut Sha256,
+) -> BootstrapResult<()> {
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true);
+    let mut file = base_dir.open_with(relative, &options).map_err(|e| {
+        color_eyre::eyre::eyre!("failed to open file '{}': {e}", display_path.display())
+    })?;
+    let mut buffer = [0u8; 8192];
+    loop {
+        let bytes_read = file.read(&mut buffer).map_err(|e| {
+            color_eyre::eyre::eyre!("failed to read file '{}': {e}", display_path.display())
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    Ok(())
+}
+
+fn join_path(base: &Path, relative: &Path) -> PathBuf {
+    if relative.as_os_str().is_empty() {
+        base.to_path_buf()
+    } else {
+        base.join(relative)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for file hashing helpers.
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn lower_hex_digit_encodes_every_nibble() {
+        let encoded: String = (0..16).map(lower_hex_digit).collect();
+
+        assert_eq!(encoded, "0123456789abcdef");
+    }
+
+    #[test]
+    fn hash_directory_produces_consistent_results() {
+        let temp = TempDir::new().expect("tempdir");
+        fs::write(temp.path().join("file1.sql"), "CREATE TABLE a;").expect("write");
+        fs::write(temp.path().join("file2.sql"), "CREATE TABLE b;").expect("write");
+
+        let hash1 = hash_directory(temp.path()).expect("hash1");
+        let hash2 = hash_directory(temp.path()).expect("hash2");
+
+        assert_eq!(hash1, hash2, "same contents should produce same hash");
+    }
+
+    #[test]
+    fn hash_directory_changes_with_content() {
+        let temp = TempDir::new().expect("tempdir");
+        fs::write(temp.path().join("file.sql"), "CREATE TABLE a;").expect("write");
+
+        let hash1 = hash_directory(temp.path()).expect("hash1");
+
+        fs::write(temp.path().join("file.sql"), "CREATE TABLE b;").expect("write");
+        let hash2 = hash_directory(temp.path()).expect("hash2");
+
+        assert_ne!(
+            hash1, hash2,
+            "different contents should produce different hash"
+        );
+    }
+
+    #[test]
+    fn hash_directory_matches_expected_lowercase_hex() {
+        let temp = TempDir::new().expect("tempdir");
+        fs::write(temp.path().join("test.sql"), "SELECT 1;").expect("write");
+
+        let hash = hash_directory(temp.path()).expect("hash");
+
+        assert_eq!(
+            hash,
+            "2af7c3691c5edf7203fbf813e5396bb448399a842ef79e83d622251dfd89f9c8"
+        );
+    }
+
+    #[test]
+    fn hash_directory_handles_nested_directories() {
+        let temp = TempDir::new().expect("tempdir");
+
+        // Create nested directory structure
+        let subdir = temp.path().join("migrations");
+        fs::create_dir(&subdir).expect("create subdir");
+        fs::write(subdir.join("001_init.sql"), "CREATE TABLE users;").expect("write");
+
+        let nested = subdir.join("nested");
+        fs::create_dir(&nested).expect("create nested");
+        fs::write(nested.join("002_add_posts.sql"), "CREATE TABLE posts;").expect("write");
+
+        // Root level file
+        fs::write(temp.path().join("schema.sql"), "-- schema").expect("write");
+
+        let hash1 = hash_directory(temp.path()).expect("hash1");
+        let hash2 = hash_directory(temp.path()).expect("hash2");
+
+        assert_eq!(
+            hash1, hash2,
+            "nested directory hash should be deterministic"
+        );
+
+        // Modify nested file and verify hash changes
+        fs::write(nested.join("002_add_posts.sql"), "CREATE TABLE comments;").expect("write");
+        let hash3 = hash_directory(temp.path()).expect("hash3");
+
+        assert_ne!(hash1, hash3, "nested file change should affect hash");
+    }
+
+    #[test]
+    fn hash_directory_handles_empty_directory() {
+        let temp = TempDir::new().expect("tempdir");
+
+        let hash = hash_directory(temp.path()).expect("hash");
+
+        // Empty directory should produce a valid hash
+        assert_eq!(hash.len(), 64, "empty directory hash should be 64 chars");
+        assert!(
+            hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "empty directory hash should be hex"
+        );
+
+        // Add a file and verify hash changes
+        fs::write(temp.path().join("file.sql"), "SELECT 1;").expect("write");
+        let hash2 = hash_directory(temp.path()).expect("hash2");
+
+        assert_ne!(hash, hash2, "adding file should change hash");
+    }
+}

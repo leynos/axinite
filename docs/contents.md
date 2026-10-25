@@ -265,3 +265,5 @@
 - [ADR 0013: Place CI jobs by rule](adrs/adr-0013-place-ci-jobs-by-rule.md)
   records the rule-based runner placement, including the utility-job rule that
   moves short jobs off the hosted pool only when it makes them wait.
+- [ADR 0014: Apply Oxlint plug-ins to the front end](adrs/adr-0014-front-end-oxlint-plugins.md)
+  records the pinned Unicorn and `ai-deslop` rules and their conflict policy.

@@ -334,3 +334,5 @@ aarch64-apple-darwin = "macos-14"
 [patch.crates-io]
 # Update the SDK transport without forking libSQL; see the patch UPSTREAM.md.
 hyper-rustls = { path = "crates/hyper-rustls" }
+# Keep a slot sweep and its following claim atomic; see the patch UPSTREAM.md.
+pg-embed-setup-unpriv = { path = "crates/pg-embed-setup-unpriv" }

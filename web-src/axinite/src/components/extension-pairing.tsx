@@ -45,7 +45,7 @@ export const ExtensionPairing: Component<ExtensionPairingProps> = (props) => {
       props.onApproved();
       void pairing.refetch();
     },
-    onError: (error: unknown, code) => {
+    onError: (error, code) => {
       setErrors((current) => ({
         ...current,
         [code]: error instanceof Error ? error.message : String(error),

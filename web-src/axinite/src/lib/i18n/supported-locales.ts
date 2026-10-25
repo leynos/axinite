@@ -53,18 +53,16 @@ export const DETECTION_ORDER = [
   "navigator",
 ] as const;
 
-const LOCALE_MAP: Record<string, SupportedLocale> = SUPPORTED_LOCALES.reduce(
-  (map, locale) => {
-    const fullCode = locale.code.toLowerCase();
-    map[fullCode] = locale;
-    const [languagePart] = fullCode.split("-");
-    if (languagePart && !map[languagePart]) {
-      map[languagePart] = locale;
-    }
-    return map;
-  },
-  {} as Record<string, SupportedLocale>
-);
+const localeMap: Record<string, SupportedLocale> = {};
+for (const locale of SUPPORTED_LOCALES) {
+  const fullCode = locale.code.toLowerCase();
+  localeMap[fullCode] = locale;
+  const [languagePart] = fullCode.split("-");
+  if (languagePart && !localeMap[languagePart]) {
+    localeMap[languagePart] = locale;
+  }
+}
+const LOCALE_MAP = localeMap;
 
 const fallbackLocale = (() => {
   const locale = LOCALE_MAP[DEFAULT_LOCALE.toLowerCase()];

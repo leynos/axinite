@@ -11,14 +11,9 @@ export type RestartPhase = "idle" | "restarting" | "restarted" | "failed";
 /** Bounded operational categories; no response bodies or URLs cross this port. */
 export type RestartFailureCategory = "timeout" | "transport" | "http";
 
-/** A browser adapter's sanitized restart-command failure. */
-export class RestartCommandError extends Error {
-  /** Retains only the operational category for the domain failure callback. */
-  constructor(readonly category: RestartFailureCategory) {
-    super("Restart command failed");
-    this.name = "RestartCommandError";
-  }
-}
+export type RestartSendResult =
+  | { kind: "accepted" }
+  | { kind: "failed"; category: RestartFailureCategory };
 
 /** A successful completion of the `restart` tool call. */
 function isRestartToolCompleted(event: ChatSseEvent): boolean {
@@ -55,8 +50,8 @@ export type RestartStreamHandle = {
 };
 
 export type RestartDeps = {
-  /** POST the `/restart` command through the chat send API. */
-  sendRestart: () => Promise<unknown>;
+  /** POST `/restart`; return a bounded result from the chat API adapter. */
+  sendRestart: () => Promise<RestartSendResult>;
   /** Open a dedicated chat event stream for reconnection detection. */
   openStream: (handlers: RestartStreamHandlers) => RestartStreamHandle;
   /** Resolve `true` when the gateway status endpoint is reachable. */
@@ -109,11 +104,12 @@ class RestartLifecycle {
     this.deps.onPhase("restarted");
   }
 
-  private fail(attempt: RestartAttempt, error: unknown): void {
+  private fail(
+    attempt: RestartAttempt,
+    category: RestartFailureCategory
+  ): void {
     if (!this.isCurrent(attempt)) return;
     this.retire(attempt);
-    const category =
-      error instanceof RestartCommandError ? error.category : "transport";
     this.deps.onPhase("failed");
     this.deps.onFailure?.(category);
   }
@@ -184,12 +180,17 @@ class RestartLifecycle {
     try {
       this.openStream(attempt);
       if (this.isCurrent(attempt)) {
-        void this.deps
-          .sendRestart()
-          .catch((error: unknown) => this.fail(attempt, error));
+        void this.deps.sendRestart().then(
+          (result) => {
+            if (result.kind === "failed") {
+              this.fail(attempt, result.category);
+            }
+          },
+          () => this.fail(attempt, "transport")
+        );
       }
-    } catch (error) {
-      this.fail(attempt, error);
+    } catch {
+      this.fail(attempt, "transport");
     }
   }
 

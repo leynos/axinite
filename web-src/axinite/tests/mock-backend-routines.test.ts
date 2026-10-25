@@ -12,6 +12,7 @@ import type {
   RoutineRunsResponse,
   RoutineSummaryResponse,
 } from "@/lib/api/contracts";
+import type { JsonValue } from "@/lib/api/json-value";
 import { handleMockRequest } from "../../mock-backend/src/server";
 import { MockBackendState } from "../../mock-backend/src/state";
 
@@ -19,17 +20,20 @@ async function requestJson<T>(
   state: MockBackendState,
   path: string,
   method = "GET",
-  body?: unknown
+  body?: JsonValue
 ): Promise<T> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
   const response = await handleMockRequest(
-    new Request(`http://mock.test${path}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    new Request(`http://mock.test${path}`, init),
     state
   );
   expect(response.status).toBe(200);
+  // SAFETY: This helper targets the in-process routine route named by each
+  // caller, and those callers assert the returned fields against that DTO.
   return response.json() as Promise<T>;
 }
 
@@ -115,13 +119,14 @@ describe("stub routine mutation contracts", () => {
     const path = `/api/routines/${id}`;
     const before = await requestJson<RoutineDetailResponse>(state, path);
     for (const enabled of [!before.enabled, before.enabled]) {
-      expect(
-        (await requestJson<ActionResponse>(state, `${path}/toggle`, "POST"))
-          .success
-      ).toBe(true);
-      expect(
-        (await requestJson<RoutineDetailResponse>(state, path)).enabled
-      ).toBe(enabled);
+      const toggle = await requestJson<ActionResponse>(
+        state,
+        `${path}/toggle`,
+        "POST"
+      );
+      expect(toggle.success).toBe(true);
+      const detail = await requestJson<RoutineDetailResponse>(state, path);
+      expect(detail.enabled).toBe(enabled);
     }
   });
 

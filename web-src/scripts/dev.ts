@@ -8,10 +8,10 @@ import { parsePort } from "../mock-backend/src/ports";
 
 /** Minimal disposable TCP probe capability; it does not reserve a port. */
 export type PortProbe = {
-  unref: () => unknown;
-  once: (event: "error" | "listening", listener: () => void) => unknown;
-  listen: (port: number, host: string) => unknown;
-  close: (callback: () => void) => unknown;
+  unref: () => void;
+  once: (event: "error" | "listening", listener: () => void) => void;
+  listen: (port: number, host: string) => void;
+  close: (callback: () => void) => void;
 };
 
 /**
@@ -70,7 +70,7 @@ export async function reservePreviewPort(options: {
 /** The supervisor may signal only explicitly supplied owned subprocesses. */
 export type ManagedProcess = {
   label: string;
-  process: { kill: () => unknown; exited: Promise<number> };
+  process: { kill: () => void; exited: Promise<number> };
 };
 
 /** Process lifecycle adapter; registering a signal returns its removal hook. */
@@ -115,13 +115,13 @@ export async function superviseChildren(
         exitCode: await child.process.exited.catch(() => 1),
       }))
     );
-    if (!shutdown) {
+    if (shutdown) {
+      await shutdown;
+    } else {
       deps.error(
         `[dev] ${result.label} exited unexpectedly with code ${result.exitCode}`
       );
       await stopAll(`${result.label} exited`, result.exitCode || 1);
-    } else {
-      await shutdown;
     }
   } finally {
     for (const remove of removeSignals) remove();
@@ -138,7 +138,7 @@ function pipeOutput(
   const decoder = new TextDecoder();
   let pending = "";
   void (async () => {
-    while (true) {
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) {
         if (pending.length > 0) writer(`[${label}] ${pending}`);
@@ -207,7 +207,9 @@ async function main(): Promise<void> {
     },
     log: console.log,
     error: console.error,
-    exit: (code) => process.exit(code),
+    exit: (code) => {
+      process.exitCode = code;
+    },
   });
 }
 
