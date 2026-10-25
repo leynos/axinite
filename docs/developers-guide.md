@@ -1403,7 +1403,7 @@ What Make does add:
   rustup toolchain with its components and targets. It verifies `mold` against
   `tools/mold/SHA256SUMS` and installs it under `BUILD_TOOLS_PREFIX`, which
   defaults to `$HOME/.local`. It does not install `clang`; on Linux, install
-  that system prerequisite with your package manager. The Makefile prepends
+  that system prerequisite with a system package manager. The Makefile prepends
   `${BUILD_TOOLS_PREFIX}/bin` to `PATH` for its recipes, so the pinned `mold`
   wins over a distribution copy for both the check and `-fuse-ld=mold`. Under
   CI it also appends that directory to `GITHUB_PATH` for steps that call Cargo
