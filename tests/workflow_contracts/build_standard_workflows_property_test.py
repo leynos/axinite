@@ -51,34 +51,53 @@ def _jobs(draw: st.DrawFn) -> tuple[dict[str, object], list[tuple[str, bool]], b
     return job, roles, host != "non-linux"
 
 
+def _first_compile_position(roles: list[tuple[str, bool]]) -> int | None:
+    """Find the first generated compile step without inspecting YAML."""
+    return next(
+        (
+            index
+            for index, (kind, _) in enumerate(roles)
+            if kind in ("compile-cargo", "compile-make")
+        ),
+        None,
+    )
+
+
+def _removes_standard_before_compile(
+    roles: list[tuple[str, bool]], first_compile: int
+) -> bool:
+    """Recognize the fixture action that removes the development config."""
+    return any(
+        kind == "remove" and index < first_compile
+        for index, (kind, _) in enumerate(roles)
+    )
+
+
+def _installs_unconditionally_before_compile(
+    roles: list[tuple[str, bool]], first_compile: int
+) -> bool:
+    """Require at least one unguarded install before the first compile."""
+    early_installs = [
+        guarded
+        for index, (kind, guarded) in enumerate(roles)
+        if kind == "install" and index < first_compile
+    ]
+    return bool(early_installs) and not any(early_installs)
+
+
 def _reference_is_valid(
     job: dict[str, object], roles: list[tuple[str, bool]], is_linux: bool
 ) -> bool:
     """Model the policy from generated roles, without workflow parsing helpers."""
     if not is_linux:
         return True
-    compile_positions = [
-        index
-        for index, (kind, _) in enumerate(roles)
-        if kind in ("compile-cargo", "compile-make")
-    ]
-    if not compile_positions:
+    first_compile = _first_compile_position(roles)
+    if first_compile is None:
         return True
-    first_compile = compile_positions[0]
-    removed_before_compile = any(
-        kind == "remove" and index < first_compile
-        for index, (kind, _) in enumerate(roles)
-    )
-    if removed_before_compile:
+    if _removes_standard_before_compile(roles, first_compile):
         return True
-    early_installs = [
-        guarded
-        for index, (kind, guarded) in enumerate(roles)
-        if kind == "install" and index < first_compile
-    ]
     return (
-        bool(early_installs)
-        and not any(early_installs)
+        _installs_unconditionally_before_compile(roles, first_compile)
         and job.get("continue-on-error") is not True
     )
 

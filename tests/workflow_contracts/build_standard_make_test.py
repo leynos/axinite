@@ -324,4 +324,6 @@ def test_the_unmutated_copy_is_clean(
 
 def test_the_mutations_executed() -> None:
     """Prove the parametrized cases exist, so none can be discovered away."""
-    assert len(MUTATIONS) == 11
+    assert len(MUTATIONS) == 11, (
+        f"expected 11 Makefile mutations, got {len(MUTATIONS)}: {sorted(MUTATIONS)}"
+    )
