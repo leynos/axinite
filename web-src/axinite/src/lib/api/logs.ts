@@ -74,35 +74,47 @@ function parseLogLevel(
   return LOG_LEVELS.get(value.toLowerCase());
 }
 
+type LogEventFailure = "invalid-json" | "invalid-payload";
+
+type LogEventParseResult =
+  | { status: "parsed"; entry: LogEntry }
+  | { status: "rejected"; reason: LogEventFailure };
+
+function rejectLogEvent(reason: LogEventFailure, onError?: () => void): void {
+  recordBoundaryFailure("log-stream", reason);
+  onError?.();
+}
+
+function parseLogEventPayload(serializedJson: string): LogEventParseResult {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(serializedJson);
+  } catch {
+    return { status: "rejected", reason: "invalid-json" };
+  }
+  if (!isJsonObject(payload)) {
+    return { status: "rejected", reason: "invalid-payload" };
+  }
+  const entry = parseLogEntry(payload);
+  return entry === undefined
+    ? { status: "rejected", reason: "invalid-payload" }
+    : { status: "parsed", entry };
+}
+
 function parseLogEvent(
   rawEvent: Event,
   onError?: () => void
 ): LogEntry | undefined {
-  if (!(rawEvent instanceof MessageEvent) || !isString(rawEvent.data)) {
-    recordBoundaryFailure("log-stream", "invalid-payload");
-    onError?.();
+  if (!(rawEvent instanceof MessageEvent)) {
+    rejectLogEvent("invalid-payload", onError);
     return undefined;
   }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(rawEvent.data);
-  } catch {
-    recordBoundaryFailure("log-stream", "invalid-json");
-    onError?.();
+  const result = parseLogEventPayload(rawEvent.data);
+  if (result.status === "rejected") {
+    rejectLogEvent(result.reason, onError);
     return undefined;
   }
-  if (!isJsonObject(payload)) {
-    recordBoundaryFailure("log-stream", "invalid-payload");
-    onError?.();
-    return undefined;
-  }
-  const entry = parseLogEntry(payload);
-  if (entry === undefined) {
-    recordBoundaryFailure("log-stream", "invalid-payload");
-    onError?.();
-    return undefined;
-  }
-  return entry;
+  return result.entry;
 }
 
 /**
