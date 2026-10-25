@@ -13,6 +13,7 @@
 fn db_surface_compile_contracts() {
     let cases = trybuild::TestCases::new();
     cases.pass("tests/trybuild/db_forwarders.rs");
+    cases.pass("tests/trybuild/sandbox_mode_from_str.rs");
     #[cfg(feature = "postgres")]
     cases.pass("tests/trybuild/db_forwarders_postgres.rs");
     #[cfg(feature = "libsql")]
