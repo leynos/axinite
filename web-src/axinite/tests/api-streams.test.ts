@@ -168,6 +168,26 @@ describe("log SSE wire contract", () => {
     expect(WireEventSource.latest.close).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes uppercase levels emitted by the Rust gateway", () => {
+    const listener = vi.fn();
+    const error = vi.fn();
+    connectLogEvents(listener, error);
+    const gatewayEntry = {
+      level: "INFO",
+      target: "axinite",
+      message: "ready",
+      timestamp: "2026-10-01T00:00:00Z",
+    };
+
+    WireEventSource.latest.frame("log", JSON.stringify(gatewayEntry));
+
+    expect(listener).toHaveBeenCalledExactlyOnceWith({
+      ...gatewayEntry,
+      level: "info",
+    });
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it("reports malformed log frames and connection errors and then recovers", () => {
     const listener = vi.fn();
     const error = vi.fn();

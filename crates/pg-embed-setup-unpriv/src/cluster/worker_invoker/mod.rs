@@ -1,0 +1,384 @@
+//! Dispatches `PostgreSQL` lifecycle operations either in-process or via the privileged worker
+//! binary.
+use std::future::Future;
+
+use color_eyre::eyre::{Context, eyre};
+use tokio::runtime::Runtime;
+use tracing::{error, info, info_span};
+
+use super::{WorkerOperation, panic_utils::nested_runtime_thread_panic};
+#[cfg(all(unix, privileged_unix_platform))]
+use crate::worker_process::{self, WorkerRequest, WorkerRequestArgs};
+use crate::{
+    ExecutionMode,
+    ExecutionPrivileges,
+    TestBootstrapSettings,
+    bootstrap::{root_privilege_drop_supported, unsupported_root_privilege_drop_error},
+    error::{BootstrapError, BootstrapResult, LifecycleTimeout},
+    observability::LOG_TARGET,
+};
+
+// ============================================================================
+// Shared helper functions
+// ============================================================================
+
+/// Creates a tracing span for lifecycle operations.
+///
+/// Used by both sync and async invokers to maintain consistent observability.
+/// The `async_mode` field is only recorded when `true` to maintain backward
+/// compatibility with existing sync span format.
+fn create_lifecycle_span(
+    operation: WorkerOperation,
+    bootstrap: &TestBootstrapSettings,
+    async_mode: bool,
+) -> tracing::Span {
+    let span = info_span!(
+        target: LOG_TARGET,
+        "lifecycle_operation",
+        operation = operation.as_str(),
+        privileges = ?bootstrap.privileges,
+        mode = ?bootstrap.execution_mode,
+        async_mode = tracing::field::Empty
+    );
+    if async_mode {
+        span.record("async_mode", true);
+    }
+    span
+}
+
+/// Executes a root operation, handling test hooks, execution mode validation,
+/// and platform-specific constraints.
+///
+/// This is the shared implementation used by both sync (`WorkerInvoker::invoke_as_root`)
+/// and async (`AsyncInvoker::run_root_async`) code paths.
+fn execute_root_operation(
+    bootstrap: &TestBootstrapSettings,
+    env_vars: &[(String, Option<String>)],
+    operation: WorkerOperation,
+) -> BootstrapResult<()> {
+    #[cfg(any(test, feature = "cluster-unit-tests"))]
+    {
+        let hook_slot = crate::test_support::run_root_operation_hook()
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .clone();
+        if let Some(hook) = hook_slot {
+            return hook(bootstrap, env_vars, operation);
+        }
+    }
+
+    if !root_privilege_drop_supported() {
+        return Err(unsupported_root_privilege_drop_error());
+    }
+
+    match bootstrap.execution_mode {
+        ExecutionMode::InProcess => Err(BootstrapError::from(eyre!(concat!(
+            "ExecutionMode::InProcess is unsafe for root because process-wide ",
+            "UID/GID changes race in multi-threaded tests; switch to ",
+            "ExecutionMode::Subprocess"
+        )))),
+        ExecutionMode::Subprocess => spawn_worker_inner(bootstrap, env_vars, operation),
+    }
+}
+
+/// Spawns the worker subprocess to execute a privileged operation.
+///
+/// This is the shared implementation for worker spawning, used by both sync and
+/// async code paths.
+#[cfg(all(unix, privileged_unix_platform))]
+fn spawn_worker_inner(
+    bootstrap: &TestBootstrapSettings,
+    env_vars: &[(String, Option<String>)],
+    operation: WorkerOperation,
+) -> BootstrapResult<()> {
+    let worker = bootstrap.worker_binary.as_ref().ok_or_else(|| {
+        BootstrapError::from(eyre!(concat!(
+            "pg_worker binary not found. Install it with 'cargo install --path . --bin pg_worker' ",
+            "and ensure it is in PATH, or set PG_EMBEDDED_WORKER to its absolute path"
+        )))
+    })?;
+
+    let args = WorkerRequestArgs {
+        worker,
+        settings: &bootstrap.settings,
+        env_vars,
+        operation,
+        timeout: operation.timeout(bootstrap),
+    };
+    let request = WorkerRequest::new(args);
+    worker_process::run(&request)
+}
+
+/// Rejects privileged worker dispatch on targets without privilege dropping.
+#[cfg(not(all(
+    unix,
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ),
+)))]
+fn spawn_worker_inner(
+    _bootstrap: &TestBootstrapSettings,
+    _env_vars: &[(String, Option<String>)],
+    operation: WorkerOperation,
+) -> BootstrapResult<()> {
+    Err(BootstrapError::from(eyre!(
+        "privilege drop not supported on this target; refusing to run as root: {}",
+        operation.error_context()
+    )))
+}
+
+fn log_failure(operation: WorkerOperation, err: &BootstrapError) {
+    error!(
+        target: LOG_TARGET,
+        operation = operation.as_str(),
+        error = %err,
+        "lifecycle operation failed"
+    );
+}
+
+fn log_success(operation: WorkerOperation) {
+    info!(
+        target: LOG_TARGET,
+        operation = operation.as_str(),
+        "lifecycle operation completed"
+    );
+}
+
+/// Logs the start of an in-process lifecycle operation.
+///
+/// Used by both sync and async invokers. When `async_mode` is true, appends
+/// " (async)" to the message to distinguish async execution paths in logs.
+fn log_in_process_start(operation: WorkerOperation, async_mode: bool) {
+    let suffix = if async_mode { " (async)" } else { "" };
+    info!(
+        target: LOG_TARGET,
+        operation = operation.as_str(),
+        "running lifecycle operation in-process{suffix}"
+    );
+}
+
+/// Logs the dispatch of a lifecycle operation to the worker subprocess.
+///
+/// Used by both sync and async invokers. When `async_mode` is true, appends
+/// " (async)" to the message to distinguish async execution paths in logs.
+fn log_worker_dispatch(operation: WorkerOperation, worker_binary: Option<&str>, async_mode: bool) {
+    let suffix = if async_mode { " (async)" } else { "" };
+    info!(
+        target: LOG_TARGET,
+        operation = operation.as_str(),
+        worker = worker_binary,
+        "dispatching lifecycle operation via worker{suffix}"
+    );
+}
+
+/// Creates a timeout error with consistent formatting.
+///
+/// Used by both sync and async invokers to ensure consistent error messages.
+fn timeout_error(ctx: &'static str, timeout: std::time::Duration) -> BootstrapError {
+    BootstrapError::from(color_eyre::Report::new(LifecycleTimeout {
+        context: ctx,
+        seconds: timeout.as_secs_f64(),
+    }))
+}
+
+async fn run_with_timeout<Fut>(
+    timeout: std::time::Duration,
+    future: Fut,
+) -> Result<Result<(), postgresql_embedded::Error>, tokio::time::error::Elapsed>
+where
+    Fut: Future<Output = Result<(), postgresql_embedded::Error>> + Send,
+{
+    tokio::time::timeout(timeout, future).await
+}
+
+// ============================================================================
+// Synchronous invoker
+// ============================================================================
+
+/// Executes worker operations whilst respecting configured privileges.
+#[derive(Debug)]
+#[doc(hidden)]
+pub struct WorkerInvoker<'a> {
+    runtime: &'a Runtime,
+    bootstrap: &'a TestBootstrapSettings,
+    env_vars: &'a [(String, Option<String>)],
+}
+
+impl<'a> WorkerInvoker<'a> {
+    /// Creates an invoker bound to a runtime, bootstrap configuration, and
+    /// derived environment variables.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// use pg_embedded_setup_unpriv::{ExecutionPrivileges, WorkerInvoker};
+    /// use pg_embedded_setup_unpriv::test_support::{dummy_settings, test_runtime};
+    ///
+    /// # fn demo() -> color_eyre::eyre::Result<()> {
+    /// let runtime = test_runtime()?;
+    /// let bootstrap = dummy_settings(ExecutionPrivileges::Unprivileged);
+    /// let env = bootstrap.environment.to_env();
+    /// let invoker = WorkerInvoker::new(&runtime, &bootstrap, &env);
+    /// # let _ = invoker;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub const fn new(
+        runtime: &'a Runtime,
+        bootstrap: &'a TestBootstrapSettings,
+        env_vars: &'a [(String, Option<String>)],
+    ) -> Self {
+        Self {
+            runtime,
+            bootstrap,
+            env_vars,
+        }
+    }
+
+    /// Executes an operation either in-process or via the privileged worker,
+    /// depending on the configured privilege level.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`BootstrapError`] when the worker invocation fails or when
+    /// the in-process operation surfaces an error.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// use pg_embedded_setup_unpriv::{ExecutionPrivileges, WorkerInvoker, WorkerOperation};
+    /// use pg_embedded_setup_unpriv::test_support::{dummy_settings, test_runtime};
+    ///
+    /// # fn demo() -> pg_embedded_setup_unpriv::BootstrapResult<()> {
+    /// let runtime = test_runtime()?;
+    /// let bootstrap = dummy_settings(ExecutionPrivileges::Unprivileged);
+    /// let env = bootstrap.environment.to_env();
+    /// let invoker = WorkerInvoker::new(&runtime, &bootstrap, &env);
+    /// invoker.invoke(WorkerOperation::Setup, async {
+    ///     Ok::<(), postgresql_embedded::Error>(())
+    /// })?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn invoke<Fut>(&self, operation: WorkerOperation, in_process_op: Fut) -> BootstrapResult<()>
+    where
+        Fut: Future<Output = Result<(), postgresql_embedded::Error>> + Send,
+    {
+        let span = self.lifecycle_span(operation);
+        let _entered = span.enter();
+
+        let result = self.dispatch_operation(operation, in_process_op);
+        Self::log_outcome(operation, &result);
+        result
+    }
+
+    fn dispatch_operation<Fut>(
+        &self,
+        operation: WorkerOperation,
+        in_process_op: Fut,
+    ) -> BootstrapResult<()>
+    where
+        Fut: Future<Output = Result<(), postgresql_embedded::Error>> + Send,
+    {
+        match self.bootstrap.privileges {
+            ExecutionPrivileges::Unprivileged => self.run_unprivileged(operation, in_process_op),
+            ExecutionPrivileges::Root => self.run_root(operation),
+        }
+    }
+
+    fn run_unprivileged<Fut>(
+        &self,
+        operation: WorkerOperation,
+        in_process_op: Fut,
+    ) -> BootstrapResult<()>
+    where
+        Fut: Future<Output = Result<(), postgresql_embedded::Error>> + Send,
+    {
+        log_in_process_start(operation, false);
+        let timeout = operation.timeout(self.bootstrap);
+        self.invoke_unprivileged(in_process_op, operation.error_context(), timeout)
+    }
+
+    fn run_root(&self, operation: WorkerOperation) -> BootstrapResult<()> {
+        log_worker_dispatch(
+            operation,
+            self.bootstrap.worker_binary.as_ref().map(|p| p.as_str()),
+            false,
+        );
+        self.invoke_as_root(operation)
+    }
+
+    fn log_outcome(operation: WorkerOperation, result: &BootstrapResult<()>) {
+        if let Err(err) = result {
+            log_failure(operation, err);
+        } else {
+            log_success(operation);
+        }
+    }
+
+    fn invoke_unprivileged<Fut>(
+        &self,
+        future: Fut,
+        ctx: &'static str,
+        timeout: std::time::Duration,
+    ) -> BootstrapResult<()>
+    where
+        Fut: Future<Output = Result<(), postgresql_embedded::Error>> + Send,
+    {
+        let result = if tokio::runtime::Handle::try_current().is_ok() {
+            self.run_unprivileged_in_scoped_thread(future, ctx, timeout)?
+        } else {
+            self.runtime.block_on(run_with_timeout(timeout, future))
+        };
+
+        result
+            .map_err(|_| timeout_error(ctx, timeout))?
+            .context(ctx)
+            .map_err(BootstrapError::from)
+    }
+
+    /// Executes an unprivileged operation on a helper thread when already
+    /// inside a Tokio runtime.
+    ///
+    /// Calling `Runtime::block_on` from a runtime thread panics with
+    /// "Cannot start a runtime from within a runtime". Running the operation on
+    /// a scoped thread avoids the nested-runtime panic while keeping the sync
+    /// API surface intact for callers such as `run()`.
+    fn run_unprivileged_in_scoped_thread<Fut>(
+        &self,
+        future: Fut,
+        ctx: &'static str,
+        timeout: std::time::Duration,
+    ) -> BootstrapResult<Result<Result<(), postgresql_embedded::Error>, tokio::time::error::Elapsed>>
+    where
+        Fut: Future<Output = Result<(), postgresql_embedded::Error>> + Send,
+    {
+        let runtime = self.runtime;
+        std::thread::scope(|scope| {
+            scope
+                .spawn(move || runtime.block_on(run_with_timeout(timeout, future)))
+                .join()
+        })
+        .map_err(|panic_payload| {
+            nested_runtime_thread_panic(ctx, "nested-runtime operation", panic_payload)
+        })
+    }
+
+    fn lifecycle_span(&self, operation: WorkerOperation) -> tracing::Span {
+        create_lifecycle_span(operation, self.bootstrap, false)
+    }
+
+    pub(super) fn invoke_as_root(&self, operation: WorkerOperation) -> BootstrapResult<()> {
+        execute_root_operation(self.bootstrap, self.env_vars, operation)
+    }
+}
+
+#[cfg(feature = "async-api")]
+mod async_invoker;
+#[cfg(feature = "async-api")]
+pub(crate) use async_invoker::AsyncInvoker;
+
+#[cfg(test)]
+mod tests;

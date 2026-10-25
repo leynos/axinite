@@ -1,0 +1,85 @@
+//! Internal helpers re-exported for integration tests.
+//!
+//! Besides filesystem convenience wrappers, this module exposes the
+//! `RUN_ROOT_OPERATION_HOOK` plumbing so behavioural tests can intercept and
+//! inspect privileged worker operations. The `install_run_root_operation_hook`
+//! helper registers a closure for the duration of a `HookGuard`, ensuring
+//! `TestCluster` calls are observable without leaking state across suites.
+
+pub(crate) mod bootstrap_retry;
+mod errors;
+mod filesystem;
+mod fixtures;
+mod hash;
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+mod hook;
+#[cfg(any(test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+mod logging;
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+mod panic;
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+mod partial_data_dir;
+mod scoped_env;
+mod shared_singleton;
+mod shared_singleton_core;
+#[cfg(all(test, feature = "loom-tests"))]
+mod shared_singleton_loom_tests;
+mod worker_env;
+
+#[cfg(doc)]
+mod fixtures_docs;
+
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+pub use errors::{bootstrap_error, privilege_error};
+pub use filesystem::ambient_dir_and_path;
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+pub use filesystem::{CapabilityTempDir, ensure_dir_exists, metadata, set_permissions};
+pub use fixtures::{
+    dummy_environment,
+    dummy_settings,
+    ensure_worker_env,
+    shared_cluster,
+    shared_cluster_handle,
+    test_runtime,
+};
+#[cfg(not(doc))]
+pub use fixtures::{shared_test_cluster, shared_test_cluster_handle, test_cluster};
+#[cfg(doc)]
+pub use fixtures_docs::{shared_test_cluster, shared_test_cluster_handle, test_cluster};
+pub use hash::hash_directory;
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+pub use hook::{
+    HookGuard,
+    RunRootOperationHook,
+    RunRootOperationHookInstallError,
+    drain_hook_install_logs,
+    install_run_root_operation_hook,
+    invoke_with_privileges,
+    run_root_operation_hook,
+};
+#[cfg(any(test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+pub use logging::{
+    capture_debug_logs,
+    capture_info_logs,
+    capture_info_logs_with_spans,
+    capture_warn_logs,
+};
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+pub use panic::panic_payload_to_string;
+#[cfg(any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker"))]
+pub use partial_data_dir::create_partial_data_dir;
+pub use scoped_env::scoped_env;
+pub use worker_env::worker_binary_for_tests;
+
+#[cfg(all(
+    any(unix, windows),
+    any(doc, test, feature = "cluster-unit-tests", feature = "dev-worker")
+))]
+pub use crate::cluster::{
+    PostmasterPid,
+    PostmasterProcess,
+    postmaster_process_is_running,
+    process_is_running,
+    read_postmaster_pid,
+    read_postmaster_process,
+};

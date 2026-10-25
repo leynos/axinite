@@ -1,0 +1,120 @@
+# pg_embedded_setup_unpriv
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](
+https://deepwiki.com/leynos/pg-embed-setup-unpriv)
+
+*Zero-configuration PostgreSQL test fixtures for Rust—whether you're root or
+not.*
+
+## Why pg_embedded_setup_unpriv?
+
+Writing integration tests against PostgreSQL should be straightforward, but
+environments vary: CI containers often run as root, developer laptops don't,
+and everyone wants the same tests to pass everywhere. This crate makes that
+happen:
+
+- **Zero configuration**: Spin up a real PostgreSQL instance with a single
+  line of code. No environment variables, config files, or manual setup
+  required.
+- **Works anywhere**: The same test code runs on root CI (Codex, containers)
+  and unprivileged machines (GitHub Actions, your laptop)—the library detects
+  privileges at runtime and adapts.
+- **RAII lifecycle**: `TestCluster` starts PostgreSQL on construction and
+  stops it on drop. No orphan processes, no cleanup code.
+- **Fast test isolation**: Clone pre-migrated template databases in
+  milliseconds instead of bootstrapping fresh clusters for each test.
+
+## Quick start
+
+### Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dev-dependencies]
+pg-embed-setup-unpriv = "0.6.3"
+rstest = "0.26"
+```
+
+For the published CLI binaries, install the release archive with:
+
+```sh
+cargo binstall pg-embed-setup-unpriv
+```
+
+Published `cargo binstall` targets:
+
+| Operating system | Targets                                                 |
+| ---------------- | ------------------------------------------------------- |
+| Linux            | `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` |
+| macOS            | `aarch64-apple-darwin`, `x86_64-apple-darwin`           |
+| Windows          | `x86_64-pc-windows-msvc`                                |
+
+Windows on ARM is not published because the upstream PostgreSQL binary archive
+does not provide `aarch64-pc-windows-msvc` binaries. On Windows, the helper
+creates directories with the current account's default access control lists
+(ACLs); the POSIX `0700`/`0755` file-mode privacy clamps used on Unix are
+skipped because Windows does not expose those modes.
+
+### Basic usage
+
+```rust
+use pg_embedded_setup_unpriv::{test_support::test_cluster, TestCluster};
+use rstest::rstest;
+
+#[rstest]
+fn test_my_database_logic(test_cluster: TestCluster) {
+    let url = test_cluster.connection().database_url("postgres");
+    // Connect with your preferred client and run queries
+    assert!(url.starts_with("postgresql://"));
+}
+```
+
+That's it. The `test_cluster` fixture handles downloading PostgreSQL, creating
+directories, starting the server, and cleaning up when the test ends.
+
+## Features
+
+- **Automatic privilege detection**: Root executions delegate filesystem work
+  to a `pg_worker` subprocess running as `nobody`; unprivileged executions run
+  entirely in-process.
+- **rstest integration**: Ready-made fixtures (`test_cluster`,
+  `shared_test_cluster`) for declarative test setup.
+- **Async support**: Use `TestCluster::start_async()` in `#[tokio::test]`
+  contexts (requires the `async-api` feature).
+- **Template databases**: Clone databases via PostgreSQL's `TEMPLATE`
+  mechanism for sub-second test isolation.
+- **Diesel support**: Optional `diesel-support` feature provides
+  `diesel_connection()` for direct database access.
+- **Observability**: Tracing spans for lifecycle events, with sensitive values
+  automatically redacted.
+- **Prebuilt extensions**: Declare `PG_EXTENSIONS` (for example `vector`) and
+  a digest-pinned manifest, and the cluster installs verified prebuilt archives
+  from [df12-pg-extensions][df12-pg-extensions] before the server starts; see
+  [docs/extensions.md](docs/extensions.md).
+
+[df12-pg-extensions]: https://github.com/leynos/df12-pg-extensions
+
+## Running as root / pg_worker
+
+If your tests run as `root` (common in containers/CI) and you hit privilege
+errors, ensure the `pg_worker` helper is configured via `PG_EMBEDDED_WORKER`.
+See the Users' Guide section on root-only test agents for the required setup
+and environment variables.[^root-worker]
+
+[^root-worker]: docs/users-guide.md#integrating-with-root-only-test-agents
+
+## Learn more
+
+- [Users' Guide](docs/users-guide.md) — full documentation, async API,
+  template databases, and performance tuning
+- [Developers' Guide](docs/developers-guide.md) — contributing and development
+- [Roadmap](docs/roadmap.md) — planned features and progress
+
+## Licence
+
+ISC — see the licence in [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions welcome! Please see [AGENTS.md](AGENTS.md) for guidelines.

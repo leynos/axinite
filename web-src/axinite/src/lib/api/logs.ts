@@ -14,16 +14,20 @@ import type {
   LogLevelRequest,
   LogLevelResponse,
 } from "@/lib/api/contracts";
-import { isJsonObject, isString } from "@/lib/api/json-value";
+import {
+  isJsonObject,
+  isString,
+  type JsonObject,
+  type JsonValue,
+} from "@/lib/api/json-value";
 
-const LOG_LEVEL_VALUES: readonly LogEntry["level"][] = [
-  "trace",
-  "debug",
-  "info",
-  "warn",
-  "error",
-];
-const LOG_LEVELS = new Set<string>(LOG_LEVEL_VALUES);
+const LOG_LEVELS = new Map<string, LogEntry["level"]>([
+  ["trace", "trace"],
+  ["debug", "debug"],
+  ["info", "info"],
+  ["warn", "warn"],
+  ["error", "error"],
+]);
 
 /** GET /api/logs/level: fetch the gateway's current runtime log level. */
 export function fetchLogLevel(): Promise<LogLevelResponse> {
@@ -40,27 +44,33 @@ export function setLogLevel(level: string): Promise<LogLevelResponse> {
   });
 }
 
-function isLogEntry(value: unknown): value is LogEntry {
-  if (!isJsonObject(value)) {
-    return false;
+function parseLogEntry(value: JsonObject): LogEntry | undefined {
+  const level = parseLogLevel(value["level"]);
+  if (level === undefined) {
+    return undefined;
   }
-  if (!isLogLevel(value["level"])) {
-    return false;
+  const target = value["target"];
+  if (!isString(target)) {
+    return undefined;
   }
-  if (!isString(value["target"])) {
-    return false;
+  const message = value["message"];
+  if (!isString(message)) {
+    return undefined;
   }
-  if (!isString(value["message"])) {
-    return false;
+  const timestamp = value["timestamp"];
+  if (!isString(timestamp)) {
+    return undefined;
   }
-  return isString(value["timestamp"]);
+  return { level, target, message, timestamp };
 }
 
-function isLogLevel(value: unknown): value is LogEntry["level"] {
+function parseLogLevel(
+  value: JsonValue | undefined
+): LogEntry["level"] | undefined {
   if (!isString(value)) {
-    return false;
+    return undefined;
   }
-  return LOG_LEVELS.has(value);
+  return LOG_LEVELS.get(value.toLowerCase());
 }
 
 /**
@@ -83,11 +93,16 @@ export function connectLogEvents(
       onError?.();
       return;
     }
-    if (!isLogEntry(payload)) {
+    if (!isJsonObject(payload)) {
       onError?.();
       return;
     }
-    listener(payload);
+    const entry = parseLogEntry(payload);
+    if (entry === undefined) {
+      onError?.();
+      return;
+    }
+    listener(entry);
   });
   if (onError) {
     setStreamConnectionErrorHandler(source, onError);

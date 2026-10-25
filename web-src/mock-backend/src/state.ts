@@ -834,9 +834,11 @@ export class MockBackendState {
     if (!job) {
       throw new Error("Job not found");
     }
-    const content = job.files[path];
+    const content = Object.hasOwn(job.files, path)
+      ? job.files[path]
+      : undefined;
     if (content === undefined) {
-      throw new TypeError("File not found");
+      throw new Error("File not found");
     }
     return { path, content };
   }

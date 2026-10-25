@@ -120,6 +120,26 @@ describe("mock query purity", () => {
     state.dispose();
   });
 
+  it.each([
+    "constructor",
+    "toString",
+    "missing.txt",
+  ])("treats inherited or unknown job file %s as missing", (path) => {
+    const state = new MockBackendState();
+    let thrown: unknown;
+    try {
+      state.readJobFile("job-comparison", path);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      state.dispose();
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(thrown).toHaveProperty("message", "File not found");
+  });
+
   it("does not expose the created thread as a mutable state alias", () => {
     const state = new MockBackendState();
     const thread = state.createThread();

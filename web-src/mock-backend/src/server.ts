@@ -430,8 +430,16 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: /^\/api\/routines\/([^/]+)\/toggle$/,
     handler: async ({ state, request, match }) => {
+      const id = firstCapture(match);
+      if (request.body === null) {
+        return jsonResponse(state.toggleRoutine(id));
+      }
+
       const body = await parseJsonBody(request, isToggleRequest);
-      return jsonResponse(state.toggleRoutine(firstCapture(match), body));
+      if (body === undefined) {
+        return errorResponse(400, "Invalid routine toggle body.");
+      }
+      return jsonResponse(state.toggleRoutine(id, body));
     },
   },
   {

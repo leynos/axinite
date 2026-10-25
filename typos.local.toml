@@ -125,6 +125,9 @@ ignore = [
 ]
 [files]
 exclude = [
+  # Vendored upstream source keeps its API spellings and release prose; the
+  # Axinite-owned code and documentation around this dependency remain checked.
+  "crates/pg-embed-setup-unpriv/**",
   # Split-module descendants of the excluded catalogue/artefact files above:
   # they inherit the same public identifiers and wire tokens (catalog,
   # artifact) that must retain upstream spelling.

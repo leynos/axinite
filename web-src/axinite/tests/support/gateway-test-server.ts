@@ -61,7 +61,12 @@ async function readRequestBody(request: Request): Promise<RequestBodyResult> {
     return { isValid: true };
   }
 
-  const parsed: unknown = await request.clone().json();
+  let parsed: unknown;
+  try {
+    parsed = await request.clone().json();
+  } catch {
+    return { isValid: false };
+  }
   if (!isJsonObject(parsed)) {
     return { isValid: false };
   }

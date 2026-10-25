@@ -72,10 +72,7 @@ function createTeeReportLoader(status: {
 
   const copyReport = () => {
     const current = report();
-    const clipboard: unknown = Object.getOwnPropertyDescriptor(
-      globalThis.navigator,
-      "clipboard"
-    )?.value;
+    const clipboard: unknown = globalThis.navigator.clipboard;
     if (!current || !isClipboardWriter(clipboard)) {
       return;
     }

@@ -18,6 +18,7 @@ import {
 // stored token through both transports.
 
 afterEach(() => {
+  vi.restoreAllMocks();
   clearGatewayToken();
   vi.unstubAllGlobals();
 });
@@ -36,6 +37,16 @@ describe("gateway token storage", () => {
     expect(globalThis.sessionStorage.getItem("axinite.gateway-token")).toBe(
       "persisted"
     );
+  });
+
+  it("treats session storage denied by the browser as unavailable", () => {
+    vi.spyOn(globalThis, "sessionStorage", "get").mockImplementation(() => {
+      throw new Error("Session storage is unavailable");
+    });
+
+    expect(getGatewayToken()).toBeNull();
+    expect(() => setGatewayToken("secret-token")).not.toThrow();
+    expect(() => clearGatewayToken()).not.toThrow();
   });
 });
 
