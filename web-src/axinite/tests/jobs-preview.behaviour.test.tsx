@@ -1,13 +1,12 @@
 /**
  * @file Behaviour tests for the jobs route (`JobsPreview` and `JobDetail`),
- * with the jobs API module mocked so list, detail, event and file flows run
- * without a gateway.
+ * using the real API modules against controlled in-process gateway responses.
  */
 
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { AppProviders } from "@/app/providers";
 import { JobDetail } from "@/components/jobs/job-detail";
@@ -20,28 +19,11 @@ import type {
 } from "@/lib/api/contracts";
 import { promptJob } from "@/lib/api/jobs";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
+import { GatewayTestServer } from "./support/gateway-test-server";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
 import { TestProviders } from "./support/test-providers";
 
-const jobsApiMocks = vi.hoisted(() => ({
-  fetchJobs: vi.fn(),
-  fetchJobSummary: vi.fn(),
-  fetchJobDetail: vi.fn(),
-  fetchJobEvents: vi.fn(),
-  fetchJobFiles: vi.fn(),
-  readJobFile: vi.fn(),
-  restartJob: vi.fn(),
-  cancelJob: vi.fn(),
-  promptJob: vi.fn(),
-}));
-
-vi.mock("@/lib/api/jobs", () => jobsApiMocks);
-
-// The live activity source is injected in the detail tests, so the chat module
-// is stubbed only to keep the default import resolvable.
-vi.mock("@/lib/api/chat", () => ({
-  connectChatEvents: vi.fn(() => ({ close: vi.fn() })),
-}));
+let gateway: GatewayTestServer;
 
 const FLAG_OVERRIDE_KEY = "axinite.feature-flag-overrides";
 
@@ -94,6 +76,22 @@ type RenderedDetail = {
   promptText: () => string;
 };
 
+class LiveEventHarness {
+  private handler: ((event: ChatSseEvent) => void) | undefined;
+
+  connect = (handler: (event: ChatSseEvent) => void) => {
+    this.handler = handler;
+    return { close: () => {} };
+  };
+
+  emit = (event: ChatSseEvent): void => {
+    if (!this.handler) {
+      throw new Error("Job event stream was not connected");
+    }
+    this.handler(event);
+  };
+}
+
 function renderJobDetail(
   job: JobDetailResponse,
   options: RenderDetailOptions = {}
@@ -101,7 +99,7 @@ function renderJobDetail(
   const [activePath, setActivePath] = createSignal<string>();
   const [promptText, setPromptText] = createSignal("");
   const [fileContent, setFileContent] = createSignal<string>();
-  let emit: (event: ChatSseEvent) => void = () => undefined;
+  const eventHarness = new LiveEventHarness();
 
   const onSelectFile = (path: string) => {
     setActivePath(path);
@@ -112,26 +110,23 @@ function renderJobDetail(
     <TestProviders>
       <JobDetail
         activePath={activePath}
-        connectLive={(onEvent) => {
-          emit = onEvent;
-          return { close: vi.fn() };
-        }}
+        connectLive={eventHarness.connect}
         events={() => options.events ?? []}
         fileContent={fileContent}
         files={() => options.files ?? []}
         job={() => job}
-        onCancel={() => undefined}
+        onCancel={() => {}}
         onPromptInput={setPromptText}
-        onRestart={() => undefined}
+        onRestart={() => {}}
         onSelectFile={onSelectFile}
-        onSubmitPrompt={options.onSubmitPrompt ?? (() => undefined)}
+        onSubmitPrompt={options.onSubmitPrompt ?? (() => {})}
         promptText={promptText}
       />
     </TestProviders>
   ));
 
   return {
-    emit: (event) => emit(event),
+    emit: eventHarness.emit,
     selectedFile: activePath,
     promptText,
   };
@@ -142,27 +137,37 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  for (const mock of Object.values(jobsApiMocks)) {
-    mock.mockReset();
-  }
-  window.localStorage.clear();
+  gateway = new GatewayTestServer()
+    .respond({ method: "GET", path: "/api/jobs", payload: { jobs: [] } })
+    .respond({
+      method: "GET",
+      path: "/api/jobs/summary",
+      payload: {
+        total: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+        stuck: 0,
+      },
+    })
+    .route({
+      method: "POST",
+      path: /^\/api\/jobs\/[^/]+\/prompt$/u,
+      handler: async () => Response.json({ success: true, message: "ok" }),
+    });
+  globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
-
-  jobsApiMocks.fetchJobSummary.mockResolvedValue({
-    total: 0,
-    running: 0,
-    completed: 0,
-    failed: 0,
-    stuck: 0,
-  });
 });
 
 describe("jobs preview error handling", () => {
   it("shows a visible error state when the jobs list request fails", async () => {
-    jobsApiMocks.fetchJobs.mockRejectedValue(
-      new Error("Simulated failure for /api/jobs.")
-    );
+    gateway.fail({
+      method: "GET",
+      path: "/api/jobs",
+      status: 500,
+      message: "Simulated failure for /api/jobs.",
+    });
 
     render(() => (
       <AppProviders>
@@ -177,7 +182,7 @@ describe("jobs preview error handling", () => {
           "Jobs could not be loaded"
         );
       },
-      { timeout: 5_000 }
+      { timeout: 5000 }
     );
   });
 });
@@ -243,7 +248,7 @@ describe("jobs detail tabs", () => {
   });
 
   it("hides restart when the flag is on but the job cannot restart", () => {
-    window.localStorage.setItem(
+    globalThis.localStorage.setItem(
       FLAG_OVERRIDE_KEY,
       JSON.stringify({ action_job_restart: true })
     );
@@ -254,7 +259,7 @@ describe("jobs detail tabs", () => {
   });
 
   it("shows restart when the flag is on and the job can restart", () => {
-    window.localStorage.setItem(
+    globalThis.localStorage.setItem(
       FLAG_OVERRIDE_KEY,
       JSON.stringify({ action_job_restart: true })
     );
@@ -318,7 +323,6 @@ describe("jobs detail tabs", () => {
   });
 
   it("posts done:true when the prompt is marked as done", async () => {
-    jobsApiMocks.promptJob.mockResolvedValue({ success: true, message: "ok" });
     const detail = renderJobDetail(makeJob(), {
       // Mirror the JobsPreview wiring: the composer's done flag shapes the body.
       onSubmitPrompt: (done) =>
@@ -340,10 +344,17 @@ describe("jobs detail tabs", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(jobsApiMocks.promptJob).toHaveBeenCalledWith("job-1", {
-        content: "do it",
-        done: true,
-      });
+      expect(
+        gateway.requests.some((request) => {
+          const body = request.body;
+          return (
+            request.method === "POST" &&
+            request.path === "/api/jobs/job-1/prompt" &&
+            body?.["content"] === "do it" &&
+            body["done"] === true
+          );
+        })
+      ).toBe(true);
     });
   });
 

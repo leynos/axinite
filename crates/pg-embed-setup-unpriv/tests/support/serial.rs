@@ -1,0 +1,223 @@
+//! Serialization guard shared by behavioural test suites.
+//!
+//! Acquire this guard **before** calling environment helpers such as
+//! [`crate::test_support::with_scoped_env`] to maintain the lock-ordering
+//! contract used throughout the integration scenarios (process lock, scenario
+//! mutex, then environment mutex). Following this order prevents deadlocks when
+//! multiple suites mutate process-wide state.
+
+#[cfg(unix)]
+use std::fs::OpenOptions;
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+#[cfg(unix)]
+use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
+
+use rstest::fixture;
+
+#[cfg(not(unix))]
+#[path = "serial/non_unix.rs"]
+mod non_unix;
+
+static SCENARIO_MUTEX: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
+
+#[cfg(unix)]
+type ProcessLock = std::fs::File;
+
+#[cfg(not(unix))]
+use non_unix::ProcessLock;
+
+#[derive(Debug)]
+#[must_use = "Hold this guard for the duration of the serialized scenario"]
+pub struct ScenarioSerialGuard {
+    _guard: MutexGuard<'static, ()>,
+    _lock_file: ProcessLock,
+}
+
+#[derive(Debug)]
+#[must_use = "Hold this guard for the duration of the serialized scenario"]
+pub struct ScenarioLocalGuard {
+    _guard: MutexGuard<'static, ()>,
+}
+
+/// Provides a serialization guard for behavioural test scenarios.
+///
+/// Acquires a global mutex to ensure that scenarios relying on shared state
+/// (such as process environment variables or singleton resources) execute
+/// serially, preventing cross-test interference. A cross-process lock is also
+/// acquired so independent test binaries coordinate access to the shared
+/// `PostgreSQL` cache and installation directories.
+///
+/// # Behaviour
+///
+/// - Acquires the global `SCENARIO_MUTEX` and wraps the guard.
+/// - If the mutex is poisoned (a previous test panicked whilst holding the lock), the poison is
+///   cleared and execution continues.
+/// - The guard is automatically released when dropped at the end of the test.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use rstest::rstest;
+/// use tests::support::serial::{serial_guard, ScenarioSerialGuard};
+///
+/// #[rstest]
+/// fn my_scenario(serial_guard: ScenarioSerialGuard) {
+///     let _guard = serial_guard;
+///     // Test code that mutates shared state
+/// }
+/// ```
+#[fixture]
+pub fn serial_guard() -> ScenarioSerialGuard {
+    let lock_file = acquire_process_lock();
+    let guard = acquire_scenario_guard();
+    ScenarioSerialGuard {
+        _guard: guard,
+        _lock_file: lock_file,
+    }
+}
+
+/// Provides a local-only serialization guard for behavioural scenarios.
+///
+/// Use this guard when a test only needs in-process serialization (for example,
+/// it uses sandboxed directories) and does not require a cross-process file
+/// lock.
+///
+/// # Behaviour
+///
+/// - Acquires the global `SCENARIO_MUTEX` and wraps the guard.
+/// - If the mutex is poisoned (a previous test panicked whilst holding the lock), the poison is
+///   cleared and execution continues.
+/// - The guard is automatically released when dropped at the end of the test.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use rstest::rstest;
+/// use tests::support::serial::{local_serial_guard, ScenarioLocalGuard};
+///
+/// #[rstest]
+/// fn my_scenario(local_serial_guard: ScenarioLocalGuard) {
+///     let _guard = local_serial_guard;
+///     // Test code that uses sandboxed directories
+/// }
+/// ```
+#[fixture]
+pub fn local_serial_guard() -> ScenarioLocalGuard {
+    let guard = acquire_scenario_guard();
+    ScenarioLocalGuard { _guard: guard }
+}
+
+fn acquire_scenario_guard() -> MutexGuard<'static, ()> {
+    SCENARIO_MUTEX
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[cfg(unix)]
+fn acquire_process_lock() -> ProcessLock {
+    let target_dir =
+        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| PathBuf::from("target"), PathBuf::from);
+    if let Err(err) = std::fs::create_dir_all(&target_dir) {
+        panic!(
+            "failed to create target dir for scenario lock at {}: {err}",
+            target_dir.display()
+        );
+    }
+    let lock_path = target_dir.join("pg-embed-setup-unpriv.serial.lock");
+    let open_result = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path);
+    let lock_file = match open_result {
+        Ok(file) => file,
+        Err(err) => panic!(
+            "failed to open scenario lock file at {}: {err}",
+            lock_path.display()
+        ),
+    };
+    // SAFETY: The file descriptor obtained from `lock_file.as_raw_fd()` is valid
+    // because `lock_file` was opened via `OpenOptions::open` and remains owned by
+    // this scope until after the `flock` call completes. No other code moves or
+    // closes the descriptor while this block runs. The `libc::flock` syscall
+    // operates on the OS-level file descriptor and does not access Rust memory,
+    // so there are no data-race concerns from Rust's perspective.
+    let result = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) };
+    assert!(
+        result == 0,
+        "failed to acquire scenario lock at {}: {}",
+        lock_path.display(),
+        std::io::Error::last_os_error()
+    );
+    lock_file
+}
+
+#[cfg(not(unix))]
+fn acquire_process_lock() -> ProcessLock { non_unix::acquire_process_lock() }
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for scenario serialization guards.
+
+    #[cfg(unix)]
+    use rstest::rstest;
+
+    use super::*;
+
+    #[test]
+    fn serial_guard_is_not_reentrant() {
+        let guard = serial_guard();
+        assert!(SCENARIO_MUTEX.try_lock().is_err());
+        drop(guard);
+        let reacquired = SCENARIO_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        drop(reacquired);
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "best-effort cleanup where errors are intentionally ignored"
+    )]
+    fn acquire_process_lock_places_lock_file_in_cargo_target_dir(
+        serial_guard: ScenarioSerialGuard,
+    ) {
+        use std::{env, ffi::OsString, fs};
+
+        use pg_embedded_setup_unpriv::test_support::scoped_env;
+
+        let _guard = serial_guard;
+
+        let tmp_dir = env::temp_dir().join("pg_scenario_lock_test");
+        // Best-effort cleanup of any previous test run; errors are expected if
+        // the directory does not exist.
+        let _ = fs::remove_dir_all(&tmp_dir);
+        fs::create_dir_all(&tmp_dir)
+            .expect("failed to create temporary CARGO_TARGET_DIR for acquire_process_lock test");
+
+        // Set CARGO_TARGET_DIR to our test directory using the shared scoped_env
+        // helper, which restores the original value when the guard is dropped.
+        let _env_guard = scoped_env(vec![(
+            OsString::from("CARGO_TARGET_DIR"),
+            Some(tmp_dir.clone().into_os_string()),
+        )]);
+        let _lock = acquire_process_lock();
+
+        let entries: Vec<_> = fs::read_dir(&tmp_dir)
+            .expect("failed to read temporary CARGO_TARGET_DIR for acquire_process_lock test")
+            .collect();
+        assert!(
+            !entries.is_empty(),
+            "expected acquire_process_lock to create a lock file in {tmp_dir:?}, but directory \
+             was empty"
+        );
+
+        // Best-effort cleanup; errors are non-fatal in test teardown.
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+}

@@ -1,0 +1,349 @@
+//! Drops elevated privileges for worker subprocesses where supported.
+//!
+//! The helper enforces that payload files are owned by the target unprivileged
+//! account before execing the worker binary with the downgraded identity.
+
+use std::{path::Path, process::Command};
+
+#[cfg(all(
+    unix,
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ),
+))]
+use color_eyre::eyre::{Context, eyre};
+use tracing::info;
+#[cfg(all(
+    unix,
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ),
+))]
+use tracing::info_span;
+
+use crate::{error::BootstrapResult, observability::LOG_TARGET};
+
+macro_rules! cfg_privilege_drop {
+    ($($item:item)*) => {
+        $(
+            #[cfg(all(
+                unix,
+                any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "freebsd",
+                    target_os = "openbsd",
+                    target_os = "dragonfly",
+                ),
+            ))]
+            $item
+        )*
+    };
+}
+
+cfg_privilege_drop! {
+    use nix::unistd::{Gid, Uid, User, chown};
+    use std::os::unix::process::CommandExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+}
+
+/// Applies privilege-dropping configuration to a worker command.
+///
+/// On supported Unix platforms, resolves the "nobody" account, reassigns the
+/// worker payload to that user, and arranges to demote credentials immediately
+/// before `exec`. Unsupported platforms treat the helper as a no-op so tests and
+/// non-Unix builds continue to function.
+///
+/// # Errors
+///
+/// Returns an error if resolving the "nobody" account fails or if updating the
+/// payload ownership is unsuccessful.
+///
+/// # Examples
+///
+/// ```ignore
+/// use std::path::Path;
+/// use std::process::Command;
+///
+/// use pg_embedded_setup_unpriv::worker_process::privileges;
+///
+/// # fn demo() -> pg_embedded_setup_unpriv::BootstrapResult<()> {
+/// let payload = Path::new("/tmp/worker_payload.json");
+/// let mut command = Command::new("/usr/local/bin/worker");
+/// privileges::apply(payload, &mut command)?;
+/// # Ok(())
+/// # }
+/// ```
+pub(crate) fn apply(payload_path: &Path, command: &mut Command) -> BootstrapResult<()> {
+    apply_impl(payload_path, command)
+}
+
+cfg_privilege_drop! {
+    fn apply_impl(payload_path: &Path, command: &mut Command) -> BootstrapResult<()> {
+        apply_unix(payload_path, command)
+    }
+
+    // Tracks nesting so privilege drop stays disabled while any guard is held.
+    static SKIP_PRIVILEGE_DROP: AtomicUsize = AtomicUsize::new(0);
+
+    fn apply_unix(payload_path: &Path, command: &mut Command) -> BootstrapResult<()> {
+        let span = info_span!(
+            target: LOG_TARGET,
+            "privilege_drop",
+            payload = %payload_path.display()
+        );
+        let _entered = span.enter();
+
+        if skip_privilege_drop(payload_path) {
+            return Ok(());
+        }
+
+        apply_privilege_drop(payload_path, command)
+    }
+
+    fn apply_privilege_drop(payload_path: &Path, command: &mut Command) -> BootstrapResult<()> {
+        let (uid, gid) = resolve_nobody_ids()?;
+        chown_payload(payload_path, uid, gid)?;
+        configure_pre_exec(command, uid, gid);
+
+        info!(
+            target: LOG_TARGET,
+            payload = %payload_path.display(),
+            uid,
+            gid,
+            "configured worker command to drop privileges"
+        );
+        Ok(())
+    }
+
+    fn skip_privilege_drop(payload_path: &Path) -> bool {
+        let should_skip = skip_privilege_drop_for_tests();
+        if should_skip {
+            info!(
+                target: LOG_TARGET,
+                payload = %payload_path.display(),
+                "skipping privilege drop for tests"
+            );
+        }
+        should_skip
+    }
+
+    fn resolve_nobody_ids() -> BootstrapResult<(u32, u32)> {
+        let user = User::from_name("nobody")
+            .context("failed to resolve user 'nobody'")?
+            .ok_or_else(|| eyre!("user 'nobody' not found"))?;
+        Ok((user.uid.as_raw(), user.gid.as_raw()))
+    }
+
+    fn chown_payload(payload_path: &Path, uid: u32, gid: u32) -> BootstrapResult<()> {
+        chown(
+            payload_path,
+            Some(Uid::from_raw(uid)),
+            Some(Gid::from_raw(gid)),
+        )
+        .context("failed to chown worker payload to nobody")?;
+        Ok(())
+    }
+
+    fn configure_pre_exec(command: &mut Command, uid: u32, gid: u32) {
+        unsafe {
+            // SAFETY: This closure executes immediately before `exec` whilst the process
+            // still owns elevated credentials. The synchronous UID/GID demotion mirrors the
+            // previous inlined implementation in `TestCluster::spawn_worker` and keeps the
+            // privilege adjustments ordered: groups, gid, then uid.
+            command.pre_exec(move || {
+                if libc::setgroups(0, std::ptr::null()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::setgid(gid) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::setuid(uid) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+}
+
+#[cfg(not(all(
+    unix,
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ),
+)))]
+fn apply_noop(_payload_path: &Path, _command: &mut Command) -> BootstrapResult<()> {
+    info!(
+        target: LOG_TARGET,
+        "privilege drop unsupported on this platform; worker command left unchanged"
+    );
+    Ok(())
+}
+
+#[cfg(not(all(
+    unix,
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ),
+)))]
+fn apply_impl(payload_path: &Path, command: &mut Command) -> BootstrapResult<()> {
+    apply_noop(payload_path, command)
+}
+
+cfg_privilege_drop! {
+    /// Guard that restores the privilege-drop toggle when dropped.
+    ///
+    /// Obtain the guard through [`disable_privilege_drop_for_tests`] when
+    /// temporarily bypassing demotion during integration tests; dropping the guard
+    /// re-enables the standard privilege enforcement automatically.
+    #[cfg(any(test, doc, feature = "privileged-tests"))]
+    #[derive(Debug)]
+    pub(crate) struct PrivilegeDropGuard;
+
+    #[cfg(any(test, doc, feature = "privileged-tests"))]
+    impl Drop for PrivilegeDropGuard {
+        fn drop(&mut self) {
+            decrement_skip_privilege_drop();
+        }
+    }
+
+    #[cfg(any(test, doc, feature = "privileged-tests"))]
+    #[must_use]
+    pub(crate) fn disable_privilege_drop_for_tests() -> PrivilegeDropGuard {
+        SKIP_PRIVILEGE_DROP.fetch_add(1, Ordering::SeqCst);
+        PrivilegeDropGuard
+    }
+
+    fn skip_privilege_drop_for_tests() -> bool {
+        SKIP_PRIVILEGE_DROP.load(Ordering::SeqCst) > 0
+    }
+
+    #[cfg(any(test, doc, feature = "privileged-tests"))]
+    fn decrement_skip_privilege_drop() {
+        let _update_result = SKIP_PRIVILEGE_DROP.fetch_update(
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+            |value| {
+                debug_assert!(
+                    value > 0,
+                    "PrivilegeDropGuard dropped with zero privilege-drop counter"
+                );
+                Some(value.saturating_sub(1))
+            },
+        );
+    }
+}
+
+#[cfg(all(
+    test,
+    unix,
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ),
+))]
+mod tests {
+    //! Tests for worker process privilege handling.
+    use std::process::Command;
+
+    use color_eyre::eyre::ensure;
+    use serial_test::serial;
+    use tempfile::NamedTempFile;
+
+    use super::*;
+    use crate::test_support::capture_info_logs;
+
+    // All tests that flip the process-global `SKIP_PRIVILEGE_DROP` counter share
+    // the `privilege_drop_toggle` serial key so the exact-count assertions in
+    // `skip_toggle_tracks_nested_guards` are never raced by a concurrent guard.
+
+    #[test]
+    #[serial(privilege_drop_toggle)]
+    fn skip_guard_logs_observability() -> color_eyre::Result<()> {
+        let payload = NamedTempFile::new()?;
+        let mut command = Command::new("true");
+        let guard = disable_privilege_drop_for_tests();
+
+        let (logs, result) = capture_info_logs(|| apply(payload.path(), &mut command));
+        drop(guard);
+
+        ensure!(result.is_ok(), "privilege drop skip should succeed");
+        ensure!(
+            logs.iter().any(|line| {
+                line.contains("skipping privilege drop for tests")
+                    && line.contains(&format!("{}", payload.path().display()))
+            }),
+            "expected skip log entry, got {logs:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[serial(privilege_drop_toggle)]
+    fn skip_toggle_tracks_nested_guards() {
+        assert!(!skip_privilege_drop_for_tests(), "toggle starts disabled");
+        let outer = disable_privilege_drop_for_tests();
+        assert!(skip_privilege_drop_for_tests(), "outer guard enables skip");
+        let inner = disable_privilege_drop_for_tests();
+        assert!(skip_privilege_drop_for_tests(), "inner guard keeps skip");
+        drop(inner);
+        assert!(
+            skip_privilege_drop_for_tests(),
+            "skip remains while outer guard is held"
+        );
+        drop(outer);
+        assert!(
+            !skip_privilege_drop_for_tests(),
+            "skip clears once all guards drop"
+        );
+    }
+
+    #[test]
+    fn resolve_nobody_ids_returns_unprivileged_account() {
+        let (uid, gid) = resolve_nobody_ids().expect("resolve nobody account");
+        assert!(uid > 0, "nobody uid must not be root");
+        assert!(gid > 0, "nobody gid must not be root");
+    }
+
+    #[test]
+    fn configure_pre_exec_demotion_hook_fails_spawn_when_unprivileged() {
+        // The installed pre-exec hook demotes credentials before `exec`. As an
+        // unprivileged process, demoting to uid/gid 0 must fail (EPERM) inside
+        // the hook, which makes `spawn()` return an error. A no-op
+        // `configure_pre_exec` would instead let `true` spawn successfully, so
+        // this test fails if the hook is not installed and executed.
+        //
+        // Skip under root, where demotion to uid 0 succeeds and the hook cannot
+        // fail.
+        if nix::unistd::geteuid().is_root() {
+            return;
+        }
+
+        let mut command = Command::new("true");
+        configure_pre_exec(&mut command, 0, 0);
+        assert!(
+            command.spawn().is_err(),
+            "pre-exec demotion to uid 0 must fail for an unprivileged process"
+        );
+    }
+}

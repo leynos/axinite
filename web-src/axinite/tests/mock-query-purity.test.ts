@@ -13,88 +13,88 @@ function first<T>(entries: readonly T[]): T {
 }
 
 /** Simulate an in-process consumer changing every mutable part of a DTO. */
-function corrupt(value: unknown): void {
-  if (typeof value !== "object" || value === null) return;
+function corrupt<T extends object>(value: T): void {
   for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === "object" && entry !== null) {
-      corrupt(entry);
+    const child: unknown = entry;
+    if (child instanceof Object) {
+      corrupt(child);
     } else {
       Reflect.set(value, key, "consumer changed this value");
     }
   }
-  if (Array.isArray(value)) value.push({ injected: true });
+  if (Array.isArray(value)) {
+    value.push({ injected: true });
+  }
 }
 
-const queries: { name: string; read: (state: MockBackendState) => unknown }[] =
-  [
-    { name: "status", read: (state) => state.getGatewayStatus() },
-    { name: "flags", read: (state) => state.getFeatureFlags() },
-    { name: "threads", read: (state) => state.listThreads() },
-    { name: "history", read: (state) => state.getHistory("thread-assistant") },
-    { name: "pairing", read: (state) => state.pairingList("whatsapp") },
-    { name: "memory tree", read: (state) => state.getMemoryTree() },
-    { name: "memory listing", read: (state) => state.listMemory() },
-    {
-      name: "memory read",
-      read: (state) =>
-        state.readMemory(
-          first(state.getMemoryTree().entries.filter((entry) => !entry.is_dir))
-            .path
-        ),
-    },
-    {
-      name: "memory search",
-      read: (state) => state.searchMemory({ query: "a" }),
-    },
-    { name: "jobs", read: (state) => state.listJobs() },
-    { name: "job summary", read: (state) => state.summarizeJobs() },
-    { name: "job detail", read: (state) => state.getJob("job-comparison") },
-    {
-      name: "job events",
-      read: (state) => state.getJobEvents("job-comparison"),
-    },
-    {
-      name: "job files",
-      read: (state) => state.listJobFiles("job-comparison"),
-    },
-    {
-      name: "job file read",
-      read: (state) =>
-        state.readJobFile(
-          "job-comparison",
-          first(state.listJobFiles("job-comparison").entries).path
-        ),
-    },
-    { name: "routines", read: (state) => state.listRoutines() },
-    { name: "routine summary", read: (state) => state.summarizeRoutines() },
-    {
-      name: "routine detail",
-      read: (state) =>
-        state.getRoutine(first(state.listRoutines().routines).id),
-    },
-    {
-      name: "routine runs",
-      read: (state) =>
-        state.getRoutineRuns(first(state.listRoutines().routines).id),
-    },
-    { name: "extensions", read: (state) => state.listExtensions() },
-    { name: "extension tools", read: (state) => state.listExtensionTools() },
-    {
-      name: "extension registry",
-      read: (state) => state.searchExtensionRegistry(),
-    },
-    {
-      name: "extension setup",
-      read: (state) =>
-        state.getExtensionSetup(first(state.listExtensions().extensions).name),
-    },
-    { name: "skills", read: (state) => state.listSkills() },
-    {
-      name: "skill catalogue",
-      read: (state) => state.searchSkills({ query: "" }),
-    },
-    { name: "log level", read: (state) => state.getLogLevel() },
-  ];
+const queries: { name: string; read: (state: MockBackendState) => object }[] = [
+  { name: "status", read: (state) => state.getGatewayStatus() },
+  { name: "flags", read: (state) => state.getFeatureFlags() },
+  { name: "threads", read: (state) => state.listThreads() },
+  { name: "history", read: (state) => state.getHistory("thread-assistant") },
+  { name: "pairing", read: (state) => state.pairingList("whatsapp") },
+  { name: "memory tree", read: (state) => state.getMemoryTree() },
+  { name: "memory listing", read: (state) => state.listMemory() },
+  {
+    name: "memory read",
+    read: (state) =>
+      state.readMemory(
+        first(state.getMemoryTree().entries.filter((entry) => !entry.is_dir))
+          .path
+      ),
+  },
+  {
+    name: "memory search",
+    read: (state) => state.searchMemory({ query: "a" }),
+  },
+  { name: "jobs", read: (state) => state.listJobs() },
+  { name: "job summary", read: (state) => state.summarizeJobs() },
+  { name: "job detail", read: (state) => state.getJob("job-comparison") },
+  {
+    name: "job events",
+    read: (state) => state.getJobEvents("job-comparison"),
+  },
+  {
+    name: "job files",
+    read: (state) => state.listJobFiles("job-comparison"),
+  },
+  {
+    name: "job file read",
+    read: (state) =>
+      state.readJobFile(
+        "job-comparison",
+        first(state.listJobFiles("job-comparison").entries).path
+      ),
+  },
+  { name: "routines", read: (state) => state.listRoutines() },
+  { name: "routine summary", read: (state) => state.summarizeRoutines() },
+  {
+    name: "routine detail",
+    read: (state) => state.getRoutine(first(state.listRoutines().routines).id),
+  },
+  {
+    name: "routine runs",
+    read: (state) =>
+      state.getRoutineRuns(first(state.listRoutines().routines).id),
+  },
+  { name: "extensions", read: (state) => state.listExtensions() },
+  { name: "extension tools", read: (state) => state.listExtensionTools() },
+  {
+    name: "extension registry",
+    read: (state) => state.searchExtensionRegistry(),
+  },
+  {
+    name: "extension setup",
+    read: (state) =>
+      state.getExtensionSetup(first(state.listExtensions().extensions).name),
+  },
+  { name: "skills", read: (state) => state.listSkills() },
+  {
+    name: "skill catalogue",
+    read: (state) => state.searchSkills({ query: "" }),
+  },
+  { name: "log level", read: (state) => state.getLogLevel() },
+];
 
 describe("mock query purity", () => {
   it.each(
@@ -118,6 +118,26 @@ describe("mock query purity", () => {
     state.getHistory("thread-assistant");
     expect(state.listThreads().active_thread).toBe(thread.id);
     state.dispose();
+  });
+
+  it.each([
+    "constructor",
+    "toString",
+    "missing.txt",
+  ])("treats inherited or unknown job file %s as missing", (path) => {
+    const state = new MockBackendState();
+    let thrown: unknown;
+    try {
+      state.readJobFile("job-comparison", path);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      state.dispose();
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(thrown).toHaveProperty("message", "File not found");
   });
 
   it("does not expose the created thread as a mutable state alias", () => {

@@ -15,8 +15,8 @@ import type {
 
 /** GET /api/memory/tree: fetch the workspace tree, optionally to `depth`. */
 export function fetchMemoryTree(depth?: number): Promise<MemoryTreeResponse> {
-  const url = new URL("/api/memory/tree", window.location.origin);
-  if (typeof depth === "number") {
+  const url = new URL("/api/memory/tree", globalThis.location.origin);
+  if (depth !== undefined) {
     url.searchParams.set("depth", String(depth));
   }
   return requestJson<MemoryTreeResponse>(`${url.pathname}${url.search}`);
@@ -24,7 +24,7 @@ export function fetchMemoryTree(depth?: number): Promise<MemoryTreeResponse> {
 
 /** GET /api/memory/read: read one workspace file by `path`. */
 export function readMemory(path: string): Promise<MemoryReadResponse> {
-  const url = new URL("/api/memory/read", window.location.origin);
+  const url = new URL("/api/memory/read", globalThis.location.origin);
   url.searchParams.set("path", path);
   return requestJson<MemoryReadResponse>(`${url.pathname}${url.search}`);
 }
@@ -33,12 +33,18 @@ export function readMemory(path: string): Promise<MemoryReadResponse> {
 export function searchMemory(
   request: MemorySearchRequest
 ): Promise<MemorySearchResponse> {
-  return postJson<MemorySearchResponse>("/api/memory/search", request);
+  return postJson<MemorySearchResponse, MemorySearchRequest>(
+    "/api/memory/search",
+    request
+  );
 }
 
 /** POST /api/memory/write: write a workspace memory file. */
 export function writeMemory(
   request: MemoryWriteRequest
 ): Promise<MemoryWriteResponse> {
-  return postJson<MemoryWriteResponse>("/api/memory/write", request);
+  return postJson<MemoryWriteResponse, MemoryWriteRequest>(
+    "/api/memory/write",
+    request
+  );
 }

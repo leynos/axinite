@@ -1,0 +1,364 @@
+//! Validates translating environment settings into `PostgreSQL` configuration.
+
+use std::path::Path;
+
+use camino::Utf8PathBuf;
+use color_eyre::eyre::{ensure, eyre};
+#[cfg(unix)]
+use nix::unistd::geteuid;
+#[cfg(all(unix, feature = "privileged-tests", privileged_unix_platform,))]
+use pg_embedded_setup_unpriv::Error as PgEmbeddedError;
+use pg_embedded_setup_unpriv::PgEnvCfg;
+#[cfg(all(
+    unix,
+    any(feature = "privileged-tests", feature = "cluster-unit-tests"),
+    privileged_unix_platform,
+))]
+use pg_embedded_setup_unpriv::nobody_uid;
+#[cfg(unix)]
+use pg_embedded_setup_unpriv::{ExecutionPrivileges, detect_execution_privileges};
+#[cfg(all(unix, feature = "cluster-unit-tests", privileged_unix_platform,))]
+use pg_embedded_setup_unpriv::{make_data_dir_private, make_dir_accessible};
+use postgresql_embedded::VersionReq;
+use rstest::{fixture, rstest};
+
+#[cfg(all(unix, feature = "privileged-tests", privileged_unix_platform,))]
+#[expect(
+    deprecated,
+    reason = "Tests assert the deprecated helper surfaces its failure path"
+)]
+fn invoke_deprecated_with_temp_euid() -> pg_embedded_setup_unpriv::Result<()> {
+    pg_embedded_setup_unpriv::with_temp_euid(nobody_uid(), || Ok(()))
+}
+
+/// Tests that a `PgEnvCfg` with specific settings is correctly converted to a `settings` object,
+/// and that all relevant fields and configuration values are preserved.
+///
+/// # Returns
+/// A `color_eyre::Result` indicating success or failure of the round-trip conversion.
+#[rstest]
+fn to_settings_roundtrip() -> color_eyre::Result<()> {
+    let cfg = PgEnvCfg {
+        version_req: Some("=16.4.0".into()),
+        port: Some(5433),
+        superuser: Some("admin".into()),
+        password: Some("secret".into()),
+        data_dir: Some(Utf8PathBuf::from("/tmp/data")),
+        runtime_dir: Some(Utf8PathBuf::from("/tmp/runtime")),
+        locale: Some("en_US".into()),
+        encoding: Some("UTF8".into()),
+        binary_cache_dir: None,
+        embed_root: None,
+        max_connections: None,
+        extensions: None,
+        extensions_manifest: None,
+        extensions_manifest_sha256: None,
+        extensions_cache_dir: None,
+    };
+    let settings = cfg.to_settings()?;
+    let expected_version = VersionReq::parse("=16.4.0").map_err(|err| eyre!(err))?;
+    ensure!(
+        settings.version == expected_version,
+        "version requirement should match the configuration",
+    );
+    ensure!(settings.port == 5433, "port should match the configuration");
+    ensure!(settings.username == "admin", "superuser should propagate");
+    ensure!(settings.password == "secret", "password should propagate");
+    ensure!(
+        settings.data_dir == Path::new("/tmp/data"),
+        "data directory should match the configuration",
+    );
+    ensure!(
+        settings.installation_dir == Path::new("/tmp/runtime"),
+        "installation directory should match the configuration",
+    );
+    ensure!(
+        settings
+            .configuration
+            .get("locale")
+            .is_some_and(|value| value == "en_US"),
+        "locale should be recorded in the configuration map",
+    );
+    ensure!(
+        settings
+            .configuration
+            .get("encoding")
+            .is_some_and(|value| value == "UTF8"),
+        "encoding should be recorded in the configuration map",
+    );
+
+    // Note: binary_cache_dir is not propagated through to_settings() as it is
+    // specific to this crate's cache system, not postgresql_embedded::Settings.
+    // See bootstrap module tests for binary_cache_dir propagation coverage.
+
+    Ok(())
+}
+
+/// Tests that the default `PgEnvCfg` configuration can be converted to settings without error.
+#[rstest]
+fn to_settings_default_config() -> color_eyre::Result<()> {
+    let cfg = PgEnvCfg::default();
+    cfg.to_settings()?;
+    Ok(())
+}
+
+#[fixture]
+fn default_pg_env() -> PgEnvCfg {
+    // Keep this as a fixture factory so rstest can inject the default settings.
+    PgEnvCfg::default()
+}
+
+#[rstest]
+fn to_settings_for_tests_applies_worker_limits(default_pg_env: PgEnvCfg) -> color_eyre::Result<()> {
+    let settings = default_pg_env.to_settings_for_tests()?;
+
+    ensure!(
+        settings
+            .configuration
+            .get("autovacuum")
+            .is_some_and(|value| value == "off"),
+        "expected autovacuum to be disabled for tests",
+    );
+    ensure!(
+        settings
+            .configuration
+            .get("max_connections")
+            .is_some_and(|value| value == "20"),
+        "expected max_connections to be capped for tests",
+    );
+
+    Ok(())
+}
+
+/// `PG_MAX_CONNECTIONS` replaces the test cap and applies outside tests too.
+#[rstest]
+#[case::for_tests(true)]
+#[case::plain(false)]
+fn max_connections_override_is_applied(#[case] for_tests: bool) -> color_eyre::Result<()> {
+    let cfg = PgEnvCfg {
+        max_connections: Some(120),
+        ..PgEnvCfg::default()
+    };
+    let settings = cfg.to_settings_with_context(for_tests)?;
+    ensure!(
+        settings
+            .configuration
+            .get("max_connections")
+            .is_some_and(|value| value == "120"),
+        "expected max_connections to follow PG_MAX_CONNECTIONS (for_tests={for_tests})",
+    );
+    Ok(())
+}
+
+/// `PG_MAX_CONNECTIONS` below the reserved-slot floor is a configuration
+/// error rather than a server that fails to start later.
+#[rstest]
+#[case::zero(0)]
+#[case::one(1)]
+#[case::three(3)]
+fn max_connections_below_floor_is_rejected(#[case] limit: u32) -> color_eyre::Result<()> {
+    let cfg = PgEnvCfg {
+        max_connections: Some(limit),
+        ..PgEnvCfg::default()
+    };
+    let Err(err) = cfg.to_settings() else {
+        color_eyre::eyre::bail!("max_connections={limit} must be rejected");
+    };
+    let message = err.to_string();
+    ensure!(
+        message.contains("PG_MAX_CONNECTIONS") && message.contains(&format!("got {limit}")),
+        "unexpected message: {message}"
+    );
+    Ok(())
+}
+
+/// The floor itself is accepted, so the rejection is exclusive.
+#[test]
+fn max_connections_at_floor_is_accepted() -> color_eyre::Result<()> {
+    let cfg = PgEnvCfg {
+        max_connections: Some(pg_embedded_setup_unpriv::MIN_MAX_CONNECTIONS),
+        ..PgEnvCfg::default()
+    };
+    let settings = cfg.to_settings()?;
+    ensure!(
+        settings
+            .configuration
+            .get("max_connections")
+            .is_some_and(|value| value == "4"),
+        "expected the floor to be applied verbatim"
+    );
+    Ok(())
+}
+
+#[rstest]
+fn to_settings_omits_worker_limits_by_default(default_pg_env: PgEnvCfg) -> color_eyre::Result<()> {
+    let settings = default_pg_env.to_settings()?;
+
+    ensure!(
+        !settings.configuration.contains_key("autovacuum"),
+        "expected autovacuum to remain at PostgreSQL defaults",
+    );
+    ensure!(
+        !settings.configuration.contains_key("max_connections"),
+        "expected max_connections to remain at PostgreSQL defaults",
+    );
+
+    Ok(())
+}
+
+#[cfg(all(unix, feature = "privileged-tests", privileged_unix_platform,))]
+#[rstest]
+/// Verify that the effective uid is changed within the passed block
+fn with_temp_euid_changes_uid() -> color_eyre::Result<()> {
+    if !geteuid().is_root() {
+        tracing::warn!("skipping root-dependent test");
+        return Ok(());
+    }
+
+    let outcome = invoke_deprecated_with_temp_euid();
+    let Err(err) = outcome else {
+        return Err(eyre!("with_temp_euid should now reject privilege swaps"));
+    };
+    let privilege_err = match err {
+        PgEmbeddedError::Privilege(inner) => inner,
+        other => {
+            return Err(eyre!(
+                "expected privilege error variant, received {other:?}"
+            ));
+        }
+    };
+    let source_message = privilege_err.to_string();
+    ensure!(
+        source_message
+            .contains("with_temp_euid() is unsupported; use the worker-based privileged path"),
+        "unexpected error message: {source_message}",
+    );
+    Ok(())
+}
+
+#[cfg(all(
+    unix,
+    any(not(feature = "privileged-tests"), not(privileged_unix_platform),),
+))]
+#[rstest]
+/// Stub variant ensuring the suite reports skipped when privilege drops are unavailable.
+fn with_temp_euid_changes_uid() -> color_eyre::Result<()> {
+    tracing::warn!(
+        "skipping root-dependent test: enable the privileged-tests feature to exercise privilege \
+         drops",
+    );
+    Ok(())
+}
+
+#[cfg(all(unix, feature = "cluster-unit-tests", privileged_unix_platform,))]
+#[path = "support/cap_fs_settings.rs"]
+mod cap_fs;
+
+#[cfg(all(unix, feature = "cluster-unit-tests", privileged_unix_platform,))]
+mod dir_accessible_tests {
+    //! Unix permission checks for directory accessibility validation.
+    use cap_fs::{CapabilityTempDir, metadata};
+    use cap_std::fs::{MetadataExt, PermissionsExt};
+    use color_eyre::eyre::{Context, ensure};
+    use nix::unistd::User;
+
+    use super::*;
+
+    #[rstest]
+    fn make_dir_accessible_allows_nobody() -> color_eyre::Result<()> {
+        if !geteuid().is_root() {
+            tracing::warn!("skipping root-dependent test");
+            return Ok(());
+        }
+
+        let tmp = CapabilityTempDir::new("make-dir-accessible")?;
+        let dir = tmp.path().join("foo");
+        let maybe_user = User::from_uid(nobody_uid()).context("User::from_uid failed")?;
+        let Some(nobody) = maybe_user else {
+            tracing::warn!("skipping test: 'nobody' user not found");
+            return Ok(());
+        };
+        super::make_dir_accessible(&dir, &nobody)?;
+        let meta = metadata(&dir).map_err(|err| eyre!(err))?;
+        ensure!(
+            meta.uid() == nobody_uid().as_raw(),
+            "directory should be owned by the nobody user",
+        );
+        ensure!(
+            meta.permissions().mode() & 0o777 == 0o755,
+            "directory should be world-readable",
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    fn make_data_dir_private_sets_strict_mode() -> color_eyre::Result<()> {
+        if !geteuid().is_root() {
+            tracing::warn!("skipping root-dependent test");
+            return Ok(());
+        }
+
+        let tmp = CapabilityTempDir::new("make-data-dir-private")?;
+        let dir = tmp.path().join("bar");
+        let maybe_user = User::from_uid(nobody_uid()).context("User::from_uid failed")?;
+        let Some(nobody) = maybe_user else {
+            tracing::warn!("skipping test: 'nobody' user not found");
+            return Ok(());
+        };
+        if let Err(err) = super::make_data_dir_private(&dir, &nobody) {
+            let message = err.to_string();
+            if message.contains("Permission denied") {
+                tracing::warn!(
+                    "SKIP-MAKE-DATA-DIR: insufficient permissions to create {}: {}",
+                    dir,
+                    message
+                );
+                return Ok(());
+            }
+
+            return Err(color_eyre::eyre::eyre!(err));
+        }
+        let meta = metadata(&dir).map_err(|err| eyre!(err))?;
+        ensure!(
+            meta.uid() == nobody_uid().as_raw(),
+            "data directory should be owned by the nobody user",
+        );
+        ensure!(
+            meta.permissions().mode() & 0o777 == 0o700,
+            "data directory should restrict permissions to 0700",
+        );
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+#[rstest]
+fn detect_execution_privileges_tracks_effective_uid() -> color_eyre::Result<()> {
+    if !geteuid().is_root() {
+        ensure!(
+            detect_execution_privileges() == ExecutionPrivileges::Unprivileged,
+            "non-root execution should be detected as unprivileged",
+        );
+        return Ok(());
+    }
+
+    ensure!(
+        detect_execution_privileges() == ExecutionPrivileges::Root,
+        "root execution should be detected as privileged",
+    );
+    #[cfg(all(feature = "privileged-tests", privileged_unix_platform,))]
+    {
+        let Err(err) = invoke_deprecated_with_temp_euid() else {
+            return Err(eyre!("with_temp_euid should now reject privilege swaps"));
+        };
+        tracing::warn!("skipping privilege swap: {err}");
+    }
+
+    #[cfg(any(not(feature = "privileged-tests"), not(privileged_unix_platform),))]
+    {
+        tracing::warn!(
+            "skipping privileged uid swap: enable the privileged-tests feature to drop privileges",
+        );
+    }
+    Ok(())
+}

@@ -250,7 +250,7 @@ export const MemoryPreview = () => {
       tree.data?.entries
         .filter((entry) => !entry.is_dir)
         .map((entry) => entry.path)
-        .sort((left, right) => left.localeCompare(right)) ?? []
+        .toSorted((left, right) => left.localeCompare(right)) ?? []
   );
 
   createEffect(() => {
@@ -263,7 +263,7 @@ export const MemoryPreview = () => {
   const memoryDocument = createQuery(() => ({
     queryKey: ["memory", "read", activePath()],
     queryFn: () => readMemory(activePath() ?? ""),
-    enabled: typeof activePath() === "string",
+    enabled: activePath() !== undefined,
   }));
 
   createEffect(() => {
@@ -292,9 +292,7 @@ export const MemoryPreview = () => {
     for (const path of filePaths()) {
       const parts = path.split("/");
       const group =
-        parts.length > 2
-          ? (parts[parts.length - 2] ?? "workspace")
-          : "workspace";
+        parts.length > 2 ? (parts.at(-2) ?? "workspace") : "workspace";
       const current = byGroup.get(group) ?? [];
       current.push(path);
       byGroup.set(group, current);

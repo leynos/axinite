@@ -16,7 +16,7 @@ describe("computeStepperModel", () => {
   });
 
   it("defaults an unset status to installed", () => {
-    expect(computeStepperModel(undefined).states).toEqual([
+    expect(computeStepperModel().states).toEqual([
       "completed",
       "pending",
       "pending",

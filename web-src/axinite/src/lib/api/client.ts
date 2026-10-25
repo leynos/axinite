@@ -13,7 +13,7 @@ type RequestOptions = {
 };
 
 /** How long any browser request may take before it is aborted. */
-export const REQUEST_TIMEOUT_MS = 5_000;
+export const REQUEST_TIMEOUT_MS = 5000;
 
 /** Bounded failure classes consumed by operator controls and safe diagnostics. */
 export type RequestFailureCategory = "timeout" | "transport" | "http";
@@ -90,9 +90,13 @@ function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
     }
 
     if (response.status === 204) {
+      // SAFETY: The client contract treats a successful empty response as the
+      // generic caller's empty result, as covered by the shared HTTP tests.
       return undefined as T;
     }
 
+    // SAFETY: API wrappers bind T to the documented endpoint DTOs; the shared
+    // HTTP layer owns transport decoding and endpoint contract tests cover them.
     return (await response.json()) as T;
   });
 }
@@ -111,35 +115,35 @@ export function requestJson<T>(url: string): Promise<T> {
 }
 
 /** Assemble a JSON write while preserving the public verb-specific helpers. */
-function writeJson<T>(
+function writeJson<T, TBody extends object = never>(
   method: "POST" | "PUT",
   url: string,
-  body?: unknown,
+  body?: TBody,
   headers?: HeadersInit
 ): Promise<T> {
   return request<T>(url, {
     method,
     headers: jsonHeaders(headers),
-    body: typeof body === "undefined" ? null : JSON.stringify(body),
+    body: body === undefined ? null : JSON.stringify(body),
   });
 }
 
 /** POST an optional JSON `body` to `url` and decode the JSON response. */
-export function postJson<T>(
+export function postJson<T, TBody extends object = never>(
   url: string,
-  body?: unknown,
+  body?: TBody,
   headers?: HeadersInit
 ): Promise<T> {
-  return writeJson<T>("POST", url, body, headers);
+  return writeJson<T, TBody>("POST", url, body, headers);
 }
 
 /** PUT an optional JSON `body` to `url` and decode the JSON response. */
-export function putJson<T>(
+export function putJson<T, TBody extends object = never>(
   url: string,
-  body?: unknown,
+  body?: TBody,
   headers?: HeadersInit
 ): Promise<T> {
-  return writeJson<T>("PUT", url, body, headers);
+  return writeJson<T, TBody>("PUT", url, body, headers);
 }
 
 /** DELETE `url` and decode the JSON response. */
@@ -158,10 +162,31 @@ export function setStreamConnectionErrorHandler(
   source: EventSource,
   onError: () => void
 ): void {
-  source.onerror = (event) => {
+  source.addEventListener("error", (event) => {
     if ("data" in event) return;
     onError();
-  };
+  });
+}
+
+class InertEventSource extends EventTarget {
+  readonly CONNECTING = 0;
+  readonly OPEN = 1;
+  readonly CLOSED = 2;
+  readonly withCredentials = false;
+  readonly readyState = 0;
+  readonly url: string;
+  onerror: ((this: InertEventSource, event: Event) => void) | null = null;
+  onmessage:
+    | ((this: InertEventSource, event: MessageEvent<string>) => void)
+    | null = null;
+  onopen: ((this: InertEventSource, event: Event) => void) | null = null;
+
+  constructor(url: string) {
+    super();
+    this.url = url;
+  }
+
+  close(): void {}
 }
 
 /**
@@ -171,22 +196,9 @@ export function setStreamConnectionErrorHandler(
 export function createEventStream(url: string): EventSource {
   const streamUrl = appendTokenToUrl(url);
   if (typeof EventSource === "undefined") {
-    const stub = {
-      onerror: null,
-      onmessage: null,
-      onopen: null,
-      readyState: 0,
-      url: streamUrl,
-      withCredentials: false,
-      addEventListener() {},
-      removeEventListener() {},
-      dispatchEvent() {
-        return true;
-      },
-      close() {},
-    };
-
-    return stub as unknown as EventSource;
+    // SAFETY: The inert target mirrors EventSource's fields and close method;
+    // its inherited EventTarget listener overload is broader than the DOM API.
+    return new InertEventSource(streamUrl) as EventSource;
   }
 
   return new EventSource(streamUrl, { withCredentials: false });

@@ -4,6 +4,8 @@
  * `/api/chat/events` SSE subscription. Used by the `/chat` surface.
  */
 
+import { recordBoundaryFailure } from "@/lib/api/boundary-diagnostics";
+import { isChatSseEvent } from "@/lib/api/chat-event-parser";
 import {
   createEventStream,
   postJson,
@@ -22,6 +24,7 @@ import type {
   ThreadInfo,
   ThreadListResponse,
 } from "@/lib/api/contracts";
+import { isString } from "@/lib/api/json-value";
 
 /** GET /api/chat/threads: list chat threads. */
 export function fetchThreads(): Promise<ThreadListResponse> {
@@ -37,7 +40,7 @@ export function createThread(): Promise<ThreadInfo> {
 export function fetchHistory(
   threadId?: string | null
 ): Promise<HistoryResponse> {
-  const url = new URL("/api/chat/history", window.location.origin);
+  const url = new URL("/api/chat/history", globalThis.location.origin);
   if (threadId) {
     url.searchParams.set("thread_id", threadId);
   }
@@ -48,28 +51,85 @@ export function fetchHistory(
 export function sendMessage(
   request: SendMessageRequest
 ): Promise<SendMessageResponse> {
-  return postJson<SendMessageResponse>("/api/chat/send", request);
+  return postJson<SendMessageResponse, SendMessageRequest>(
+    "/api/chat/send",
+    request
+  );
 }
 
 /** POST /api/chat/approval: answer a tool approval request. */
 export function submitApproval(
   request: ApprovalRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>("/api/chat/approval", request);
+  return postJson<ActionResponse, ApprovalRequest>(
+    "/api/chat/approval",
+    request
+  );
 }
 
 /** POST /api/chat/auth-token: submit a token for a pending extension auth. */
 export function submitAuthToken(
   request: AuthTokenRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>("/api/chat/auth-token", request);
+  return postJson<ActionResponse, AuthTokenRequest>(
+    "/api/chat/auth-token",
+    request
+  );
 }
 
 /** POST /api/chat/auth-cancel: cancel a pending extension auth. */
 export function cancelAuth(
   request: AuthCancelRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>("/api/chat/auth-cancel", request);
+  return postJson<ActionResponse, AuthCancelRequest>(
+    "/api/chat/auth-cancel",
+    request
+  );
+}
+
+function reportUnexpectedChatEvent(
+  eventType: ChatSseEvent["type"],
+  onError?: () => void
+): void {
+  // EventSource's native error event is reported by the shared transport hook.
+  if (eventType === "error") {
+    return;
+  }
+  recordBoundaryFailure("chat-stream", "invalid-payload");
+  onError?.();
+}
+
+function handleChatEventFrame(
+  eventType: ChatSseEvent["type"],
+  rawEvent: Event,
+  listener: (event: ChatSseEvent) => void,
+  onError?: () => void
+): void {
+  if (!(rawEvent instanceof MessageEvent)) {
+    reportUnexpectedChatEvent(eventType, onError);
+    return;
+  }
+  if (!isString(rawEvent.data)) {
+    recordBoundaryFailure("chat-stream", "invalid-payload");
+    onError?.();
+    return;
+  }
+
+  // Parse errors stay inside this callback and reach the stream error hook.
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawEvent.data);
+  } catch {
+    recordBoundaryFailure("chat-stream", "invalid-json");
+    onError?.();
+    return;
+  }
+  if (!isChatSseEvent(payload)) {
+    recordBoundaryFailure("chat-stream", "invalid-payload");
+    onError?.();
+    return;
+  }
+  listener(payload);
 }
 
 /**
@@ -105,29 +165,15 @@ export function connectChatEvents(
   ];
 
   for (const eventType of eventTypes) {
-    source.addEventListener(eventType, (rawEvent) => {
-      const messageEvent = rawEvent as MessageEvent<unknown>;
-      // The browser dispatches its built-in connection-failure Event under
-      // the "error" type too; only gateway frames carry a JSON data string.
-      if (typeof messageEvent.data !== "string") {
-        return;
-      }
-      // A malformed frame is reported through `onError` rather than thrown
-      // from inside the EventSource callback, where nothing could catch it.
-      let event: ChatSseEvent;
-      try {
-        event = JSON.parse(messageEvent.data) as ChatSseEvent;
-      } catch {
-        onError?.();
-        return;
-      }
-      listener(event);
-    });
+    source.addEventListener(eventType, (rawEvent) =>
+      handleChatEventFrame(eventType, rawEvent, listener, onError)
+    );
   }
 
-  if (onError) {
-    setStreamConnectionErrorHandler(source, onError);
-  }
+  setStreamConnectionErrorHandler(source, () => {
+    recordBoundaryFailure("chat-stream", "connection");
+    onError?.();
+  });
 
   return source;
 }

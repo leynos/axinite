@@ -4100,7 +4100,24 @@ The browser UI is a SolidJS app in `web-src/`, built with Bun (the workspace
 declares `bun >= 1.1.41` in `web-src/package.json`), so Bun is required for
 front-end work. The gateway embeds the built output. See
 `docs/solidjs-frontend.md` for the architecture, the stub runtime, and the
-serving contract. The Make targets are:
+serving contract. CI uses Bun 1.3.11; use that version when refreshing the
+embedded bundle so its output is reproducible. `frontend-install` consumes the
+committed `web-src/bun.lock` with `--frozen-lockfile`.
+
+The lint gate runs Biome, followed by Oxlint on application source, tests, the
+mock backend, and lint scripts. Oxlint 1.82.0 supplies Unicorn's recommended
+profile; `ai-deslop` 0.4.8 supplies the Deslop recommended rules.
+`oxlint-tsgolint` 7.0.2004 provides type-aware linting. The native TypeScript
+7.0.2 compiler is installed as `@typescript/native`, while the TypeScript 6.0.2
+compatibility package remains under `typescript` for tools using its compiler
+API. `bun run check:types` runs both compilers, including declaration checks;
+`bun run check:types:6` runs the compatibility checks alone. The exact pins,
+rule ownership, and permitted exceptions are recorded in
+[ADR 0014](adrs/adr-0014-front-end-oxlint-plugins.md).
+
+Formatting, type checking, semantic checks, tests, accessibility checks, and
+Fluent validation remain separate scripts in `web-src/package.json`; the
+following Make targets compose them for contributors:
 
 | Target             | Effect                                                               |
 | ------------------ | -------------------------------------------------------------------- |

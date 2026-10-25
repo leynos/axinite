@@ -7,6 +7,7 @@
 import type {
   ActionResponse,
   ApprovalRequest,
+  CatalogueSkillEntry,
   ChatSseEvent,
   LogEntry,
   RoutineDetailResponse,
@@ -14,7 +15,7 @@ import type {
   SkillInstallRequest,
   TurnInfo,
 } from "../../axinite/src/lib/api/contracts";
-import type { MockCatalogueSkill, MockThread } from "./fixtures";
+import type { MockThread } from "./fixtures";
 
 // Shared preview string reused by the tool_result event and the recorded
 // tool-call result on a chat turn.
@@ -181,7 +182,7 @@ function buildResponseParts(
       "The mock preview backend acknowledged the /restart command.",
     ];
   }
-  const imageCount = plan.request.images?.length ?? 0;
+  const imageCount = plan.request.images.length;
   return [
     "Mock backend response for ",
     `"${plan.request.content}": `,
@@ -358,9 +359,9 @@ export function resolveSkillSource(request: SkillInstallRequest): string {
  * suffix; returns null when none matches.
  */
 export function matchCatalogueSkill(
-  entries: MockCatalogueSkill[],
+  entries: CatalogueSkillEntry[],
   request: SkillInstallRequest
-): MockCatalogueSkill | null {
+): CatalogueSkillEntry | null {
   return (
     entries.find(
       (entry) =>
@@ -371,14 +372,17 @@ export function matchCatalogueSkill(
   );
 }
 
-/**
- * OAuth fixtures omit auth_url entirely on the manual-token path.
- */
-export function extensionAuthentication(name: string): {
+/** Authentication instructions returned by the mock extension setup route. */
+export type ExtensionAuthentication = {
   instructions: string;
   setup_url: string;
   auth_url?: string;
-} {
+};
+
+/** OAuth fixtures omit auth_url entirely on the manual-token path. */
+export function extensionAuthentication(
+  name: string
+): ExtensionAuthentication {
   if (name === "google-drive") {
     return {
       auth_url: "https://oauth.example.invalid/consent",

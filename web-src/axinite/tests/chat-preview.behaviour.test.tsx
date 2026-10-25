@@ -1,94 +1,140 @@
 /**
- * @file Behaviour tests for the chat route (`ChatPreview`). The chat API module
- * is mocked so tests can drive threads, history, approvals, auth cards and SSE
- * events without a gateway.
+ * @file Behaviour tests for the chat route (`ChatPreview`) using the real API
+ * modules and controlled in-process gateway responses and SSE frames.
  */
 
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { AppProviders } from "@/app/providers";
 import { ChatPreview } from "@/components/chat-preview";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
+import {
+  GatewayEventSource,
+  GatewayTestServer,
+} from "./support/gateway-test-server";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
 import { TestProviders } from "./support/test-providers";
 
-type ChatEvent = { type: string; [key: string]: unknown };
+let gateway: GatewayTestServer;
 
-const chatApiMocks = vi.hoisted(() => ({
-  createThread: vi.fn(),
-  fetchHistory: vi.fn(),
-  fetchThreads: vi.fn(),
-  sendMessage: vi.fn(),
-  submitApproval: vi.fn(),
-  submitAuthToken: vi.fn(),
-  cancelAuth: vi.fn(),
-  connectChatEvents: vi.fn(),
-  listener: null as ((event: ChatEvent) => void) | null,
-}));
+function imageFile(name: string): File {
+  return new File([new Uint8Array([1, 2, 3, 4])], name, {
+    type: "image/png",
+  });
+}
 
-vi.mock("@/lib/api/chat", () => ({
-  connectChatEvents: chatApiMocks.connectChatEvents,
-  createThread: chatApiMocks.createThread,
-  fetchHistory: chatApiMocks.fetchHistory,
-  fetchThreads: chatApiMocks.fetchThreads,
-  sendMessage: chatApiMocks.sendMessage,
-  submitApproval: chatApiMocks.submitApproval,
-  submitAuthToken: chatApiMocks.submitAuthToken,
-  cancelAuth: chatApiMocks.cancelAuth,
-}));
+function fileInput(container: HTMLElement): HTMLInputElement {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+  if (!input) {
+    throw new Error("Chat image input was not rendered");
+  }
+  return input;
+}
+
+function renderPreview() {
+  return render(() => (
+    <AppProviders>
+      <ChatPreview />
+    </AppProviders>
+  ));
+}
+
+async function waitForEventSource(): Promise<void> {
+  await waitFor(() => {
+    expect(GatewayEventSource.latest).toBeDefined();
+  });
+}
+
+class DeferredResponse {
+  readonly promise: Promise<Response>;
+  private resolveResponse: ((response: Response) => void) | undefined;
+
+  constructor() {
+    this.promise = new Promise<Response>((resolve) => {
+      this.resolveResponse = resolve;
+    });
+  }
+
+  resolve(response: Response): void {
+    if (!this.resolveResponse) {
+      throw new Error("Deferred response was not initialized");
+    }
+    this.resolveResponse(response);
+  }
+}
+
+function deferredResponse(): DeferredResponse {
+  return new DeferredResponse();
+}
 
 beforeAll(async () => {
   await setupI18nTestHarness();
 });
 
 beforeEach(async () => {
-  chatApiMocks.listener = null;
-  chatApiMocks.createThread.mockReset();
-  chatApiMocks.fetchThreads.mockReset();
-  chatApiMocks.fetchHistory.mockReset();
-  chatApiMocks.sendMessage.mockReset();
-  chatApiMocks.submitApproval.mockReset();
-  chatApiMocks.submitAuthToken.mockReset();
-  chatApiMocks.cancelAuth.mockReset();
-  chatApiMocks.connectChatEvents.mockReset();
+  gateway = new GatewayTestServer()
+    .respond({
+      method: "GET",
+      path: "/api/chat/threads",
+      payload: {
+        assistant_thread: {
+          id: "thread-1",
+          state: "Idle",
+          turn_count: 0,
+          created_at: "2026-03-26T12:00:00Z",
+          updated_at: "2026-03-26T12:00:00Z",
+          title: "Chat thread",
+        },
+        threads: [],
+        active_thread: "thread-1",
+      },
+    })
+    .respond({
+      method: "GET",
+      path: "/api/chat/history",
+      payload: {
+        thread_id: "thread-1",
+        turns: [],
+        has_more: false,
+      },
+    })
+    .respond({
+      method: "POST",
+      path: "/api/chat/send",
+      payload: {
+        message_id: "message-1",
+        status: "queued",
+      },
+    })
+    .respond({
+      method: "POST",
+      path: "/api/chat/auth-token",
+      payload: {
+        success: true,
+        message: "Authentication completed.",
+      },
+    })
+    .respond({
+      method: "POST",
+      path: "/api/chat/auth-cancel",
+      payload: {
+        success: true,
+        message: "Auth cancelled.",
+      },
+    })
+    .respond({
+      method: "POST",
+      path: "/api/chat/approval",
+      payload: { success: true, message: "ok" },
+    });
 
-  window.localStorage.clear();
+  globalThis.localStorage.clear();
   document.documentElement.lang = "";
   document.documentElement.dir = "";
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
-
-  chatApiMocks.fetchThreads.mockResolvedValue({
-    assistant_thread: {
-      id: "thread-1",
-      state: "Idle",
-      turn_count: 0,
-      created_at: "2026-03-26T12:00:00Z",
-      updated_at: "2026-03-26T12:00:00Z",
-      title: "Chat thread",
-    },
-    threads: [],
-    active_thread: "thread-1",
-  });
-  chatApiMocks.fetchHistory.mockResolvedValue({
-    thread_id: "thread-1",
-    turns: [],
-    has_more: false,
-  });
-  chatApiMocks.sendMessage.mockResolvedValue({
-    message_id: "message-1",
-    status: "queued",
-  });
-  chatApiMocks.connectChatEvents.mockImplementation(
-    (listener: (event: ChatEvent) => void) => {
-      chatApiMocks.listener = listener;
-      return {
-        close: vi.fn(),
-      };
-    }
-  );
 });
 
 describe("chat preview behaviour", () => {
@@ -104,21 +150,28 @@ describe("chat preview behaviour", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(chatApiMocks.sendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: "Check the deployment status",
-          thread_id: "thread-1",
+      expect(
+        gateway.requests.some((request) => {
+          const body = request.body;
+          return (
+            request.path === "/api/chat/send" &&
+            body?.["content"] === "Check the deployment status" &&
+            body["thread_id"] === "thread-1"
+          );
         })
-      );
+      ).toBe(true);
     });
 
     expect(screen.getByText("Check the deployment status")).toBeVisible();
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "stream_chunk",
-      content: "Reviewing the deployment now.",
-      thread_id: "thread-1",
+      payload: {
+        type: "stream_chunk",
+        content: "Reviewing the deployment now.",
+        thread_id: "thread-1",
+      },
     });
 
     await waitFor(() => {
@@ -127,28 +180,18 @@ describe("chat preview behaviour", () => {
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
   });
 
-  const renderPreview = () =>
-    render(() => (
-      <AppProviders>
-        <ChatPreview />
-      </AppProviders>
-    ));
-
-  const waitForListener = async () => {
-    await waitFor(() => {
-      expect(chatApiMocks.listener).not.toBeNull();
-    });
-  };
-
   it("renders a generated-image card from an image_generated event", async () => {
     renderPreview();
-    await waitForListener();
+    await waitForEventSource();
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "image_generated",
-      data_url: "data:image/png;base64,AAAA",
-      path: "workspace/generated/preview.png",
-      thread_id: "thread-1",
+      payload: {
+        type: "image_generated",
+        data_url: "data:image/png;base64,AAAA",
+        path: "workspace/generated/preview.png",
+        thread_id: "thread-1",
+      },
     });
 
     const image = await screen.findByAltText("Generated image");
@@ -158,13 +201,16 @@ describe("chat preview behaviour", () => {
 
   it("renders a job card with a link from a job_started event", async () => {
     renderPreview();
-    await waitForListener();
+    await waitForEventSource();
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "job_started",
-      job_id: "abcdef1234567890",
-      title: "Spawned preview job",
-      browse_url: "https://example.test/projects/1/",
+      payload: {
+        type: "job_started",
+        job_id: "abcdef1234567890",
+        title: "Spawned preview job",
+        browse_url: "https://example.test/projects/1/",
+      },
     });
 
     expect(await screen.findByText("Spawned preview job")).toBeVisible();
@@ -180,17 +226,16 @@ describe("chat preview behaviour", () => {
   });
 
   it("submits an auth token and dismisses the card on success", async () => {
-    chatApiMocks.submitAuthToken.mockResolvedValue({
-      success: true,
-      message: "Authentication completed.",
-    });
     renderPreview();
-    await waitForListener();
+    await waitForEventSource();
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
-      auth_url: "https://auth.example.test/oauth",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+        auth_url: "https://auth.example.test/oauth",
+      },
     });
 
     expect(
@@ -202,10 +247,16 @@ describe("chat preview behaviour", () => {
     await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
     await waitFor(() => {
-      expect(chatApiMocks.submitAuthToken).toHaveBeenCalledWith({
-        extension_name: "github",
-        token: "valid-token",
-      });
+      expect(
+        gateway.requests.some((request) => {
+          const body = request.body;
+          return (
+            request.path === "/api/chat/auth-token" &&
+            body?.["extension_name"] === "github" &&
+            body["token"] === "valid-token"
+          );
+        })
+      ).toBe(true);
     });
     await waitFor(() => {
       expect(
@@ -216,17 +267,24 @@ describe("chat preview behaviour", () => {
   });
 
   it("keeps the auth card and shows an error when the token is rejected", async () => {
-    chatApiMocks.submitAuthToken.mockResolvedValue({
-      success: false,
-      message: "Invalid token.",
+    gateway.respond({
+      method: "POST",
+      path: "/api/chat/auth-token",
+      payload: {
+        success: false,
+        message: "Invalid token.",
+      },
     });
     renderPreview();
-    await waitForListener();
+    await waitForEventSource();
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
-      auth_url: "https://auth.example.test/oauth",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+        auth_url: "https://auth.example.test/oauth",
+      },
     });
 
     await screen.findByText("Authentication required for github");
@@ -246,25 +304,28 @@ describe("chat preview behaviour", () => {
   });
 
   it("cancels the auth flow via the cancel endpoint", async () => {
-    chatApiMocks.cancelAuth.mockResolvedValue({
-      success: true,
-      message: "Auth cancelled.",
-    });
     renderPreview();
-    await waitForListener();
+    await waitForEventSource();
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+      },
     });
 
     await screen.findByText("Authentication required for github");
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => {
-      expect(chatApiMocks.cancelAuth).toHaveBeenCalledWith({
-        extension_name: "github",
-      });
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.path === "/api/chat/auth-cancel" &&
+            request.body?.["extension_name"] === "github"
+        )
+      ).toBe(true);
     });
     await waitFor(() => {
       expect(
@@ -275,19 +336,25 @@ describe("chat preview behaviour", () => {
 
   it("removes the auth card when auth_completed arrives", async () => {
     renderPreview();
-    await waitForListener();
+    await waitForEventSource();
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "auth_required",
-      extension_name: "github",
+      payload: {
+        type: "auth_required",
+        extension_name: "github",
+      },
     });
     await screen.findByText("Authentication required for github");
 
-    chatApiMocks.listener?.({
+    GatewayEventSource.latest?.emit({
       type: "auth_completed",
-      extension_name: "github",
-      success: true,
-      message: "All set.",
+      payload: {
+        type: "auth_completed",
+        extension_name: "github",
+        success: true,
+        message: "All set.",
+      },
     });
 
     await waitFor(() => {
@@ -301,17 +368,14 @@ describe("chat preview behaviour", () => {
   it("rejects an oversize image with a notice and stages a valid one", async () => {
     const { container } = renderPreview();
     await screen.findByLabelText("Message composer");
-
-    const fileInput = container.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
+    const input = fileInput(container);
 
     const oversize = new File(
       [new Uint8Array(5 * 1024 * 1024 + 1)],
       "huge.png",
       { type: "image/png" }
     );
-    await userEvent.upload(fileInput, oversize);
+    await userEvent.upload(input, oversize);
 
     expect(
       await screen.findByText("huge.png is larger than the 5 MB limit.")
@@ -320,7 +384,7 @@ describe("chat preview behaviour", () => {
     const valid = new File([new Uint8Array([1, 2, 3, 4])], "ok.png", {
       type: "image/png",
     });
-    await userEvent.upload(fileInput, valid);
+    await userEvent.upload(input, valid);
 
     const thumb = await screen.findByAltText("ok.png");
     expect(thumb).toBeVisible();
@@ -332,65 +396,77 @@ describe("chat preview behaviour", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(chatApiMocks.sendMessage).toHaveBeenCalled();
+      expect(
+        gateway.requests.some((request) => request.path === "/api/chat/send")
+      ).toBe(true);
     });
-    const payload = chatApiMocks.sendMessage.mock.calls.at(-1)?.[0];
-    expect(payload.images).toHaveLength(1);
-    expect(payload.images[0].media_type).toBe("image/png");
-    expect(typeof payload.images[0].data).toBe("string");
-    expect(payload.images[0].data.length).toBeGreaterThan(0);
+    const sentMessage = gateway.requests.find(
+      (request) => request.path === "/api/chat/send"
+    );
+    expect(sentMessage?.body?.["images"]).toMatchObject([
+      {
+        media_type: "image/png",
+        data: expect.stringMatching(/.+/u),
+      },
+    ]);
   });
 
   it("keeps images staged while a send is in flight", async () => {
-    let resolveSend: (value: unknown) => void = () => undefined;
-    chatApiMocks.sendMessage.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveSend = resolve;
-        })
-    );
+    const pendingSend = deferredResponse();
+    gateway.route({
+      method: "POST",
+      path: "/api/chat/send",
+      handler: () => pendingSend.promise,
+    });
     const { container } = renderPreview();
     await screen.findByLabelText("Message composer");
-    const fileInput = container.querySelector(
-      'input[type="file"]'
-    ) as HTMLInputElement;
-    const image = (name: string) =>
-      new File([new Uint8Array([1, 2, 3, 4])], name, { type: "image/png" });
+    const input = fileInput(container);
 
-    await userEvent.upload(fileInput, image("first.png"));
+    await userEvent.upload(input, imageFile("first.png"));
     await screen.findByAltText("first.png");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
-      expect(chatApiMocks.sendMessage).toHaveBeenCalledTimes(1);
+      expect(
+        gateway.requests.filter((request) => request.path === "/api/chat/send")
+      ).toHaveLength(1);
     });
 
     // Staged after Send, before the gateway answers.
-    await userEvent.upload(fileInput, image("second.png"));
+    await userEvent.upload(input, imageFile("second.png"));
     await screen.findByAltText("second.png");
-    resolveSend({ message_id: "message-1", status: "queued" });
+    pendingSend.resolve(
+      Response.json({ message_id: "message-1", status: "queued" })
+    );
 
     await waitFor(() => {
       expect(screen.queryByAltText("first.png")).toBeNull();
     });
     expect(screen.getByAltText("second.png")).toBeVisible();
-    expect(chatApiMocks.sendMessage.mock.calls[0]?.[0].images).toHaveLength(1);
+    const send = gateway.requests.find(
+      (request) => request.path === "/api/chat/send"
+    );
+    expect(send?.body?.["images"]).toHaveLength(1);
   });
 
   it("tags user and assistant turns with data-role markers", async () => {
-    chatApiMocks.fetchHistory.mockResolvedValue({
-      thread_id: "thread-1",
-      turns: [
-        {
-          turn_number: 1,
-          user_input: "Ping the daemon",
-          response: "Pong from the daemon.",
-          state: "Complete",
-          started_at: "2026-03-26T12:00:00Z",
-          completed_at: "2026-03-26T12:00:01Z",
-          tool_calls: [],
-        },
-      ],
-      has_more: false,
+    gateway.respond({
+      method: "GET",
+      path: "/api/chat/history",
+      payload: {
+        thread_id: "thread-1",
+        turns: [
+          {
+            turn_number: 1,
+            user_input: "Ping the daemon",
+            response: "Pong from the daemon.",
+            state: "Complete",
+            started_at: "2026-03-26T12:00:00Z",
+            completed_at: "2026-03-26T12:00:01Z",
+            tool_calls: [],
+          },
+        ],
+        has_more: false,
+      },
     });
 
     // TestProviders builds a fresh QueryClient so the non-empty history is not
@@ -410,25 +486,32 @@ describe("chat preview behaviour", () => {
   });
 
   it("offers Approve/Always/Deny on the pending-approval card and disables them while submitting", async () => {
-    chatApiMocks.fetchHistory.mockResolvedValue({
-      thread_id: "thread-1",
-      turns: [],
-      has_more: false,
-      pending_approval: {
-        request_id: "req-42",
-        tool_name: "shell",
-        description: "Run a shell command",
-        parameters: '{ "cmd": "ls" }',
+    gateway.respond({
+      method: "GET",
+      path: "/api/chat/history",
+      payload: {
+        thread_id: "thread-1",
+        turns: [],
+        has_more: false,
+        pending_approval: {
+          request_id: "req-42",
+          tool_name: "shell",
+          description: "Run a shell command",
+          parameters: '{ "cmd": "ls" }',
+        },
       },
     });
 
     let resolveApproval: (() => void) | undefined;
-    chatApiMocks.submitApproval.mockImplementation(
-      () =>
-        new Promise<{ success: boolean; message: string }>((resolve) => {
-          resolveApproval = () => resolve({ success: true, message: "ok" });
-        })
-    );
+    gateway.route({
+      method: "POST",
+      path: "/api/chat/approval",
+      handler: () =>
+        new Promise((resolve) => {
+          resolveApproval = () =>
+            resolve(Response.json({ success: true, message: "ok" }));
+        }),
+    });
 
     // Fresh QueryClient (see the data-role test) so the pending_approval
     // history is not masked by the cached empty "thread-1" history.
@@ -452,9 +535,14 @@ describe("chat preview behaviour", () => {
     await userEvent.click(alwaysButton);
 
     await waitFor(() => {
-      expect(chatApiMocks.submitApproval).toHaveBeenCalledWith(
-        expect.objectContaining({ request_id: "req-42", action: "always" })
-      );
+      expect(
+        gateway.requests.some(
+          (request) =>
+            request.path === "/api/chat/approval" &&
+            request.body?.["request_id"] === "req-42" &&
+            request.body["action"] === "always"
+        )
+      ).toBe(true);
     });
 
     // All three actions are disabled while the mutation is pending.

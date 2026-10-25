@@ -1,0 +1,279 @@
+[package]
+name = "pg-embed-setup-unpriv"
+version = "0.6.3"
+edition = "2024"
+rust-version = "1.92"
+description = "Initializes postgresql_embedded clusters with platform-appropriate setup"
+license = "ISC"
+documentation = "https://docs.rs/pg-embed-setup-unpriv/latest/pg_embedded_setup_unpriv"
+homepage = "https://df12.studio/docs.html"
+repository = "https://github.com/leynos/pg-embed-setup-unpriv"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
+bin-dir = "{ name }-{ target }-v{ version }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[lib]
+name = "pg_embedded_setup_unpriv"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pg_embedded_setup_unpriv"
+path = "src/main.rs"
+
+[[bin]]
+name = "pg_worker"
+path = "src/bin/pg_worker.rs"
+
+[[bin]]
+name = "pg_worker_hang"
+path = "tests/support/pg_worker_hang.rs"
+required-features = ["dev-worker"]
+
+[[test]]
+name = "test_cluster"
+path = "tests/test_cluster.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "bootstrap_for_tests"
+path = "tests/bootstrap_for_tests.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "bootstrap_privileges"
+path = "tests/bootstrap_privileges.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "bootstrap_worker_binary"
+path = "tests/bootstrap_worker_binary.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "cluster_split_constructors"
+path = "tests/cluster_split_constructors.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "data_dir_recovery"
+path = "tests/data_dir_recovery.rs"
+required-features = ["cluster-unit-tests", "privileged-tests"]
+
+[[test]]
+name = "database_lifecycle"
+path = "tests/database_lifecycle.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "observability"
+path = "tests/observability.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "recovery_integration"
+path = "tests/recovery_integration.rs"
+required-features = ["dev-worker"]
+
+[[test]]
+name = "shutdown_timeout"
+path = "tests/shutdown_timeout.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "shutdown_hook"
+path = "tests/shutdown_hook.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "shutdown_hook_lifecycle"
+path = "tests/shutdown_hook_lifecycle.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "test_cluster_behaviour"
+path = "tests/test_cluster_behaviour.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "test_cluster_connection"
+path = "tests/test_cluster_connection.rs"
+required-features = ["cluster-unit-tests", "diesel-support"]
+
+[[test]]
+name = "test_cluster_drop"
+path = "tests/test_cluster_drop.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "test_cluster_fixture"
+path = "tests/test_cluster_fixture/mod.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "test_cluster_extensions"
+path = "tests/test_cluster_extensions.rs"
+required-features = ["cluster-unit-tests"]
+
+[[test]]
+name = "test_cluster_async"
+path = "tests/test_cluster_async.rs"
+required-features = ["async-api"]
+
+[[test]]
+name = "settings"
+path = "tests/settings.rs"
+
+[dependencies]
+postgresql_embedded = { version = "0.20.2", features = ["tokio"] }
+# Named directly only to classify `postgresql_embedded::Error::ArchiveError`
+# causes when deciding whether a bootstrap failure is transient. It must stay
+# the version `postgresql_embedded` uses: a test builds that error from this
+# crate's type, so a mismatch fails to compile rather than silently turning
+# the retry off. The requirement is the floor `postgresql_embedded` names
+# (0.20.2, which needs Rust 1.92), so a lockfile resolved for the declared
+# `rust-version` can pick it; 0.20.3 and later need 1.94 and would raise the
+# minimum supported Rust version if required here.
+postgresql_archive = { version = "0.20.2", default-features = false }
+color-eyre = "0.6"
+tokio = { version = "1", features = ["rt", "macros", "time", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_with = "3"
+diesel = { version = "2", default-features = false, features = ["postgres"], optional = true }
+postgres = "0.19"
+ortho_config = { version = "0.5.0", features = ["json5", "yaml", "toml"] }
+clap = { version = "4", features = ["derive"] }
+figment = { version = "0.10", features = ["env"] }
+uncased = "0.9"
+figment-json5 = "0.1.1"
+cap-std = "4.0.2"
+camino = { version = "1.2", features = ["serde1"] }
+thiserror = "2"
+serde_json = "1"
+secrecy = { version = "0.10", features = ["serde"] }
+tempfile = "3"
+filetime = "0.2.27"
+libc = "0.2"
+loom = { version = "0.7.2", optional = true }
+wait-timeout = "0.2"
+tracing = { version = "0.1", features = ["std"] }
+tracing-subscriber = { version = "0.3", features = ["fmt"], optional = true }
+pq-sys = { version = "0.7.5", optional = true, features = ["bundled"] }
+rstest = "0.27"
+dashmap = "6.1.0"
+dirs = "7.0"
+sha2 = "0.11"
+# HTTP for the extension hook; the TLS backend matches postgresql_embedded's
+# default so the two share one stack.
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "native-tls"] }
+tar = "0.4.46"
+flate2 = "1.1.9"
+fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31.3", default-features = false, features = ["user", "fs", "signal"] }
+
+[build-dependencies]
+[features]
+toml = []
+json5 = []
+yaml = []
+async-api = []
+privileged-tests = []
+cluster-unit-tests = ["dep:tracing-subscriber"]
+dev-worker = ["dep:tracing-subscriber"]
+diesel-support = ["dep:diesel", "dep:pq-sys"]
+loom-tests = ["dep:loom"]
+
+[lints.rust]
+unknown_lints             = "deny"
+renamed_and_removed_lints = "deny"
+missing_docs              = "deny"
+
+[lints.rustdoc]
+missing_crate_level_docs     = "deny"
+broken_intra_doc_links       = "deny"
+private_intra_doc_links      = "deny"
+bare_urls                    = "deny"
+invalid_html_tags            = "deny"
+invalid_codeblock_attributes = "deny"
+unescaped_backticks          = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+# 1. hygiene
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+blanket_clippy_restriction_lints = "deny"
+cognitive_complexity = "deny"
+needless_pass_by_value = "deny"
+implicit_hasher = "deny"
+
+# 2. debugging leftovers
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
+# 2. panic-prone operations
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+integer_division = "deny"
+integer_division_remainder_used = "deny"
+panic_in_result_fn = "deny"
+unreachable = "deny"
+
+# 4. portability
+host_endian_bytes = "deny"
+little_endian_bytes = "deny"
+big_endian_bytes = "deny"
+
+# 5. nursery idiom polish
+let_underscore_must_use = "deny"
+or_fun_call = "deny"
+option_if_let_else = "deny"
+self_named_module_files = "deny"
+shadow_reuse = "deny"
+shadow_same = "deny"
+shadow_unrelated = "deny"
+str_to_string = "deny"
+string_lit_as_bytes = "deny"
+try_err = "deny"
+unneeded_field_pattern = "deny"
+use_self = "deny"
+
+# 6. numerical foot-guns
+float_arithmetic = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_precision_loss = "deny"
+lossy_float_literal = "deny"
+
+# 7. API ergonomics
+missing_const_for_fn = "deny"
+must_use_candidate = "deny"
+unused_async = "deny"
+
+# 8. Error handling
+missing_panics_doc = "deny"
+error_impl_error = "deny"
+result_large_err = "deny"
+
+[dev-dependencies]
+makefile-lossless = "0.3.40"
+temp-env = "0.3"
+color-eyre = "0.6"
+diesel = { version = "2", default-features = false, features = ["postgres"] }
+proptest = "1"
+rstest-bdd = "0.5.0"
+rstest-bdd-macros = "0.5.0"
+once_cell = "1"
+unic-langid = "0.9"
+serial_test = { version = "3.4.0", features = ["file_locks"] }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+mockall = "0.15"
+trybuild = "1"
+insta = "1"

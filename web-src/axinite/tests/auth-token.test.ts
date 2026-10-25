@@ -18,6 +18,7 @@ import {
 // stored token through both transports.
 
 afterEach(() => {
+  vi.restoreAllMocks();
   clearGatewayToken();
   vi.unstubAllGlobals();
 });
@@ -33,9 +34,36 @@ describe("gateway token storage", () => {
 
   it("survives module state through sessionStorage", () => {
     setGatewayToken("persisted");
-    expect(window.sessionStorage.getItem("axinite.gateway-token")).toBe(
+    expect(globalThis.sessionStorage.getItem("axinite.gateway-token")).toBe(
       "persisted"
     );
+  });
+
+  it("treats session storage denied by the browser as unavailable", () => {
+    vi.spyOn(globalThis, "sessionStorage", "get").mockImplementation(() => {
+      throw new Error("Session storage is unavailable");
+    });
+
+    expect(getGatewayToken()).toBeNull();
+    setGatewayToken("secret-token");
+    expect(getGatewayToken()).toBe("secret-token");
+    clearGatewayToken();
+    expect(getGatewayToken()).toBeNull();
+  });
+
+  it("uses the latest token after a denied write and clears it after a denied removal", () => {
+    setGatewayToken("stale-token");
+    vi.spyOn(globalThis.sessionStorage, "setItem").mockImplementation(() => {
+      throw new Error("Storage writes are denied");
+    });
+    setGatewayToken("accepted-token");
+    expect(getGatewayToken()).toBe("accepted-token");
+
+    vi.spyOn(globalThis.sessionStorage, "removeItem").mockImplementation(() => {
+      throw new Error("Storage removal is denied");
+    });
+    clearGatewayToken();
+    expect(getGatewayToken()).toBeNull();
   });
 });
 

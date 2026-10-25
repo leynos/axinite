@@ -6,24 +6,25 @@
  * enables synthetic downtime without restarting any process.
  */
 
-import type {
-  ApprovalRequest,
-  AuthCancelRequest,
-  AuthTokenRequest,
-  ChatSseEvent,
-  ExtensionSetupRequest,
-  JobPromptRequest,
-  LogEntry,
-  MemorySearchRequest,
-  MemoryWriteRequest,
-  PairingApproveRequest,
-  SendMessageRequest,
-  SkillInstallRequest,
-  SkillSearchRequest,
-  ToggleRequest,
-} from "../../axinite/src/lib/api/contracts";
+import type { ChatSseEvent, LogEntry } from "../../axinite/src/lib/api/contracts";
+import { isJsonObject, isString } from "../../axinite/src/lib/api/json-value";
 import { parseMockFeatureFlagEnvironment } from "./flag-environment";
 import { parsePort } from "./ports";
+import {
+  isApprovalRequest,
+  isAuthCancelRequest,
+  isAuthTokenRequest,
+  isExtensionSetupRequest,
+  isJobPromptRequest,
+  isMemorySearchRequest,
+  isMemoryWriteRequest,
+  isPairingApproveRequest,
+  isSendMessageRequest,
+  isSkillInstallRequest,
+  isSkillSearchRequest,
+  isToggleRequest,
+  parseJsonBody,
+} from "./request-parsers";
 import { MockBackendState, PairingRateLimitedError } from "./state";
 import { isStreamingApiPath } from "./streaming-routes";
 
@@ -52,8 +53,11 @@ export function parseFailureRoutes(raw: string | undefined): Set<string> {
 
 const failureRoutes = parseFailureRoutes(process.env["MOCK_FAILURES"]);
 
-function jsonResponse(payload: unknown, init?: ResponseInit): Response {
-  return new Response(JSON.stringify(payload), {
+function jsonResponse<T extends object | string | number | boolean | null>(
+  payload: T,
+  init?: ResponseInit
+): Response {
+  return Response.json(payload, {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-cache",
@@ -64,10 +68,6 @@ function jsonResponse(payload: unknown, init?: ResponseInit): Response {
 
 function errorResponse(status: number, message: string): Response {
   return jsonResponse({ error: message }, { status });
-}
-
-async function parseJson<T>(request: Request): Promise<T> {
-  return (await request.json()) as T;
 }
 
 const SSE_HEADERS = {
@@ -138,16 +138,18 @@ export function buildSseResponse({
   return new Response(stream, { headers: SSE_HEADERS });
 }
 
+function chatSseFrame(event: ChatSseEvent): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
 function buildChatSseResponse(state: MockBackendState): Response {
-  const frame = (event: ChatSseEvent) =>
-    `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
   return buildSseResponse({
     subscribe: ({ send, close }) =>
       state.subscribeToChat({
-        send: (event) => send(frame(event)),
+        send: (event) => send(chatSseFrame(event)),
         close,
       }),
-    heartbeatFrame: frame({ type: "heartbeat" }),
+    heartbeatFrame: chatSseFrame({ type: "heartbeat" }),
   });
 }
 
@@ -180,6 +182,10 @@ function firstCapture(match: RegExpMatchArray | null): string {
     throw new Error("Route pattern did not capture a path parameter");
   }
   return value;
+}
+
+function parseMemoryDepth(value: string | null): number | undefined {
+  return value === null ? undefined : Math.trunc(Number(value));
 }
 
 type RouteHandler = (ctx: RouteContext) => Response | Promise<Response>;
@@ -225,7 +231,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/chat/send",
     handler: async ({ state, request }) => {
-      const body = await parseJson<SendMessageRequest>(request);
+      const body = await parseJsonBody(request, isSendMessageRequest);
+      if (!body) return errorResponse(400, "Invalid chat message body.");
       return jsonResponse(state.sendMessage(body), { status: 202 });
     },
   },
@@ -238,7 +245,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/chat/approval",
     handler: async ({ state, request }) => {
-      const body = await parseJson<ApprovalRequest>(request);
+      const body = await parseJsonBody(request, isApprovalRequest);
+      if (!body) return errorResponse(400, "Invalid approval body.");
       return jsonResponse(state.submitApproval(body));
     },
   },
@@ -246,7 +254,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/chat/auth-token",
     handler: async ({ state, request }) => {
-      const body = await parseJson<AuthTokenRequest>(request);
+      const body = await parseJsonBody(request, isAuthTokenRequest);
+      if (!body) return errorResponse(400, "Invalid auth token body.");
       return jsonResponse(state.chatAuthToken(body));
     },
   },
@@ -254,7 +263,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/chat/auth-cancel",
     handler: async ({ state, request }) => {
-      const body = await parseJson<AuthCancelRequest>(request);
+      const body = await parseJsonBody(request, isAuthCancelRequest);
+      if (!body) return errorResponse(400, "Invalid auth cancellation body.");
       return jsonResponse(state.chatAuthCancel(body));
     },
   },
@@ -262,7 +272,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: /^\/api\/pairing\/([^/]+)\/approve$/,
     handler: async ({ state, request, match }) => {
-      const body = await parseJson<PairingApproveRequest>(request);
+      const body = await parseJsonBody(request, isPairingApproveRequest);
+      if (!body) return errorResponse(400, "Invalid pairing approval body.");
       try {
         return jsonResponse(
           state.pairingApprove(firstCapture(match), body.code)
@@ -289,11 +300,7 @@ const routes: readonly Route[] = [
     pattern: "/api/memory/tree",
     handler: ({ state, url }) => {
       const depthParam = url.searchParams.get("depth");
-      return jsonResponse(
-        state.getMemoryTree(
-          depthParam === null ? undefined : Number.parseInt(depthParam, 10)
-        )
-      );
+      return jsonResponse(state.getMemoryTree(parseMemoryDepth(depthParam)));
     },
   },
   {
@@ -317,7 +324,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/memory/write",
     handler: async ({ state, request }) => {
-      const body = await parseJson<MemoryWriteRequest>(request);
+      const body = await parseJsonBody(request, isMemoryWriteRequest);
+      if (!body) return errorResponse(400, "Invalid memory write body.");
       return jsonResponse(state.writeMemory(body));
     },
   },
@@ -325,7 +333,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/memory/search",
     handler: async ({ state, request }) => {
-      const body = await parseJson<MemorySearchRequest>(request);
+      const body = await parseJsonBody(request, isMemorySearchRequest);
+      if (!body) return errorResponse(400, "Invalid memory search body.");
       return jsonResponse(state.searchMemory(body));
     },
   },
@@ -384,7 +393,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: /^\/api\/jobs\/([^/]+)\/prompt$/,
     handler: async ({ state, request, match }) => {
-      const body = await parseJson<JobPromptRequest>(request);
+      const body = await parseJsonBody(request, isJobPromptRequest);
+      if (!body) return errorResponse(400, "Invalid job prompt body.");
       return jsonResponse(state.promptJob(firstCapture(match), body));
     },
   },
@@ -420,14 +430,16 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: /^\/api\/routines\/([^/]+)\/toggle$/,
     handler: async ({ state, request, match }) => {
-      const body =
-        request.headers.get("content-length") === "0"
-          ? undefined
-          : await request
-              .clone()
-              .json()
-              .catch(() => undefined as ToggleRequest | undefined);
-      return jsonResponse(state.toggleRoutine(firstCapture(match), body));
+      const id = firstCapture(match);
+      if (request.body === null) {
+        return jsonResponse(state.toggleRoutine(id));
+      }
+
+      const body = await parseJsonBody(request, isToggleRequest);
+      if (body === undefined) {
+        return errorResponse(400, "Invalid routine toggle body.");
+      }
+      return jsonResponse(state.toggleRoutine(id, body));
     },
   },
   {
@@ -458,13 +470,12 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/extensions/install",
     handler: async ({ state, request }) => {
-      const body = (await request.json().catch(() => ({ name: "" }))) as {
-        name?: string;
-      };
-      if (!body.name) {
+      const body = await parseJsonBody(request, isJsonObject);
+      const name = body && isString(body["name"]) ? body["name"] : "";
+      if (!name) {
         return errorResponse(400, "Missing extension name.");
       }
-      return jsonResponse(state.installExtension(body.name));
+      return jsonResponse(state.installExtension(name));
     },
   },
   {
@@ -489,7 +500,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: /^\/api\/extensions\/([^/]+)\/setup$/,
     handler: async ({ state, request, match }) => {
-      const body = await parseJson<ExtensionSetupRequest>(request);
+      const body = await parseJsonBody(request, isExtensionSetupRequest);
+      if (!body) return errorResponse(400, "Invalid extension setup body.");
       return jsonResponse(
         state.submitExtensionSetup(firstCapture(match), body.secrets)
       );
@@ -504,7 +516,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/skills/search",
     handler: async ({ state, request }) => {
-      const body = await parseJson<SkillSearchRequest>(request);
+      const body = await parseJsonBody(request, isSkillSearchRequest);
+      if (!body) return errorResponse(400, "Invalid skill search body.");
       return jsonResponse(state.searchSkills(body));
     },
   },
@@ -512,7 +525,8 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: "/api/skills/install",
     handler: async ({ state, request }) => {
-      const body = await parseJson<SkillInstallRequest>(request);
+      const body = await parseJsonBody(request, isSkillInstallRequest);
+      if (!body) return errorResponse(400, "Invalid skill install body.");
       return jsonResponse(state.installSkill(body));
     },
   },
@@ -536,10 +550,9 @@ const routes: readonly Route[] = [
     method: ["POST", "PUT"],
     pattern: "/api/logs/level",
     handler: async ({ state, request }) => {
-      const body = (await request.json().catch(() => ({ level: "info" }))) as {
-        level?: string;
-      };
-      return jsonResponse(state.setLogLevel(body.level ?? "info"));
+      const body = await parseJsonBody(request, isJsonObject);
+      const level = body && isString(body["level"]) ? body["level"] : "info";
+      return jsonResponse(state.setLogLevel(level));
     },
   },
 ];
@@ -556,12 +569,13 @@ function matchRoute(
   method: string,
   pathname: string
 ): RegExpMatchArray | null | undefined {
-  const methods =
-    typeof route.method === "string" ? [route.method] : route.method;
+  const methods = Array.isArray(route.method)
+    ? route.method
+    : [route.method];
   if (!methods.includes(method)) {
     return undefined;
   }
-  if (typeof route.pattern === "string") {
+  if (!(route.pattern instanceof RegExp)) {
     return route.pattern === pathname ? null : undefined;
   }
   return pathname.match(route.pattern) ?? undefined;
@@ -615,19 +629,21 @@ export async function handleMockRequest(
  * port, server, state and an owned stop hook. The default state enables
  * synthetic restart downtime only when MOCK_RESTART_FIXTURE=1.
  */
+export type MockBackendServer = {
+  port: number;
+  server: ReturnType<typeof Bun.serve>;
+  state: MockBackendState;
+  /** Stops this owned server and disposes its restart fixture timers. */
+  stop: () => Promise<void>;
+};
+
 export function createMockBackendServer(
   port = DEFAULT_API_PORT,
   state = new MockBackendState(undefined, {
     restartFixture: process.env["MOCK_RESTART_FIXTURE"] === "1",
     featureFlagOverrides: parseMockFeatureFlagEnvironment(process.env),
   })
-): {
-  port: number;
-  server: ReturnType<typeof Bun.serve>;
-  state: MockBackendState;
-  /** Stops this owned server and disposes its restart fixture timers. */
-  stop: () => void;
-} {
+): MockBackendServer {
   const server = Bun.serve({
     port,
     fetch(request, server) {
@@ -638,22 +654,26 @@ export function createMockBackendServer(
       return handleMockRequest(request, state);
     },
   });
-  const stop = () => {
+  const stop = async () => {
     state.dispose();
-    server.stop(true);
+    await server.stop(true);
   };
   return { port: server.port ?? port, server, state, stop };
 }
 
 if (import.meta.main) {
   const { port, stop } = createMockBackendServer();
-  process.once("SIGINT", () => {
-    stop();
-    process.exit(0);
-  });
-  process.once("SIGTERM", () => {
-    stop();
-    process.exit(0);
-  });
+  const close = () => {
+    void stop().then(
+      () => {
+        process.exitCode = 0;
+      },
+      () => {
+        process.exitCode = 1;
+      }
+    );
+  };
+  process.once("SIGINT", close);
+  process.once("SIGTERM", close);
   console.log(`[mock-api] listening on http://localhost:${port}`);
 }

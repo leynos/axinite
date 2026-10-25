@@ -41,6 +41,14 @@ const DISPLAY_LEVELS: LogEntry["level"][] = [
   "error",
 ];
 
+function parseDisplayLevel(value: string): LogEntry["level"] {
+  const level = DISPLAY_LEVELS.find((candidate) => candidate === value);
+  if (!level) {
+    throw new TypeError(`Unknown log level: ${value}`);
+  }
+  return level;
+}
+
 function formatTimestamp(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
@@ -96,9 +104,7 @@ const LogsControls = (props: LogsControlsProps) => {
           class="catalogue-form__input"
           id="logs-filter-level"
           onChange={(event) =>
-            props.setDisplayLevel(
-              event.currentTarget.value as LogEntry["level"]
-            )
+            props.setDisplayLevel(parseDisplayLevel(event.currentTarget.value))
           }
           value={props.displayLevel()}
         >

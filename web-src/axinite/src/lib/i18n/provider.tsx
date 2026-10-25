@@ -6,7 +6,7 @@
 
 import type { Accessor, ParentComponent } from "solid-js";
 import { createContext, createSignal, onCleanup, useContext } from "solid-js";
-
+import { isString } from "@/lib/api/json-value";
 import i18n, { i18nReady } from "@/lib/i18n/runtime";
 import {
   AVAILABLE_LOCALES,
@@ -35,7 +35,7 @@ export const I18nProvider: ParentComponent = (props) => {
 
   void i18nReady
     .then(() => {
-      setLanguage(i18n.resolvedLanguage ?? i18n.language ?? DEFAULT_LOCALE);
+      setLanguage(i18n.resolvedLanguage || i18n.language || DEFAULT_LOCALE);
     })
     .catch((error) => {
       console.error(
@@ -51,9 +51,12 @@ export const I18nProvider: ParentComponent = (props) => {
 
   const t = (key: string, options?: TranslationOptions) => {
     language();
-    return (
-      options === undefined ? i18n.t(key) : i18n.t(key, options)
-    ) as string;
+    const translated =
+      options === undefined ? i18n.t(key) : i18n.t(key, options);
+    if (!isString(translated)) {
+      throw new TypeError(`Translation "${key}" did not resolve to text`);
+    }
+    return translated;
   };
 
   return (

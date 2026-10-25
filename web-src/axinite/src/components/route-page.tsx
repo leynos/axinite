@@ -5,7 +5,8 @@
  * the fallback.
  */
 
-import { For, Show } from "solid-js";
+import type { Component } from "solid-js";
+import { Show } from "solid-js";
 
 import { ChatPreview } from "@/components/chat-preview";
 import { ExtensionsPreview } from "@/components/extensions-preview";
@@ -23,6 +24,16 @@ type RoutePageProps = {
   routeId: RouteId;
 };
 
+const ROUTE_CONTENT = {
+  chat: ChatPreview,
+  memory: MemoryPreview,
+  jobs: JobsPreview,
+  routines: RoutinesPreview,
+  extensions: ExtensionsPreview,
+  skills: SkillsPreview,
+  logs: LogsPreview,
+} satisfies Record<RouteId, Component>;
+
 /**
  * Renders the requested route surface or an unavailable notice when its flag
  * is disabled.
@@ -31,72 +42,7 @@ export const RoutePage = (props: RoutePageProps) => {
   const flags = useFeatureFlags();
   const { t } = useI18n();
   const details = () => ROUTE_DETAILS[props.routeId];
-  const renderGenericPreview = () => (
-    <>
-      <header class="route-page__hero">
-        <div class="route-page__eyebrow">{t("route-hero-eyebrow")}</div>
-        <div class="route-page__hero-grid">
-          <div>
-            <h2 class="route-page__title">
-              {t(`route-${props.routeId}-label`)}
-            </h2>
-            <p class="route-page__summary">
-              {t(`page-${props.routeId}-summary`)}
-            </p>
-          </div>
-          <div class="route-page__meta">
-            <div class="route-page__meta-card">
-              <p class="route-page__meta-label">{t("route-meta-mode-label")}</p>
-              <p class="route-page__meta-value">
-                {t(`page-${props.routeId}-mode`)}
-              </p>
-            </div>
-            <div class="route-page__meta-card">
-              <p class="route-page__meta-label">
-                {t("route-meta-status-label")}
-              </p>
-              <p class="route-page__meta-value">
-                {t(`page-${props.routeId}-status`)}
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div class="route-page__cards">
-        <For each={details().cardKeys}>
-          {(cardKey) => (
-            <article class="route-card">
-              <p class="route-card__kicker">{t("route-card-kicker")}</p>
-              <h3 class="route-card__title">
-                {t(`page-${props.routeId}-${cardKey}-title`)}
-              </h3>
-              <p class="route-card__body">
-                {t(`page-${props.routeId}-${cardKey}-body`)}
-              </p>
-            </article>
-          )}
-        </For>
-      </div>
-
-      <section class="route-page__agenda">
-        <div>
-          <h3 class="route-page__section-title">{t("route-agenda-title")}</h3>
-          <p class="route-page__section-body">
-            {t(`page-${props.routeId}-agenda`)}
-          </p>
-        </div>
-        <div>
-          <h3 class="route-page__section-title">
-            {t("route-guardrail-title")}
-          </h3>
-          <p class="route-page__section-body">
-            {t(`page-${props.routeId}-guardrail`)}
-          </p>
-        </div>
-      </section>
-    </>
-  );
+  const RouteContent = ROUTE_CONTENT[props.routeId];
 
   return (
     <section class="route-page">
@@ -109,23 +55,7 @@ export const RoutePage = (props: RoutePageProps) => {
           </div>
         }
       >
-        {props.routeId === "chat" ? (
-          <ChatPreview />
-        ) : props.routeId === "memory" ? (
-          <MemoryPreview />
-        ) : props.routeId === "jobs" ? (
-          <JobsPreview />
-        ) : props.routeId === "routines" ? (
-          <RoutinesPreview />
-        ) : props.routeId === "extensions" ? (
-          <ExtensionsPreview />
-        ) : props.routeId === "skills" ? (
-          <SkillsPreview />
-        ) : props.routeId === "logs" ? (
-          <LogsPreview />
-        ) : (
-          renderGenericPreview()
-        )}
+        <RouteContent />
       </Show>
     </section>
   );

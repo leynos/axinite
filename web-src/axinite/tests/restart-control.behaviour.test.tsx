@@ -3,7 +3,7 @@
  * reflects the restart phases reported by the injected restart dependencies.
  */
 
-import { render, screen, waitFor } from "@solidjs/testing-library";
+import { render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import {
   afterAll,
@@ -19,16 +19,27 @@ import { AppProviders } from "@/app/providers";
 import { RestartControl } from "@/components/restart-control";
 import * as chatApi from "@/lib/api/chat";
 import { RequestError } from "@/lib/api/client";
-import type { ChatSseEvent } from "@/lib/api/contracts";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
-import {
-  RestartCommandError,
-  type RestartDeps,
-  type RestartStreamHandlers,
+import type {
+  RestartDeps,
+  RestartSendResult,
+  RestartStreamHandlers,
 } from "@/lib/restart";
+import { GatewayEventSource } from "./support/gateway-test-server";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
 
 const dialogStyles = document.createElement("style");
+
+function rawFailureDeps(onPhase: RestartDeps["onPhase"]): RestartDeps {
+  return {
+    sendRestart: () =>
+      Promise.resolve({ kind: "failed", category: "transport" }),
+    onPhase,
+    openStream: () => ({ close: () => {} }),
+    checkStatus: () => Promise.resolve(true),
+    scheduleStatusPolls: () => () => {},
+  };
+}
 
 beforeAll(async () => {
   // Happy DOM omits the browser's initial animation-name value. Kobalte
@@ -43,12 +54,15 @@ beforeAll(async () => {
 afterAll(() => dialogStyles.remove());
 
 beforeEach(async () => {
-  window.localStorage.clear();
+  globalThis.localStorage.clear();
   const runtime = await import("@/lib/i18n/runtime");
   await runtime.default.changeLanguage(DEFAULT_LOCALE);
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("restart control", () => {
   it("is hidden when the gateway does not permit restarts", async () => {
@@ -65,19 +79,16 @@ describe("restart control", () => {
   });
 
   it("confirms, sends /restart, and reports completion on reconnect", async () => {
-    const sendRestart = vi.fn().mockResolvedValue({
-      message_id: "m1",
-      status: "queued",
-    });
+    const sendRestart = vi.fn().mockResolvedValue({ kind: "accepted" });
     let handlers: RestartStreamHandlers | undefined;
     const makeDeps = (onPhase: RestartDeps["onPhase"]): RestartDeps => ({
       sendRestart,
       openStream: (h) => {
         handlers = h;
-        return { close: () => undefined };
+        return { close: () => {} };
       },
       checkStatus: () => Promise.resolve(true),
-      scheduleStatusPolls: () => () => undefined,
+      scheduleStatusPolls: () => () => {},
       onPhase,
     });
 
@@ -95,9 +106,8 @@ describe("restart control", () => {
       name: "Restart the gateway?",
     });
     await userEvent.click(
-      screen.getAllByRole("button", { name: "Restart" }).at(-1) as HTMLElement
+      within(dialog).getByRole("button", { name: "Restart" })
     );
-    void dialog;
 
     await waitFor(() => {
       expect(sendRestart).toHaveBeenCalledTimes(1);
@@ -124,22 +134,20 @@ describe("restart control", () => {
     "http",
   ] as const)("reports %s safely and lets the operator retry", async (category) => {
     const sendRestart = vi
-      .fn()
-      .mockRejectedValueOnce(new RestartCommandError(category))
-      .mockResolvedValue({ status: "accepted" });
-    const report = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+      .fn<() => Promise<RestartSendResult>>()
+      .mockResolvedValueOnce({ kind: "failed", category })
+      .mockResolvedValue({ kind: "accepted" });
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
     let handlers: RestartStreamHandlers | undefined;
     const makeDeps = (onPhase: RestartDeps["onPhase"]): RestartDeps => ({
       sendRestart,
       onPhase,
       openStream: (next) => {
         handlers = next;
-        return { close: () => undefined };
+        return { close: () => {} };
       },
       checkStatus: () => Promise.resolve(true),
-      scheduleStatusPolls: () => () => undefined,
+      scheduleStatusPolls: () => () => {},
     });
     render(() => (
       <AppProviders>
@@ -161,7 +169,7 @@ describe("restart control", () => {
       category,
     });
     await waitFor(() => {
-      expect(window.getComputedStyle(document.body).pointerEvents).not.toBe(
+      expect(globalThis.getComputedStyle(document.body).pointerEvents).not.toBe(
         "none"
       );
     });
@@ -180,20 +188,11 @@ describe("restart control", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("never exposes a raw rejected error in its diagnostic or operator message", async () => {
-    const report = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    const makeDeps = (onPhase: RestartDeps["onPhase"]): RestartDeps => ({
-      sendRestart: () => Promise.reject(new Error("secret-token/private-url")),
-      onPhase,
-      openStream: () => ({ close: () => undefined }),
-      checkStatus: () => Promise.resolve(true),
-      scheduleStatusPolls: () => () => undefined,
-    });
+  it("reports only bounded transport categories in its diagnostic", async () => {
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
     render(() => (
       <AppProviders>
-        <RestartControl makeDeps={makeDeps} restartEnabled={() => true} />
+        <RestartControl makeDeps={rawFailureDeps} restartEnabled={() => true} />
       </AppProviders>
     ));
     await userEvent.click(
@@ -208,8 +207,7 @@ describe("restart control", () => {
       event: "restart_failed",
       category: "transport",
     });
-    expect(JSON.stringify(report.mock.calls)).not.toContain("secret-token");
-    expect(document.body.textContent).not.toContain("private-url");
+    expect(screen.getByRole("button", { name: "Retry restart" })).toBeEnabled();
   });
 
   it.each([
@@ -220,9 +218,7 @@ describe("restart control", () => {
     vi.spyOn(chatApi, "sendMessage").mockRejectedValue(
       new RequestError(category, "secret-response/token", 503)
     );
-    const report = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
     render(() => (
       <AppProviders>
         <RestartControl restartEnabled={() => true} />
@@ -240,8 +236,9 @@ describe("restart control", () => {
       event: "restart_failed",
       category,
     });
-    expect(JSON.stringify(report.mock.calls)).not.toContain("secret-response");
-    expect(JSON.stringify(report.mock.calls)).not.toContain("503");
+    const reportText = JSON.stringify(report.mock.calls);
+    expect(reportText).not.toContain("secret-response");
+    expect(reportText).not.toContain("503");
     expect(screen.getByRole("button", { name: "Retry restart" })).toBeEnabled();
   });
 
@@ -250,22 +247,7 @@ describe("restart control", () => {
       message_id: "restart-fixture",
       status: "accepted",
     });
-    let emit: ((event: ChatSseEvent) => void) | undefined;
-    let malformedFrame: () => void = () => undefined;
-    const source = {
-      onopen: null,
-      onerror: null,
-      close: vi.fn(),
-    } as unknown as EventSource;
-    const connect = vi
-      .spyOn(chatApi, "connectChatEvents")
-      .mockImplementation((listener, parseError) => {
-        emit = listener;
-        malformedFrame = () => {
-          parseError?.();
-        };
-        return source;
-      });
+    vi.stubGlobal("EventSource", GatewayEventSource);
     render(() => (
       <AppProviders>
         <RestartControl restartEnabled={() => true} />
@@ -277,22 +259,32 @@ describe("restart control", () => {
     await screen.findByRole("alertdialog");
     await userEvent.click(screen.getByRole("button", { name: /^Restart$/ }));
     await waitFor(() => expect(chatApi.sendMessage).toHaveBeenCalled());
-    expect(connect.mock.calls[0]).toHaveLength(1);
-    emit?.({ type: "tool_completed", name: "restart", success: true });
-    malformedFrame();
-    source.onerror?.(
-      new MessageEvent("error", {
-        data: JSON.stringify({
-          type: "error",
-          message: "Gateway reported an error",
-        }),
-      })
-    );
-    source.onopen?.(new Event("open"));
+    await waitFor(() => expect(GatewayEventSource.latest).toBeDefined());
+    const source = GatewayEventSource.latest;
+    if (!source) {
+      throw new Error("Restart stream was not opened");
+    }
+    source.emit({
+      type: "tool_completed",
+      payload: {
+        type: "tool_completed",
+        name: "restart",
+        success: true,
+      },
+    });
+    source.frame({ type: "response", data: "{ malformed json" });
+    source.emit({
+      type: "error",
+      payload: {
+        type: "error",
+        message: "Gateway reported an error",
+      },
+    });
+    source.open();
     expect(screen.queryByText("Gateway restarted.")).toBeNull();
     expect(screen.getByText("Restarting the gateway…")).toBeVisible();
-    source.onerror?.(new Event("error"));
-    source.onopen?.(new Event("open"));
+    source.fail();
+    source.open();
     expect(await screen.findByText("Gateway restarted.")).toBeVisible();
     expect(source.close).toHaveBeenCalledTimes(1);
   });

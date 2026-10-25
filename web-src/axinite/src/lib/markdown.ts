@@ -15,14 +15,30 @@
 
 function escapeHtml(text: string): string {
   return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 type BlockKind = "none" | "ul" | "ol" | "table";
+
+function inlineMarkup(text: string): string {
+  const codeSpans: string[] = [];
+  const withPlaceholders = text.replaceAll(/`([^`]+)`/g, (_, content) => {
+    const index = codeSpans.length;
+    codeSpans.push(content);
+    return `\uFFFDCODE${index}\uFFFD`;
+  });
+  const formatted = withPlaceholders
+    .replaceAll(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replaceAll(/\*(.+?)\*/g, "<em>$1</em>");
+  return formatted.replaceAll(/\uFFFDCODE(\d+)\uFFFD/g, (match, indexStr) => {
+    const span = codeSpans[Number(indexStr)];
+    return span === undefined ? match : `<code>${span}</code>`;
+  });
+}
 
 /**
  * Renders the supported Markdown subset to HTML after escaping source HTML.
@@ -38,15 +54,18 @@ export function renderMarkdown(source: string): string {
 
   function closeBlock(): void {
     switch (block) {
-      case "ul":
+      case "ul": {
         html.push("</ul>");
         break;
-      case "ol":
+      }
+      case "ol": {
         html.push("</ol>");
         break;
-      case "table":
+      }
+      case "table": {
         html.push("</tbody></table>");
         break;
+      }
     }
     block = "none";
   }
@@ -56,22 +75,6 @@ export function renderMarkdown(source: string): string {
     closeBlock();
     html.push(kind === "ul" ? "<ul>" : "<ol>");
     block = kind;
-  }
-
-  function inlineMarkup(text: string): string {
-    const codeSpans: string[] = [];
-    const withPlaceholders = text.replace(/`([^`]+)`/g, (_, content) => {
-      const index = codeSpans.length;
-      codeSpans.push(content);
-      return `\uFFFDCODE${index}\uFFFD`;
-    });
-    const formatted = withPlaceholders
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.+?)\*/g, "<em>$1</em>");
-    return formatted.replace(/\uFFFDCODE(\d+)\uFFFD/g, (match, indexStr) => {
-      const span = codeSpans[Number(indexStr)];
-      return span !== undefined ? `<code>${span}</code>` : match;
-    });
   }
 
   function flushParagraph(): void {
@@ -99,11 +102,11 @@ export function renderMarkdown(source: string): string {
 
     if (block !== "table") {
       closeBlock();
-      html.push("<table>");
       html.push(
-        `<thead><tr>${cells.map((c) => `<th>${inlineMarkup(c)}</th>`).join("")}</tr></thead>`
+        "<table>",
+        `<thead><tr>${cells.map((c) => `<th>${inlineMarkup(c)}</th>`).join("")}</tr></thead>`,
+        "<tbody>"
       );
-      html.push("<tbody>");
       block = "table";
       return true;
     }
@@ -131,7 +134,7 @@ export function renderMarkdown(source: string): string {
     }
 
     // Unordered list
-    if (line.match(/^[-*]\s+/)) {
+    if (/^[-*]\s+/.test(line)) {
       flushParagraph();
       ensureList("ul");
       html.push(`<li>${inlineMarkup(line.replace(/^[-*]\s+/, ""))}</li>`);
