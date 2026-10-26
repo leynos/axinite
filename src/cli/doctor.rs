@@ -16,8 +16,8 @@ use core_checks::{
 };
 use external_checks::{check_binary, check_docker_daemon, check_service_installed};
 use subsystem_checks::{
-    check_embeddings, check_gateway_config, check_mcp_config, check_routines_config, check_secrets,
-    check_skills,
+    check_embeddings_with_context, check_gateway_config_with_context, check_mcp_config,
+    check_routines_config_with_context, check_secrets, check_skills,
 };
 
 use crate::config::EnvContext;
@@ -76,27 +76,28 @@ async fn run_core_checks(
 
 async fn run_subsystem_checks(
     settings: &Settings,
+    env_context: &EnvContext,
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
 ) {
     check(
         "Embeddings",
-        check_embeddings(settings),
+        check_embeddings_with_context(env_context, settings),
         passed,
         failed,
         skipped,
     );
     check(
         "Routines config",
-        check_routines_config(),
+        check_routines_config_with_context(env_context),
         passed,
         failed,
         skipped,
     );
     check(
         "Gateway config",
-        check_gateway_config(settings),
+        check_gateway_config_with_context(env_context, settings),
         passed,
         failed,
         skipped,
@@ -108,8 +109,14 @@ async fn run_subsystem_checks(
         failed,
         skipped,
     );
-    check("Skills", check_skills().await, passed, failed, skipped);
-    check("Secrets", check_secrets(settings), passed, failed, skipped);
+    check("Skills", check_skills(env_context).await, passed, failed, skipped);
+    check(
+        "Secrets",
+        check_secrets(settings, env_context),
+        passed,
+        failed,
+        skipped,
+    );
     check(
         "Service",
         check_service_installed(),
@@ -161,6 +168,7 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
 
     // Capture the environment once and derive settings from the same snapshot
     // so every check observes a consistent view.
+    EnvContext::refresh_dotenv_layers();
     let env_context = crate::bootstrap::capture_config_env_context();
     let settings = match Settings::load_from(&env_context.axinite_base_dir().join("settings.json"))
     {
@@ -179,7 +187,14 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
         &mut skipped,
     )
     .await;
-    run_subsystem_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
+    run_subsystem_checks(
+        &settings,
+        &env_context,
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+    )
+    .await;
     run_external_binary_checks(&mut passed, &mut failed, &mut skipped).await;
 
     // ── Summary ───────────────────────────────────────────────

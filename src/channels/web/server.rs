@@ -118,6 +118,8 @@ impl RateLimiter {
 pub struct GatewayState {
     /// Feature-flag environment values resolved from the startup snapshot.
     pub env_flag_overlay: std::collections::HashMap<&'static str, bool>,
+    /// Restart capability resolved once from the gateway's startup snapshot.
+    pub restart_enabled: bool,
     /// Channel to send messages to the agent loop.
     pub msg_tx: tokio::sync::RwLock<Option<mpsc::Sender<IncomingMessage>>>,
     /// SSE broadcast manager.

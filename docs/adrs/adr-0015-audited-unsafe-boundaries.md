@@ -347,14 +347,16 @@ Kani and Verus are possible follow-ups; this ADR does not add them.
 - `rustix` is a new direct dependency. It is already in the lock and widely
   used, and the Linux backend issues syscalls directly, but it is trusted code
   that the compiler cannot check for us.
-- `dotenvy::dotenv` and `dotenvy::from_path` write loaded values into the
-  process environment with `std::env::set_var`; that call lives in the
-  dependency, not in this repository. Production invokes them from the
-  synchronous `main` entry point before the Tokio runtime starts. The calls
-  therefore remain sensitive to any environment access concurrent with startup,
-  and reusing them after runtime startup would be unsafe. Replacing these
-  mutating loaders with `from_path_iter` and feeding the `EnvContext` snapshot
-  would remove the process-environment mutation; that is deferred.
+- Resolved by issue #468: Axinite parses `.env` files with
+  `dotenvy::from_read_iter` into replaceable `DotenvLayers` snapshots and
+  merges them into `EnvContext`. Startup and async config reloads no longer
+  call a mutating `dotenvy` API, and `clippy::disallowed_methods` prevents
+  those APIs from returning. Configuration code sees dotenv values; direct
+  process reads and child processes do not. CWD-file values can no longer
+  substitute into the separate bootstrap file. Spawn sites pass required
+  credentials through their explicit environment seams. The dependency scan
+  and remaining `set_var` hits are recorded in
+  [Rust boundary verification and unsafe inventory](../rust-boundary-verification.md).
 - `EnvContext::capture_ambient` now applies the libSQL autodetection, so a
   developer whose `~/.axinite/axinite.db` exists and who sets no
   `DATABASE_BACKEND` sees `libsql` in every ambient snapshot, which is what the

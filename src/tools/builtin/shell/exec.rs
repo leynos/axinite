@@ -72,7 +72,9 @@ impl ShellTool {
             c
         };
 
-        // Scrub environment to prevent secret leakage (CWE-200).
+        // Scrub the real process environment to prevent secret leakage; the
+        // dotenv snapshot is never forwarded. See
+        // docs/configuration-guide.md#child-process-environment.
         // Only forward known-safe variables; everything else (API keys,
         // session tokens, credentials) is stripped from child processes.
         command.env_clear();

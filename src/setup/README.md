@@ -13,7 +13,7 @@ ______________________________________________________________________
 axinite onboard [--skip-auth] [--channels-only] [--provider-only] [--quick]
 ```
 
-Explicit invocation. Loads `.env` files, runs the wizard, exits.
+Explicit invocation. Parses `.env` files into `EnvContext`, runs the wizard, exits.
 
 ```text
 axinite          (first run, no database configured)
@@ -36,38 +36,34 @@ ______________________________________________________________________
 ## Startup Sequence (main.rs)
 
 ```text
-1. Load .env files (dotenvy::dotenv() then load_axinite_env())
-2. Capture EnvContext     → snapshot env vars and injected secrets
+1. Parse .env files into immutable DotenvLayers before the runtime starts
+2. Capture EnvContext from process, dotenv and injected-secret layers
 3. Start the Tokio runtime and parse CLI args
 4. If Command::Onboard  → run wizard, exit
 5. If Command::Run or no command:
    a. Acquire the PID lock
-   b. check_onboard_needed() → run wizard if needed; merge ~/.axinite/.env
-      into the wizard's snapshot so onboarding credentials are retained
-   c. Config::from_context_with_optional_toml(&ctx, ...) → build config
-   d. Create SessionManager  → load session token
-   e. ensure_authenticated() → validate session (NEAR AI only)
-   f. ... rest of agent startup
+   b. check_onboard_needed() → run wizard if needed
+   c. Refresh dotenv layers after onboarding and capture the updated context
+   d. Config::from_context_with_optional_toml(&ctx, ...) → build config
+   e. Create SessionManager  → load session token
+   f. ensure_authenticated() → validate session (NEAR AI only)
+   g. ... rest of agent startup
 ```
+**Critical ordering:** `.env` files are parsed before the runtime starts.
+The resulting immutable layers are merged into `EnvContext`; their values are
+not exported to the process environment or child processes. Configuration
+reload refreshes the files and replaces the layer snapshot, so onboarding
+writes become visible to the next config load. The root is resolved from the
+process environment and the current-directory `.env` before the bootstrap file
+is selected; the bootstrap file cannot relocate itself.
 
-**Critical ordering:** `.env` files must be loaded (step 1) before the
-`EnvContext` snapshot is captured (step 2) because bootstrap vars like
-`DATABASE_BACKEND` live in `~/.axinite/.env`.
-
-The snapshot is also captured before onboarding runs. The wizard records any
-API key it collects in its own `EnvContext`, and startup merges `.env` into
-that snapshot, so a key entered during first-run onboarding is available when
-configuration is resolved afterwards. Configuration resolution and SIGHUP
-reload do not re-read process environment variables or `.env` files after the
-initial capture; tracing initialization still reads ambient `RUST_LOG`.
-
-**Environment access:** startup captures the ambient environment once and
-threads the resulting `EnvContext` through composition. Constructors such as
-`SetupWizard::with_env_context` and `with_config_and_env_context` accept an
-explicit snapshot, and setup lookups (`default_libsql_path_in`,
-`upsert_bootstrap_vars_to`, `compute_axinite_base_dir_from`) derive paths from
-that snapshot rather than re-reading the process environment. Tests build an
-`EnvContext` directly and never mutate the process environment.
+**Environment access:** startup threads an `EnvContext` through composition.
+Constructors such as `SetupWizard::with_env_context` and
+`with_config_and_env_context` accept an explicit snapshot, and setup lookups
+(`default_libsql_path_in`, `upsert_bootstrap_vars_to`,
+`compute_axinite_base_dir_from`) derive paths from that snapshot rather than
+re-reading the process environment. Tests build an `EnvContext` directly and
+never mutate the process environment.
 
 ______________________________________________________________________
 

@@ -1,23 +1,34 @@
 //! Tests for bootstrap `.env` formatting and round-trip behaviour.
 
+use crate::config::dotenv_layers::DotenvLayers;
 use crate::test_support::ExpectValid;
 use tempfile::tempdir;
 
 use super::super::*;
 
+fn parse_env_file(path: &std::path::Path) -> Vec<(String, String)> {
+    let read_error = format!("read dotenv file at {}", path.display());
+    let bytes = ambient_fs::read(path).expect_valid(read_error.as_str());
+    let base_dir = path.parent().expect_valid("dotenv test path has a parent");
+    let layers = DotenvLayers::from_contents(None, Some(&bytes), base_dir);
+    let mut values = layers
+        .bootstrap_values()
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<Vec<_>>();
+    values.sort_by(|left, right| left.0.cmp(&right.0));
+    values
+}
+
 fn assert_env_roundtrip(key: &str, value: &str) {
     let dir = tempdir().expect_valid("create temp dir for env round-trip test");
     let env_path = dir.path().join(".env");
     let write_error = format!("write round-trip env at {}", env_path.display());
-    let parse_error = format!("parse round-trip env at {}", env_path.display());
     let vars = [(key, value)];
 
     upsert_bootstrap_vars_to(&env_path, &vars).expect_valid(write_error.as_str());
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid(parse_error.as_str())
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
 
     assert_eq!(
         parsed.len(),
@@ -48,8 +59,6 @@ fn test_save_and_load_database_url() {
     let env_path = dir.path().join(".env");
     let write_error = format!("write .env at {}", env_path.display());
     let read_error = format!("read .env at {}", env_path.display());
-    let parse_error = format!("parse dotenv from {}", env_path.display());
-
     let url = "postgres://localhost:5432/axinite_test";
     ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
         .expect_valid(write_error.as_str());
@@ -60,10 +69,7 @@ fn test_save_and_load_database_url() {
         "DATABASE_URL=\"postgres://localhost:5432/axinite_test\"\n"
     );
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid(parse_error.as_str())
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].0, "DATABASE_URL");
     assert_eq!(parsed[0].1, url);
@@ -78,10 +84,7 @@ fn test_save_database_url_with_hash_in_password() {
     ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
         .expect_valid("write .env for hash-in-password test");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse dotenv for hash-in-password test")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].0, "DATABASE_URL");
     assert_eq!(parsed[0].1, url);
@@ -113,10 +116,7 @@ INJECTED="pwned"#;
     let content = format!("LLM_BASE_URL=\"{}\"\n", escaped);
     ambient_fs::write(&env_path, &content).expect_valid("write escaped bootstrap env");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse escaped bootstrap env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
 
     assert_eq!(parsed.len(), 1, "injection must not create extra vars");
     assert_eq!(parsed[0].0, "LLM_BASE_URL");
@@ -144,10 +144,7 @@ fn test_save_bootstrap_env_multiple_vars() {
     }
     ambient_fs::write(&env_path, &content).expect_valid("write multi-var bootstrap env");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse multi-var bootstrap env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
     assert_eq!(parsed.len(), 2);
     assert_eq!(
         parsed[0],
@@ -172,12 +169,36 @@ fn test_save_bootstrap_env_overwrites_previous() {
     let content = "DATABASE_BACKEND=\"libsql\"\nLIBSQL_PATH=\"/new/path.db\"\n";
     ambient_fs::write(&env_path, content).expect_valid("overwrite bootstrap env");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse overwritten bootstrap env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
     assert_eq!(parsed.len(), 2);
     assert!(parsed.iter().all(|(key, _)| key != "DATABASE_URL"));
+}
+
+#[test]
+fn dotenv_parser_preserves_multiline_export_and_substitution_format() {
+    let dir = tempdir().expect_valid("create dotenv format parity directory");
+    let env_path = dir.path().join(".env");
+    let contents = concat!(
+        "export AXINITE_TEST_ENV_FORMAT_EXPORTED=present\n",
+        "AXINITE_TEST_ENV_FORMAT_MULTILINE=\"first line\nsecond line\"\n",
+        "AXINITE_TEST_ENV_FORMAT_SOURCE=from-file\n",
+        "AXINITE_TEST_ENV_FORMAT_SUBSTITUTED=${AXINITE_TEST_ENV_FORMAT_SOURCE}\n",
+    );
+    ambient_fs::write(&env_path, contents).expect_valid("write dotenv format parity file");
+
+    let parsed = parse_env_file(&env_path);
+
+    assert!(
+        parsed.iter().any(|(key, value)| {
+            key == "AXINITE_TEST_ENV_FORMAT_EXPORTED" && value == "present"
+        })
+    );
+    assert!(parsed.iter().any(|(key, value)| {
+        key == "AXINITE_TEST_ENV_FORMAT_MULTILINE" && value == "first line\nsecond line"
+    }));
+    assert!(parsed.iter().any(|(key, value)| {
+        key == "AXINITE_TEST_ENV_FORMAT_SUBSTITUTED" && value == "from-file"
+    }));
 }
 
 env_roundtrip_test!(
@@ -200,10 +221,7 @@ fn bootstrap_env_special_chars_in_url() {
     let content = format!("DATABASE_URL=\"{}\"\n", escaped);
     ambient_fs::write(&env_path, &content).expect_valid("write special-char URL env");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse special-char URL env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
 
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].1, url, "URL with special chars must survive");
@@ -225,10 +243,7 @@ fn upsert_bootstrap_var_preserves_existing() {
     result.push('\n');
     ambient_fs::write(&env_path, &result).expect_valid("write single upsert env");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse single upsert env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
 
     assert_eq!(parsed.len(), 3, "should have 3 vars after upsert");
     assert!(
@@ -270,10 +285,7 @@ fn bootstrap_env_all_wizard_vars_round_trip() {
     }
     ambient_fs::write(&env_path, &content).expect_valid("write full wizard round-trip env");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse full wizard round-trip env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
 
     assert_eq!(parsed.len(), vars.len(), "all vars must survive round-trip");
     for (key, value) in &vars {
@@ -298,10 +310,7 @@ fn upsert_bootstrap_vars_preserves_unknown_keys() {
     let vars = [("DATABASE_BACKEND", "libsql"), ("LLM_BACKEND", "openai")];
     upsert_bootstrap_vars_to(&env_path, &vars).expect_valid("upsert wizard vars");
 
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse env after first upsert")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_env_file(&env_path);
 
     assert_eq!(
         parsed.len(),
@@ -336,10 +345,7 @@ fn upsert_bootstrap_vars_preserves_unknown_keys() {
     let vars2 = [("LLM_BACKEND", "anthropic")];
     upsert_bootstrap_vars_to(&env_path, &vars2).expect_valid("upsert LLM backend a second time");
 
-    let parsed2: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse env after second upsert")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed2 = parse_env_file(&env_path);
 
     assert_eq!(
         parsed2.len(),

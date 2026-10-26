@@ -211,6 +211,8 @@ impl ClaudeCodeConfig {
     pub fn extract_oauth_token() -> Option<String> {
         // macOS: extract from Keychain
         if cfg!(target_os = "macos") {
+            // This probe reads host Keychain state, not dotenv values; see
+            // docs/configuration-guide.md#child-process-environment.
             match std::process::Command::new("security")
                 .args([
                     "find-generic-password",

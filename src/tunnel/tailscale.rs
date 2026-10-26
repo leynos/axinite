@@ -10,6 +10,8 @@ use crate::tunnel::{
 /// Uses `tailscale serve` (tailnet-only) or `tailscale funnel` (public).
 ///
 /// Requires Tailscale installed and authenticated (`tailscale up`).
+/// Its environment contract is documented in
+/// `docs/configuration-guide.md#child-process-environment`.
 pub struct TailscaleTunnel {
     funnel: bool,
     hostname: Option<String>,

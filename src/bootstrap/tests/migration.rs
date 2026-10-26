@@ -1,11 +1,20 @@
 //! Tests for bootstrap JSON migration and upsert helpers.
 
+use crate::config::dotenv_layers::DotenvLayers;
 use crate::test_support::ExpectValid;
-use std::process::Command;
+use std::collections::HashMap;
 
 use tempfile::tempdir;
 
 use super::super::*;
+
+fn parse_bootstrap_env(env_path: &std::path::Path) -> HashMap<String, String> {
+    let bytes = ambient_fs::read(env_path).expect_valid("read bootstrap dotenv file");
+    let base_dir = env_path.parent().expect_valid("dotenv file has a parent");
+    DotenvLayers::from_contents(None, Some(&bytes), base_dir)
+        .bootstrap_values()
+        .clone()
+}
 
 fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
     assert!(env_path.exists(), ".env must exist after migration");
@@ -55,33 +64,8 @@ fn test_migrate_bootstrap_json_to_env() {
     assert_bootstrap_file_renamed(dir.path());
 }
 
-/// Exercise the `bootstrap.json` to `.env` migration, including the child-process branch that performs the load.
 #[test]
-fn load_axinite_env_migrates_bootstrap_json_to_env() {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("AXINITE_LOAD_ENV_CHILD")
-    }
-    .ok()
-    .as_deref()
-        == Some("1")
-    {
-        let base_dir = std::path::PathBuf::from(
-            {
-                #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-                std::env::var("AXINITE_BASE_DIR")
-            }
-            .expect_valid("AXINITE_BASE_DIR missing"),
-        );
-        let env_path = base_dir.join(".env");
-
-        load_axinite_env();
-
-        assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary");
-        assert_bootstrap_file_renamed(&base_dir);
-        return;
-    }
-
+fn dotenv_layers_migrate_bootstrap_json_to_env() {
     let dir = tempdir().expect_valid("create temp dir for load_axinite_env migration");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
@@ -93,22 +77,22 @@ fn load_axinite_env_migrates_bootstrap_json_to_env() {
     )
     .expect_valid("write bootstrap.json");
 
-    let current_exe = std::env::current_exe().expect_valid("locate current test binary");
-    let status = Command::new(current_exe)
-        .args([
-            "--exact",
-            "bootstrap::tests::migration::load_axinite_env_migrates_bootstrap_json_to_env",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .env("AXINITE_LOAD_ENV_CHILD", "1")
-        .env("AXINITE_BASE_DIR", dir.path())
-        .env_remove("DATABASE_URL")
-        .env_remove("DATABASE_BACKEND")
-        .status()
-        .expect_valid("spawn load_axinite_env boundary test");
+    let process = HashMap::from([(
+        String::from("AXINITE_BASE_DIR"),
+        dir.path().to_string_lossy().into_owned(),
+    )]);
+    let layers = DotenvLayers::load(dir.path(), &process, None);
 
-    assert!(status.success(), "child boundary test failed: {status}");
+    let env_path = dir.path().join(".env");
+    assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary");
+    assert_bootstrap_file_renamed(dir.path());
+    assert_eq!(
+        layers
+            .bootstrap_values()
+            .get("DATABASE_URL")
+            .map(String::as_str),
+        Some("postgres://localhost/axinite_public_boundary")
+    );
 }
 
 #[test]
@@ -142,64 +126,6 @@ fn test_migrate_bootstrap_json_missing() {
 }
 
 #[test]
-/// Verify that auto-detection leaves the backend unset when the database file
-/// is absent and selects `libsql` once the file exists.
-fn libsql_autodetection_injects_backend_when_db_exists() {
-    let dir = tempdir().expect_valid("create temp dir for libsql autodetect");
-    let db_path = dir.path().join("axinite.db");
-
-    assert!(!db_path.exists());
-    assert!(
-        with_libsql_backend_autodetection(crate::config::EnvContext::default(), &db_path)
-            .get("DATABASE_BACKEND")
-            .is_none(),
-        "should not auto-detect when db file is absent"
-    );
-
-    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
-    assert!(
-        with_libsql_backend_autodetection(crate::config::EnvContext::default(), &db_path)
-            .get("DATABASE_BACKEND")
-            == Some("libsql"),
-        "should detect libsql when db file is present and backend unset"
-    );
-}
-
-#[test]
-/// Verify that an explicitly configured backend is preserved even when a
-/// libSQL database file is present.
-fn test_libsql_autodetect_does_not_override_explicit_backend() {
-    let dir = tempdir().expect_valid("create temp dir for explicit backend autodetect test");
-    let db_path = dir.path().join("axinite.db");
-    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
-
-    let context = with_libsql_backend_autodetection(
-        crate::config::EnvContext::default().with_env("DATABASE_BACKEND", "postgres"),
-        &db_path,
-    );
-    assert!(
-        context.get("DATABASE_BACKEND") == Some("postgres"),
-        "must not override an explicitly set DATABASE_BACKEND"
-    );
-}
-
-#[test]
-/// Verify that an explicitly present but empty `DATABASE_BACKEND` blocks
-/// auto-detection rather than being treated as unset.
-fn test_libsql_autodetect_respects_an_empty_backend_environment_value() {
-    let dir = tempdir().expect_valid("create temp dir for empty backend autodetect test");
-    let db_path = dir.path().join("axinite.db");
-    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
-
-    let context = crate::config::EnvContext::default().with_env("DATABASE_BACKEND", "");
-    let resolved = with_libsql_backend_autodetection(context, &db_path);
-    assert!(
-        resolved.get("DATABASE_BACKEND").is_none(),
-        "an explicitly present empty backend must prevent auto-detection"
-    );
-}
-
-#[test]
 fn upsert_bootstrap_vars_creates_file_if_missing() {
     let dir = tempdir().expect_valid("create temp dir for missing-file upsert");
     let env_path = dir.path().join("subdir").join(".env");
@@ -210,14 +136,11 @@ fn upsert_bootstrap_vars_creates_file_if_missing() {
     upsert_bootstrap_vars_to(&env_path, &vars).expect_valid("upsert vars into missing file");
 
     assert!(env_path.exists());
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse newly created bootstrap env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_bootstrap_env(&env_path);
     assert_eq!(parsed.len(), 1);
     assert_eq!(
-        parsed[0],
-        ("DATABASE_BACKEND".to_string(), "libsql".to_string())
+        parsed.get("DATABASE_BACKEND").map(String::as_str),
+        Some("libsql")
     );
 }
 

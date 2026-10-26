@@ -230,3 +230,29 @@ pub(super) async fn create_and_start_container(
 
     Ok(container_id)
 }
+
+#[cfg(test)]
+mod tests {
+    //! Tests for the explicit environment passed to Claude Code containers.
+
+    use super::append_claude_code_env;
+    use crate::orchestrator::job_types::ContainerJobConfig;
+
+    #[test]
+    fn claude_container_receives_api_key_in_preference_to_oauth_token() {
+        let config = ContainerJobConfig {
+            claude_code_api_key: Some("api-key".to_string()),
+            claude_code_oauth_token: Some("oauth-token".to_string()),
+            ..ContainerJobConfig::default()
+        };
+        let mut env = Vec::new();
+
+        append_claude_code_env(&config, &mut env);
+
+        assert!(env.contains(&"ANTHROPIC_API_KEY=api-key".to_string()));
+        assert!(
+            !env.iter()
+                .any(|value| value.starts_with("CLAUDE_CODE_OAUTH_TOKEN="))
+        );
+    }
+}

@@ -12,16 +12,40 @@ Axinite does not read configuration from a single source. Startup is layered so
 the process can bootstrap before the database is available, then reload richer
 settings once persistent state is online.
 
-Table 1. Effective configuration precedence.
+The environment snapshot follows this order:
 
-| Priority | Source                       | Notes                                                                                                                                                                                                                                                  |
-| -------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Highest  | Explicit process environment | Values exported in the shell always win. Empty strings are treated as unset by the config helpers.                                                                                                                                                     |
-| High     | `./.env`                     | Loaded by `dotenvy::dotenv()` before `~/.axinite/.env`, and never overwrites existing process variables.                                                                                                                                               |
-| Medium   | `~/.axinite/.env`            | Loaded by `crate::bootstrap::load_axinite_env()`. This is the bootstrap layer for settings needed before database access, especially `DATABASE_URL`.                                                                                                   |
-| Medium   | Optional TOML overlay        | `Config::from_env_with_toml()` and `Config::from_db_with_toml()` overlay `~/.axinite/config.toml` by default, or an explicit `--config` path when one is provided. TOML overrides JSON or database settings, but still loses to environment variables. |
-| Low      | Persisted database settings  | Used once the settings store is available.                                                                                                                                                                                                             |
-| Lowest   | Code defaults                | Hard-coded defaults in `src/config/*.rs`.                                                                                                                                                                                                              |
+1. Real process environment.
+2. The nearest regular `.env` file found by walking from the current directory
+   towards its ancestors.
+3. `<AXINITE_BASE_DIR>/.env`, defaulting to `~/.axinite/.env`.
+4. Automatic `DATABASE_BACKEND=libsql` selection when the resolved base
+   directory contains the default libSQL database and no backend key exists.
+5. Injected secrets, as a fallback for ordinary environment lookups.
+
+The process environment wins over both files. A non-empty `AXINITE_BASE_DIR`
+from the process or current-directory file selects the bootstrap directory; a
+value inside the bootstrap file cannot relocate the file that contains it. When
+no home variable supplies a directory, Axinite uses the platform home directory
+lookup as the fallback. Empty values are retained in the snapshot.
+`EnvContext::get()` treats an empty value as unset, while an explicitly present
+empty `DATABASE_BACKEND` still blocks automatic backend detection.
+
+After environment resolution, config constructors apply their settings layers:
+environment snapshot, optional TOML, persisted database settings, then code
+defaults. TOML overrides database settings but loses to environment inputs.
+
+Dotenv values are parsed into immutable `EnvContext` snapshots. They are not
+written to the process environment and are not inherited by child processes.
+Ambient config constructors reread the files; hot reload replaces the parsed
+layer snapshot so files written during onboarding are visible on the next
+config load. The base directory itself is cached after its first access.
+
+`dotenvy` keeps within-file quoting, multiline values, `export`, and
+substitution. Substitution in the bootstrap file no longer sees names defined
+only in the current-directory `.env`; both files can still substitute names
+from their own contents and from the real process environment. Duplicate keys
+keep the first stored value, while later duplicate entries can affect the
+parser's substitution value for subsequent lines.
 
 Two bootstrap details matter in practice:
 
@@ -40,6 +64,24 @@ injected secret overlays. `Config::from_context(...)` resolves against that
 snapshot instead of re-reading ambient process state, which keeps precedence
 deterministic and removes the need for global environment mutation in many
 tests.
+
+### Child-process environment
+
+The table records each child-process environment contract. Inherited values
+come from the real process environment; dotenv values are available only when
+the listed explicit seam forwards them.
+
+| Spawn site                                   | Environment passed to the child                                                                                                                                                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare tunnel and setup token validation | The token resolved from `EnvContext` is passed as `--token`. Other inherited values come from the real process environment.                                                                                                        |
+| ngrok tunnel                                 | The token resolved from `EnvContext` is passed as `NGROK_AUTHTOKEN`; other inherited values come from the real process environment.                                                                                                |
+| Tailscale tunnel                             | Uses the authenticated host Tailscale daemon and its host state. No dotenv values are forwarded.                                                                                                                                   |
+| Custom tunnel                                | Inherits the real process environment. The configured command is split into a program and arguments; there is no shell expansion or dotenv forwarding.                                                                             |
+| MCP stdio server                             | Inherits the real process environment and adds only the server's configured `env` map. That map overrides inherited values; Axinite does not pass the full `EnvContext`.                                                           |
+| Claude bridge container                      | The Docker job receives the selected API key or OAuth token explicitly from `ContainerJobConfig`. The `claude` child inherits the worker container environment and adds the explicit credential map returned for the job.          |
+| Built-in shell tool                          | The direct host fallback clears the environment, forwards only safe variables read from the real process, then adds explicitly supplied worker credentials. The Docker path receives only its command-specific environment map.    |
+| Sandbox manager host fallback                | Inherits the real process environment and overlays the command-specific map. Docker sandbox commands receive the explicit map and container image defaults, not the host `EnvContext`.                                             |
+| Host probes and builders                     | `which`, `where`, Docker, service-manager, macOS Keychain `security`, `cloudflared` detection, and Cargo artefact-build commands inherit the real process environment for `PATH` and host tooling. They do not need dotenv values. |
 
 ## 2. Global `axinite` CLI options
 
@@ -499,7 +541,7 @@ Table 24. Advanced, internal, and debug-oriented environment variables.
 | `AXINITE_TRACE_MODEL_NAME`   | Override the model name stored in a trace file.                                                        | Defaults to `recorded-<inner-model-name>`.                                             |
 | `AXINITE_IN_DOCKER`          | Declare that the host is running inside the Docker restart environment.                                | Must be `true` for the restart tool to perform a process exit.                         |
 | `AXINITE_DISABLE_RESTART`    | Suppress the actual process exit in the restart tool.                                                  | Intended for tests or controlled development runs.                                     |
-| `AXINITE_WORKER_TOKEN`       | Bearer token used by internal sandbox workers when talking to the orchestrator.                        | Required for `worker` and `claude-bridge` container entrypoints.                       |
+| `AXINITE_WORKER_TOKEN`       | Bearer token used by internal sandbox workers when talking to the orchestrator.                        | Read from the real process environment by `worker` and `claude-bridge` entrypoints.    |
 | `CLAUDE_CODE_OAUTH_TOKEN`    | OAuth token discovered by the Claude Code bridge when no API key is present.                           | Intended for container and bridge flows rather than the main config loader.            |
 | `AXINITE_PID_LOCK_CHILD`     | Internal test knob for PID-lock child processes.                                                       | Not intended for user-facing configuration.                                            |
 | `AXINITE_PID_LOCK_PATH`      | Internal PID-lock test path override.                                                                  | Not intended for user-facing configuration.                                            |

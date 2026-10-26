@@ -146,11 +146,11 @@ impl WorkerRuntime {
 
     /// Create a new worker runtime from environment variables.
     ///
-    /// Reads `AXINITE_WORKER_TOKEN` from the environment for auth.
+    /// Reads `AXINITE_WORKER_TOKEN` from the real process environment for auth.
     /// This is a convenience constructor for production use; tests should
     /// prefer [`Self::new`] with an explicit client.
     pub fn from_env(config: WorkerConfig) -> Result<Self, WorkerError> {
-        Self::from_context(config, &crate::config::EnvContext::capture_ambient())
+        Self::from_context(config, &crate::config::EnvContext::capture_process())
     }
 
     /// Create a worker runtime from an explicit environment snapshot.

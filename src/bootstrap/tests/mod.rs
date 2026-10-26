@@ -6,6 +6,7 @@
 //! `migration_support`.
 
 mod base_dir;
+mod config_round_trip;
 mod env_format;
 mod migration;
 mod migration_disk_to_db;

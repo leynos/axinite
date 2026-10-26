@@ -205,6 +205,7 @@ async fn print_mcp_status() {
 
 /// Run the status command, printing system health info.
 pub async fn run_status_command() -> anyhow::Result<()> {
+    EnvContext::refresh_dotenv_layers();
     let env_context = crate::bootstrap::capture_config_env_context();
     let base_dir = env_context.axinite_base_dir();
     let settings = load_settings_from(

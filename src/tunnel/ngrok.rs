@@ -41,6 +41,8 @@ impl NativeTunnel for NgrokTunnel {
         }
         args.extend(["--log", "stdout", "--log-format", "logfmt"].map(String::from));
 
+        // The tunnel token is explicit; see
+        // docs/configuration-guide.md#child-process-environment.
         let mut child = Command::new("ngrok")
             .args(&args)
             .env("NGROK_AUTHTOKEN", &self.auth_token)

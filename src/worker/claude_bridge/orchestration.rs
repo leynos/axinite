@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::Instant;
 
+use crate::config::EnvContext;
 use crate::error::WorkerError;
 use crate::worker::api::{CompletionReport, StatusUpdate, WorkerState};
 
@@ -99,8 +100,6 @@ impl ClaudeBridgeRuntime {
         self.has_copied_auth().await
     }
 
-    /// Fetch the job description and the credentials to inject into the child
-    /// process environment.
     async fn fetch_job_and_env(&self) -> Result<(String, HashMap<String, String>), WorkerError> {
         let job = self.client.get_job().await?;
         tracing::info!(
@@ -133,7 +132,7 @@ impl ClaudeBridgeRuntime {
     }
 
     fn warn_if_missing_auth(&self, env: &HashMap<String, String>, copied_auth_present: bool) {
-        if has_claude_credentials(env) || copied_auth_present {
+        if has_claude_credentials(env, &EnvContext::capture_process()) || copied_auth_present {
             return;
         }
         tracing::warn!(
@@ -242,18 +241,11 @@ impl ClaudeBridgeRuntime {
     }
 }
 
-/// Return `true` when the child environment or the process environment
-/// carries Claude Code credentials (API key or OAuth token).
-fn has_claude_credentials(env: &HashMap<String, String>) -> bool {
-    let has_api_key = env.contains_key("ANTHROPIC_API_KEY") || {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("ANTHROPIC_API_KEY")
-    }
-    .is_ok();
-    let has_oauth = env.contains_key("CLAUDE_CODE_OAUTH_TOKEN") || {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("CLAUDE_CODE_OAUTH_TOKEN")
-    }
-    .is_ok();
+/// Return `true` when the child map or snapshot carries a Claude credential.
+fn has_claude_credentials(env: &HashMap<String, String>, env_context: &EnvContext) -> bool {
+    let has_api_key =
+        env.contains_key("ANTHROPIC_API_KEY") || env_context.contains_key("ANTHROPIC_API_KEY");
+    let has_oauth = env.contains_key("CLAUDE_CODE_OAUTH_TOKEN")
+        || env_context.contains_key("CLAUDE_CODE_OAUTH_TOKEN");
     has_api_key || has_oauth
 }

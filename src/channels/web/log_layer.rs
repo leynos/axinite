@@ -64,8 +64,6 @@ impl LogBroadcaster {
         }
     }
 
-    /// Scrub secrets from a log entry, retain it in the ring buffer, and
-    /// broadcast it to live subscribers.
     pub fn send(&self, mut entry: LogEntry) {
         // Scrub secrets from the message before it reaches any subscriber.
         // This is defence-in-depth: even if code elsewhere accidentally logs
@@ -177,11 +175,9 @@ impl LogLevelHandle {
 /// Returns the `LogLevelHandle` so callers can swap the filter at runtime.
 /// The fmt layer and `WebLogLayer` are attached alongside the reloadable filter.
 pub fn init_tracing(log_broadcaster: Arc<LogBroadcaster>) -> Arc<LogLevelHandle> {
-    let raw_filter = {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("RUST_LOG")
-    }
-    .unwrap_or_else(|_| "axinite=info,tower_http=warn".to_string());
+    let raw_filter = crate::config::EnvContext::capture_ambient()
+        .get_owned("RUST_LOG")
+        .unwrap_or_else(|| "axinite=info,tower_http=warn".to_string());
 
     // Split into the axinite directive and "everything else" (base_filter).
     let mut axinite_level = String::from("info");
@@ -253,8 +249,6 @@ impl MessageVisitor {
 }
 
 impl Visit for MessageVisitor {
-    /// Capture the `message` field as the entry text and record every other
-    /// field as a `name=value` pair.
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
             self.message = format!("{:?}", value);

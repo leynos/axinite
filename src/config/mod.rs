@@ -1,15 +1,15 @@
 //! Configuration for Axinite.
 //!
-//! Settings are loaded with priority: env var > database > default.
-//! `DATABASE_URL` lives in `~/.axinite/.env` (loaded via dotenvy early
-//! in startup). Everything else comes from env vars, the DB settings
-//! table, or auto-detection.
+//! Settings are resolved from an immutable environment snapshot, then overlaid
+//! by database, TOML, and default values according to each setting's policy.
+//! Dotenv files are parsed without modifying the process environment.
 
 mod agent;
 mod builder;
 mod channels;
 mod context;
 mod database;
+pub(crate) mod dotenv_layers;
 mod embeddings;
 mod heartbeat;
 pub(crate) mod helpers;
@@ -65,9 +65,9 @@ pub use crate::llm::session::SessionConfig;
 
 /// Thread-safe overlay for injected env vars (secrets loaded from DB).
 ///
-/// Used by `inject_llm_keys_from_secrets()` to make API keys available to
-/// `optional_env()` without unsafe `set_var` calls. `optional_env()` checks
-/// real env vars first, then falls back to this overlay.
+/// Used by `inject_llm_keys_from_secrets()` to make API keys available through
+/// `EnvContext` without writing to the process environment. Process and dotenv
+/// values take precedence over this overlay.
 ///
 /// Uses `Mutex<HashMap>` instead of `OnceLock` so that both
 /// `inject_os_credentials()` and `inject_llm_keys_from_secrets()` can merge
@@ -152,6 +152,7 @@ impl Config {
         user_id: &str,
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
+        EnvContext::refresh_dotenv_layers();
         Self::from_db_from_context_with_toml(
             store,
             user_id,
@@ -205,9 +206,8 @@ impl Config {
     /// and by CLI commands that don't have DB access.
     /// Falls back to legacy `settings.json` on disk if present.
     ///
-    /// The binary loads `./.env` and `~/.axinite/.env` at its synchronous
-    /// startup boundary. Library callers that need a separate environment
-    /// source should use [`Self::from_context`] with an explicit [`EnvContext`].
+    /// Refreshes `./.env` and the bootstrap `.env` into an immutable context
+    /// without writing either file's values to the process environment.
     pub async fn from_env() -> Result<Self, ConfigError> {
         Self::from_env_with_toml(None).await
     }
@@ -216,6 +216,7 @@ impl Config {
     pub async fn from_env_with_toml(
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
+        EnvContext::refresh_dotenv_layers();
         let settings = Settings::load()?;
         let ctx = crate::bootstrap::capture_config_env_context();
         let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;

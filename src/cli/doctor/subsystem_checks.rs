@@ -1,7 +1,6 @@
 //! Subsystem diagnostic checks: embeddings, routines, gateway, MCP
 //! servers, skills, and secrets configuration.
 
-use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -9,12 +8,6 @@ use super::CheckResult;
 
 // ── Embeddings ──────────────────────────────────────────────
 
-pub(super) fn check_embeddings(settings: &Settings) -> CheckResult {
-    check_embeddings_with_context(&EnvContext::capture_ambient(), settings)
-}
-
-/// Resolve the embeddings configuration from the supplied snapshot and report
-/// whether credentials are present.
 pub(super) fn check_embeddings_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
     let config = match crate::config::EmbeddingsConfig::resolve_from(ctx, settings) {
         Ok(config) => config,
@@ -23,7 +16,7 @@ pub(super) fn check_embeddings_with_context(ctx: &EnvContext, settings: &Setting
     if !config.enabled {
         return CheckResult::Skip("disabled (set EMBEDDING_ENABLED=true)".into());
     }
-    if embeddings_credentials_present(&config) {
+    if embeddings_credentials_present(&config, ctx) {
         CheckResult::Pass(format!(
             "provider={}, model={}",
             config.provider, config.model
@@ -41,10 +34,13 @@ pub(super) fn check_embeddings_with_context(ctx: &EnvContext, settings: &Setting
 }
 
 /// Whether credentials for the configured embeddings provider are present.
-fn embeddings_credentials_present(config: &crate::config::EmbeddingsConfig) -> bool {
+fn embeddings_credentials_present(
+    config: &crate::config::EmbeddingsConfig,
+    ctx: &EnvContext,
+) -> bool {
     match config.provider.as_str() {
         "openai" => config.openai_api_key().is_some(),
-        "nearai" => nearai_session_present(),
+        "nearai" => nearai_session_present(ctx),
         "ollama" => true, // local, no creds needed
         _ => config.openai_api_key().is_some(),
     }
@@ -55,8 +51,8 @@ fn embeddings_credentials_present(config: &crate::config::EmbeddingsConfig) -> b
 /// NearAiEmbeddings uses SessionManager::get_token() which only returns
 /// session tokens, NOT NEARAI_API_KEY
 /// (src/workspace/embeddings.rs:309, src/llm/session.rs:132).
-fn nearai_session_present() -> bool {
-    let session_path = crate::config::llm::default_session_path();
+fn nearai_session_present(ctx: &EnvContext) -> bool {
+    let session_path = crate::config::llm::default_session_path_in(&ctx.axinite_base_dir());
     session_path.exists()
         && ambient_fs::read_to_string(&session_path)
             .map(|s| !s.trim().is_empty())
@@ -65,12 +61,6 @@ fn nearai_session_present() -> bool {
 
 // ── Routines config ─────────────────────────────────────────
 
-pub(super) fn check_routines_config() -> CheckResult {
-    check_routines_config_with_context(&EnvContext::capture_ambient())
-}
-
-/// Resolve the routine configuration from the supplied snapshot and report
-/// whether routines are enabled.
 pub(super) fn check_routines_config_with_context(ctx: &EnvContext) -> CheckResult {
     match crate::config::RoutineConfig::resolve_from(ctx) {
         Ok(config) => {
@@ -89,11 +79,13 @@ pub(super) fn check_routines_config_with_context(ctx: &EnvContext) -> CheckResul
 
 // ── Gateway config ──────────────────────────────────────────
 
-/// Report the gateway bind address and whether an auth token is configured.
-pub(super) fn check_gateway_config(settings: &Settings) -> CheckResult {
+pub(super) fn check_gateway_config_with_context(
+    ctx: &EnvContext,
+    settings: &Settings,
+) -> CheckResult {
     // Use the same resolve() path as runtime so invalid env values
     // (e.g. GATEWAY_PORT=abc) are caught here too.
-    match crate::config::ChannelsConfig::resolve(settings) {
+    match crate::config::ChannelsConfig::resolve_from(ctx, settings) {
         Ok(channels) => match channels.gateway {
             Some(gw) => {
                 if gw.auth_token.is_some() {
@@ -116,7 +108,6 @@ pub(super) fn check_gateway_config(settings: &Settings) -> CheckResult {
 
 // ── MCP servers ─────────────────────────────────────────────
 
-/// Load the MCP server configuration and validate every enabled server.
 pub(super) async fn check_mcp_config() -> CheckResult {
     let file = match crate::tools::mcp::config::load_mcp_servers().await {
         Ok(file) => file,
@@ -166,9 +157,10 @@ fn validate_mcp_servers(servers: &[&crate::tools::mcp::config::McpServerConfig])
 
 // ── Skills ──────────────────────────────────────────────────
 
-pub(super) async fn check_skills() -> CheckResult {
-    let user_dir = axinite_base_dir().join("skills");
-    let installed_dir = axinite_base_dir().join("installed_skills");
+pub(super) async fn check_skills(ctx: &EnvContext) -> CheckResult {
+    let base_dir = ctx.axinite_base_dir();
+    let user_dir = base_dir.join("skills");
+    let installed_dir = base_dir.join("installed_skills");
 
     let mut registry = crate::skills::SkillRegistry::new(user_dir.clone());
     registry = registry.with_installed_dir(installed_dir);
@@ -185,20 +177,13 @@ pub(super) async fn check_skills() -> CheckResult {
 }
 
 // ── Secrets ─────────────────────────────────────────────────
-
-/// Report the configured secrets master-key source and whether it is usable.
-pub(super) fn check_secrets(settings: &Settings) -> CheckResult {
+pub(super) fn check_secrets(settings: &Settings, ctx: &EnvContext) -> CheckResult {
     match settings.secrets_master_key_source {
         crate::settings::KeySource::Keychain => {
             CheckResult::Pass("master key source: OS keychain".into())
         }
         crate::settings::KeySource::Env => {
-            if {
-                #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-                std::env::var("SECRETS_MASTER_KEY")
-            }
-            .is_ok()
-            {
+            if ctx.contains_key("SECRETS_MASTER_KEY") {
                 CheckResult::Pass("master key source: env var (set)".into())
             } else {
                 CheckResult::Fail(

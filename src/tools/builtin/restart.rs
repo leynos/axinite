@@ -43,7 +43,7 @@ pub struct RestartTool {
 impl RestartTool {
     /// Construct the restart adapter from the process environment at startup.
     pub fn new() -> Self {
-        Self::from_context(EnvContext::capture_ambient())
+        Self::from_context(EnvContext::capture_process())
     }
 
     /// Construct the restart adapter from an explicit environment snapshot.

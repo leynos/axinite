@@ -7,9 +7,8 @@
 //! - [`EnvKey`] makes environment-variable names explicit at call sites.
 //! - `*_from(...)` helpers read from an explicit [`EnvContext`] snapshot for
 //!   deterministic config construction.
-//! - Ambient `*_env(...)` wrappers are retained for compatibility and still
-//!   honour the injected secret overlay after checking the real process
-//!   environment first.
+//! - Ambient `*_env(...)` wrappers capture `EnvContext`, which combines the
+//!   process environment, parsed dotenv layers, and injected secrets.
 //! - Shared parsing cores keep error formatting and boolean semantics
 //!   consistent across both resolution paths.
 //!
@@ -19,7 +18,6 @@
 use crate::error::ConfigError;
 
 use super::EnvContext;
-use super::INJECTED_VARS;
 
 /// A typed wrapper for an environment-variable name.
 ///
@@ -78,40 +76,8 @@ pub(crate) fn optional_env_from(
 ) -> Result<Option<String>, ConfigError> {
     Ok(ctx.get_owned(key.as_str()))
 }
-
-/// Read an optional value from the ambient process environment, falling back
-/// to the injected-variable overlay.
-///
-/// Retained for legacy callers; new code should use [`optional_env_from`] with
-/// an explicit [`EnvContext`].
 pub(crate) fn optional_env(key: EnvKey) -> Result<Option<String>, ConfigError> {
-    // Check real env vars first (always win over injected secrets)
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "FIXME: legacy ambient fallback; migrate callers to EnvContext, see https://github.com/leynos/axinite/issues/333"
-    )]
-    match std::env::var(key.as_str()) {
-        Ok(val) if val.is_empty() => {}
-        Ok(val) => return Ok(Some(val)),
-        Err(std::env::VarError::NotPresent) => {}
-        Err(e) => {
-            return Err(ConfigError::ParseError(format!(
-                "failed to read {key}: {e}"
-            )));
-        }
-    }
-
-    // Fall back to thread-safe overlay (secrets injected from DB)
-    if let Some(val) = INJECTED_VARS
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .get(key.as_str())
-        .cloned()
-    {
-        return Ok(Some(val));
-    }
-
-    Ok(None)
+    optional_env_from(&EnvContext::capture_ambient(), key)
 }
 
 pub(crate) fn parse_optional_env_from<T>(

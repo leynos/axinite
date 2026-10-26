@@ -25,6 +25,7 @@ impl TestGatewayStateFactory {
             sse: SseManager::new(),
             workspace,
             env_flag_overlay: Default::default(),
+            restart_enabled: false,
             session_manager: None,
             log_broadcaster: None,
             log_level_handle: None,

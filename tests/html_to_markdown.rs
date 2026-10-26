@@ -185,7 +185,6 @@ proptest! {
     }
 }
 
-/// Convert every page under `tests/test-pages` and compare it with its expected Markdown.
 #[test]
 fn convert_test_pages_to_markdown() {
     let test_pages = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -252,12 +251,7 @@ fn convert_test_pages_to_markdown() {
             }
         }
 
-        if {
-            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-            std::env::var("HTML_TO_MD_VERBOSE")
-        }
-        .is_ok()
-        {
+        if axinite::config::EnvContext::capture_process().contains_key("HTML_TO_MD_VERBOSE") {
             println!("--- {} ---\n{}\n", dir_name, markdown);
         }
         converted += 1;

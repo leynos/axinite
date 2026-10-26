@@ -87,9 +87,8 @@ pub struct JobContext {
     pub metadata: serde_json::Value,
     /// Extra environment variables to inject into spawned child processes.
     ///
-    /// Used by the worker runtime to pass fetched credentials to tools
-    /// (e.g., shell commands) without mutating the global process environment
-    /// via `std::env::set_var`, which is unsafe in multi-threaded programs.
+    /// Used by the worker runtime to pass fetched credentials explicitly to
+    /// tools (e.g., shell commands) without mutating global process state.
     ///
     /// Wrapped in `Arc` for cheap cloning on every tool invocation.
     #[serde(skip)]

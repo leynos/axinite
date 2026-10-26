@@ -45,9 +45,9 @@ const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 impl WorkerHttpClient {
     /// Create a new client from environment.
     ///
-    /// Reads `AXINITE_WORKER_TOKEN` from the environment.
+    /// Reads `AXINITE_WORKER_TOKEN` from the real process environment.
     pub fn from_env(orchestrator_url: String, job_id: Uuid) -> Result<Self, WorkerError> {
-        Self::from_context(orchestrator_url, job_id, &EnvContext::capture_ambient())
+        Self::from_context(orchestrator_url, job_id, &EnvContext::capture_process())
     }
 
     /// Create a client from an explicit environment snapshot.

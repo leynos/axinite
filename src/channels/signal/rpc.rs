@@ -2,6 +2,7 @@
 //! request/response handling, send-parameter construction, and attachment
 //! path validation.
 
+use std::path::Path;
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -267,13 +268,13 @@ impl SignalChannel {
     /// Uses the shared path validation logic from path_utils to ensure:
     /// - No path traversal attacks (../, URL-encoded, null bytes)
     /// - Paths are canonicalized and symlinks resolved
-    /// - All paths are within ~/.axinite/ sandbox
-    pub(super) fn validate_attachment_paths(paths: &[String]) -> Result<(), ChannelError> {
-        // Get the sandbox base directory (same as MessageTool uses)
-        let base_dir = axinite_base_dir();
-
+    /// - All paths are within the configured Axinite sandbox directory
+    pub(super) fn validate_attachment_paths(
+        paths: &[String],
+        base_dir: &Path,
+    ) -> Result<(), ChannelError> {
         for path in paths {
-            crate::tools::builtin::path_utils::validate_path(path, Some(&base_dir)).map_err(
+            crate::tools::builtin::path_utils::validate_path(path, Some(base_dir)).map_err(
                 |e| {
                     ChannelError::InvalidMessage(format!(
                         "Attachment path must be within {}: {}",
@@ -294,7 +295,8 @@ impl SignalChannel {
         content: &str,
         attachments: &[String],
     ) -> Result<(), ChannelError> {
-        Self::validate_attachment_paths(attachments)?;
+        let base_dir = axinite_base_dir();
+        Self::validate_attachment_paths(attachments, &base_dir)?;
 
         // Text and attachments always go out in a single RPC call. Message
         // text is omitted only for attachment-only sends; a plain send with

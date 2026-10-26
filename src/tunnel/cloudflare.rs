@@ -33,6 +33,7 @@ impl NativeTunnel for CloudflareTunnel {
 
     async fn start<'a>(&'a self, local_host: &'a str, local_port: u16) -> Result<String> {
         let origin = format!("http://{local_host}:{local_port}");
+        // See docs/configuration-guide.md#child-process-environment for token forwarding.
         let mut child = Command::new("cloudflared")
             .args([
                 "tunnel",

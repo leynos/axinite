@@ -43,8 +43,6 @@ pub async fn connect_docker() -> Result<DockerConnection> {
     }
 }
 
-/// Connect to the Docker daemon, trying local defaults and then well-known
-/// user-owned socket locations.
 #[cfg(feature = "docker")]
 async fn connect_docker_inner() -> Result<DockerConnection> {
     // First try bollard defaults (checks DOCKER_HOST env var, then /var/run/docker.sock).
@@ -99,20 +97,11 @@ pub(crate) fn docker_feature_disabled_error() -> SandboxError {
 }
 
 #[cfg(all(unix, feature = "docker"))]
-/// Collect candidate user-owned Docker socket paths from the ambient `HOME`
-/// and `XDG_RUNTIME_DIR` variables and the effective user ID.
 fn unix_socket_candidates() -> Vec<PathBuf> {
+    let env = crate::config::EnvContext::capture_process();
     unix_socket_candidates_from_env(
-        {
-            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-            std::env::var_os("HOME")
-        }
-        .map(PathBuf::from),
-        {
-            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-            std::env::var_os("XDG_RUNTIME_DIR")
-        }
-        .map(PathBuf::from),
+        env.get("HOME").map(PathBuf::from),
+        env.get("XDG_RUNTIME_DIR").map(PathBuf::from),
         Some(rustix::process::geteuid().as_raw().to_string()),
     )
 }

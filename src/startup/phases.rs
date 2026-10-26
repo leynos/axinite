@@ -319,13 +319,7 @@ async fn run_first_run_onboarding_if_needed(
             env_context.clone(),
         );
         wizard.run().await?;
-        // The wizard's own snapshot carries credentials entered during
-        // onboarding (for example an API key stored while the database is
-        // unavailable), so merge `.env` on top of that rather than on the
-        // snapshot captured before onboarding.
-        Ok(axinite::bootstrap::merge_axinite_env_into_context(
-            wizard.env_context(),
-        )?)
+        Ok(wizard.env_context().refreshed_ambient_snapshot())
     } else {
         Ok(env_context.clone())
     }

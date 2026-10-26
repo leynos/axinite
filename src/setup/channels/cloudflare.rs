@@ -4,6 +4,9 @@
 //! as plain strings throughout: they are free-form external text with no
 //! domain invariants a newtype could enforce. Tunnel tokens are carried as
 //! [`secrecy::SecretString`] and only exposed at the point of use.
+//!
+//! Child process environment decisions are documented in
+//! `docs/configuration-guide.md#child-process-environment`.
 
 use base64::Engine;
 use secrecy::ExposeSecret;
@@ -245,6 +248,8 @@ fn detect_linux_cloudflared_service(conflicts: &mut Vec<String>) {
 /// Spawns `cloudflared tunnel run` with a dummy local URL and watches stderr
 /// for up to 10 seconds. If a connection URL appears, the token is valid.
 /// If error indicators appear first, returns the error message.
+/// The token is passed explicitly; see
+/// `docs/configuration-guide.md#child-process-environment`.
 async fn validate_cloudflare_token_live(token: &secrecy::SecretString) -> Result<(), String> {
     use tokio::io::AsyncBufReadExt;
     use tokio::process::Command;

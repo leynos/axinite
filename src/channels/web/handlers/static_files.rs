@@ -58,8 +58,6 @@ fn is_invalid_project_id(project_id: &str) -> bool {
     has_path_separator || is_traversal_or_empty
 }
 
-/// Serve a file from a project directory after validating the project ID and
-/// confirming the canonical path stays inside the project root.
 async fn serve_project_file(project_id: &str, path: &str) -> axum::response::Response {
     if is_invalid_project_id(project_id) {
         return (StatusCode::BAD_REQUEST, "Invalid project ID").into_response();
@@ -161,8 +159,6 @@ pub async fn logs_level_set_handler(
     tracing::info!("Log level changed to '{}'", handle.current_level());
     Ok(Json(serde_json::json!({ "level": handle.current_level() })))
 }
-/// Serve gateway health data: version, connection counts, uptime, cost and
-/// model usage when a cost guard is present, and whether restart is enabled.
 pub async fn gateway_status_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Json<GatewayStatusResponse> {
@@ -193,20 +189,13 @@ pub async fn gateway_status_handler(
         (None, None, None)
     };
 
-    let restart_enabled = {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("AXINITE_IN_DOCKER")
-    }
-    .map(|v| v.to_lowercase() == "true")
-    .unwrap_or(false);
-
     Json(GatewayStatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         sse_connections,
         ws_connections,
         total_connections: sse_connections + ws_connections,
         uptime_secs,
-        restart_enabled,
+        restart_enabled: state.restart_enabled,
         daily_cost,
         actions_this_hour,
         model_usage,
@@ -235,4 +224,26 @@ pub struct GatewayStatusResponse {
     actions_this_hour: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     model_usage: Option<Vec<ModelUsageEntry>>,
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for static gateway status and project handlers.
+
+    use axum::extract::State;
+
+    use crate::channels::web::test_helpers::TestGatewayBuilder;
+
+    use super::gateway_status_handler;
+
+    #[tokio::test]
+    async fn gateway_status_reports_explicit_restart_override() {
+        let state = TestGatewayBuilder::new().restart_enabled(true).build();
+
+        let response = gateway_status_handler(State(state)).await;
+        let response =
+            serde_json::to_value(response.0).expect("gateway status response is valid JSON");
+
+        assert_eq!(response["restart_enabled"], true);
+    }
 }

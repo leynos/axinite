@@ -5,11 +5,11 @@ use crate::config::EnvContext;
 use crate::testing::test_utils::test_config_from_context;
 
 #[tokio::test]
-async fn container_job_config_uses_overlay_only_anthropic_api_key() {
+async fn container_job_config_uses_anthropic_api_key_from_explicit_context() {
     let env_context = EnvContext::default()
         .with_env("DATABASE_BACKEND", "libsql")
         .with_env("DATABASE_URL", "unused://test")
-        .with_secret("ANTHROPIC_API_KEY", "overlay-only-key");
+        .with_env("ANTHROPIC_API_KEY", "context-only-key");
     let config = test_config_from_context(&env_context)
         .await
         .expect("test configuration should resolve from the supplied context");
@@ -18,7 +18,7 @@ async fn container_job_config_uses_overlay_only_anthropic_api_key() {
 
     assert_eq!(
         job_config.claude_code_api_key.as_deref(),
-        Some("overlay-only-key")
+        Some("context-only-key")
     );
 }
 

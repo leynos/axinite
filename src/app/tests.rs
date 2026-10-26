@@ -39,8 +39,6 @@ async fn assert_no_activation(workspace: &Arc<Workspace>, import_dir: &Path) -> 
 
 #[cfg(feature = "libsql")]
 #[fixture]
-/// Build an `AppBuilder` over a migrated temporary libSQL database, with a
-/// workspace import directory containing a marker file.
 async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)> {
     let temp_dir = tempfile::tempdir()?;
     let db_path = temp_dir.path().join("app-builder-test.db");
@@ -86,18 +84,9 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
 
 #[cfg(feature = "libsql")]
 #[tokio::test]
-/// Verify that `init_database` migrates legacy `settings.json` into the
-/// database and renames the file. The test re-executes itself as a child
-/// process so the migration runs with a controlled environment.
 async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("AXINITE_APP_MIGRATION_CHILD")
-    }
-    .ok()
-    .as_deref()
-        == Some("1")
-    {
+    let process_env = EnvContext::capture_process();
+    if process_env.get("AXINITE_APP_MIGRATION_CHILD") == Some("1") {
         run_init_database_migration_child().await?;
         return Ok(());
     }
@@ -144,38 +133,18 @@ async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "libsql")]
-/// Child-process half of the legacy settings migration test: read the paths
-/// from the environment, run `init_database`, and assert the setting was
-/// migrated and the legacy file renamed.
 async fn run_init_database_migration_child() -> anyhow::Result<()> {
-    let axinite_dir = PathBuf::from({
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
-        )]
-        std::env::var("AXINITE_BASE_DIR")
-    }?);
-    let db_path = PathBuf::from({
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
-        )]
-        std::env::var("AXINITE_APP_MIGRATION_DB_PATH")
-    }?);
-    let skills_dir = PathBuf::from({
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
-        )]
-        std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")
-    }?);
-    let installed_skills_dir = PathBuf::from({
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
-        )]
-        std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")
-    }?);
+    let process_env = EnvContext::capture_process();
+    let required_path = |key: &str| {
+        process_env
+            .get(key)
+            .map(PathBuf::from)
+            .with_context(|| format!("{key} is not set in the child process"))
+    };
+    let axinite_dir = required_path("AXINITE_BASE_DIR")?;
+    let db_path = required_path("AXINITE_APP_MIGRATION_DB_PATH")?;
+    let skills_dir = required_path("AXINITE_APP_MIGRATION_SKILLS_DIR")?;
+    let installed_skills_dir = required_path("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")?;
 
     let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
     let session = Arc::new(SessionManager::new(SessionConfig::default()));
@@ -209,9 +178,6 @@ async fn run_init_database_migration_child() -> anyhow::Result<()> {
 #[cfg(feature = "libsql")]
 #[rstest]
 #[tokio::test]
-/// Verify that `build_components` constructs the workspace without importing
-/// or seeding it, and that `RuntimeSideEffects::start` performs the deferred
-/// import.
 async fn build_components_returns_without_activating_side_effects(
     #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
 ) -> anyhow::Result<()> {

@@ -139,11 +139,7 @@ fn slack_relay_entry(relay_url: String) -> RegistryEntry {
 /// Pass `None` when the relay is not configured.
 pub fn builtin_entries() -> Vec<RegistryEntry> {
     builtin_entries_with_relay(
-        {
-            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-            std::env::var("CHANNEL_RELAY_URL")
-        }
-        .ok(),
+        crate::config::EnvContext::capture_ambient().get_owned("CHANNEL_RELAY_URL"),
     )
 }
 

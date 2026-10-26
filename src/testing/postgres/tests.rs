@@ -110,11 +110,10 @@ fn a_misconfigured_database_was_never_skippable(#[case] requirement: PostgresReq
     assert!(!skip_is_allowed(&misconfigured(), requirement));
 }
 
-/// The raw reading agrees with the string reading where a string exists.
+/// The raw-value rule agrees with the string rule where a string exists.
 ///
-/// `from_os_value` is what the process actually calls, so the decision
-/// table above would be describing an unused function if the two readings
-/// could disagree on the ordinary cases.
+/// The end-to-end wiring test below separately verifies the production
+/// `EnvContext` path, including a value that is not Unicode.
 #[rstest]
 #[case::unset(None, PostgresRequirement::Optional)]
 #[case::empty(Some(""), PostgresRequirement::Optional)]

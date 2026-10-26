@@ -1,5 +1,8 @@
 //! External dependency checks: service installation, the Docker daemon,
 //! and external binaries on the PATH.
+//!
+//! Probe child environments are documented in
+//! `docs/configuration-guide.md#child-process-environment`.
 
 use super::CheckResult;
 
