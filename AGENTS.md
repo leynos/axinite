@@ -120,12 +120,15 @@ management.
   - `make check-fmt`
     - `cargo fmt --all -- --check`
     - `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`
+    - `cargo fmt --manifest-path
+      tests/probes/cranelift-unwind/Cargo.toml --all -- --check`
   - `make typecheck`
     - `cargo check --all --benches --tests --examples`
     - `cargo check --all --benches --tests --examples`
       `--no-default-features --features libsql-test-helpers`
     - `cargo check --all --benches --tests --examples --all-features`
     - `cargo check --manifest-path tools-src/github/Cargo.toml --tests`
+    - `cargo check --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all-targets`
   - `make lint` (runs `make lint-clippy` then `make lint-whitaker`)
     - `make lint-clippy`
       - `cargo clippy --all --benches --tests --examples -- -D warnings`
@@ -134,21 +137,28 @@ management.
       - `cargo clippy --all --benches --tests --examples --all-features -- -D warnings`
       - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests \
         -- -D warnings`
+    - `cargo clippy --manifest-path tests/probes/cranelift-unwind/Cargo.toml \
+      --all-targets -- -D warnings`
     - `make lint-whitaker` (the Whitaker Dylint suite with warnings denied)
       - `RUSTFLAGS="-D warnings" whitaker --all -- --all-targets --all-features`
       - `RUSTFLAGS="-D warnings" whitaker --all \
         --manifest-path tools-src/github/Cargo.toml -- --tests`
-  - `make test` (runs `make test-workspace` then `make test-github-tool`)
+  - `make test` (runs `make test-workspace`, `make test-github-tool`,
+    `make test-libsql-transport`, and `make test-cranelift-probe`)
     - `make test-workspace`
       - `make build-github-tool-wasm`
       - `cargo nextest run --workspace $TEST_FEATURES \
         --profile $NEXTEST_PROFILE`
+    - `make test-cranelift-probe`
+      - `cargo test --manifest-path tests/probes/cranelift-unwind/Cargo.toml`
     - `make test-github-tool`
       - `cargo test --manifest-path tools-src/github/Cargo.toml`
-- The halves are separate targets because CI runs them on separate lanes and
+- The suites are separate targets because CI runs them on separate lanes and
   separate triggers: `tools-src/github` is outside the workspace, so
   `--workspace` never reaches it, and it would otherwise run once per matrix
-  leg. See "One suite, one run per trigger" in the developers' guide.
+  leg. The standalone Cranelift probe is outside `test-workspace`, so the CI
+  matrix does not repeat it for every feature leg. See "One suite, one run per
+  trigger" in the developers' guide.
 - Nextest profiles are configured in `.config/nextest.toml`. The `default`
   profile excludes expensive compile-contract tests (trybuild); the `ci`
   profile runs everything. Pass `NEXTEST_PROFILE=ci` to `make test` or

@@ -36,6 +36,7 @@ from _build_standard_workflow_mutations import TEXT_MUTATIONS, WORKFLOW_MUTATION
 from _build_standard_workflows import (
     INSTALL_TARGET,
     compiles,
+    install_violations,
     make_targets_in,
     runs_on_linux,
     steps_of,
@@ -151,6 +152,26 @@ def test_runner_forms_are_all_read(documents: dict[str, dict[str, typ.Any]]) -> 
     macos = {"runs-on": "macos-14"}
     assert all(runs_on_linux(job) for job in (scalar, chain, listed, mapped, caller))
     assert not any(runs_on_linux(job) for job in (windows, macos))
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [{"if": "false"}, {"continue-on-error": True}],
+    ids=("skipped", "soft-failing"),
+)
+def test_non_guaranteed_configuration_removal_does_not_exempt_compile(
+    guard: dict[str, object],
+) -> None:
+    """Only a guaranteed removal can replace the build-tools install."""
+    job = {
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {"name": "Remove config", "run": "rm .cargo/config.toml", **guard},
+            {"name": "Compile", "run": "cargo test"},
+        ],
+    }
+
+    assert install_violations("test.yml:guarded-removal", job, set())
 
 
 @pytest.mark.parametrize(

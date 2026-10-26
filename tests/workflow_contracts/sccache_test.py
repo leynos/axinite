@@ -102,7 +102,8 @@ COMPILING_COMMANDS: tuple[re.Pattern[str], ...] = tuple(
         # first half of `test-workflow-contracts`, which is a PyYAML parse and
         # not a build; a `(?!-)` guard on it would instead exempt
         # `test-workspace`, which compiles the whole workspace.
-        r"\bmake\s+(?:test-workspace|test-github-tool|test|lint-whitaker)\b(?!-)",
+        r"\bmake\s+(?:test-workspace|test-github-tool|"
+        r"test-cranelift-probe|test|lint-whitaker)\b(?!-)",
         r"\./scripts/build-wasm-extensions\.sh",
     )
 )

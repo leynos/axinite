@@ -1,14 +1,17 @@
-"""Property tests for Cargo rustflags normalization and source precedence.
+"""Bounded properties for the repository's Cargo rustflags model.
 
-The oracle models Cargo's single-source selection directly, independently of
-`_build_standard`'s table reader and matching helpers.
+The reference model is separate from `_build_standard`'s table reader and
+matching helpers. It covers the checked-in build/target tables and a supplied
+`RUSTFLAGS` value, not `CARGO_ENCODED_RUSTFLAGS`, layered Cargo configuration,
+arbitrary `cfg` expressions, or Cargo's ordering for multiple matching target
+tables.
 
 Run via ``make test-workflow-contracts``.
 """
 
 from __future__ import annotations
 
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from _build_standard import PLATFORMS, effective_rustflags, normalize
@@ -86,7 +89,7 @@ def _build_source_tokens(config: dict[str, object]) -> list[str]:
 def _reference_effective(
     config: dict[str, object], triple: str, assigned: str | None
 ) -> list[str]:
-    """Apply an assigned environment or Cargo's target-then-build precedence."""
+    """Apply the represented override or target-then-build table precedence."""
     if assigned is not None:
         return _reference_normalize(assigned.split())
 
@@ -97,8 +100,13 @@ def _reference_effective(
 
 
 @given(st.lists(FLAG, max_size=40))
+@example(flags=["-C", "opt-level=2"])
+@example(flags=["-Z"])
+@example(flags=["-C", "-Z", "unstable-option"])
+@example(flags=["-C", "", "target-cpu=native"])
+@example(flags=["", "-Z", "unstable-option"])
 def test_normalize_matches_the_pending_control_model(flags: list[str]) -> None:
-    """Arbitrary empty and split compiler tokens normalize by one rule."""
+    """Explicit control-token cases and arbitrary strings share one rule."""
     assert normalize(flags) == _reference_normalize(flags), f"flags={flags!r}"
 
 

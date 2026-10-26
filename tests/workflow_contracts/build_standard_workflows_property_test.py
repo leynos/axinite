@@ -1,7 +1,8 @@
-"""Property tests for workflow tool installation ordering.
+"""Bounded role-based properties for workflow tool installation ordering.
 
-A small generated workflow model independently decides whether a Linux job's
-build-tools install is unconditional and precedes every compile.
+The reference model represents conditional steps as skippable, so a config
+removal only exempts a compile when its role is unguarded. Repository workflows
+are checked separately by `build_standard_workflows_test.py`.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -22,7 +23,9 @@ def _jobs(draw: st.DrawFn) -> tuple[dict[str, object], list[tuple[str, bool]], b
     host = draw(st.sampled_from(("linux", "non-linux")))
     kinds = draw(
         st.lists(
-            st.sampled_from(("compile-cargo", "compile-make", "install", "remove", "other")),
+            st.sampled_from(
+                ("compile-cargo", "compile-make", "install", "remove", "other")
+            ),
             max_size=18,
         )
     )
@@ -39,7 +42,7 @@ def _jobs(draw: st.DrawFn) -> tuple[dict[str, object], list[tuple[str, bool]], b
         }[kind]
         step: dict[str, object] = {"name": f"step-{index}", "run": run}
         if guarded:
-            step["if"] = "always()"
+            step["if"] = "false"
         steps.append(step)
     job: dict[str, object] = {
         "runs-on": "ubuntu-latest" if host == "linux" else "windows-latest",
@@ -66,10 +69,10 @@ def _first_compile_position(roles: list[tuple[str, bool]]) -> int | None:
 def _removes_standard_before_compile(
     roles: list[tuple[str, bool]], first_compile: int
 ) -> bool:
-    """Recognize the fixture action that removes the development config."""
+    """Recognize an unguarded removal before compilation."""
     return any(
-        kind == "remove" and index < first_compile
-        for index, (kind, _) in enumerate(roles)
+        kind == "remove" and not guarded and index < first_compile
+        for index, (kind, guarded) in enumerate(roles)
     )
 
 

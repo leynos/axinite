@@ -788,7 +788,13 @@ feature selections.
 so `--workspace` cannot reach either however wide the feature set. The private
 libSQL TLS transport also has a dedicated lane so its feature-specific tests
 run once per CI trigger. `make test` runs `test-workspace`, `test-github-tool`,
-and `test-libsql-transport`; CI runs those suites on separate lanes.
+`test-libsql-transport`, and `test-cranelift-probe`; CI runs the first three
+suites on separate lanes.
+
+The Cranelift probe is a standalone package rather than a workspace member.
+`test-cranelift-probe` runs it once as part of `make test`, outside each CI
+workspace feature-matrix leg. The backend can still be selected independently
+for the documented reproduction.
 
 `make test` does not run the Telegram channel's tests. They run on CI's
 `telegram-tests` lane alone, so after changing `channels-src/telegram`, run
@@ -1472,6 +1478,16 @@ every Cargo and Whitaker line the Makefile emits
 `build_standard_workflows_test.py` does the same for the workflows. Each judge
 is also run against mutated copies and must reject them.
 
+The Hypothesis properties are bounded checks of these Python inspectors, not
+proofs of Cargo or GitHub Actions semantics. The Cargo model covers the
+checked-in build and target tables plus a supplied `RUSTFLAGS` value; it does
+not cover `CARGO_ENCODED_RUSTFLAGS`, layered Cargo configuration, arbitrary
+`cfg` expressions, or Cargo's ordering for multiple matching target tables.
+Routing examples provide fixed expectations for supported command forms; the
+generated routing comparisons remain helper-level checks. A workflow job may
+skip the build-tools installation only when a standalone, non-skippable `rm`
+removes `.cargo/config.toml` before its first compile.
+
 Docker images use the stable `rust:` base images specified by their Dockerfiles
 and do not use the nightly toolchain or the development standard.
 `.dockerignore` excludes `.cargo/` and `rust-toolchain.toml` so that
@@ -1490,35 +1506,63 @@ exception on 2026-10-22. It was rechecked against the current Wasmtime lock on
 
 - **Toolchain and target.** `nightly-2026-10-16`
   (`rustc 1.101.0-nightly (4ebd25825 2026-10-15)`) with
-  `rustc-codegen-cranelift-preview`, on `x86_64-unknown-linux-gnu`. Nothing was
-  measured on macOS or Windows.
+  `rustc-codegen-cranelift-x86_64-unknown-linux-gnu`, on
+  `x86_64-unknown-linux-gnu`. Nothing was measured on macOS or Windows.
 - **The earlier Wasmtime compile failure is resolved.** The previous lock used
   Wasmtime 48.0.6, whose stack-switching assembly failed to compile under
   Cranelift because `asm!` and `global_asm!` `sym` operands were unsupported.
   The current lock uses 48.0.7, and an isolated `cargo check` of that version
   completes with Cranelift on this toolchain. That proves this dependency now
   compiles in isolation; it does not prove the workspace or its tests pass.
-- **Reproduction: a caught panic aborts.** A four-test crate, built the same
-  way, reproduces it with no repository code:
+- **Reproducible panic and unwind probe.** The complete, dependency-free
+  crate is `tests/probes/cranelift-unwind/` (`Cargo.toml` and `src/lib.rs`).
+  Each test is run in its own process so an abort cannot hide the remaining
+  outcomes. `RUSTFLAGS` selects the test profile's backend and intentionally
+  replaces the repository's default frontend and linker flags; this isolates
+  the panic behaviour rather than testing those flags with Cranelift. Run from
+  the repository root:
 
-  ```rust
-  #[test]
-  fn catch_unwind_catches() {
-      let r = std::panic::catch_unwind(|| {
-          if std::hint::black_box(true) { panic!("boom"); }
-      });
-      assert!(r.is_err());
-  }
-  // plus: a spawned thread that panics and is joined, a drop that must run
-  // during unwinding, and a bare #[should_panic] test.
+  ```sh
+  set +e
+  for test in catch_unwind_catches spawned_thread_panic_is_join_error \
+    should_panic_works nested_drop_runs_during_unwind; do
+    env -u CARGO_ENCODED_RUSTFLAGS \
+      RUSTFLAGS='-Zcodegen-backend=cranelift' \
+      cargo +nightly-2026-10-16 test \
+        --target-dir target/cranelift-unwind \
+        --manifest-path tests/probes/cranelift-unwind/Cargo.toml \
+        --lib "panic_backend::$test" -- --exact --nocapture
+    printf 'cranelift %s: exit %s\n' "$test" "$?"
+  done
   ```
 
-  Under Cranelift `catch_unwind_catches` and the drop-during-unwind test fail
-  and the process dies with
-  `fatal runtime error: failed to initiate panic, error 5, aborting` (SIGABRT).
-  A bare `#[should_panic]` test passes, which is why one successful panic test
-  is not evidence. The LLVM control passes all four, and so does Cranelift on
-  the `dev` profile with the `test` profile left on LLVM.
+  Run the same filtered cases with an empty `RUSTFLAGS` value for the LLVM
+  control:
+
+  ```sh
+  set +e
+  for test in catch_unwind_catches spawned_thread_panic_is_join_error \
+    should_panic_works nested_drop_runs_during_unwind; do
+    env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS='' \
+      cargo +nightly-2026-10-16 test \
+        --target-dir target/cranelift-unwind \
+        --manifest-path tests/probes/cranelift-unwind/Cargo.toml \
+        --lib "panic_backend::$test" -- --exact --nocapture
+    printf 'llvm %s: exit %s\n' "$test" "$?"
+  done
+  ```
+
+  The per-test outcomes on this toolchain and target are:
+
+  | Test                                 | Cranelift test profile                                                   | LLVM test profile                   |
+  | ------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------- |
+  | `catch_unwind_catches`               | Failed; the panic escaped `catch_unwind` (exit 101)                      | Passed                              |
+  | `spawned_thread_panic_is_join_error` | Aborted with SIGABRT and `failed to initiate panic, error 5` (exit 101)  | Passed                              |
+  | `should_panic_works`                 | Passed                                                                   | Passed                              |
+  | `nested_drop_runs_during_unwind`     | Failed; the panic escaped and the drop marker was not emitted (exit 101) | Passed; the drop marker was emitted |
+
+  All four LLVM controls pass. The probe does not test the workspace or claim
+  that these named repository tests fail under Cranelift.
 - **Repository tests that the unwinding fault threatens.** These are affected
   paths, not results from a Cranelift workspace run:
   `test_select_active_skills_returns_empty_when_registry_lock_is_poisoned`
@@ -1528,8 +1572,9 @@ exception on 2026-10-22. It was rechecked against the current Wasmtime lock on
   `test_cosine_similarity_different_lengths_does_not_panic` (`catch_unwind`),
   and every code path that turns a panicking task into an error
   (`JoinError::is_panic` in the tool executors and the skill gating).
-- **Control.** With no Cranelift in the test build, `make -k test` on the same
-  head passes: 4,431 workspace tests run, 4,431 passed, 12 skipped.
+- **Control.** With the development backend left on LLVM, `make test` passes,
+  including the workspace suite and all four LLVM controls in the standalone
+  probe. No Cranelift workspace test was run.
 - **Why it is not scoped.** Moving only `wasmtime` and the unwinding callers
   to LLVM would leave Cranelift on the dependencies and LLVM on the crate a
   developer edits, which is where the speed-up is wanted.
@@ -1541,10 +1586,10 @@ exception on 2026-10-22. It was rechecked against the current Wasmtime lock on
   that evidence. A bump pull request is where to re-measure: set the profile
   keys on the pull request, run `make test`, and adopt the backend if it passes
   by removing this exception and adding the keys, the
-  `rustc-codegen-cranelift-preview` component and a contract for them together.
-  The estate's audit accepts either state and rejects an exception that names
-  an older toolchain than the pin, so each bump of `channel` needs a line here
-  saying whether it was measured.
+  `rustc-codegen-cranelift-x86_64-unknown-linux-gnu` component and a contract
+  for them together. The estate's audit accepts either state and rejects an
+  exception that names an older toolchain than the pin, so each bump of
+  `channel` needs a line here saying whether it was measured.
 
 A contract (`build_standard_config_test.py`) holds the configuration and this
 exception in agreement: while the exception stands, no Cargo profile and no
@@ -1649,10 +1694,10 @@ make lint
 make test
 ```
 
-The aggregate `make test` runs the workspace, GitHub tool, and libSQL TLS
-transport suites. `make lint` covers the workspace and GitHub tool; the TLS
-transport has a separate strict lint target, `make lint-libsql-transport`,
-which also runs in its CI lane.
+The aggregate `make test` runs the workspace, GitHub tool, libSQL TLS
+transport, and standalone Cranelift probe suites. `make lint` covers the
+workspace, GitHub tool, and probe; the TLS transport has a separate strict lint
+target, `make lint-libsql-transport`, which also runs in its CI lane.
 
 The current `Makefile` also includes:
 

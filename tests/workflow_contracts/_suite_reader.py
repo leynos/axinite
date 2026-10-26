@@ -186,10 +186,11 @@ def make_runs(
 ) -> Iterator[tuple[str, str, frozenset[str]]]:
     """Yield the scope, profile and features of each Make target in a script.
 
-    Only the workspace half reads the step's variables. `make test-github-tool`
-    runs plain `cargo test` over one crate: it takes no features and no
-    nextest profile, so giving it the step's would invent a difference between
-    two identical runs.
+    Only the workspace suite reads the step's variables. The GitHub tool and
+    standalone probe run plain `cargo test` over fixed crate scopes; neither
+    takes features or a nextest profile, so giving either the step's values
+    would invent a difference between identical runs. The TLS target has its
+    own fixed feature set.
 
     Parameters
     ----------

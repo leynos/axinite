@@ -17,7 +17,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 #: Environment assignments a recipe may put before the Cargo executable, such as
 #: the release routes' `RUSTFLAGS="${RUSTFLAGS-}"`. They are the subject of
 #: `build_standard_make_test.py`; here the command after them is what counts.
-LEADING_ASSIGNMENTS = re.compile(r"""^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)+""")
+LEADING_ASSIGNMENTS = re.compile(
+    r"""^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+)+"""
+)
 
 
 def without_assignments(line: str) -> str:
@@ -109,12 +111,20 @@ def test_test_target_uses_expected_nextest_command(
                 "--target wasm32-wasip2",
             ),
         ),
-        ("fmt", ("fmt --all", "fmt --manifest-path tools-src/github/Cargo.toml --all")),
+        (
+            "fmt",
+            (
+                "fmt --all",
+                "fmt --manifest-path tools-src/github/Cargo.toml --all",
+                "fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all",
+            ),
+        ),
         (
             "check-fmt",
             (
                 "fmt --all -- --check",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
+                "fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all -- --check",
             ),
         ),
         (
@@ -127,6 +137,7 @@ def test_test_target_uses_expected_nextest_command(
                 "check --all --benches --tests --examples --all-features "
                 "--features test-helpers,embedded-postgres",
                 "check --manifest-path tools-src/github/Cargo.toml --tests",
+                "check --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all-targets",
             ),
         ),
         (
@@ -140,6 +151,8 @@ def test_test_target_uses_expected_nextest_command(
                 "--features test-helpers,embedded-postgres -- -D warnings",
                 "clippy --manifest-path tools-src/github/Cargo.toml --tests "
                 "-- -D warnings",
+                "clippy --manifest-path tests/probes/cranelift-unwind/Cargo.toml "
+                "--all-targets -- -D warnings",
             ),
         ),
         (
@@ -165,7 +178,12 @@ def test_test_target_uses_expected_nextest_command(
                 "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
                 "--no-default-features "
                 "--features rustls-native-certs,tokio-runtime,http1 --doc",
+                "test --manifest-path tests/probes/cranelift-unwind/Cargo.toml",
             ),
+        ),
+        (
+            "test-cranelift-probe",
+            ("test --manifest-path tests/probes/cranelift-unwind/Cargo.toml",),
         ),
         (
             "test-cargo",
@@ -207,6 +225,7 @@ def test_test_target_uses_expected_nextest_command(
         "lint-clippy",
         "lint-libsql-transport",
         "test",
+        "test-cranelift-probe",
         "test-cargo",
         "test-matrix",
         "test-matrix-cargo",
@@ -331,7 +350,9 @@ def test_targets_escape_resolved_cargo_paths(
         {
             "CARGO": "",
             "HOME": str(fake_home),
-            "PATH": os.pathsep.join((str(fake_bin), str(utility_bin), str(sandbox.bin))),
+            "PATH": os.pathsep.join(
+                (str(fake_bin), str(utility_bin), str(sandbox.bin))
+            ),
         }
     )
     subprocess.run(

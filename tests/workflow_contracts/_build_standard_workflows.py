@@ -40,7 +40,10 @@ WASM_BUILDER = re.compile(r"\./scripts/build-wasm-extensions\.sh")
 GENERATE_COVERAGE = "leynos/shared-actions/.github/actions/generate-coverage@"
 INSTALL_WHITAKER = "leynos/shared-actions/.github/actions/install-whitaker@"
 LINUX_LABEL = re.compile(r"ubuntu|ubicloud|linux", re.IGNORECASE)
-CONFIG_REMOVAL = re.compile(r"\brm\b[^\n]*\.cargo/config\.toml")
+CONFIG_REMOVAL = re.compile(
+    r"rm\s+(?:(?:-f|--force)\s+)?\.cargo/config\.toml"
+    r"(?:\s+rust-toolchain\.toml)?"
+)
 
 
 class Step(typ.NamedTuple):
@@ -179,6 +182,11 @@ def _first_index(sequence: list[Step], test: cabc.Callable[[Step], bool]) -> int
     return next((i for i, step in enumerate(sequence) if test(step)), None)
 
 
+def _removes_configuration(step: Step) -> bool:
+    """Recognize a standalone, hard-failing removal of the build config."""
+    return not step.guarded and CONFIG_REMOVAL.fullmatch(step.run.strip()) is not None
+
+
 def _early_install_violations(
     label: str, sequence: list[Step], installs: list[int], first: int
 ) -> list[str]:
@@ -234,7 +242,7 @@ def install_violations(
     list of str
         One message per violation. Empty for a job that need not install, which
         is one that is not on Linux, compiles nothing, or removes the
-        configuration before it compiles.
+        configuration unconditionally before it compiles.
     """
     if not runs_on_linux(job):
         return []
@@ -243,7 +251,7 @@ def install_violations(
     first = _first_index(sequence, lambda step: compiles(step, targets))
     if first is None:
         return []
-    removal = _first_index(sequence, lambda step: bool(CONFIG_REMOVAL.search(step.run)))
+    removal = _first_index(sequence, _removes_configuration)
     if removal is not None and removal < first:
         return []
     return _ordering_violations(label, job, sequence, first)

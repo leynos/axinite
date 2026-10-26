@@ -70,6 +70,7 @@ TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 LIBSQL_TRANSPORT_TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
+CRANELIFT_PROBE_MANIFEST := tests/probes/cranelift-unwind/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralized and remove each one as soon as the triggering
 # transitive dependency is upgraded.
@@ -115,7 +116,7 @@ LIBSQL_AUDIT_FLAGS := \
 PDF_EXTRACT_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0192
 
-.PHONY: all build install-build-tools check-build-tools install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-full frontend-stub
+.PHONY: all build install-build-tools check-build-tools install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport test-cranelift-probe lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-full frontend-stub
 
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
@@ -198,12 +199,14 @@ build-github-tool-wasm:
 fmt:
 	$(CARGO_COMMAND) fmt --all
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
+	$(CARGO_COMMAND) fmt --manifest-path $(CRANELIFT_PROBE_MANIFEST) --all
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 	$(MDLINT) --fix "**/*.md"
 
 check-fmt:
 	$(CARGO_COMMAND) fmt --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
+	$(CARGO_COMMAND) fmt --manifest-path $(CRANELIFT_PROBE_MANIFEST) --all -- --check
 	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 typecheck: check-build-tools
@@ -211,6 +214,7 @@ typecheck: check-build-tools
 	$(CARGO_COMMAND) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
 	$(CARGO_COMMAND) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
 	$(CARGO_COMMAND) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
+	$(CARGO_COMMAND) check --manifest-path $(CRANELIFT_PROBE_MANIFEST) --all-targets
 
 lint: lint-clippy lint-whitaker
 
@@ -219,6 +223,7 @@ lint-clippy: check-build-tools
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+	$(CARGO_COMMAND) clippy --manifest-path $(CRANELIFT_PROBE_MANIFEST) --all-targets -- -D warnings
 
 # Cover the TLS member's additional feature configuration with strict lints.
 lint-libsql-transport: check-build-tools
@@ -261,19 +266,18 @@ rust-audit:
 		done' sh $(call shell_quote,$(value CARGO_AUDIT_COMMAND)) {} +
 
 # The whole suite, for a developer. CI runs the workspace, GitHub tool, and
-# libSQL TLS suites on separate lanes; this target runs all three locally.
-test: test-workspace test-github-tool test-libsql-transport
+# libSQL TLS suites on separate lanes. The standalone probe stays out of the
+# workspace matrix and runs once here.
+test: test-workspace test-github-tool test-libsql-transport test-cranelift-probe
 
 # The workspace suite alone. `tools-src/github` is excluded from the workspace,
-# so `--workspace` does not reach it; the WASM build is still needed here
-# because the metadata and schema tests load the artefact it produces.
+# so `--workspace` does not reach it; the WASM build is needed by schema tests.
 test-workspace: check-build-tools
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
 
-# The GitHub tool crate's own suite. It is the only test work `--workspace`
-# never covers, which is why it is the one lane that survives the CI
-# de-duplication.
+# The GitHub tool crate's own suite is outside the workspace, so CI gives it a
+# separate lane rather than repeating it in each workspace matrix leg.
 test-github-tool: check-build-tools
 	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
@@ -311,3 +315,8 @@ test-libsql-transport: check-build-tools
 	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --all-features --doc
 	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --doc
 	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --no-default-features --features rustls-native-certs,tokio-runtime,http1 --doc
+
+# The standalone panic/unwind probe runs once under LLVM, outside each workspace
+# feature-matrix leg. Its backend is selected independently for manual probes.
+test-cranelift-probe: check-build-tools
+	$(CARGO_COMMAND) test --manifest-path $(CRANELIFT_PROBE_MANIFEST)

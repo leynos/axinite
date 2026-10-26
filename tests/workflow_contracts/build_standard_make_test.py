@@ -41,6 +41,7 @@ TARGETS = (
     "lint-whitaker",
     "lint-libsql-transport",
     "test",
+    "test-cranelift-probe",
     "test-workspace",
     "test-github-tool",
     "test-libsql-transport",
@@ -55,10 +56,11 @@ TARGETS = (
 #: silently skips a branch fails here rather than passing on an empty list.
 MINIMUM_INVOCATIONS = {
     "build": 1,
-    "typecheck": 4,
-    "lint-clippy": 4,
+    "typecheck": 5,
+    "lint-clippy": 5,
     "lint-whitaker": 2,
     "lint-libsql-transport": 1,
+    "test-cranelift-probe": 1,
     "test-workspace": 2,
     "test-github-tool": 1,
     "test-libsql-transport": 4,
@@ -147,7 +149,9 @@ def test_release_routes_were_seen_and_assign_rustflags(
     ]
     assert len(release) == 2, f"expected both release invocations, got: {release}"
     missing_assignments = [
-        invocation for invocation in release if "RUSTFLAGS" not in invocation.assignments
+        invocation
+        for invocation in release
+        if "RUSTFLAGS" not in invocation.assignments
     ]
     assert not missing_assignments, (
         f"release invocations missing RUSTFLAGS: {missing_assignments}"
@@ -173,7 +177,14 @@ def test_whitaker_has_a_literal_boundary(
 )
 def test_the_executable_is_substituted_on_every_cargo_line(cargo: str) -> None:
     """No recipe hard-codes `cargo`: each line runs the injected executable."""
-    for target in ("typecheck", "lint-clippy", "test-workspace", "build", "install"):
+    for target in (
+        "typecheck",
+        "lint-clippy",
+        "test-workspace",
+        "test-cranelift-probe",
+        "build",
+        "install",
+    ):
         lines = dry_run(target, cargo=cargo)
         hard_coded = [line for line in lines if re.search(r"(^|\s)cargo\s", line)]
         assert hard_coded == [], f"make {target} runs a literal cargo: {hard_coded}"
@@ -230,6 +241,14 @@ MUTATIONS: dict[str, tuple[str, cabc.Callable[[str], str]]] = {
         "test-workspace",
         lambda t: t.replace(
             "test-workspace: check-build-tools\n", "test-workspace:\n", 1
+        ),
+    ),
+    "probe-loses-the-preflight": (
+        "test-cranelift-probe",
+        lambda t: t.replace(
+            "test-cranelift-probe: check-build-tools\n",
+            "test-cranelift-probe:\n",
+            1,
         ),
     ),
     "build-loses-the-preflight": (
@@ -309,7 +328,9 @@ def test_the_unmutated_copy_is_clean(
         lines = dry_run(target, root=tmp_path)
         invocations, unparsed = parse_invocations(lines)
         assert not unparsed, f"make {target} emitted unparsed lines: {unparsed}"
-        assert invocations, f"make {target} emitted no Cargo or Whitaker commands: {lines}"
+        assert invocations, (
+            f"make {target} emitted no Cargo or Whitaker commands: {lines}"
+        )
         preflight_problems = preflight_violations(lines, invocations)
         assert preflight_problems == [], (
             f"make {target} preflight violations: {preflight_problems}"
@@ -324,6 +345,6 @@ def test_the_unmutated_copy_is_clean(
 
 def test_the_mutations_executed() -> None:
     """Prove the parametrized cases exist, so none can be discovered away."""
-    assert len(MUTATIONS) == 11, (
-        f"expected 11 Makefile mutations, got {len(MUTATIONS)}: {sorted(MUTATIONS)}"
+    assert len(MUTATIONS) == 12, (
+        f"expected 12 Makefile mutations, got {len(MUTATIONS)}: {sorted(MUTATIONS)}"
     )
