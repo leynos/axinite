@@ -10,12 +10,13 @@ Choosing a smaller shape is only defensible with measurement, and the two
 numbers that decide it, the peak memory and the low-water disk mark, appear
 nowhere in a job's ordinary output. So the rule enforced here has two halves:
 each job declares the shape its work justifies, and each job that runs on a
-paid shape carries the sampler that proves the choice. A resize with no
-sampler is a guess that nobody can check afterwards.
+paid shape carries the telemetry that proves the choice; that half is held by
+`ci_telemetry_test.py`. A resize with no measurement is a guess that nobody
+can check afterwards.
 
 Peaks belong to the shape, not to the workload. Cargo scales parallelism with
 the processor count, so a peak measured on one shape does not transfer to
-another; the sampler has to run on the shape actually in use.
+another; the telemetry has to run on the shape actually in use.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -23,9 +24,10 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import pytest
+from _telemetry import INSTRUMENTED_WORKFLOWS
 from _utility_jobs import SMALLEST_ARM, is_utility_job
 from _workflow_files import jobs
-from _workflow_policy import Job, step_text
+from _workflow_policy import Job
 
 ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 
@@ -39,11 +41,6 @@ APPROVED_SHAPES: dict[str, str] = {
     "them wait; architecture-independent (user ruling, 25 September 2026)",
 }
 
-SAMPLER = "./scripts/ci-resource-sampler.sh"
-START_STEP = "Start resource sampler"
-REPORT_STEP = "Report resource peaks"
-
-
 def _ubicloud_jobs() -> tuple[Job, ...]:
     """Return every job that requests an Ubicloud runner on any event."""
     return tuple(job for job in ALL_JOBS if job.uses_ubicloud)
@@ -53,7 +50,7 @@ def _sized_jobs() -> tuple[Job, ...]:
     """Return the Ubicloud jobs whose shape is a sizing decision.
 
     The named utility jobs are left out: each is pinned to the smallest shape
-    by `runner_placement_test.py`, so there is no resize for the sampler to
+    by `runner_placement_test.py`, so there is no resize for the telemetry to
     inform and no reviewed shape to choose.
     """
     return tuple(
@@ -64,6 +61,20 @@ def _sized_jobs() -> tuple[Job, ...]:
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
     """Return readable parameter identifiers for a job sequence."""
     return [str(job) for job in candidates]
+
+
+@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
+def test_every_sized_job_is_in_a_workflow_that_carries_telemetry(job: Job) -> None:
+    """Link the sizing decision to the measurement that justifies it.
+
+    `ci_telemetry_test.py` checks the jobs of `INSTRUMENTED_WORKFLOWS`. A paid
+    shape in any other workflow would escape it, so the workflow must be listed.
+    """
+    assert job.workflow in INSTRUMENTED_WORKFLOWS, (
+        f"{job} sits on a paid shape in {job.workflow}, which is not in "
+        "INSTRUMENTED_WORKFLOWS, so no contract requires its telemetry. Add the "
+        "workflow to the list in _telemetry.py and to the collector's list."
+    )
 
 
 def test_some_job_uses_ubicloud() -> None:
@@ -80,74 +91,6 @@ def test_every_ubicloud_job_uses_an_approved_shape(job: Job) -> None:
             f"{', '.join(sorted(APPROVED_SHAPES))}. A new shape is a cost "
             "decision and needs the measurement that justifies it."
         )
-
-
-@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
-def test_every_ubicloud_job_samples_its_own_resources(job: Job) -> None:
-    """Require the evidence that makes the next resize decidable.
-
-    Without this, a job can be moved to a smaller shape on a hunch and the
-    only signal that it was too small is the job dying, which reads as a
-    flake rather than as a sizing error.
-    """
-    names = [str(step.get("name", "")) for step in job.steps]
-    assert START_STEP in names, (
-        f"{job} runs on {job.runner_summary} and does not start the resource "
-        f"sampler. Add a {START_STEP!r} step; the shape it occupies cannot be "
-        "reviewed without the peak it reaches."
-    )
-    assert REPORT_STEP in names, (
-        f"{job} starts the sampler and never reports it, so the measurement "
-        "is taken and thrown away"
-    )
-    assert names.index(START_STEP) < names.index(REPORT_STEP), (
-        f"{job} reports the sampler before starting it"
-    )
-    # Assert the command, not the step name. A step renamed onto a no-op
-    # satisfies a name check, and the report then succeeds while printing "no
-    # samples recorded", so the measurement disappears with every test still
-    # green. This is the whole failure mode the contract exists to stop.
-    start = job.steps[names.index(START_STEP)]
-    assert f"{SAMPLER} start" in step_text(start), (
-        f"{job} has a {START_STEP!r} step that does not run "
-        f"`{SAMPLER} start`; a step that only carries the name measures "
-        "nothing and reports success"
-    )
-
-
-@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
-def test_the_sampler_reports_even_when_the_job_fails(job: Job) -> None:
-    """A job killed by its shape is exactly the job whose peak matters."""
-    report = next(step for step in job.steps if step.get("name") == REPORT_STEP)
-    assert report.get("if") == "always()", (
-        f"{job} reports resource peaks only on success, which loses the "
-        "measurement in the one case that would explain the failure"
-    )
-    assert f"{SAMPLER} report" in step_text(report), (
-        f"{job} must report through {SAMPLER}"
-    )
-
-
-@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
-def test_the_sampler_starts_after_the_checkout(job: Job) -> None:
-    """The script lives in the repository, so it cannot run before checkout."""
-    steps = job.steps
-    start_at = next(
-        index for index, step in enumerate(steps) if step.get("name") == START_STEP
-    )
-    checkout_at = next(
-        (
-            index
-            for index, step in enumerate(steps)
-            if str(step.get("uses", "")).startswith("actions/checkout@")
-        ),
-        None,
-    )
-    assert checkout_at is not None, f"{job} runs the sampler without checkout"
-    assert checkout_at < start_at, (
-        f"{job} starts the sampler at step {start_at}, before the checkout at "
-        f"step {checkout_at} has put the script on disk"
-    )
 
 
 #: The reviewed shape for every Ubicloud job, with the reason. Wall times are

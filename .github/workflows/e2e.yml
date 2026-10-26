@@ -58,12 +58,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Right-sizing needs the peak memory and the low-water disk mark, and
-      # neither is visible in a job's own output. The sampler runs alongside
-      # the build and reports both at the end, with `if: always()` so a job
-      # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      # Right-sizing needs the busy cores, the peak memory and the low-water
+      # disk mark, and none is visible in a job's own output. The telemetry
+      # sampler runs alongside the build and prints one record at the end,
+      # with `if: always()` so a job that fails on resources still says so.
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -111,32 +111,21 @@ jobs:
           path: target/debug/axinite
           retention-days: 1
 
-  # ── Step 2: run test slices in parallel ───────────────────────────────────
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
+        id: sccache
         if: always()
-        env:
-          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
-        run: |
-          set -euo pipefail
-          # Print to the log as well as the job summary. The summary is not
-          # readable through the REST API, so the log copy is what lets anyone
-          # confirm the hit rate, or a read or write error, after the fact.
-          stats="$(sccache --show-stats)"
-          printf '%s\n' "$stats"
-          {
-            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
-            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
-            # name the backend setup-rust chose.
-            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
-            printf '```text\n'
-            printf '%s\n' "$stats"
-            printf '```\n'
-          } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Report resource peaks
+        uses: leynos/shared-actions/.github/actions/sccache-report@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          status: ${{ steps.setup-rust.outputs.sccache-status }}
+          backend: ${{ steps.setup-rust.outputs.cache-backend }}
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
+  # ── Step 2: run test slices in parallel ───────────────────────────────────
   test:
     name: E2E (${{ matrix.group }})
     needs: build
@@ -179,12 +168,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Right-sizing needs the peak memory and the low-water disk mark, and
-      # neither is visible in a job's own output. The sampler runs alongside
-      # the build and reports both at the end, with `if: always()` so a job
-      # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      # Right-sizing needs the busy cores, the peak memory and the low-water
+      # disk mark, and none is visible in a job's own output. The telemetry
+      # sampler runs alongside the build and prints one record at the end,
+      # with `if: always()` so a job that fails on resources still says so.
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - name: Download binary
         uses: actions/download-artifact@v8
@@ -216,11 +205,12 @@ jobs:
           path: tests/e2e/screenshots/
           if-no-files-found: ignore
 
-  # ── Roll-up for branch protection ────────────────────────────────────────
-  # Roll-up for branch protection. Compares upstream results only.
-      - name: Report resource peaks
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+
+  # ── Roll-up for branch protection ────────────────────────────────────────
+  # Compares upstream results only.
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
