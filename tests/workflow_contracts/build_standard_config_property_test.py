@@ -46,6 +46,43 @@ def _source_tokens(source: object) -> list[str]:
     return []
 
 
+def _target_applies(key: object, triple: str) -> bool:
+    """Match an exact target or the Linux cfg target independently."""
+    if key == triple:
+        return True
+    if key != 'cfg(target_os = "linux")':
+        return False
+    return PLATFORMS[triple] == "linux"
+
+
+def _matching_target_sources(config: dict[str, object], triple: str) -> list[object]:
+    """Collect rustflags from every matching Cargo target table."""
+    targets = config.get("target", {})
+    if not isinstance(targets, dict):
+        return []
+
+    matching: list[object] = []
+    for key, table in targets.items():
+        if not _target_applies(key, triple):
+            continue
+        if not isinstance(table, dict):
+            continue
+        if "rustflags" not in table:
+            continue
+        matching.append(table["rustflags"])
+    return matching
+
+
+def _build_source_tokens(config: dict[str, object]) -> list[str]:
+    """Read build rustflags only after no target table matched."""
+    build = config.get("build", {})
+    if not isinstance(build, dict):
+        return []
+    if "rustflags" not in build:
+        return []
+    return _source_tokens(build["rustflags"])
+
+
 def _reference_effective(
     config: dict[str, object], triple: str, assigned: str | None
 ) -> list[str]:
@@ -53,23 +90,10 @@ def _reference_effective(
     if assigned is not None:
         return _reference_normalize(assigned.split())
 
-    targets = config.get("target", {})
-    matching: list[object] = []
-    if isinstance(targets, dict):
-        for key, table in targets.items():
-            applies = key == triple or (
-                key == 'cfg(target_os = "linux")'
-                and PLATFORMS[triple] == "linux"
-            )
-            if applies and isinstance(table, dict) and "rustflags" in table:
-                matching.append(table["rustflags"])
+    matching = _matching_target_sources(config, triple)
     if matching:
         return [token for source in matching for token in _source_tokens(source)]
-
-    build = config.get("build", {})
-    if isinstance(build, dict) and "rustflags" in build:
-        return _source_tokens(build["rustflags"])
-    return []
+    return _build_source_tokens(config)
 
 
 @given(st.lists(FLAG, max_size=40))

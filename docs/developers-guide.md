@@ -1383,18 +1383,18 @@ no codegen backend.
 
 ### What Make adds
 
-The Makefile does not restate the flags, because no gate recipe assigns
-`RUSTFLAGS`: an assigned `RUSTFLAGS` replaces every `rustflags` source in the
-configuration, so a gate that set it to deny warnings would silently lose the
-frontend and the linker. The gates deny warnings through Clippy's own
+The Makefile does not restate the flags: no standard-preserving gate recipe
+assigns `RUSTFLAGS`. An assigned `RUSTFLAGS` replaces every `rustflags` source
+in the configuration, so a gate that set it to deny warnings would silently
+lose the frontend and linker. The gates deny warnings through Clippy's own
 `-- -D warnings`. A caller who exports `RUSTFLAGS` has chosen to replace the
-standard, for bare Cargo and for Make alike.
+standard, for bare Cargo and Make alike.
 
 What Make does add:
 
 - `make check-build-tools` runs before every `build`, `typecheck`, `lint-*`
-  and `test-*` target. On Linux it verifies that `clang` is present; it also
-  checks that `mold` on `PATH` reports exactly the version in
+  and `test-*` target. On Linux it verifies that `clang` and `mold` are
+  present, and that `mold` on `PATH` reports exactly the version in
   `tools/mold/VERSION`, and that the pinned toolchain is installed with every
   component and target `rust-toolchain.toml` lists. A missing or drifted tool
   stops the run with the command that fixes it; there is no fallback to a
@@ -1453,26 +1453,29 @@ coverage in its owning module.
 
 Table 2. How each kind of build is routed.
 
-| Build                                                                 | Frontend and linker flags            | Backend                                     | How the route is kept                                                 |
-| --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------- |
-| Bare Cargo, `make build`, typecheck, lint                             | `-Zthreads=8`; `mold` on Linux       | LLVM                                        | `.cargo/config.toml`, preflighted by `make check-build-tools`         |
-| `make test-*`                                                         | as above                             | LLVM                                        | as above                                                              |
-| Coverage (`cargo llvm-cov`, `generate-coverage`)                      | none; the instrumentation flags only | LLVM                                        | step `RUSTFLAGS: ''`                                                  |
-| Release and packaging (`dist`, `cargo install`, release WASM, Docker) | none                                 | LLVM (the release profile names no backend) | `RUSTFLAGS` assigned empty; Docker builds never see the configuration |
-| Whitaker                                                              | none; `-D warnings` only             | LLVM                                        | literal `RUSTFLAGS="-D warnings"` in the recipe                       |
-| MSRV check (`test.yml` `msrv`)                                        | none; the configuration is removed   | LLVM on stable                              | `rm .cargo/config.toml rust-toolchain.toml` before `cargo check`      |
+| Build                                                                               | Frontend and linker flags            | Backend                                     | How the route is kept                                            |
+| ----------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------- | ---------------------------------------------------------------- |
+| Bare Cargo, `make build`, typecheck, lint                                           | `-Zthreads=8`; `mold` on Linux       | LLVM                                        | `.cargo/config.toml`, preflighted by `make check-build-tools`    |
+| `make test-*`                                                                       | as above                             | LLVM                                        | as above                                                         |
+| Coverage (`cargo llvm-cov`, `generate-coverage`)                                    | none; the instrumentation flags only | LLVM                                        | step `RUSTFLAGS: ''`                                             |
+| Release and packaging (`dist`, `cargo install`, release WASM, `scripts/build-*.sh`) | none                                 | LLVM (the release profile names no backend) | `RUSTFLAGS` assigned (empty by default)                          |
+| Docker images                                                                       | none                                 | LLVM                                        | `.dockerignore` excludes `.cargo/` and `rust-toolchain.toml`     |
+| Whitaker                                                                            | none; `-D warnings` only             | LLVM                                        | literal `RUSTFLAGS="-D warnings"` in the recipe                  |
+| MSRV check (`test.yml` `msrv`)                                                      | none; the configuration is removed   | LLVM on stable                              | `rm .cargo/config.toml rust-toolchain.toml` before `cargo check` |
 
-Every exclusion works the same way: an assigned `RUSTFLAGS` displaces the
-`rustflags` tables, and nothing else in the configuration reaches the build.
-`tests/workflow_contracts/build_standard_make_test.py` evaluates every Cargo
-and Whitaker line the Makefile emits (`make --dry-run CARGO=probe-cargo`) and
-checks the matrix; `build_standard_workflows_test.py` does the same for the
-workflows. Each judge is also run against mutated copies and must reject them.
+Coverage, release, and Whitaker routes use explicit `RUSTFLAGS` assignments,
+which displace the configured `rustflags`. The MSRV job removes both Cargo
+configuration files, while `.dockerignore` excludes them from Docker build
+contexts. `tests/workflow_contracts/build_standard_make_test.py` evaluates
+every Cargo and Whitaker line the Makefile emits
+(`make --dry-run CARGO=probe-cargo`) and checks the matrix;
+`build_standard_workflows_test.py` does the same for the workflows. Each judge
+is also run against mutated copies and must reject them.
 
-Docker images build on the stable `rust:` base image their `Dockerfile` names,
-the MSRV compiler, and never take the nightly or the standard. `.dockerignore`
-excludes `.cargo/` and `rust-toolchain.toml` so that `Dockerfile.worker`'s
-`COPY . .` cannot hand them to the build.
+Docker images use the stable `rust:` base images specified by their Dockerfiles
+and do not use the nightly toolchain or the development standard.
+`.dockerignore` excludes `.cargo/` and `rust-toolchain.toml` so that
+`Dockerfile.worker`'s `COPY . .` cannot hand them to the build.
 
 ### Cranelift
 
@@ -1521,7 +1524,7 @@ exception on 2026-10-22. It was rechecked against the current Wasmtime lock on
   `test_select_active_skills_returns_empty_when_registry_lock_is_poisoned`
   (`src/agent/dispatcher/tests/skills.rs`, which panics in a spawned thread to
   poison a lock), the four `#[should_panic]` tests
-  (`tests/support_unit_tests/ assertions_tests.rs`, `crates/hyper-rustls`), and
+  (`tests/support_unit_tests/assertions_tests.rs`, `crates/hyper-rustls`), and
   `test_cosine_similarity_different_lengths_does_not_panic` (`catch_unwind`),
   and every code path that turns a panicking task into an error
   (`JoinError::is_panic` in the tool executors and the skill gating).
