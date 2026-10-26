@@ -33,30 +33,55 @@ DEFAULT_TARGETS = [triple for triple in PLATFORMS if PLATFORMS[triple] != "wasi"
 def _invocations(draw: st.DrawFn) -> Invocation:
     """Build supported tool/verb combinations and complete option values."""
     tool = draw(st.sampled_from(TOOLS))
-    if tool == "cargo":
-        verb = draw(st.sampled_from(CARGO_VERBS))
-    elif tool == "nextest":
-        verb = "run"
-    else:
-        verb = "dylint"
+    verb = _draw_verb(draw, tool)
+    arguments = _base_arguments(draw, tool, verb)
+    _append_profile_options(draw, tool, arguments)
+    _append_target_option(draw, tool, arguments)
+    return Invocation(tool, verb, {}, tuple(arguments), draw(st.integers(0, 10)))
 
+
+def _draw_verb(draw: st.DrawFn, tool: str) -> str:
+    if tool == "cargo":
+        return draw(st.sampled_from(CARGO_VERBS))
+    if tool == "nextest":
+        return "run"
+    return "dylint"
+
+
+def _base_arguments(draw: st.DrawFn, tool: str, verb: str) -> list[str]:
     arguments = ["axinite-cli"] if verb == "install" else []
     if tool != "whitaker":
         arguments.extend(draw(st.lists(ARGUMENT, max_size=8)))
-    if tool == "cargo" and draw(st.booleans()):
-        profile = draw(st.sampled_from(("dev", "test", "release", "bench")))
-        arguments.extend(("--profile", profile))
-    if tool == "nextest" and draw(st.booleans()):
-        arguments.extend(("--profile", draw(st.sampled_from(("default", "ci")))))
-    if tool == "nextest" and draw(st.booleans()):
-        arguments.extend(
-            ("--cargo-profile", draw(st.sampled_from(("release", "bench"))))
+    return arguments
+
+
+def _append_optional_option(
+    draw: st.DrawFn,
+    arguments: list[str],
+    option: str,
+    choices: tuple[str, ...],
+) -> None:
+    if draw(st.booleans()):
+        arguments.extend((option, draw(st.sampled_from(choices))))
+
+
+def _append_profile_options(draw: st.DrawFn, tool: str, arguments: list[str]) -> None:
+    if tool == "cargo":
+        _append_optional_option(
+            draw, arguments, "--profile", ("dev", "test", "release", "bench")
         )
+    if tool == "nextest":
+        _append_optional_option(draw, arguments, "--profile", ("default", "ci"))
+        _append_optional_option(
+            draw, arguments, "--cargo-profile", ("release", "bench")
+        )
+
+
+def _append_target_option(draw: st.DrawFn, tool: str, arguments: list[str]) -> None:
     if tool != "whitaker" and draw(st.booleans()):
         arguments.extend(("--target", draw(st.sampled_from(tuple(PLATFORMS)))))
     if tool == "whitaker":
         arguments.append("--all")
-    return Invocation(tool, verb, {}, tuple(arguments), draw(st.integers(0, 10)))
 
 
 def _reference_release(invocation: Invocation) -> bool:
