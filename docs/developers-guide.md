@@ -4258,10 +4258,9 @@ Four consequences shape `coverage.yml` and `codescene-coverage.yml`:
   more, such as the Codecov OIDC upload, declares it itself, and the job that
   uploads to CodeScene carries `contents: read` alone.
 - No publisher job and no `generate-coverage` step may carry `if:` or
-  `continue-on-error`. That is why the libsql-only leg is its own job, and why
-  `coverage-gate` has no `always()`. The gate is not a required check, the
-  workflow never runs on a pull request, and a failed needed job still fails
-  the run, so a skipped gate loses only a redundant red entry.
+  `continue-on-error`. The pinned CV-005 contract also rejects a condition on
+  `coverage-gate`. A failed needed job fails the workflow directly; the
+  successful roll-up records the upstream results when every dependency passes.
 - Every publisher checkout sets `persist-credentials: false`.
 - The pull-request lane may carry the pull-request guard and any declared
   `[[pairing]]` guards, which are AND terms. An OR with `workflow_dispatch`
@@ -4308,9 +4307,9 @@ accident: an action step left at the default, and a
 action. The budget is read as GitHub resolves it: the input first, then the
 variable at step, job and workflow scope, the most specific declaration
 winning. The suite-lane reading counts an action step with `use-cargo-nextest`
-as a run, and counts runs per matrix leg, so `coverage.yml`, which runs the
-suite from a `run:` step on two legs and through the action on the third, is
-one run per leg.
+as a run, and counts runs per matrix leg. `coverage.yml` therefore has two
+matrix-leg runs from `run:` steps and one separate `coverage-libsql` run
+through the action.
 
 ### What the values are sized against
 
@@ -4516,11 +4515,11 @@ its job would leave a lane that looks bounded and is not, and so would a
 plausible condition that quietly excluded the event the lane exists for. The
 conditions are pinned by value rather than tested for falsity, because YAML
 parses `false` to a boolean and enumerating falsy spellings would miss the
-plausible ones anyway. `codescene-coverage.yml`'s lane legitimately runs on
-pull requests and on manual dispatch, because `coverage.yml` covers the trunk.
-Whitespace is collapsed before comparison, so refolding a long condition is not
-a change; dropping a clause is. The lane coordinates are compared both ways, so
-a lane appearing without an entry fails too.
+plausible ones anyway. `codescene-coverage.yml`'s lane is pull-request-only;
+its workflow trigger and `REQUIRED_CONDITIONS` admit `pull_request`. Whitespace
+is collapsed before comparison, so refolding a long condition is not a change;
+dropping a clause is. The lane coordinates are compared both ways, so a lane
+appearing without an entry fails too.
 
 ## 39. Front-end workspace
 

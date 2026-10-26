@@ -9,6 +9,9 @@ build. A ratchet that compares a report built with a different toolchain or
 profile than its baseline reports that difference as a change in coverage, so
 those inputs are held equal here.
 
+The versioned nightly baseline path is fixed on both sides as well, so this
+module checks that each workflow names the bootstrap baseline.
+
 Run via ``make test-workflow-contracts``.
 """
 
@@ -35,6 +38,7 @@ PUBLISHER: typ.Final[tuple[str, str, str]] = (
 
 RUST_TOOLCHAIN_ACTION: typ.Final[str] = "dtolnay/rust-toolchain@"
 SETUP_RUST_ACTION: typ.Final[str] = "setup-rust@"
+BASELINE_RUST_FILE: typ.Final[str] = ".coverage-baseline.rust.nightly-2026-10-16"
 
 
 def _job(estate: Estate, workflow: str, job_id: str) -> dict[str, object]:
@@ -69,7 +73,9 @@ def _uses_step(job: dict[str, object], fragment: str) -> dict[str, object]:
 def _with(step: dict[str, object]) -> dict[str, object]:
     """Return a step's `with` mapping."""
     inputs = step.get("with")
-    assert isinstance(inputs, dict), f"{step.get('name') or step.get('uses')} needs with"
+    assert isinstance(inputs, dict), (
+        f"{step.get('name') or step.get('uses')} needs with"
+    )
     return inputs
 
 
@@ -138,3 +144,17 @@ def test_both_sides_run_the_same_generator_configuration(
         f"generator {where} differs: {lane_value!r} in the lane, "
         f"{publisher_value!r} in the publisher"
     )
+
+
+def test_both_sides_use_the_versioned_nightly_baseline(estate: Estate) -> None:
+    """The PR lane reads the baseline that the main-owned publisher writes."""
+    lane_job, publisher_job = _sides(estate)
+    for side, job, step_name in (
+        ("lane", lane_job, LANE[2]),
+        ("publisher", publisher_job, PUBLISHER[2]),
+    ):
+        baseline = _with(_step(job, step_name)).get("baseline-rust-file")
+        assert baseline == BASELINE_RUST_FILE, (
+            f"the {side} must use the versioned nightly baseline "
+            f"{BASELINE_RUST_FILE!r}, found {baseline!r}"
+        )

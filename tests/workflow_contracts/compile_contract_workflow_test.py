@@ -115,7 +115,7 @@ def test_baseline_runs_compile_contracts_for_every_coverage_configuration(
 
     gate = _job(estate, "coverage.yml", "coverage-gate")
     assert "compile-contracts" in _needs(gate), (
-        "the main coverage roll-up must fail when compile-contracts are missing"
+        "the main coverage roll-up must depend on compile-contracts"
     )
 
 

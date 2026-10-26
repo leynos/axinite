@@ -759,7 +759,6 @@ jobs:
           path: tests/e2e/screenshots/
           if-no-files-found: ignore
 
-  # Roll-up for branch protection. Compares upstream results only.
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
@@ -785,6 +784,7 @@ jobs:
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report
+  # Successful roll-up for this workflow; it compares upstream results only.
   coverage-gate:
     name: Coverage
     runs-on: ubuntu-latest

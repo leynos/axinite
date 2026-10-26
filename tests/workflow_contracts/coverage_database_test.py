@@ -115,7 +115,7 @@ def test_no_coverage_job_starts_a_database_service(job_name: str) -> None:
 
 @pytest.mark.parametrize("job_name", [JOB, LIBSQL_JOB])
 def test_no_coverage_job_names_a_database(job_name: str) -> None:
-    """No step may export a database URL, which would take precedence.
+    """No workflow, job or step may export a database URL.
 
     A named `TEST_DATABASE_URL` is used before the embedded cluster, so a leg
     that exported one would silently skip the cluster it is meant to run on.
@@ -123,7 +123,24 @@ def test_no_coverage_job_names_a_database(job_name: str) -> None:
     the same rule. For the libsql-only job a URL would point a leg built
     without `postgres` at a database it does not use.
     """
-    for step in _steps(_job(job_name)):
+    workflow = load(WORKFLOW_DIR / WORKFLOW)
+    job = _job(job_name)
+    steps = _steps(job)
+    scopes = [("workflow", workflow.get("env")), ("job", job.get("env"))]
+    scopes.extend(
+        (f"step {step.get('name')!r}", step.get("env")) for step in steps
+    )
+    for scope, environment in scopes:
+        if environment is None:
+            continue
+        assert isinstance(environment, dict), f"{scope} env must be a mapping"
+        for variable in (TEST_URL_VARIABLE, RUNTIME_URL_VARIABLE):
+            assert variable not in environment, (
+                f"{scope} of {job_name} sets {variable}; Postgres legs must use "
+                "the embedded cluster"
+            )
+
+    for step in steps:
         script = step_text(step)
         for variable in (TEST_URL_VARIABLE, RUNTIME_URL_VARIABLE):
             assert f"{variable}=" not in script, (
