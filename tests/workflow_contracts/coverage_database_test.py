@@ -87,6 +87,43 @@ def _steps(job: dict[str, object]) -> list[dict[str, object]]:
     return [step for step in steps if isinstance(step, dict)]
 
 
+def _database_url_environment_scopes(
+    job_name: str,
+) -> list[tuple[str, object | None]]:
+    """Return workflow, job and step environments for a coverage job."""
+    workflow = load(WORKFLOW_DIR / WORKFLOW)
+    job = _job(job_name)
+    scopes = [("workflow", workflow.get("env")), ("job", job.get("env"))]
+    scopes.extend(
+        (f"step {step.get('name')!r}", step.get("env")) for step in _steps(job)
+    )
+    return scopes
+
+
+def _assert_no_database_url_environment(
+    scope: str, environment: object | None, job_name: str
+) -> None:
+    """Reject database URL declarations in one workflow environment scope."""
+    if environment is None:
+        return
+    assert isinstance(environment, dict), f"{scope} env must be a mapping"
+    for variable in (TEST_URL_VARIABLE, RUNTIME_URL_VARIABLE):
+        assert variable not in environment, (
+            f"{scope} of {job_name} sets {variable}; Postgres legs must use "
+            "the embedded cluster"
+        )
+
+
+def _assert_no_database_url_in_script(job_name: str, step: dict[str, object]) -> None:
+    """Reject shell assignments that would override the embedded cluster."""
+    script = step_text(step)
+    for variable in (TEST_URL_VARIABLE, RUNTIME_URL_VARIABLE):
+        assert f"{variable}=" not in script, (
+            f"the step {step.get('name')!r} of {job_name} exports "
+            f"{variable}; Postgres legs must use the embedded cluster"
+        )
+
+
 def _legs() -> list[dict[str, object]]:
     """Return the coverage job's matrix legs."""
     strategy = _job(JOB).get("strategy")
@@ -115,38 +152,16 @@ def test_no_coverage_job_starts_a_database_service(job_name: str) -> None:
 
 @pytest.mark.parametrize("job_name", [JOB, LIBSQL_JOB])
 def test_no_coverage_job_names_a_database(job_name: str) -> None:
-    """No workflow, job or step may export a database URL.
+    """Workflow, job and step environments must not name a database."""
+    for scope, environment in _database_url_environment_scopes(job_name):
+        _assert_no_database_url_environment(scope, environment, job_name)
 
-    A named `TEST_DATABASE_URL` is used before the embedded cluster, so a leg
-    that exported one would silently skip the cluster it is meant to run on.
-    `DATABASE_URL` is the runtime's own name for the same thing and is held to
-    the same rule. For the libsql-only job a URL would point a leg built
-    without `postgres` at a database it does not use.
-    """
-    workflow = load(WORKFLOW_DIR / WORKFLOW)
-    job = _job(job_name)
-    steps = _steps(job)
-    scopes = [("workflow", workflow.get("env")), ("job", job.get("env"))]
-    scopes.extend(
-        (f"step {step.get('name')!r}", step.get("env")) for step in steps
-    )
-    for scope, environment in scopes:
-        if environment is None:
-            continue
-        assert isinstance(environment, dict), f"{scope} env must be a mapping"
-        for variable in (TEST_URL_VARIABLE, RUNTIME_URL_VARIABLE):
-            assert variable not in environment, (
-                f"{scope} of {job_name} sets {variable}; Postgres legs must use "
-                "the embedded cluster"
-            )
 
-    for step in steps:
-        script = step_text(step)
-        for variable in (TEST_URL_VARIABLE, RUNTIME_URL_VARIABLE):
-            assert f"{variable}=" not in script, (
-                f"the step {step.get('name')!r} of {job_name} exports "
-                f"{variable}; Postgres legs must use the embedded cluster"
-            )
+@pytest.mark.parametrize("job_name", [JOB, LIBSQL_JOB])
+def test_no_coverage_job_script_exports_a_database_url(job_name: str) -> None:
+    """Coverage step scripts must leave database selection to the cluster."""
+    for step in _steps(_job(job_name)):
+        _assert_no_database_url_in_script(job_name, step)
 
 
 def test_every_leg_of_the_postgres_job_compiles_postgres() -> None:
@@ -194,9 +209,7 @@ def test_the_postgres_job_tells_the_tests_the_database_is_not_optional() -> None
     leg it fell off.
     """
     steps = [
-        step
-        for step in _steps(_job(JOB))
-        if f"{REQUIRE_VARIABLE}=" in step_text(step)
+        step for step in _steps(_job(JOB)) if f"{REQUIRE_VARIABLE}=" in step_text(step)
     ]
     assert len(steps) == 1, (
         f"expected exactly one step exporting {REQUIRE_VARIABLE} in {JOB}, found "

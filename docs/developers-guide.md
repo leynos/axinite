@@ -160,7 +160,7 @@ obtain an Ubicloud runner at all; see "The fork fallback" below.
 
 | Class                                  | Jobs                                                                                                                                                                 | Runner                                                                          |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Build and test                         | `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`                                                                                                             | `ubicloud-standard-4`                                                           |
+| Build and test                         | `coverage.yml` `coverage` (two matrix legs), `coverage.yml` `coverage-libsql`, `coverage.yml` `e2e-coverage`                                                         | `ubicloud-standard-4`                                                           |
 | Build and test, fork-dependent         | `code_style.yml` `format`, `code_style.yml` `clippy`, `codescene-coverage.yml` `coverage-check`                                                                      | `ubicloud-standard-4` on a branch pull request, `ubuntu-latest` on a fork's     |
 | Build and test, event-dependent        | `test.yml` `tests` (not on `push`), `test.yml` `wasm-wit-compat`                                                                                                     | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`       |
 | Build and test, event-dependent, small | `test.yml` `telegram-tests`, `test.yml` `github-tool-tests`                                                                                                          | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule`       |
@@ -729,8 +729,10 @@ On a pull request `test.yml`'s libsql-only leg ran
 `--no-default-features --features libsql --features test-helpers` over the
 workspace, which is exactly what `codescene-coverage.yml` was already running
 under instrumentation. On a push to `main` all three `test.yml` legs repeated
-what `coverage.yml` had just done. The GitHub tool crate was worse: it rode
-along inside `make test`, so it ran once per leg, three times a trigger.
+the three coverage shapes the split `coverage.yml` pipeline had just measured:
+two matrix legs in `coverage` and one separate libsql-only `coverage-libsql`
+job. The GitHub tool crate was worse: it rode along inside `make test`, so it
+ran once per leg, three times a trigger.
 
 The rule is now one lane per suite per trigger, and which lane it is depends on
 the trigger:
@@ -738,7 +740,7 @@ the trigger:
 | Trigger                                     | Workspace suite                                                                            | GitHub tool crate              | libSQL TLS transport                | Telegram channel crate      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ | ----------------------------------- | --------------------------- |
 | `pull_request`                              | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
-| `push` to `main`                            | `coverage.yml` `coverage`, all three legs                                                  | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `push` to `main`                            | `coverage.yml` `coverage` (two matrix legs), `coverage.yml` `coverage-libsql`              | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 | `workflow_dispatch`                         | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 | `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 
@@ -4369,8 +4371,9 @@ The 90 minute ceilings are unchanged, and the contract records why they hold:
 | `coverage.yml` `Coverage (all-features)` | 900 s               | 1,085 s         | 185 s            | 33966708901 |
 | `coverage.yml` `Coverage (default)`      | 856 s               | 1,031 s         | 175 s            | 34051006881 |
 
-*Table: measured coverage-step and whole-job durations, read across six
-successful runs of `coverage.yml` covering three matrix legs each.*
+*Historical timing evidence from six successful runs of the pre-split
+`coverage.yml` workflow; each run covered three matrix legs. The current
+workflow has two `coverage` matrix legs and a separate `coverage-libsql` job.*
 
 The requirement is the whole-run budget, plus a minute for nextest to
 terminate, both taken once per run the lane makes, plus the build and the steps
