@@ -1,3 +1,5 @@
+/// <reference types="vitest/config" />
+
 /**
  * @file Vitest project for unit and behaviour tests under happy-dom; the
  * accessibility tests are excluded and run from `vitest.a11y.config.ts`.
@@ -6,7 +8,7 @@
 import { resolve } from "node:path";
 
 import solid from "vite-plugin-solid";
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [solid()],
