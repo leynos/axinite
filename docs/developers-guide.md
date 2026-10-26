@@ -1587,8 +1587,9 @@ build without a commit and leave Dependabot nothing to move.
   without the other fails.
 - **Release artefacts** (the `dist` builds and the WASM extension bundles) are
   built on the pinned nightly, so that what CI tests is what ships, with the
-  standard excluded as the routing table says. **Docker images** build on the
-  stable `rust:1.95` base images, which are the MSRV compiler.
+  standard excluded as the routing table says. Docker images use the stable
+  `rust:` base images specified by their Dockerfiles and do not use the nightly
+  toolchain or the development standard.
 
 ### Provisioning the build tools in CI
 
