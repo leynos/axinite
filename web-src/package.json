@@ -53,7 +53,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/user-event": "^14.6.8",
     "@types/jest-axe": "^3.5.9",
-    "@types/node": "^24.6.0",
+    "@types/node": "^26.6.5",
     "@typescript/native": "npm:typescript@7.0.2",
     "ai-deslop": "0.4.8",
     "axe-core": "^4.14.0",
