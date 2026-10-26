@@ -262,6 +262,7 @@ fn validate_array_items(prop: &Value, prop_path: &SchemaPath, out: &mut Vec<Stri
     };
 
     if !is_object_type(items) {
+        // Non-object item schemas remain intentionally accepted without recursion.
         return;
     }
 
