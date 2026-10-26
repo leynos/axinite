@@ -4527,10 +4527,10 @@ appearing without an entry fails too.
 ## 39. Front-end workspace
 
 The browser UI is a SolidJS app in `web-src/`, built with Bun (the workspace
-declares `bun >= 1.1.41` in `web-src/package.json`), so Bun is required for
+declares `bun >= 1.4.4` in `web-src/package.json`), so Bun is required for
 front-end work. The gateway embeds the built output. See
 `docs/solidjs-frontend.md` for the architecture, the stub runtime, and the
-serving contract. CI uses Bun 1.3.11; use that version when refreshing the
+serving contract. CI uses Bun 1.4.4; use that version when refreshing the
 embedded bundle so its output is reproducible. `frontend-install` consumes the
 committed `web-src/bun.lock` with `--frozen-lockfile`.
 
