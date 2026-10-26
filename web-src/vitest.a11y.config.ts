@@ -1,5 +1,3 @@
-/// <reference types="vitest/config" />
-
 /**
  * @file Vitest project for accessibility tests (`*.a11y.test.ts[x]`) under
  * happy-dom. Kept separate from `vitest.config.ts` so the jest-axe checks run
@@ -9,7 +7,7 @@
 import { resolve } from "node:path";
 
 import solid from "vite-plugin-solid";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [solid()],

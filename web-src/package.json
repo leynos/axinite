@@ -69,5 +69,8 @@
     "vite": "^8.3.5",
     "vite-plugin-solid": "^2.11.14",
     "vitest": "^5.0.5"
+  },
+  "overrides": {
+    "vite": "$vite"
   }
 }
