@@ -261,18 +261,14 @@ impl ExtensionManager {
         &self,
         auth: &crate::tools::wasm::AuthCapabilitySchema,
     ) -> ToolAuthState {
-        let has_token = self
-            .secrets
-            .exists(&self.user_id, &auth.secret_name)
-            .await
-            .unwrap_or(false)
-            || auth.env_var.as_ref().is_some_and(|v| {
-                {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                    std::env::var(v)
-                }
-                .is_ok()
-            });
+        let has_token =
+            self.secrets
+                .exists(&self.user_id, &auth.secret_name)
+                .await
+                .unwrap_or(false)
+                || auth.env_var.as_ref().is_some_and(|key| {
+                    crate::config::EnvContext::capture_ambient().contains_key(key)
+                });
         if has_token {
             ToolAuthState::Ready
         } else if auth.oauth.is_some() {

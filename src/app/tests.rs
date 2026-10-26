@@ -85,14 +85,8 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("AXINITE_APP_MIGRATION_CHILD")
-    }
-    .ok()
-    .as_deref()
-        == Some("1")
-    {
+    let process_env = EnvContext::capture_process();
+    if process_env.get("AXINITE_APP_MIGRATION_CHILD") == Some("1") {
         run_init_database_migration_child().await?;
         return Ok(());
     }
@@ -140,22 +134,17 @@ async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
 
 #[cfg(feature = "libsql")]
 async fn run_init_database_migration_child() -> anyhow::Result<()> {
-    let axinite_dir = PathBuf::from({
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("AXINITE_BASE_DIR")
-    }?);
-    let db_path = PathBuf::from({
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("AXINITE_APP_MIGRATION_DB_PATH")
-    }?);
-    let skills_dir = PathBuf::from({
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")
-    }?);
-    let installed_skills_dir = PathBuf::from({
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")
-    }?);
+    let process_env = EnvContext::capture_process();
+    let required_path = |key: &str| {
+        process_env
+            .get(key)
+            .map(PathBuf::from)
+            .with_context(|| format!("{key} is not set in the child process"))
+    };
+    let axinite_dir = required_path("AXINITE_BASE_DIR")?;
+    let db_path = required_path("AXINITE_APP_MIGRATION_DB_PATH")?;
+    let skills_dir = required_path("AXINITE_APP_MIGRATION_SKILLS_DIR")?;
+    let installed_skills_dir = required_path("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")?;
 
     let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
     let session = Arc::new(SessionManager::new(SessionConfig::default()));

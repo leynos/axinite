@@ -31,7 +31,7 @@ fn check_binary_skips_nonexistent() {
 #[test]
 fn check_secrets_none_returns_skip() {
     let settings = Settings::default();
-    match check_secrets(&settings) {
+    match check_secrets(&settings, &EnvContext::default()) {
         CheckResult::Skip(msg) => {
             assert!(
                 msg.contains("not configured"),
@@ -109,16 +109,13 @@ fn check_secrets_env_without_var_returns_fail() {
         secrets_master_key_source: crate::settings::KeySource::Env,
         ..Default::default()
     };
-    match check_secrets(&settings) {
+    let context = EnvContext::for_testing(Default::default(), Default::default());
+    match check_secrets(&settings, &context) {
         CheckResult::Fail(msg) => {
             assert!(
                 msg.contains("SECRETS_MASTER_KEY not set"),
                 "expected mention of missing env var, got: {msg}"
             );
-        }
-        CheckResult::Pass(_) => {
-            // If SECRETS_MASTER_KEY happens to be set in the environment,
-            // Pass is correct — don't fail the test.
         }
         other => panic!(
             "expected Fail or Pass for env key source, got: {}",

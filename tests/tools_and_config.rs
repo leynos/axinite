@@ -4,8 +4,6 @@
 #[path = "support/tools_and_config.rs"]
 mod support;
 
-#[path = "tools_and_config/config_round_trip.rs"]
-mod config_round_trip;
 #[path = "tools_and_config/tool_schema_validation.rs"]
 mod tool_schema_validation;
 #[path = "tools_and_config/trace_format.rs"]

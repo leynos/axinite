@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::axinite_base_dir;
+use crate::config::EnvContext;
 use crate::settings::Settings;
 
 /// Load settings from JSON and TOML config files, matching the runtime
@@ -34,33 +34,26 @@ fn load_settings_from(json_path: &std::path::Path, toml_path: &std::path::Path) 
     settings
 }
 
-fn default_tools_dir() -> PathBuf {
-    axinite_base_dir().join("tools")
+fn default_tools_dir(ctx: &EnvContext) -> PathBuf {
+    ctx.axinite_base_dir().join("tools")
 }
 
-fn default_channels_dir() -> PathBuf {
-    axinite_base_dir().join("channels")
+fn default_channels_dir(ctx: &EnvContext) -> PathBuf {
+    ctx.axinite_base_dir().join("channels")
 }
-fn db_backend_name() -> String {
-    crate::config::ambient_backend_name()
+fn db_backend_name(ctx: &EnvContext) -> String {
+    crate::config::backend_name_from(ctx)
 }
-async fn print_database_status(db_backend: &str) {
+async fn print_database_status(db_backend: &str, ctx: &EnvContext) {
     print!("  Database:    ");
     match db_backend {
         "libsql" | "turso" | "sqlite" => {
-            let path = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("LIBSQL_PATH")
-            }
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| crate::config::default_libsql_path());
+            let path = ctx
+                .get("LIBSQL_PATH")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| crate::config::default_libsql_path_in(&ctx.axinite_base_dir()));
             if path.exists() {
-                let turso = if {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                    std::env::var("LIBSQL_URL")
-                }
-                .is_ok()
-                {
+                let turso = if ctx.contains_key("LIBSQL_URL") {
                     " + Turso sync"
                 } else {
                     ""
@@ -71,13 +64,8 @@ async fn print_database_status(db_backend: &str) {
             }
         }
         _ => {
-            if {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("DATABASE_URL")
-            }
-            .is_ok()
-            {
-                match check_database().await {
+            if ctx.contains_key("DATABASE_URL") {
+                match check_database(ctx).await {
                     Ok(()) => println!("connected (PostgreSQL)"),
                     Err(e) => println!("error ({})", e),
                 }
@@ -100,25 +88,20 @@ fn print_search_status(db_backend: &str) {
     }
 }
 
-fn print_session_status() {
+fn print_session_status(ctx: &EnvContext) {
     print!("  Session:     ");
-    let session_path = crate::config::llm::default_session_path();
+    let session_path = crate::config::llm::default_session_path_in(&ctx.axinite_base_dir());
     if session_path.exists() {
         println!("found ({})", session_path.display());
     } else {
         println!("not found (run `axinite onboard`)");
     }
 }
-fn print_secrets_status() {
+fn print_secrets_status(ctx: &EnvContext) {
     // Secrets (auto-detect from env only; skip keychain probe to avoid
     // triggering macOS system password dialogs on a simple status check)
     print!("  Secrets:     ");
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("SECRETS_MASTER_KEY")
-    }
-    .is_ok()
-    {
+    if ctx.contains_key("SECRETS_MASTER_KEY") {
         println!("configured (env)");
     } else {
         // We don't probe the keychain here because get_generic_password()
@@ -128,20 +111,11 @@ fn print_secrets_status() {
         println!("env not set (keychain may be configured)");
     }
 }
-fn print_embeddings_status(settings: &Settings) {
+fn print_embeddings_status(settings: &Settings, ctx: &EnvContext) {
     print!("  Embeddings:  ");
     let emb_enabled = settings.embeddings.enabled
-        || {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("OPENAI_API_KEY")
-        }
-        .is_ok()
-        || {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("EMBEDDING_ENABLED")
-        }
-        .map(|v| v == "true")
-        .unwrap_or(false);
+        || ctx.contains_key("OPENAI_API_KEY")
+        || ctx.get("EMBEDDING_ENABLED") == Some("true");
     if emb_enabled {
         println!(
             "enabled (provider: {}, model: {})",
@@ -162,13 +136,13 @@ fn print_wasm_tools_status(tools_dir: &std::path::Path) {
     }
 }
 
-fn print_channels_status(settings: &Settings) {
+fn print_channels_status(settings: &Settings, ctx: &EnvContext) {
     print!("  Channels:    ");
     let channels_dir = settings
         .channels
         .wasm_channels_dir
         .clone()
-        .unwrap_or_else(default_channels_dir);
+        .unwrap_or_else(|| default_channels_dir(ctx));
     let mut channel_info = vec!["cli".to_string()];
     if settings.channels.http_enabled {
         channel_info.push(format!(
@@ -184,14 +158,9 @@ fn print_channels_status(settings: &Settings) {
     }
     println!("{}", channel_info.join(", "));
 }
-fn print_heartbeat_status(settings: &Settings) {
+fn print_heartbeat_status(settings: &Settings, ctx: &EnvContext) {
     print!("  Heartbeat:   ");
-    let hb_enabled = settings.heartbeat.enabled || {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("HEARTBEAT_ENABLED")
-    }
-    .map(|v| v == "true")
-    .unwrap_or(false);
+    let hb_enabled = settings.heartbeat.enabled || ctx.get("HEARTBEAT_ENABLED") == Some("true");
     if hb_enabled {
         println!("enabled (interval: {}s)", settings.heartbeat.interval_secs);
     } else {
@@ -214,6 +183,7 @@ async fn print_mcp_status() {
 /// Run the status command, printing system health info.
 pub async fn run_status_command() -> anyhow::Result<()> {
     let settings = load_settings();
+    let env_context = EnvContext::capture_ambient();
 
     println!("Axinite Status");
     println!("===============\n");
@@ -225,45 +195,44 @@ pub async fn run_status_command() -> anyhow::Result<()> {
         env!("CARGO_PKG_VERSION")
     );
 
-    let db_backend = db_backend_name();
-    print_database_status(&db_backend).await;
+    let db_backend = db_backend_name(&env_context);
+    print_database_status(&db_backend, &env_context).await;
     print_search_status(&db_backend);
-    print_session_status();
-    print_secrets_status();
-    print_embeddings_status(&settings);
+    print_session_status(&env_context);
+    print_secrets_status(&env_context);
+    print_embeddings_status(&settings, &env_context);
     print_wasm_tools_status(
         &settings
             .wasm
             .tools_dir
             .clone()
-            .unwrap_or_else(default_tools_dir),
+            .unwrap_or_else(|| default_tools_dir(&env_context)),
     );
-    print_channels_status(&settings);
-    print_heartbeat_status(&settings);
+    print_channels_status(&settings, &env_context);
+    print_heartbeat_status(&settings, &env_context);
     print_mcp_status().await;
 
     // Config path
     println!(
         "\n  Config:      {}",
-        crate::bootstrap::axinite_env_path().display()
+        env_context.axinite_base_dir().join(".env").display()
     );
 
     Ok(())
 }
 
 #[cfg(feature = "postgres")]
-async fn check_database() -> anyhow::Result<()> {
-    let url = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_URL")
+async fn check_database(ctx: &EnvContext) -> anyhow::Result<()> {
+    if !ctx.contains_key("DATABASE_URL") {
+        return Err(anyhow::anyhow!("DATABASE_URL not set"));
     }
-    .map_err(|_| anyhow::anyhow!("DATABASE_URL not set"))?;
+    let url = ctx.get_owned("DATABASE_URL").unwrap_or_default();
 
     let config: deadpool_postgres::Config = deadpool_postgres::Config {
         url: Some(url),
         ..Default::default()
     };
-    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
+    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_context(ctx))
         .map_err(|e| anyhow::anyhow!("pool error: {}", e))?;
 
     let client = tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
@@ -280,7 +249,7 @@ async fn check_database() -> anyhow::Result<()> {
 }
 
 #[cfg(not(feature = "postgres"))]
-async fn check_database() -> anyhow::Result<()> {
+async fn check_database(_ctx: &EnvContext) -> anyhow::Result<()> {
     // For non-postgres backends, just report configured
     Ok(())
 }

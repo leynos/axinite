@@ -9,11 +9,12 @@
 
 #![cfg(feature = "postgres")]
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axinite::{
     agent::HeartbeatRunner,
-    config::Config,
+    config::{Config, EnvContext},
     history::Store,
     llm::{create_llm_provider, create_session_manager},
     workspace::Workspace,
@@ -22,8 +23,42 @@ use axinite::{
 #[tokio::test]
 #[ignore] // Requires running database and LLM credentials
 async fn test_heartbeat_end_to_end() {
-    // Load .env and set up logging
-    let _ = dotenvy::dotenv();
+    // This ignored integration test uses only values exported by its caller.
+    let process_env = EnvContext::capture_process();
+    let env_vars = [
+        "AXINITE_BASE_DIR",
+        "HOME",
+        "DATABASE_BACKEND",
+        "DATABASE_URL",
+        "DATABASE_SSLMODE",
+        "DATABASE_POOL_SIZE",
+        "LIBSQL_PATH",
+        "LIBSQL_URL",
+        "LIBSQL_AUTH_TOKEN",
+        "LLM_BACKEND",
+        "LLM_MODEL",
+        "NEARAI_API_KEY",
+        "NEARAI_BASE_URL",
+        "NEARAI_SESSION_PATH",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "OPENAI_MODEL",
+        "HEARTBEAT_ENABLED",
+        "HEARTBEAT_INTERVAL_SECS",
+    ]
+    .into_iter()
+    .filter(|&key| process_env.contains_key(key))
+    .map(|key| {
+        (
+            key.to_string(),
+            process_env.get(key).unwrap_or_default().to_string(),
+        )
+    })
+    .collect::<HashMap<_, _>>();
+    let env_context = EnvContext::for_testing(env_vars, HashMap::new());
+    let settings = axinite::settings::Settings::default();
     let _ = tracing_subscriber::fmt()
         .with_env_filter("axinite=debug")
         .try_init();
@@ -31,7 +66,9 @@ async fn test_heartbeat_end_to_end() {
     println!("=== Heartbeat Integration Test ===\n");
 
     // 1. Load config
-    let config = Config::from_env().await.expect("Failed to load config");
+    let config = Config::from_context(&env_context, &settings)
+        .await
+        .expect("Failed to load config");
     println!("[1/6] Config loaded");
     println!("  heartbeat.enabled = {}", config.heartbeat.enabled);
     println!(

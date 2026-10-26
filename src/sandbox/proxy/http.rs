@@ -68,11 +68,9 @@ pub struct EnvCredentialResolver;
 
 impl NativeCredentialResolver for EnvCredentialResolver {
     async fn resolve<'a>(&'a self, name: &'a str) -> Option<String> {
-        {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var(name)
-        }
-        .ok()
+        // This hot path looks up one value without rebuilding a full config
+        // snapshot or running filesystem-backed defaults.
+        crate::config::EnvContext::get_ambient_owned(name)
     }
 }
 

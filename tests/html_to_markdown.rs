@@ -251,12 +251,7 @@ fn convert_test_pages_to_markdown() {
             }
         }
 
-        if {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("HTML_TO_MD_VERBOSE")
-        }
-        .is_ok()
-        {
+        if axinite::config::EnvContext::capture_process().contains_key("HTML_TO_MD_VERBOSE") {
             println!("--- {} ---\n{}\n", dir_name, markdown);
         }
         converted += 1;

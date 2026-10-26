@@ -1,7 +1,7 @@
 //! Config round-trip tests (QA Plan item 1.2).
 //!
-//! Tests the full config lifecycle: write via bootstrap helpers, read back via
-//! dotenvy, and assert values match. Each test uses a tempdir for isolation.
+//! Tests bootstrap serialization through the production dotenv layer parser.
+//! Each test uses a temporary directory for isolation.
 //!
 //! These tests call the real `save_bootstrap_env_to` and `upsert_bootstrap_var_to`
 //! functions from `axinite::bootstrap`, ensuring test coverage of the actual
@@ -10,19 +10,24 @@
 use std::collections::HashMap;
 use tempfile::tempdir;
 
-use axinite::bootstrap::{save_bootstrap_env_to, upsert_bootstrap_var_to};
+use crate::bootstrap::{save_bootstrap_env_to, upsert_bootstrap_var_to};
+use crate::config::dotenv_layers::DotenvLayers;
+use crate::test_support::ExpectValid;
 
 /// Fake OpenAI API key for test use only. Mirrors the internal
 /// `TEST_OPENAI_API_KEY_LONG` constant from the main crate, which is not
 /// directly available to integration tests due to `#[cfg(test)]`.
 const TEST_OPENAI_API_KEY_LONG: &str = "sk-test-key-1234567890";
 
-/// Parse a .env file into a HashMap using dotenvy.
+/// Parse a `.env` file through the same layer parser used at runtime.
 fn read_env_map(path: &std::path::Path) -> HashMap<String, String> {
-    dotenvy::from_path_iter(path)
-        .expect("dotenvy should parse the .env file")
-        .filter_map(|r| r.ok())
-        .collect()
+    let bytes = ambient_fs::read(path).expect_valid("read bootstrap .env round-trip file");
+    let base_dir = path
+        .parent()
+        .expect_valid("bootstrap .env has parent directory");
+    DotenvLayers::from_contents(None, Some(&bytes), base_dir)
+        .bootstrap_values()
+        .clone()
 }
 
 // ── Test 1: LLM_BACKEND round-trips ────────────────────────────────────────

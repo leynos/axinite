@@ -138,8 +138,8 @@ fn apply_toml_overlay_at(
 ///
 /// This bridges the gap between secrets stored during onboarding and the
 /// env-var-first resolution in `LlmConfig::resolve()`. Keys in the overlay
-/// are read by `optional_env()` before falling back to `std::env::var()`,
-/// so explicit env vars always win.
+/// are read by `optional_env()` after the immutable environment snapshot, so
+/// explicit process and dotenv values always win.
 ///
 /// Also loads tokens from OS credential stores (macOS Keychain, Linux
 /// credentials files) which don't require the secrets DB.
@@ -147,18 +147,10 @@ pub async fn inject_llm_keys_from_secrets(
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
 ) -> Result<(), ConfigError> {
-    let injected = collect_llm_key_injections(
-        secrets,
-        user_id,
-        |env_var| {
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "owning ambient secret-injection boundary; callers without a context retain compatibility"
-            )]
-            let value = std::env::var(env_var);
-            matches!(value, Ok(val) if !val.is_empty())
-        },
-    )
+    let env_context = EnvContext::capture_ambient();
+    let injected = collect_llm_key_injections(secrets, user_id, |env_var| {
+        env_context.has_non_empty_env_value(env_var)
+    })
     .await?;
     merge_injected_vars(injected);
     Ok(())

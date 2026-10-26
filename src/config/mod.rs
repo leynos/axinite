@@ -1,15 +1,15 @@
 //! Configuration for Axinite.
 //!
-//! Settings are loaded with priority: env var > database > default.
-//! `DATABASE_URL` lives in `~/.axinite/.env` (loaded via dotenvy early
-//! in startup). Everything else comes from env vars, the DB settings
-//! table, or auto-detection.
+//! Settings are loaded from an immutable environment snapshot, then overlaid
+//! by database, TOML, and default values according to each setting's policy.
+//! Dotenv files are parsed without modifying the process environment.
 
 mod agent;
 mod builder;
 mod channels;
 mod context;
 mod database;
+pub(crate) mod dotenv_layers;
 mod embeddings;
 mod heartbeat;
 pub(crate) mod helpers;
@@ -38,7 +38,8 @@ pub use self::agent::AgentConfig;
 pub use self::builder::BuilderModeConfig;
 pub use self::channels::{ChannelsConfig, CliConfig, GatewayConfig, HttpConfig, SignalConfig};
 pub use self::context::EnvContext;
-pub(crate) use self::database::ambient_backend_name;
+pub(crate) use self::database::backend_name_from;
+pub(crate) use self::database::default_libsql_path_in;
 pub use self::database::{DatabaseBackend, DatabaseConfig, SslMode, default_libsql_path};
 pub use self::embeddings::EmbeddingsConfig;
 pub use self::heartbeat::HeartbeatConfig;
@@ -67,9 +68,9 @@ pub use crate::llm::session::SessionConfig;
 
 /// Thread-safe overlay for injected env vars (secrets loaded from DB).
 ///
-/// Used by `inject_llm_keys_from_secrets()` to make API keys available to
-/// `optional_env()` without unsafe `set_var` calls. `optional_env()` checks
-/// real env vars first, then falls back to this overlay.
+/// Used by `inject_llm_keys_from_secrets()` to make API keys available through
+/// `EnvContext` without writing to the process environment. Process and dotenv
+/// values take precedence over this overlay.
 ///
 /// Uses `Mutex<HashMap>` instead of `OnceLock` so that both
 /// `inject_os_credentials()` and `inject_llm_keys_from_secrets()` can merge
@@ -137,9 +138,9 @@ impl Config {
         Ok(config)
     }
 
-    /// Load configuration from environment variables and the database.
+    /// Load configuration from the current environment snapshot and database.
     ///
-    /// Priority: env var > TOML config file > DB settings > default.
+    /// Priority: process and dotenv values > TOML config file > DB settings > default.
     /// This is the primary way to load config after DB is connected.
     pub async fn from_db(
         store: &(dyn crate::db::SettingsStore + Sync),
@@ -154,8 +155,7 @@ impl Config {
         user_id: &str,
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let _ = dotenvy::dotenv();
-        crate::bootstrap::load_axinite_env();
+        EnvContext::refresh_dotenv_layers();
         Self::from_db_from_context_with_toml(
             store,
             user_id,
@@ -204,8 +204,8 @@ impl Config {
     /// and by CLI commands that don't have DB access.
     /// Falls back to legacy `settings.json` on disk if present.
     ///
-    /// Loads both `./.env` (standard, higher priority) and `~/.axinite/.env`
-    /// (lower priority) via dotenvy, which never overwrites existing vars.
+    /// Refreshes `./.env` and the bootstrap `.env` into an immutable context
+    /// without writing either file's values to the process environment.
     pub async fn from_env() -> Result<Self, ConfigError> {
         Self::from_env_with_toml(None).await
     }
@@ -214,8 +214,7 @@ impl Config {
     pub async fn from_env_with_toml(
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let _ = dotenvy::dotenv();
-        crate::bootstrap::load_axinite_env();
+        EnvContext::refresh_dotenv_layers();
         let settings = Settings::load();
         let ctx = EnvContext::capture_ambient();
         let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;

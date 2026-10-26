@@ -3,6 +3,7 @@
 //! Checks that a skill's declared requirements (binaries, environment variables,
 //! config files) are satisfied before the skill is loaded.
 
+use crate::config::EnvContext;
 use crate::skills::GatingRequirements;
 
 /// Result of a gating check.
@@ -48,6 +49,16 @@ pub async fn check_requirements(requirements: &GatingRequirements) -> GatingResu
 /// This is the synchronous implementation; prefer the async [`check_requirements`]
 /// wrapper when calling from async contexts to avoid blocking the tokio runtime.
 pub fn check_requirements_sync(requirements: &GatingRequirements) -> GatingResult {
+    check_requirements_from_context(requirements, &EnvContext::capture_ambient())
+}
+
+/// Check requirements against an explicit snapshot. Environment presence
+/// satisfies gating even for an empty value; this does not guarantee that a
+/// spawned child process inherits values held only in dotenv layers.
+fn check_requirements_from_context(
+    requirements: &GatingRequirements,
+    env_context: &EnvContext,
+) -> GatingResult {
     let mut failures = Vec::new();
 
     for bin in &requirements.bins {
@@ -57,12 +68,7 @@ pub fn check_requirements_sync(requirements: &GatingRequirements) -> GatingResul
     }
 
     for var in &requirements.env {
-        if {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var(var)
-        }
-        .is_err()
-        {
+        if !env_context.contains_key(var) {
             failures.push(format!("required env var not set: {}", var));
         }
     }
@@ -140,13 +146,27 @@ mod tests {
 
     #[test]
     fn test_present_env_var_passes() {
-        // PATH is always set on both Unix and Windows
         let req = GatingRequirements {
-            env: vec!["PATH".to_string()],
+            env: vec!["AXINITE_TEST_GATE_KEY".to_string()],
             ..Default::default()
         };
-        let result = check_requirements_sync(&req);
+        let context = EnvContext::default().with_env("AXINITE_TEST_GATE_KEY", "value");
+        let result = check_requirements_from_context(&req, &context);
         assert!(result.passed);
+    }
+
+    #[test]
+    fn present_empty_env_var_passes_gating() {
+        let req = GatingRequirements {
+            env: vec!["AXINITE_TEST_GATE_EMPTY".to_string()],
+            ..Default::default()
+        };
+        let context = EnvContext::default().with_env("AXINITE_TEST_GATE_EMPTY", "");
+
+        let result = check_requirements_from_context(&req, &context);
+
+        assert!(result.passed);
+        assert!(result.failures.is_empty());
     }
 
     #[test]

@@ -98,17 +98,10 @@ pub(crate) fn docker_feature_disabled_error() -> SandboxError {
 
 #[cfg(all(unix, feature = "docker"))]
 fn unix_socket_candidates() -> Vec<PathBuf> {
+    let env = crate::config::EnvContext::capture_process();
     unix_socket_candidates_from_env(
-        {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var_os("HOME")
-        }
-        .map(PathBuf::from),
-        {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var_os("XDG_RUNTIME_DIR")
-        }
-        .map(PathBuf::from),
+        env.get("HOME").map(PathBuf::from),
+        env.get("XDG_RUNTIME_DIR").map(PathBuf::from),
         Some(rustix::process::geteuid().as_raw().to_string()),
     )
 }

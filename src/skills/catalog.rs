@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 
+use crate::config::EnvContext;
+
 /// Default ClawHub registry URL.
 ///
 /// Points directly at the Convex backend, bypassing Vercel's edge which
@@ -56,17 +58,13 @@ impl SkillCatalog {
     /// Create a new catalog.
     ///
     /// Reads `CLAWHUB_REGISTRY` (or legacy `CLAWDHUB_REGISTRY`) from the
-    /// environment, falling back to the Convex backend.
+    /// immutable environment snapshot, falling back to the Convex backend.
     pub fn new() -> Self {
-        let registry_url = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("CLAWHUB_REGISTRY")
-        }
-        .or_else(|_| {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("CLAWDHUB_REGISTRY")
-        })
-        .unwrap_or_else(|_| DEFAULT_REGISTRY_URL.to_string());
+        let env_context = EnvContext::capture_ambient();
+        let registry_url = env_context
+            .get_owned("CLAWHUB_REGISTRY")
+            .or_else(|| env_context.get_owned("CLAWDHUB_REGISTRY"))
+            .unwrap_or_else(|| DEFAULT_REGISTRY_URL.to_string());
 
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)

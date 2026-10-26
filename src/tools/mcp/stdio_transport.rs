@@ -39,6 +39,10 @@ impl StdioMcpTransport {
     /// * `command` - The command to execute.
     /// * `args` - Command-line arguments.
     /// * `env` - Additional environment variables to set.
+    ///
+    /// The child inherits the real process environment and receives only this
+    /// configured map from Axinite. See
+    /// `docs/configuration-guide.md#child-process-environment`.
     pub async fn spawn(
         name: impl Into<String>,
         command: &str,
@@ -227,6 +231,42 @@ mod tests {
 
         // Verify shutdown completes without error.
         transport.shutdown().await.expect("shutdown should succeed");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn configured_environment_is_delivered_and_overrides_inherited_values() {
+        let inherited_path = crate::config::EnvContext::capture_process()
+            .get_owned("PATH")
+            .unwrap_or_default();
+        let configured_path = format!("{inherited_path}:/axinite-mcp-test-path");
+        let env = HashMap::from([
+            ("AXINITE_MCP_TEST_KEY", "configured"),
+            ("AXINITE_MCP_EXPECTED_PATH", configured_path.as_str()),
+            ("PATH", configured_path.as_str()),
+        ]);
+        let transport = StdioMcpTransport::spawn(
+            "test-explicit-env",
+            "sh",
+            [
+                "-c",
+                "test \"$AXINITE_MCP_TEST_KEY\" = configured && test \"$PATH\" = \"$AXINITE_MCP_EXPECTED_PATH\"",
+            ],
+            &env,
+        )
+        .await
+        .expect("shell should spawn");
+
+        let status = transport
+            .child
+            .lock()
+            .await
+            .wait()
+            .await
+            .expect("child should exit");
+
+        assert_ne!(inherited_path, configured_path);
+        assert!(status.success(), "configured child environment should win");
     }
 
     #[tokio::test]

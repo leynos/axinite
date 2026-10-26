@@ -173,6 +173,7 @@ async fn test_no_llm_provider_returns_503() {
     // Create state WITHOUT llm_provider
     let state = Arc::new(GatewayState {
         env_flag_overlay: Default::default(),
+        restart_enabled: false,
         feature_flags: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
         msg_tx: tokio::sync::RwLock::new(None),
         sse: SseManager::new(),

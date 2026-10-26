@@ -10,13 +10,10 @@ use axinite::cli::Cli;
 mod cli;
 mod startup;
 
-/// Synchronous entry point. Loads `.env` files before the Tokio runtime
-/// starts. `dotenvy` writes the loaded values into the process environment,
-/// which is only sound while no other thread exists, so this must stay ahead
-/// of the runtime. The crate itself never calls `std::env::set_var`.
+/// Synchronous entry point. Parses `.env` files before the Tokio runtime
+/// starts so they are available in the first `EnvContext` snapshot.
 fn main() -> anyhow::Result<()> {
-    let _ = dotenvy::dotenv();
-    axinite::bootstrap::load_axinite_env();
+    axinite::config::EnvContext::refresh_dotenv_layers();
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

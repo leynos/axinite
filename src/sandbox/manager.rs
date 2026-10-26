@@ -4,6 +4,9 @@
 //! delegates Docker discovery and caching to a sibling module, manages the
 //! network proxy lifecycle, and runs commands either directly or through
 //! [`ContainerRunner`] with the configured policy and limits.
+//!
+//! Host and container child environment decisions are documented in
+//! `docs/configuration-guide.md#child-process-environment`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -213,6 +216,9 @@ impl SandboxManager {
     ) -> Result<ExecOutput> {
         use tokio::process::Command;
 
+        // This host fallback inherits real process values and overlays the
+        // command map; dotenv layers are not forwarded. See
+        // docs/configuration-guide.md#child-process-environment.
         let start = std::time::Instant::now();
 
         let mut cmd = if cfg!(target_os = "windows") {

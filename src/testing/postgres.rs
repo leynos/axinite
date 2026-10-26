@@ -12,10 +12,11 @@
 #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
 pub mod embedded;
 
-use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
+use crate::config::{DatabaseBackend, DatabaseConfig, EnvContext, SslMode};
 use crate::db::postgres::PgBackend;
 use crate::error::DatabaseError;
 use secrecy::SecretString;
+#[cfg(test)]
 use std::ffi::OsStr;
 
 // These substrings are limited to concrete local transport and name-resolution
@@ -162,12 +163,10 @@ pub async fn test_pg_db() -> Result<TestDatabase, DatabaseError> {
 }
 
 /// Read the URL a lane names for its test database, if it names one.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "transitional: migrate test database environment reads to EnvContext, see #333"
-)]
 fn configured_database_url() -> Option<String> {
-    std::env::var("TEST_DATABASE_URL").ok()
+    EnvContext::capture_process()
+        .raw_env_value("TEST_DATABASE_URL")
+        .map(str::to_string)
 }
 
 /// The error for a run with no named database and no embedded cluster.
@@ -252,6 +251,7 @@ impl PostgresRequirement {
     /// through `std::env::var(..).ok()` instead would map that read failure
     /// onto the same `None` as an unset variable, restoring the skip on
     /// exactly the lane that asked for it to be gone, and silently.
+    #[cfg(test)]
     fn from_os_value(value: Option<&OsStr>) -> Self {
         match value {
             None => Self::Optional,
@@ -262,12 +262,13 @@ impl PostgresRequirement {
     }
 
     /// Read the requirement this process was started with.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "transitional: migrate test database environment reads to EnvContext, see #333"
-    )]
     fn from_env() -> Self {
-        Self::from_os_value(std::env::var_os(REQUIRE_POSTGRES_ENV).as_deref())
+        let env = EnvContext::capture_process();
+        if env.has_non_unicode_value(REQUIRE_POSTGRES_ENV) {
+            Self::Required
+        } else {
+            Self::from_value(env.raw_env_value(REQUIRE_POSTGRES_ENV))
+        }
     }
 }
 

@@ -40,48 +40,63 @@ pub use wizard::{SetupConfig, SetupWizard};
 
 /// Check if onboarding is needed and return the reason.
 ///
-/// Reads environment variables (`DATABASE_URL`, `LIBSQL_PATH`,
-/// `ONBOARD_COMPLETED`, `NEARAI_API_KEY`) and checks for the default
-/// session file on disk. Not safe to call concurrently with `env::set_var`.
+/// Reads configuration from an immutable [`crate::config::EnvContext`] and
+/// checks for the default session file on disk.
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 pub fn check_onboard_needed() -> Option<&'static str> {
-    let has_db = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_URL")
-    }
-    .is_ok()
-        || {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("LIBSQL_PATH")
-        }
-        .is_ok()
-        || crate::config::default_libsql_path().exists();
+    check_onboard_needed_from(&crate::config::EnvContext::capture_ambient())
+}
+
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+fn check_onboard_needed_from(ctx: &crate::config::EnvContext) -> Option<&'static str> {
+    let has_db = ctx.contains_key("DATABASE_URL")
+        || ctx.contains_key("LIBSQL_PATH")
+        || crate::config::default_libsql_path_in(&ctx.axinite_base_dir()).exists();
 
     if !has_db {
         return Some("Database not configured");
     }
 
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("ONBOARD_COMPLETED")
-    }
-    .map(|v| v == "true")
-    .unwrap_or(false)
-    {
+    if ctx.get("ONBOARD_COMPLETED") == Some("true") {
         return None;
     }
 
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("NEARAI_API_KEY")
-    }
-    .is_err()
-    {
-        let session_path = crate::config::default_session_path();
+    if !ctx.contains_key("NEARAI_API_KEY") {
+        let session_path = crate::config::llm::default_session_path_in(&ctx.axinite_base_dir());
         if !session_path.exists() {
             return Some("First run");
         }
     }
 
     None
+}
+
+#[cfg(all(test, any(feature = "postgres", feature = "libsql")))]
+mod tests {
+    //! Tests for onboarding decisions from explicit configuration snapshots.
+
+    use std::collections::HashMap;
+
+    use tempfile::tempdir;
+
+    use super::check_onboard_needed_from;
+    use crate::config::EnvContext;
+
+    #[test]
+    fn empty_database_and_api_key_values_keep_presence_semantics() {
+        let dir = tempdir().expect("create temporary onboarding base directory");
+        let context = EnvContext::for_testing(
+            HashMap::from([
+                (
+                    String::from("AXINITE_BASE_DIR"),
+                    dir.path().to_string_lossy().into_owned(),
+                ),
+                (String::from("DATABASE_URL"), String::new()),
+                (String::from("NEARAI_API_KEY"), String::new()),
+            ]),
+            HashMap::new(),
+        );
+
+        assert_eq!(check_onboard_needed_from(&context), None);
+    }
 }

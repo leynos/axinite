@@ -20,6 +20,9 @@
 //!   The Unix socket fallback in `connect_docker()` is a no-op on Windows,
 //!   so detection also probes `docker version`/`docker info` via CLI if the
 //!   named pipe is unavailable.
+//!
+//! Probe child environments are documented in
+//! `docs/configuration-guide.md#child-process-environment`.
 
 /// Docker daemon availability status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

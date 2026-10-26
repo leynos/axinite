@@ -99,6 +99,8 @@ impl ClaudeBridgeRuntime {
         resume_session_id: Option<&str>,
         extra_env: &HashMap<String, String>,
     ) -> Result<Child, ClaudeSessionFailure> {
+        // The explicit credential map is layered onto the worker container's
+        // environment; see docs/configuration-guide.md#child-process-environment.
         let mut command = Command::new("claude");
         command
             .arg("-p")
