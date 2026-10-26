@@ -1393,12 +1393,12 @@ standard, for bare Cargo and Make alike.
 What Make does add:
 
 - `make check-build-tools` runs before every `build`, `typecheck`, `lint-*`
-  and `test-*` target. On Linux it verifies that `clang` and `mold` are
-  present, and that `mold` on `PATH` reports exactly the version in
-  `tools/mold/VERSION`, and that the pinned toolchain is installed with every
-  component and target `rust-toolchain.toml` lists. A missing or drifted tool
-  stops the run with the command that fixes it; there is no fallback to a
-  slower or different build.
+  and `test-*` target. On every platform it verifies that the pinned toolchain
+  is installed with every component and target listed in `rust-toolchain.toml`.
+  On Linux it also verifies that `clang` and `mold` are present, and that
+  `mold` on `PATH` reports exactly the version in `tools/mold/VERSION`. A
+  missing or drifted tool stops the run with the command that fixes it; there
+  is no fallback to a slower or different build.
 - `make install-build-tools` installs the pinned `mold` release and the pinned
   rustup toolchain with its components and targets. It verifies `mold` against
   `tools/mold/SHA256SUMS` and installs it under `BUILD_TOOLS_PREFIX`, which
