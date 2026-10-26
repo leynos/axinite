@@ -89,12 +89,25 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # 0.45 moves to skrifa, so no fixed path exists; remove when pdf-extract
 # depends on lopdf without ttf-parser. scripts/verify_audit_ignore_paths.py
 # refuses this ignore if ttf-parser gains any other dependency path.
+# RUSTSEC-2026-0391, 0398, 0403 and 0410 are reported through
+# wasmtime-internal-cache 48.0.7's zstd 0.13.3 dependency. Its cache calls only
+# zstd::encode_all/decode_all: it does not call the affected with_context or
+# seekable APIs, and decode_all is explicitly unaffected by 0403. The dependency
+# disables zstd defaults, including seekable and legacy support. 0410 applies
+# only when zstd-sys is built for wasm32; Wasmtime is a host runtime here.
+# scripts/verify_audit_ignore_paths.py keeps all three packages exclusive to
+# wasmtime-internal-cache. Remove these exceptions when that cache dependency
+# no longer reports the advisories or its use changes.
 # kuchikikiki 0.9.2 is yanked via readabilityrs. cargo-audit exposes no
 # advisory ID to ignore for this warning; track removal in
 # https://github.com/leynos/axinite/issues/214.
 AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2025-0141 \
-	--ignore RUSTSEC-2024-0370
+	--ignore RUSTSEC-2024-0370 \
+	--ignore RUSTSEC-2026-0391 \
+	--ignore RUSTSEC-2026-0398 \
+	--ignore RUSTSEC-2026-0403 \
+	--ignore RUSTSEC-2026-0410
 RUST_DECIMAL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0235
 LIBSQL_AUDIT_FLAGS := \

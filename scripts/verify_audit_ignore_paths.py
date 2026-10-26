@@ -12,6 +12,9 @@ EXPECTED_PATHS = {
     ("rkyv", "0.7.46"): "rust_decimal",
     ("h2", "0.3.27"): "libsql",
     ("ttf-parser", "0.25.1"): "pdf-extract",
+    ("zstd", "0.13.3"): "wasmtime-internal-cache",
+    ("zstd-safe", "7.2.4"): "wasmtime-internal-cache",
+    ("zstd-sys", "2.0.16+zstd.1.5.7"): "wasmtime-internal-cache",
 }
 
 PackageKey = tuple[str, str]
