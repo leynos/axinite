@@ -3846,6 +3846,18 @@ concatenation when descending into nested schema nodes.
 These types are re-exported from `src/tools/mod.rs` and are publicly available
 as `crate::tools::{ParamName, SchemaPath, ToolName}`.
 
+The lenient tool schema validator flows from `validate_tool_schema` through
+`validate_tool_schema_at` to `validate_property_schema`. Property validation
+dispatches object schemas to recursive validation at the property's path, and
+array schemas to item validation. An array without `items` reports
+`<path>: array property missing "items"`; item schemas recurse at the `items`
+child path only when their type is `object`. Other item types remain
+unconstrained.
+
+Each level appends diagnostics as it validates, preserving the existing order:
+required key errors precede that object's property errors, and nested errors
+remain in the position of the property or item that produced them.
+
 ## 35. Spelling policy
 
 Run the spelling gate with:
