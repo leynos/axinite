@@ -2,6 +2,8 @@
 
 #[cfg(test)]
 mod panic_backend {
+    //! Four panic and unwinding tests for comparing LLVM and Cranelift behaviour.
+
     use std::panic::catch_unwind;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};

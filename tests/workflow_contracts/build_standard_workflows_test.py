@@ -35,6 +35,7 @@ from _build_standard_judge import judge_all
 from _build_standard_workflow_mutations import TEXT_MUTATIONS, WORKFLOW_MUTATIONS
 from _build_standard_workflows import (
     INSTALL_TARGET,
+    Step,
     compiles,
     install_violations,
     make_targets_in,
@@ -152,6 +153,53 @@ def test_runner_forms_are_all_read(documents: dict[str, dict[str, typ.Any]]) -> 
     macos = {"runs-on": "macos-14"}
     assert all(runs_on_linux(job) for job in (scalar, chain, listed, mapped, caller))
     assert not any(runs_on_linux(job) for job in (windows, macos))
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["cargo -q test", "cargo +nightly --quiet --locked test"],
+    ids=("quiet", "toolchain-and-options"),
+)
+def test_cargo_global_boolean_options_do_not_hide_compile_verbs(command: str) -> None:
+    """Common Cargo flags before a verb still identify a compile step."""
+    step = Step("Compile", command, "", False, {}, {})
+
+    assert compiles(step, set())
+
+
+def test_make_variable_assignments_do_not_hide_compiling_targets() -> None:
+    """A Make assignment before a target does not hide its recipe."""
+    job = {
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {"name": "Compile", "run": "make TEST_FEATURES=x test-workspace"}
+        ],
+    }
+
+    assert install_violations("test.yml:assigned-target", job, {"test-workspace"})
+
+
+def test_linux_matrix_runner_still_requires_build_tool_installation() -> None:
+    """A Linux value in a runner matrix keeps the install contract active."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"os": ["ubuntu-latest", "windows-latest"]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert install_violations("test.yml:matrix-runner", job, set())
+
+
+def test_windows_only_matrix_runner_does_not_require_linux_build_tools() -> None:
+    """A resolved Windows-only runner matrix is not classified as Linux."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"os": ["windows-latest"]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert not runs_on_linux(job)
+    assert install_violations("test.yml:windows-matrix", job, set()) == []
 
 
 @pytest.mark.parametrize(

@@ -1611,7 +1611,13 @@ build without a commit and leave Dependabot nothing to move.
   minor-and-patch pull request for `/`. The estate's audit requires a dated
   nightly to be at most 56 days old, so a stale pin is a finding rather than a
   preference. A bump is an ordinary pull request: the suite must pass on the
-  new date, and `make install-build-tools` installs it.
+  new date, and `make install-build-tools` installs it. Update the date-stamped
+  `baseline-rust-file` value in both `.github/workflows/coverage.yml` and
+  `.github/workflows/codescene-coverage.yml`, plus the expected values in
+  `tests/workflow_contracts/coverage_publication_test.py` and
+  `tests/workflow_contracts/codescene_coverage_test.py`, in the same pull
+  request. The main-owned coverage publisher writes that baseline only after
+  the bump reaches `main`.
 - **Every job follows the pin.** `setup-rust` is called without a `toolchain`
   input, so it installs what the file names, with its components and target.
   Jobs that never call `setup-rust` (the formatter, both audits, the Windows

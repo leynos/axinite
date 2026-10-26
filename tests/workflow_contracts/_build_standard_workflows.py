@@ -33,13 +33,19 @@ INSTALL_COMMAND = re.compile(rf"^\s*make\s+{INSTALL_TARGET}\s*$")
 #: A Cargo command that compiles. ``cargo component --version`` and
 #: ``cargo binstall`` do not, so verbs are named.
 CARGO_COMPILE = re.compile(
-    r"\bcargo\s+(?:\+\S+\s+)?(?:build|check|clippy|test|nextest|llvm-cov)\b"
+    r"\bcargo\s+(?:\+\S+\s+)?"
+    r"(?:(?:-q|--quiet|-v|--verbose|--locked|--offline|--frozen)\s+)*"
+    r"(?:build|check|clippy|test|nextest|llvm-cov)\b"
 )
-MAKE_TARGET = re.compile(r"\bmake\s+(?:-\S+\s+)*([A-Za-z0-9_.-]+)")
+MAKE_TARGET = re.compile(
+    r"\bmake\s+(?:-\S+\s+)*(?:[A-Za-z_][A-Za-z0-9_]*[:+?!]?=\S*\s+)*"
+    r"([A-Za-z0-9_.-]+)"
+)
 WASM_BUILDER = re.compile(r"\./scripts/build-wasm-extensions\.sh")
 GENERATE_COVERAGE = "leynos/shared-actions/.github/actions/generate-coverage@"
 INSTALL_WHITAKER = "leynos/shared-actions/.github/actions/install-whitaker@"
 LINUX_LABEL = re.compile(r"ubuntu|ubicloud|linux", re.IGNORECASE)
+MATRIX_RUNNER = re.compile(r"\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}")
 CONFIG_REMOVAL = re.compile(
     r"rm\s+(?:(?:-f|--force)\s+)?\.cargo/config\.toml"
     r"(?:\s+rust-toolchain\.toml)?"
@@ -71,6 +77,36 @@ class Step(typ.NamedTuple):
     guarded: bool
     env: Mapping[str, object]
     inputs: Mapping[str, object]
+
+
+def _matrix_values(job: Mapping[str, object], name: str) -> list[object] | None:
+    """Return declared values for a runner matrix axis, if it is resolvable."""
+    strategy = job.get("strategy")
+    matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
+    if not isinstance(matrix, dict) or name not in matrix:
+        return None
+
+    declared = matrix[name]
+    values = list(declared) if isinstance(declared, list) else [declared]
+    included = matrix.get("include")
+    if isinstance(included, list):
+        values.extend(
+            row[name] for row in included if isinstance(row, dict) and name in row
+        )
+    return values
+
+
+def _matrix_axis_may_be_linux(job: Mapping[str, object], name: str) -> bool:
+    """Report whether an unresolved matrix axis can select a Linux runner."""
+    values = _matrix_values(job, name)
+    return values is None or any(LINUX_LABEL.search(str(value)) for value in values)
+
+
+def _matrix_runner_may_be_linux(job: Mapping[str, object], runner: str) -> bool:
+    """Report whether a runner expression can resolve through Linux matrix values."""
+    return any(
+        _matrix_axis_may_be_linux(job, name) for name in MATRIX_RUNNER.findall(runner)
+    )
 
 
 def _truthy(value: object) -> bool:
@@ -132,9 +168,11 @@ def runs_on_linux(job: Mapping[str, object]) -> bool:
         return "uses" in job
     if isinstance(declared, dict):
         declared = declared.get("labels")
-    if isinstance(declared, list):
-        return any(LINUX_LABEL.search(str(item)) for item in declared)
-    return bool(LINUX_LABEL.search(str(declared)))
+    runner = " ".join(map(str, declared)) if isinstance(declared, list) else str(declared)
+    if LINUX_LABEL.search(runner):
+        return True
+
+    return _matrix_runner_may_be_linux(job, runner)
 
 
 def compiles(step: Step, compiling_targets: Iterable[str]) -> bool:
