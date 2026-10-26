@@ -68,6 +68,6 @@
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.3.4",
     "vite-plugin-solid": "^2.11.14",
-    "vitest": "^3.2.4"
+    "vitest": "^5.0.4"
   }
 }
