@@ -1,7 +1,7 @@
 """Contracts for the libSQL coverage report hand-off and roll-up.
 
 The publisher saves its LCOV report for the separate Codecov job. These
-contracts keep the artifact, OIDC upload and successful-job roll-up connected.
+contracts keep the artefact, OIDC upload and successful-job roll-up connected.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -14,7 +14,7 @@ from _workflow_files import load
 from _workflow_policy import WORKFLOW_DIR
 
 WORKFLOW: typ.Final[str] = "coverage.yml"
-ARTIFACT_NAME: typ.Final[str] = "libsql-only-lcov"
+ARTEFACT_NAME: typ.Final[str] = "libsql-only-lcov"
 PUBLISHER_JOB: typ.Final[str] = "coverage-libsql"
 CODECOV_JOB: typ.Final[str] = "codecov-libsql"
 GATE_JOB: typ.Final[str] = "coverage-gate"
@@ -61,7 +61,7 @@ def _needs(job: dict[str, object]) -> set[str]:
     return {str(job_name) for job_name in needs}
 
 
-def test_libsql_publisher_saves_a_short_lived_lcov_artifact() -> None:
+def test_libsql_publisher_saves_a_short_lived_lcov_artefact() -> None:
     """Fail the publisher if it cannot hand off its report to Codecov."""
     upload = _step(
         _job(PUBLISHER_JOB), "Save the libsql-only report for the Codecov upload"
@@ -69,13 +69,13 @@ def test_libsql_publisher_saves_a_short_lived_lcov_artifact() -> None:
 
     assert upload.get("uses") == "actions/upload-artifact@v7"
     inputs = _with(upload)
-    assert inputs.get("name") == ARTIFACT_NAME
+    assert inputs.get("name") == ARTEFACT_NAME
     assert inputs.get("path") == "lcov.info"
     assert inputs.get("if-no-files-found") == "error"
     assert inputs.get("retention-days") == 1
 
 
-def test_codecov_job_downloads_and_uploads_the_publisher_artifact() -> None:
+def test_codecov_job_downloads_and_uploads_the_publisher_artefact() -> None:
     """Keep the OIDC job tied to the report produced by the publisher."""
     job = _job(CODECOV_JOB)
     assert _needs(job) == {PUBLISHER_JOB}
@@ -86,7 +86,7 @@ def test_codecov_job_downloads_and_uploads_the_publisher_artifact() -> None:
 
     download = _step(job, "Fetch the libsql-only report")
     assert download.get("uses") == "actions/download-artifact@v8"
-    assert _with(download).get("name") == ARTIFACT_NAME
+    assert _with(download).get("name") == ARTEFACT_NAME
 
     upload = _step(job, "Upload to Codecov")
     assert upload.get("uses") == "codecov/codecov-action@v5"
