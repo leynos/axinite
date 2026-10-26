@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod panic_backend {
     //! Four panic and unwinding tests for comparing LLVM and Cranelift behaviour.
+    //! The standalone crate runs outside the main workspace test matrix.
 
     use std::panic::catch_unwind;
     use std::sync::Arc;
