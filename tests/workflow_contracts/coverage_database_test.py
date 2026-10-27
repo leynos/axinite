@@ -240,6 +240,14 @@ def test_the_libsql_job_is_not_told_a_database_is_mandatory() -> None:
     assert not leaking, (
         f"{LIBSQL_JOB} must not export {REQUIRE_VARIABLE}, found it in {leaking}"
     )
+    for scope, environment in _database_url_environment_scopes(LIBSQL_JOB):
+        if environment is None:
+            continue
+        assert isinstance(environment, dict), f"{scope} env must be a mapping"
+        assert REQUIRE_VARIABLE not in environment, (
+            f"the {scope} env of {LIBSQL_JOB} sets {REQUIRE_VARIABLE}; "
+            "the libSQL-only job must not require Postgres"
+        )
 
 
 def test_the_libsql_job_compiles_without_postgres() -> None:
