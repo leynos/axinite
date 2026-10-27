@@ -4,8 +4,8 @@
  * Imports expose injected helpers without starting processes or probing ports.
  */
 import net from "node:net";
-import { stripVTControlCharacters } from "node:util";
 import { parsePort } from "../mock-backend/src/ports";
+import { createBuildReadiness, pipeOutput } from "./build-output";
 
 /** Minimal disposable TCP probe capability; it does not reserve a port. */
 export type PortProbe = {
@@ -89,7 +89,8 @@ type ProcessExit = { label: string; exitCode: number };
 async function trackDelayedProcess(
   delayed: DelayedProcess,
   owned: ManagedProcess[],
-  isShuttingDown: () => boolean
+  isShuttingDown: () => boolean,
+  reportError: (message: string) => void
 ): Promise<ProcessExit> {
   try {
     await delayed.ready;
@@ -100,7 +101,10 @@ async function trackDelayedProcess(
       label: child.label,
       exitCode: await child.process.exited.catch(() => 1),
     };
-  } catch {
+  } catch (error) {
+    reportError(
+      `[dev] preview failed to start: ${error instanceof Error ? error.message : String(error)}`
+    );
     return { label: "preview", exitCode: 1 };
   }
 }
@@ -141,7 +145,12 @@ export async function superviseChildren(
     }));
     if (delayed) {
       exits.push(
-        trackDelayedProcess(delayed, owned, () => shutdown !== undefined)
+        trackDelayedProcess(
+          delayed,
+          owned,
+          () => shutdown !== undefined,
+          deps.error
+        )
       );
     }
     const result = await Promise.race(exits);
@@ -156,34 +165,6 @@ export async function superviseChildren(
   } finally {
     for (const remove of removeSignals) remove();
   }
-}
-
-function pipeOutput(
-  label: string,
-  stream: ReadableStream<Uint8Array> | null,
-  writer: (line: string) => void,
-  observeLine?: (line: string) => void
-): void {
-  if (!stream) return;
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let pending = "";
-  void (async () => {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) {
-        if (pending.length > 0) writer(`[${label}] ${pending}`);
-        break;
-      }
-      pending += decoder.decode(value, { stream: true });
-      const lines = pending.split(/\r?\n/);
-      pending = lines.pop() ?? "";
-      for (const line of lines) {
-        writer(`[${label}] ${line}`);
-        observeLine?.(line);
-      }
-    }
-  })();
 }
 
 function spawnManaged(
@@ -221,10 +202,7 @@ async function main(): Promise<void> {
   console.log(
     `[dev] starting mock API on ${apiPort}, static preview on ${previewPort}`
   );
-  const buildEvents = new EventTarget();
-  const buildReady = new Promise<void>((resolve) => {
-    buildEvents.addEventListener("ready", () => resolve(), { once: true });
-  });
+  const buildReadiness = createBuildReadiness();
   const managed = [
     spawnManaged("mock-api", ["bun", "--watch", "mock-backend/src/server.ts"], {
       ...process.env,
@@ -234,15 +212,7 @@ async function main(): Promise<void> {
       "build",
       ["bunx", "vite", "build", "--watch"],
       process.env,
-      (line) => {
-        // Vite emits this only after it has written the complete initial bundle.
-        if (
-          /^built in \d+(?:\.\d+)?(?:ms|s)\.$/.test(
-            stripVTControlCharacters(line)
-          )
-        )
-          buildEvents.dispatchEvent(new Event("ready"));
-      }
+      buildReadiness.observeLine
     ),
   ];
   await superviseChildren(
@@ -261,7 +231,7 @@ async function main(): Promise<void> {
       },
     },
     {
-      ready: buildReady,
+      ready: buildReadiness.ready,
       start: () =>
         spawnManaged("preview", ["bun", "mock-backend/src/preview-server.ts"], {
           ...process.env,

@@ -37,6 +37,7 @@ from _build_standard_make import (
     parse_invocations,
 )
 from _build_standard_routing import make_violations, preflight_violations
+from contract_sources import read_source
 
 #: Every target that reaches Cargo or Whitaker, so a recipe that gains a Cargo
 #: line is judged. The aggregates are listed too: they are what developers run.
@@ -237,7 +238,7 @@ def _mutated_dry_run(
     tmp_path: Path, target: str, edit: cabc.Callable[[str], str]
 ) -> list[str]:
     """Return a target's dry run against a Makefile copy that `edit` altered."""
-    text = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    text = read_source(REPOSITORY_ROOT / "Makefile")
     changed = edit(text)
     assert changed != text, "the mutation did not apply"
     (tmp_path / "Makefile").write_text(changed, encoding="utf-8")
@@ -362,7 +363,7 @@ def test_the_unmutated_copy_is_clean(
     tmp_path: Path, config: dict[str, typ.Any]
 ) -> None:
     """The mutation harness reports nothing against an unchanged Makefile."""
-    text = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    text = read_source(REPOSITORY_ROOT / "Makefile")
     (tmp_path / "Makefile").write_text(text, encoding="utf-8")
     for target in ("typecheck", "lint-whitaker", "install", "build"):
         lines = dry_run(target, root=tmp_path)

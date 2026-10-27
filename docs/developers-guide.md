@@ -4483,4 +4483,10 @@ following Make targets compose them for contributors:
 
 *Table: front-end Make targets.*
 
+`frontend-stub` starts the mock API and the Vite build watcher first. It starts
+the static preview only after Vite reports that its initial build has finished,
+so the preview does not serve an incomplete bundle. If a child exits
+unexpectedly, the supervisor stops its other children and returns a failure;
+SIGINT and SIGTERM stop the owned children cleanly.
+
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md

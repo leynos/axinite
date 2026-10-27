@@ -280,6 +280,15 @@ def _has_matrix_scoped_cargo_command(script: str) -> bool:
     return False
 
 
+def _has_matrix_selected_make_target(script: str) -> bool:
+    """Detect Make arguments that could expand to an unrecognized suite target."""
+    for command in split_commands(script):
+        make = re.search(r"\bmake\s+", command)
+        if make is not None and MATRIX_REFERENCE_RE.search(command[make.end() :]):
+            return True
+    return False
+
+
 def _has_recognized_suite_command(job: Job, defaults: frozenset[str]) -> bool:
     """Return whether the job contains a command counted by suite contracts."""
     for step in job.steps:
@@ -288,7 +297,9 @@ def _has_recognized_suite_command(job: Job, defaults: frozenset[str]) -> bool:
             cargo_runs(script, defaults)
         ):
             return True
-        if any(make_runs(script, defaults)):
+        if _has_matrix_selected_make_target(script) or any(
+            make_runs(script, defaults)
+        ):
             return True
         if any(action_runs(step, defaults)):
             return True
@@ -299,7 +310,7 @@ def suite_runs_in(job: Job, event: str, defaults: frozenset[str]) -> Iterator[Su
     """Yield suite runs performed by a job for an event.
 
     An unreadable matrix is excused only when the job has no recognized suite
-    or Cargo test command whose matrix arguments could supply a suite scope.
+    or command whose matrix arguments could supply a suite scope or target.
     """
     try:
         legs = matrix_legs(job, event)
