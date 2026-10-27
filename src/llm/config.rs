@@ -93,6 +93,17 @@ pub struct RegistryProviderConfig {
     pub unsupported_params: Vec<String>,
 }
 
+/// Static AWS credentials resolved from an environment snapshot.
+#[derive(Debug, Clone)]
+pub struct BedrockCredentials {
+    /// AWS access key identifier.
+    pub access_key_id: SecretString,
+    /// AWS secret access key.
+    pub secret_access_key: SecretString,
+    /// Optional session token for temporary credentials.
+    pub session_token: Option<SecretString>,
+}
+
 /// Configuration for AWS Bedrock (native Converse API).
 #[derive(Debug, Clone)]
 pub struct BedrockConfig {
@@ -104,6 +115,8 @@ pub struct BedrockConfig {
     pub cross_region: Option<String>,
     /// AWS named profile (for SSO / assume-role workflows).
     pub profile: Option<String>,
+    /// Static credentials from the captured environment, when both keys exist.
+    pub credentials: Option<BedrockCredentials>,
 }
 
 /// LLM provider configuration.
