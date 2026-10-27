@@ -16,6 +16,7 @@ use crate::config::INJECTED_VARS;
 use crate::config::database::autodetect_libsql_backend;
 use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers};
 
+mod ambient_presence;
 mod base_dir;
 mod restart;
 
