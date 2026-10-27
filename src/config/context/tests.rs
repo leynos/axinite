@@ -27,6 +27,20 @@ fn empty_env_value_falls_back_to_secret() {
     assert!(ctx.contains_key("OPENAI_API_KEY"));
 }
 
+#[rstest::rstest]
+#[case(None, false)]
+#[case(Some(""), false)]
+#[case(Some("false"), false)]
+#[case(Some("TRUE"), true)]
+#[case(Some("true"), true)]
+fn docker_restart_flag_requires_true(#[case] value: Option<&str>, #[case] expected: bool) {
+    let ctx = value.map_or_else(EnvContext::default, |value| {
+        EnvContext::default().with_env("AXINITE_IN_DOCKER", value)
+    });
+
+    assert_eq!(ctx.is_docker_restart_environment(), expected);
+}
+
 #[test]
 fn builder_helpers_populate_context() {
     let ctx = EnvContext::default()

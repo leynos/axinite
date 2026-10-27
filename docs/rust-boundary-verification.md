@@ -109,12 +109,13 @@ home-directory fallback when no home variable supplies one. Configuration reads
 then use `EnvContext`. The remaining process-only reads serve host state,
 explicit test controls, build-directory overrides (`CARGO_TARGET_DIR`,
 `AXINITE_TOOLS_SRC`, and `AXINITE_CHANNELS_SRC`), the container worker token
-(`AXINITE_WORKER_TOKEN`), and the PostgreSQL test harness. Host state includes
-`HOME` and `XDG_RUNTIME_DIR` for shell forwarding and Docker socket discovery.
-These values are captured with `EnvContext::capture_process()` and are never
-loaded from `.env`. None of the reads writes to the environment. The existing
-scoped `clippy::disallowed_methods` expectation covers only that snapshot
-boundary. `#![forbid(unsafe_code)]` remains in place.
+(`AXINITE_WORKER_TOKEN`), the Docker restart control (`AXINITE_IN_DOCKER`), and
+the PostgreSQL test harness. Host state includes `HOME` and `XDG_RUNTIME_DIR`
+for shell forwarding and Docker socket discovery. These values are captured with
+`EnvContext::capture_process()` and are never loaded from `.env`. None of the
+reads writes to the environment. The existing scoped
+`clippy::disallowed_methods` expectation covers only that snapshot boundary.
+`#![forbid(unsafe_code)]` remains in place.
 
 ## What the boundary contract checks
 

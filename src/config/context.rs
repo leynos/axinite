@@ -17,6 +17,7 @@ use crate::config::database::autodetect_libsql_backend;
 use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers};
 
 mod base_dir;
+mod restart;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 

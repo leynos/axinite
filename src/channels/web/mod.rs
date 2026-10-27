@@ -76,9 +76,7 @@ impl GatewayChannel {
         });
 
         let env_flag_overlay = handlers::features::env_flag_overlay(&env_context);
-        let restart_enabled = EnvContext::capture_process()
-            .get("AXINITE_IN_DOCKER")
-            .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+        let restart_enabled = EnvContext::capture_process().is_docker_restart_environment();
         let state = Arc::new(GatewayState {
             env_flag_overlay,
             restart_enabled,

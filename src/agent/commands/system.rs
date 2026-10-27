@@ -118,9 +118,8 @@ impl Agent {
             ));
         }
         // Environment check: restart is only available in Docker containers
-        let in_docker = crate::config::EnvContext::capture_process()
-            .get("AXINITE_IN_DOCKER")
-            .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+        let in_docker =
+            crate::config::EnvContext::capture_process().is_docker_restart_environment();
 
         tracing::debug!("[commands::restart] AXINITE_IN_DOCKER={}", in_docker);
 
