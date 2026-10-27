@@ -83,16 +83,21 @@ def _matrix_values(job: Mapping[str, object], name: str) -> list[object] | None:
     """Return declared values for a runner matrix axis, if it is resolvable."""
     strategy = job.get("strategy")
     matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
-    if not isinstance(matrix, dict) or name not in matrix:
+    if not isinstance(matrix, dict):
         return None
 
-    declared = matrix[name]
-    values = list(declared) if isinstance(declared, list) else [declared]
+    if name in matrix:
+        declared = matrix[name]
+        values = list(declared) if isinstance(declared, list) else [declared]
+    else:
+        values = []
     included = matrix.get("include")
     if isinstance(included, list):
         values.extend(
             row[name] for row in included if isinstance(row, dict) and name in row
         )
+    if name not in matrix and not values:
+        return None
     return values
 
 
@@ -169,7 +174,7 @@ def runs_on_linux(job: Mapping[str, object]) -> bool:
     if isinstance(declared, dict):
         declared = declared.get("labels")
     runner = " ".join(map(str, declared)) if isinstance(declared, list) else str(declared)
-    if LINUX_LABEL.search(runner):
+    if LINUX_LABEL.search(MATRIX_RUNNER.sub("", runner)):
         return True
 
     return _matrix_runner_may_be_linux(job, runner)

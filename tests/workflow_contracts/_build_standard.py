@@ -19,9 +19,10 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
-import tomllib
 import typing as typ
 from pathlib import Path
+
+from _sources import SourceError, read_toml as read_source_toml
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterable, Mapping
@@ -70,8 +71,13 @@ def read_toml(relative: str, *, root: Path = REPOSITORY_ROOT) -> dict[str, typ.A
     -------
     dict
         The parsed document.
+
+    Raises
+    ------
+    SourceError
+        If the file cannot be read or its contents are not valid TOML.
     """
-    return tomllib.loads((root / relative).read_text(encoding="utf-8"))
+    return dict(read_source_toml(root / relative))
 
 
 def normalize(flags: Iterable[str]) -> list[str]:

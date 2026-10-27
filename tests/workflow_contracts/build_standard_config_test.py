@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import collections.abc as cabc
 import copy
+from pathlib import Path
 import typing as typ
 
 import pytest
@@ -30,6 +31,7 @@ from _build_standard import (
     read_toml,
     rustflag_sources,
 )
+from _sources import SourceError
 
 CONFIG = ".cargo/config.toml"
 TOOLCHAIN = "rust-toolchain.toml"
@@ -45,6 +47,31 @@ def config() -> dict[str, typ.Any]:
 def toolchain() -> dict[str, typ.Any]:
     """Return the parsed toolchain pin."""
     return read_toml(TOOLCHAIN)
+
+
+@pytest.mark.parametrize(
+    ("relative", "contents", "reason"),
+    [
+        pytest.param("missing.toml", None, "cannot be read", id="missing"),
+        pytest.param(
+            "invalid.toml", "broken = [", "is not valid TOML", id="invalid-toml"
+        ),
+    ],
+)
+def test_toml_reader_reports_source_errors(
+    relative: str, contents: str | None, reason: str, tmp_path: Path
+) -> None:
+    """The repository reader preserves the shared file-error boundary."""
+    path = tmp_path / relative
+    if contents is not None:
+        path.write_text(contents, encoding="utf-8")
+
+    with pytest.raises(SourceError, match=reason) as raised:
+        read_toml(relative, root=tmp_path)
+
+    assert raised.value.path == path, (
+        f"the source error should identify {path}, got {raised.value.path}"
+    )
 
 
 def test_the_repository_conforms(

@@ -164,7 +164,7 @@ def test_cargo_global_boolean_options_do_not_hide_compile_verbs(command: str) ->
     """Common Cargo flags before a verb still identify a compile step."""
     step = Step("Compile", command, "", False, {}, {})
 
-    assert compiles(step, set())
+    assert compiles(step, set()), f"Cargo compile options hid the verb in {command!r}"
 
 
 def test_make_variable_assignments_do_not_hide_compiling_targets() -> None:
@@ -176,7 +176,9 @@ def test_make_variable_assignments_do_not_hide_compiling_targets() -> None:
         ],
     }
 
-    assert install_violations("test.yml:assigned-target", job, {"test-workspace"})
+    assert install_violations("test.yml:assigned-target", job, {"test-workspace"}), (
+        "the assigned test-workspace target must require tool installation"
+    )
 
 
 def test_linux_matrix_runner_still_requires_build_tool_installation() -> None:
@@ -187,7 +189,9 @@ def test_linux_matrix_runner_still_requires_build_tool_installation() -> None:
         "steps": [{"name": "Compile", "run": "cargo test"}],
     }
 
-    assert install_violations("test.yml:matrix-runner", job, set())
+    assert install_violations("test.yml:matrix-runner", job, set()), (
+        "a matrix containing an Ubuntu runner must require tool installation"
+    )
 
 
 def test_windows_only_matrix_runner_does_not_require_linux_build_tools() -> None:
@@ -198,8 +202,38 @@ def test_windows_only_matrix_runner_does_not_require_linux_build_tools() -> None
         "steps": [{"name": "Compile", "run": "cargo test"}],
     }
 
-    assert not runs_on_linux(job)
-    assert install_violations("test.yml:windows-matrix", job, set()) == []
+    assert not runs_on_linux(job), "a Windows-only matrix must not be classified Linux"
+    assert install_violations("test.yml:windows-matrix", job, set()) == [], (
+        "a Windows-only matrix must not require Linux build-tool installation"
+    )
+
+
+def test_windows_only_include_matrix_does_not_require_linux_build_tools() -> None:
+    """An include-only Windows axis resolves without declared matrix axes."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"include": [{"os": "windows-latest"}]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert not runs_on_linux(job), "an included Windows runner must not be classified Linux"
+    assert install_violations("test.yml:include-only-windows", job, set()) == [], (
+        "an included Windows runner must not require Linux build-tool installation"
+    )
+
+
+def test_matrix_axis_named_linux_does_not_classify_windows_as_linux() -> None:
+    """The axis name is not a runner label when its resolved value is Windows."""
+    job = {
+        "runs-on": "${{ matrix.linux_runner }}",
+        "strategy": {"matrix": {"linux_runner": ["windows-latest"]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert not runs_on_linux(job), "a Windows matrix value must override its Linux-named axis"
+    assert install_violations("test.yml:linux-named-windows", job, set()) == [], (
+        "a Windows matrix value must not require Linux build-tool installation"
+    )
 
 
 @pytest.mark.parametrize(
