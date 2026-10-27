@@ -124,6 +124,25 @@ class TestDuplicateDetection:
         with pytest.raises(MatrixReadError, match="cannot read"):
             suite_runs_for(documents, "pull_request", defaults)
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cargo nextest run ${{ matrix.scope }}",
+            "cargo test ${{ matrix.scope }}",
+            "cargo llvm-cov nextest ${{ matrix.scope }}",
+        ],
+    )
+    def test_unreadable_matrix_cannot_hide_matrix_supplied_suite_scope(
+        self, defaults: frozenset[str], command: str
+    ) -> None:
+        """An unresolved matrix can supply a workspace or manifest scope."""
+        suite_job = self._PLANNED_PACKAGE_MATRIX.replace(
+            "dist build ${{ matrix.dist_args }}", command
+        )
+        documents = {"one.yml": self._workflow("pull_request", suite_job)}
+        with pytest.raises(MatrixReadError, match="cannot read"):
+            suite_runs_for(documents, "pull_request", defaults)
+
     def test_a_readable_matrix_supplies_workspace_scope_to_suite_recognition(
         self, defaults: frozenset[str]
     ) -> None:

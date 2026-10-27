@@ -270,11 +270,23 @@ def action_runs(
     yield WORKSPACE, str(profile), feature_key(arguments, defaults)
 
 
+def _has_matrix_scoped_cargo_command(script: str) -> bool:
+    """Detect a test command whose unresolved matrix may supply its scope."""
+    for command in split_commands(script):
+        for pattern in CARGO_COMMANDS:
+            match = pattern.search(command)
+            if match is not None and MATRIX_REFERENCE_RE.search(match["args"]):
+                return True
+    return False
+
+
 def _has_recognized_suite_command(job: Job, defaults: frozenset[str]) -> bool:
     """Return whether the job contains a command counted by suite contracts."""
     for step in job.steps:
         script = step_text(step)
-        if any(cargo_runs(script, defaults)):
+        if _has_matrix_scoped_cargo_command(script) or any(
+            cargo_runs(script, defaults)
+        ):
             return True
         if any(make_runs(script, defaults)):
             return True
@@ -286,7 +298,8 @@ def _has_recognized_suite_command(job: Job, defaults: frozenset[str]) -> bool:
 def suite_runs_in(job: Job, event: str, defaults: frozenset[str]) -> Iterator[SuiteRun]:
     """Yield suite runs performed by a job for an event.
 
-    An unreadable matrix is excused only when the job has no recognized suite.
+    An unreadable matrix is excused only when the job has no recognized suite
+    or Cargo test command whose matrix arguments could supply a suite scope.
     """
     try:
         legs = matrix_legs(job, event)
