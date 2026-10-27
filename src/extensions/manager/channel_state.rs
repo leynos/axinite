@@ -261,22 +261,17 @@ impl ExtensionManager {
         &self,
         auth: &crate::tools::wasm::AuthCapabilitySchema,
     ) -> ToolAuthState {
-        let has_token = self
+        let has_stored_token = self
             .secrets
             .exists(&self.user_id, &auth.secret_name)
             .await
-            .unwrap_or(false)
-            || auth
-                .env_var
-                .as_ref()
-                .is_some_and(|key| crate::config::EnvContext::ambient_contains_key(key));
-        if has_token {
-            ToolAuthState::Ready
-        } else if auth.oauth.is_some() {
-            ToolAuthState::NeedsAuth
-        } else {
-            ToolAuthState::NeedsSetup
-        }
+            .unwrap_or(false);
+        auth_section_state_with(
+            has_stored_token,
+            auth.oauth.is_some(),
+            auth.env_var.as_deref(),
+            crate::config::EnvContext::get_ambient_owned,
+        )
     }
 
     /// Auth readiness from `setup.required_secrets`: all mandatory,
@@ -309,5 +304,52 @@ impl ExtensionManager {
         } else {
             ToolAuthState::NeedsSetup
         }
+    }
+}
+
+/// Resolve readiness using the same non-empty environment lookup as authentication.
+fn auth_section_state_with(
+    has_stored_token: bool,
+    has_oauth: bool,
+    env_var: Option<&str>,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> ToolAuthState {
+    if has_stored_token || env_var.is_some_and(|key| lookup(key).is_some()) {
+        ToolAuthState::Ready
+    } else if has_oauth {
+        ToolAuthState::NeedsAuth
+    } else {
+        ToolAuthState::NeedsSetup
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Verify that auth readiness reflects resolvable credentials.
+
+    use super::{ToolAuthState, auth_section_state_with};
+    use crate::config::EnvContext;
+
+    #[rstest::rstest]
+    #[case("", None, true, ToolAuthState::NeedsAuth)]
+    #[case("", None, false, ToolAuthState::NeedsSetup)]
+    #[case("token", None, true, ToolAuthState::Ready)]
+    #[case("", Some("secret"), true, ToolAuthState::Ready)]
+    fn tool_auth_readiness_requires_resolvable_environment_token(
+        #[case] env_value: &str,
+        #[case] secret: Option<&str>,
+        #[case] has_oauth: bool,
+        #[case] expected: ToolAuthState,
+    ) {
+        let mut context = EnvContext::default().with_env("ACCESS_TOKEN", env_value);
+        if let Some(secret) = secret {
+            context = context.with_secret("ACCESS_TOKEN", secret);
+        }
+        assert_eq!(
+            auth_section_state_with(false, has_oauth, Some("ACCESS_TOKEN"), |key| {
+                context.get_owned(key)
+            }),
+            expected
+        );
     }
 }
