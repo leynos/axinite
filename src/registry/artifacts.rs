@@ -12,6 +12,9 @@
 //! - [`build_wasm_component`] — async build via `cargo component build`
 //! - [`build_wasm_component_sync`] — sync build for CLI use
 //! - [`install_wasm_files`] — copy `.wasm` + optional `.capabilities.json` to install dir
+//!
+//! Cargo builder environment inheritance is documented in
+//! `docs/configuration-guide.md#child-process-environment`.
 
 use std::path::{Path, PathBuf};
 
@@ -75,7 +78,7 @@ fn candidate_target_dirs_from(crate_dir: &Path, ctx: &EnvContext) -> Vec<PathBuf
 /// 1. `CARGO_TARGET_DIR` env var (shared target dir)
 /// 2. `<crate_dir>/target/` (default per-crate layout)
 pub fn resolve_target_dir(crate_dir: &Path) -> PathBuf {
-    resolve_target_dir_from(crate_dir, &EnvContext::capture_ambient())
+    resolve_target_dir_from(crate_dir, &EnvContext::capture_process())
 }
 
 /// Resolve the cargo target directory using an explicit environment snapshot.

@@ -16,6 +16,7 @@ use std::sync::RwLock;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_bedrockruntime::Client;
 use rust_decimal::Decimal;
+use secrecy::ExposeSecret;
 
 use crate::llm::config::BedrockConfig;
 use crate::llm::error::LlmError;
@@ -38,6 +39,28 @@ pub struct BedrockProvider {
     active_model: RwLock<String>,
 }
 
+/// Override the SDK chain only when a complete captured key pair is available.
+fn configure_credentials(
+    builder: aws_config::ConfigLoader,
+    config: &BedrockConfig,
+) -> aws_config::ConfigLoader {
+    match &config.credentials {
+        Some(credentials) => {
+            builder.credentials_provider(aws_sdk_bedrockruntime::config::Credentials::new(
+                credentials.access_key_id.expose_secret(),
+                credentials.secret_access_key.expose_secret(),
+                credentials
+                    .session_token
+                    .as_ref()
+                    .map(|token| token.expose_secret().to_string()),
+                None,
+                "axinite-env-context",
+            ))
+        }
+        None => builder,
+    }
+}
+
 impl BedrockProvider {
     /// Create a new Bedrock provider from configuration.
     ///
@@ -57,7 +80,7 @@ impl BedrockProvider {
         if let Some(ref profile) = config.profile {
             builder = builder.profile_name(profile);
         }
-        let sdk_config = builder.load().await;
+        let sdk_config = configure_credentials(builder, config).load().await;
 
         let client = Client::new(&sdk_config);
 

@@ -111,12 +111,9 @@ pub(super) fn resolve_env_credentials(
     allowed_keys: &HashSet<String>,
     already_injected: &HashSet<String>,
 ) -> Vec<(String, String)> {
+    let env_context = crate::config::EnvContext::capture_ambient();
     resolve_env_credentials_with_reader(allowed_keys, already_injected, |placeholder| {
-        {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var(placeholder)
-        }
-        .ok()
+        env_context.get_owned(placeholder)
     })
 }
 

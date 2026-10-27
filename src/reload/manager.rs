@@ -98,7 +98,7 @@ impl HotReloadManager {
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         let _reload_guard = self.reload_lock.lock().await;
 
-        let mut env_context = self.env_context.clone();
+        let mut env_context = self.env_context.refreshed_ambient_snapshot();
 
         // Step 1: Inject secrets into this reload's configuration snapshot.
         // Errors are logged internally by the injector; we continue regardless.

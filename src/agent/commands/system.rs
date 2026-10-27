@@ -118,12 +118,8 @@ impl Agent {
             ));
         }
         // Environment check: restart is only available in Docker containers
-        let in_docker = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("AXINITE_IN_DOCKER")
-        }
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+        let in_docker =
+            crate::config::EnvContext::capture_process().is_docker_restart_environment();
 
         tracing::debug!("[commands::restart] AXINITE_IN_DOCKER={}", in_docker);
 

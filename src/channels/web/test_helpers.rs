@@ -27,6 +27,7 @@ pub struct TestGatewayBuilder {
     skill_catalog: Option<Arc<crate::skills::catalog::SkillCatalog>>,
     store: Option<Arc<dyn crate::db::Database>>,
     env_context: EnvContext,
+    restart_enabled_override: Option<bool>,
     user_id: String,
 }
 
@@ -39,6 +40,7 @@ impl Default for TestGatewayBuilder {
             skill_catalog: None,
             store: None,
             env_context: EnvContext::default(),
+            restart_enabled_override: None,
             user_id: "test-user".to_string(),
         }
     }
@@ -90,6 +92,12 @@ impl TestGatewayBuilder {
         self
     }
 
+    /// Override the process-derived restart setting for focused gateway tests.
+    pub fn restart_enabled(mut self, restart_enabled: bool) -> Self {
+        self.restart_enabled_override = Some(restart_enabled);
+        self
+    }
+
     /// Override the user ID (default: `"test-user"`).
     pub fn user_id(mut self, id: impl Into<String>) -> Self {
         self.user_id = id.into();
@@ -102,6 +110,9 @@ impl TestGatewayBuilder {
             env_flag_overlay: crate::channels::web::handlers::features::env_flag_overlay(
                 &self.env_context,
             ),
+            restart_enabled: self
+                .restart_enabled_override
+                .unwrap_or_else(|| EnvContext::capture_process().is_docker_restart_environment()),
             msg_tx: tokio::sync::RwLock::new(self.msg_tx),
             sse: SseManager::new(),
             workspace: None,

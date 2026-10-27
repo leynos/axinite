@@ -43,7 +43,7 @@ pub struct RestartTool {
 impl RestartTool {
     /// Construct the restart adapter from the process environment at startup.
     pub fn new() -> Self {
-        Self::from_context(EnvContext::capture_ambient())
+        Self::from_context(EnvContext::capture_process())
     }
 
     /// Construct the restart adapter from an explicit environment snapshot.
@@ -93,10 +93,7 @@ impl NativeTool for RestartTool {
         // Check if running inside a Docker container via AXINITE_IN_DOCKER env var.
         // The Docker entrypoint sets this to "true". For local development, it's unset or "false".
         // The entrypoint restart loop only works inside a Docker container (axinite-worker).
-        let in_docker = self
-            .env
-            .get("AXINITE_IN_DOCKER")
-            .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+        let in_docker = self.env.is_docker_restart_environment();
 
         tracing::debug!("[RestartTool::execute] AXINITE_IN_DOCKER={}", in_docker);
 

@@ -340,6 +340,7 @@ async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
             ..Default::default()
         });
         wizard.run().await?;
+        EnvContext::refresh_dotenv_layers();
     }
     Ok(())
 }

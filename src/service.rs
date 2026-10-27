@@ -6,6 +6,9 @@
 //!
 //! The installed service runs `axinite run` (the default agent mode) and is
 //! configured to restart automatically on failure.
+//!
+//! Service-manager child environments are documented in
+//! `docs/configuration-guide.md#child-process-environment`.
 
 use std::path::PathBuf;
 use std::process::Command;

@@ -149,11 +149,8 @@ async fn complete_gateway_oauth_flow(
 ) -> Result<(), String> {
     use crate::cli::oauth_defaults;
 
-    let exchange_proxy_url = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("AXINITE_OAUTH_EXCHANGE_URL")
-    }
-    .ok();
+    let exchange_proxy_url =
+        crate::config::EnvContext::capture_ambient().get_owned("AXINITE_OAUTH_EXCHANGE_URL");
     let token_response = if let Some(ref proxy_url) = exchange_proxy_url {
         let gateway_token = flow.gateway_token.as_deref().unwrap_or_default();
         oauth_defaults::exchange_via_proxy(

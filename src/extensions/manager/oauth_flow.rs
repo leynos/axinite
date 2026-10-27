@@ -293,14 +293,51 @@ fn credential_auto_resolved(
     env_var: &Option<String>,
     has_builtin: bool,
 ) -> bool {
+    credential_auto_resolved_with(
+        inline,
+        env_var,
+        has_builtin,
+        crate::config::EnvContext::get_ambient_owned,
+    )
+}
+
+fn credential_auto_resolved_with(
+    inline: &Option<String>,
+    env_var: &Option<String>,
+    has_builtin: bool,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> bool {
     if inline.is_some() || has_builtin {
         return true;
     }
-    env_var.as_ref().is_some_and(|e| {
-        {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var(e)
+    env_var.as_ref().is_some_and(|key| lookup(key).is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    //! Verify that OAuth credentials are resolved before setup is skipped.
+
+    use super::credential_auto_resolved_with;
+    use crate::config::EnvContext;
+
+    #[rstest::rstest]
+    #[case("", None, false)]
+    #[case("credential", None, true)]
+    #[case("", Some("secret"), true)]
+    fn oauth_environment_credential_must_resolve_to_a_value(
+        #[case] env_value: &str,
+        #[case] secret: Option<&str>,
+        #[case] expected: bool,
+    ) {
+        let mut context = EnvContext::default().with_env("OAUTH_CLIENT", env_value);
+        if let Some(secret) = secret {
+            context = context.with_secret("OAUTH_CLIENT", secret);
         }
-        .is_ok()
-    })
+        assert_eq!(
+            credential_auto_resolved_with(&None, &Some("OAUTH_CLIENT".to_string()), false, |key| {
+                context.get_owned(key)
+            }),
+            expected
+        );
+    }
 }

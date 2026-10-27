@@ -14,6 +14,7 @@ use crate::error::ConfigError;
 use crate::settings::Settings;
 
 #[cfg(test)]
+#[cfg(test)]
 use crate::bootstrap::axinite_base_dir;
 
 /// Channel configurations.
@@ -220,11 +221,6 @@ fn resolve_wasm_owner_ids(
 }
 
 impl ChannelsConfig {
-    // Backwards-compatible ambient entrypoint retained for existing callers.
-    pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        Self::resolve_from(&EnvContext::capture_ambient(), settings)
-    }
-
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         Ok(Self {
             cli: CliConfig {

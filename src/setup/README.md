@@ -37,19 +37,21 @@ ______________________________________________________________________
 
 ```text
 1. Parse CLI args
-2. If Command::Onboard  → load .env, run wizard, exit
+2. If Command::Onboard  → run wizard, exit
 3. If Command::Run or no command:
-   a. Load .env files (dotenvy::dotenv() then load_axinite_env())
+   a. Parse .env files into an immutable EnvContext snapshot
    b. check_onboard_needed() → run wizard if needed
-   c. Config::from_env()     → build config from env vars
+   c. Config::from_env()     → build config from the snapshot
    d. Create SessionManager  → load session token
    e. ensure_authenticated() → validate session (NEAR AI only)
    f. ... rest of agent startup
 ```
 
-**Critical ordering:** `.env` files must be loaded (step 3a) before
-`Config::from_env()` (step 3c) because bootstrap vars like `DATABASE_BACKEND`
-live in `~/.axinite/.env`.
+**Critical ordering:** `.env` files must be parsed before the runtime starts so
+`check_onboard_needed()` and `Config::from_env()` see bootstrap values such as
+`DATABASE_BACKEND`. Parsed values stay in `EnvContext`; they are not exported
+to the process environment or children. The layer snapshot is refreshed after
+the wizard and on config reload.
 
 ______________________________________________________________________
 
@@ -691,7 +693,7 @@ Tests live in `mod tests {}` at the bottom of each file.
 **What to test when modifying setup:**
 
 - Settings round-trip: `to_db_map()` then `from_db_map()` preserves values
-- Bootstrap `.env`: dotenvy can parse what `save_bootstrap_env()` writes
+- Bootstrap `.env`: `DotenvLayers` can parse what `save_bootstrap_env()` writes
 - Model fetchers: static fallback works when API is unreachable
 - Channel discovery: handles missing dir, invalid JSON, deduplication
 - Prompt functions: not tested (interactive I/O), but ensure error paths

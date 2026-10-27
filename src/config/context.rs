@@ -1,27 +1,45 @@
 //! Explicit configuration input snapshot.
 //!
-//! `EnvContext` captures the environment inputs that participate in config
-//! resolution so callers can build configuration from explicit data instead of
-//! relying on ambient process state. Prefer [`EnvContext::capture_ambient`] at
-//! startup, then pass the captured context through `Config::from_context(...)`
-//! and other `*_from(...)` helpers when you need deterministic precedence or
-//! isolated tests.
+//! `EnvContext` captures the process environment, parsed dotenv layers, and
+//! injected secrets that participate in config resolution. Prefer
+//! [`EnvContext::capture_ambient`] at startup, then pass the captured context
+//! through `Config::from_context(...)` and other `*_from(...)` helpers when you
+//! need deterministic precedence or isolated tests.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 
+use self::base_dir::resolve_base_dir_snapshot;
 use crate::config::INJECTED_VARS;
 use crate::config::database::autodetect_libsql_backend;
+use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers};
+
+mod base_dir;
+mod restart;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
+
+#[derive(Debug)]
+struct ProcessEnvSnapshot {
+    env_vars: HashMap<String, String>,
+    non_unicode_values: HashSet<String>,
+    home_dir_fallback: Option<PathBuf>,
+}
+
+static PROCESS_ENV_SNAPSHOT: OnceLock<ProcessEnvSnapshot> = OnceLock::new();
 
 /// Snapshot of environment-backed configuration inputs.
 #[derive(Clone, Debug)]
 pub struct EnvContext {
     env_vars: HashMap<String, String>,
+    non_unicode_values: HashSet<String>,
     secrets: HashMap<String, String>,
+    home_dir_fallback: Option<PathBuf>,
     base_dir: PathBuf,
+    ambient_source: bool,
+    explicit_env_overrides: HashMap<String, String>,
 }
 
 impl Default for EnvContext {
@@ -31,19 +49,149 @@ impl Default for EnvContext {
 }
 
 impl EnvContext {
-    /// Capture the current process environment and injected secret overlay.
+    /// Capture the process environment snapshot and injected secret overlay.
     ///
     /// When `DATABASE_BACKEND` is unset and a local libSQL database file
     /// exists, the snapshot also defaults the backend to `libsql`, so the
     /// process environment never needs to be mutated to carry that default.
+    /// Process values are captured once; [`Self::refresh_dotenv_layers`] is
+    /// the refresh point for file-backed values.
     pub fn capture_ambient() -> Self {
-        let (mut env_vars, secrets) = capture_ambient_inputs();
-        let base_dir = resolve_base_dir_snapshot(&env_vars);
-        autodetect_libsql_backend(&mut env_vars, &base_dir);
+        let (process, secrets) = capture_ambient_inputs(true);
+        let layers = dotenv_layers_snapshot();
+        Self::from_dotenv_layers_with_non_unicode(
+            process.env_vars.clone(),
+            process.non_unicode_values.clone(),
+            secrets,
+            &layers,
+            process.home_dir_fallback.as_deref(),
+        )
+    }
+
+    /// Capture real process variables without dotenv layers or injected secrets.
+    ///
+    /// This is for process-level controls and test harness inputs that must not
+    /// depend on an operator's `.env` files. Application configuration should
+    /// use [`Self::capture_ambient`] instead.
+    pub fn capture_process() -> Self {
+        let (process, _) = capture_ambient_inputs(false);
+        let env_vars = process.env_vars.clone();
+        let non_unicode_values = process.non_unicode_values.clone();
+        let home_dir_fallback = process.home_dir_fallback.clone();
+        let base_dir = resolve_base_dir_snapshot(&env_vars, home_dir_fallback.as_deref());
         Self {
             env_vars,
-            secrets,
+            non_unicode_values,
+            secrets: HashMap::new(),
+            home_dir_fallback,
             base_dir,
+            ambient_source: false,
+            explicit_env_overrides: HashMap::new(),
+        }
+    }
+
+    /// Re-read dotenv files and replace the process-wide parsed layer snapshot.
+    ///
+    /// A later ambient config load sees the replacement. Existing
+    /// `EnvContext` values remain immutable snapshots.
+    pub fn refresh_dotenv_layers() {
+        let (process, _) = capture_ambient_inputs(false);
+        let start_dir = std::env::current_dir().unwrap_or_else(|error| {
+            tracing::warn!(%error, "Failed to read current directory for dotenv loading");
+            PathBuf::from(".")
+        });
+        let cached_base_dir = crate::bootstrap::cached_axinite_base_dir();
+        let layers = match cached_base_dir.as_deref() {
+            Some(base_dir) => DotenvLayers::load_with_base_dir(
+                &start_dir,
+                &process.env_vars,
+                Some(base_dir),
+                process.home_dir_fallback.as_deref(),
+            ),
+            None => DotenvLayers::load(
+                &start_dir,
+                &process.env_vars,
+                process.home_dir_fallback.as_deref(),
+            ),
+        };
+        tracing::debug!(
+            bootstrap_path = ?layers.bootstrap_path(),
+            "Refreshed parsed dotenv layers"
+        );
+        let mut snapshot = DOTENV_LAYERS
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *snapshot = Arc::new(layers);
+    }
+
+    /// Refresh ambient dotenv inputs for a reload while preserving explicit
+    /// values and secrets attached to this context.
+    pub(crate) fn refreshed_ambient_snapshot(&self) -> Self {
+        if !self.ambient_source {
+            return self.clone();
+        }
+
+        Self::refresh_dotenv_layers();
+        let (process, mut secrets) = capture_ambient_inputs(true);
+        secrets.extend(self.secrets.clone());
+        let layers = dotenv_layers_snapshot();
+        let mut refreshed = Self::from_dotenv_layers_with_non_unicode(
+            process.env_vars.clone(),
+            process.non_unicode_values.clone(),
+            secrets,
+            &layers,
+            process.home_dir_fallback.as_deref(),
+        );
+        for (key, value) in &self.explicit_env_overrides {
+            refreshed.env_vars.insert(key.clone(), value.clone());
+            refreshed.non_unicode_values.remove(key);
+            if key == AXINITE_BASE_DIR_ENV {
+                refreshed.base_dir = resolve_base_dir_snapshot(
+                    &refreshed.env_vars,
+                    refreshed.home_dir_fallback.as_deref(),
+                );
+            }
+        }
+        refreshed
+    }
+
+    /// Build an ambient-style context from explicit process inputs and dotenv
+    /// layers. The process map wins over the current-directory and bootstrap
+    /// maps; injected secrets remain the final fallback in [`Self::get`].
+    #[cfg(test)]
+    pub(crate) fn from_dotenv_layers(
+        process: HashMap<String, String>,
+        secrets: HashMap<String, String>,
+        layers: &DotenvLayers,
+    ) -> Self {
+        Self::from_dotenv_layers_with_non_unicode(process, HashSet::new(), secrets, layers, None)
+    }
+
+    fn from_dotenv_layers_with_non_unicode(
+        process: HashMap<String, String>,
+        non_unicode_values: HashSet<String>,
+        secrets: HashMap<String, String>,
+        layers: &DotenvLayers,
+        home_dir_fallback: Option<&std::path::Path>,
+    ) -> Self {
+        let mut env_vars = layers.bootstrap_values().clone();
+        env_vars.extend(layers.cwd_values().clone());
+        env_vars.extend(process);
+
+        let base_dir = layers
+            .base_dir()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| resolve_base_dir_snapshot(&env_vars, home_dir_fallback));
+        autodetect_libsql_backend(&mut env_vars, &base_dir);
+
+        Self {
+            env_vars,
+            non_unicode_values,
+            secrets,
+            home_dir_fallback: home_dir_fallback.map(PathBuf::from),
+            base_dir,
+            ambient_source: true,
+            explicit_env_overrides: HashMap::new(),
         }
     }
 
@@ -52,11 +200,15 @@ impl EnvContext {
         env_vars: HashMap<String, String>,
         secrets: HashMap<String, String>,
     ) -> Self {
-        let base_dir = resolve_base_dir_snapshot(&env_vars);
+        let base_dir = resolve_base_dir_snapshot(&env_vars, None);
         Self {
             env_vars,
+            non_unicode_values: HashSet::new(),
             secrets,
+            home_dir_fallback: None,
             base_dir,
+            ambient_source: false,
+            explicit_env_overrides: HashMap::new(),
         }
     }
 
@@ -81,18 +233,62 @@ impl EnvContext {
         self.get(key).map(str::to_string)
     }
 
-    /// Whether either map contains the key.
+    /// Resolve one current ambient value without constructing a full config
+    /// snapshot or running derived defaults such as libSQL autodetection.
+    ///
+    /// The process environment is captured once under the no-runtime-mutation
+    /// policy. Parsed dotenv layers and injected secrets stay refreshable, so
+    /// callers such as the sandbox credential resolver see their latest values
+    /// without cloning every environment map on each request.
+    pub(crate) fn get_ambient_owned(key: &str) -> Option<String> {
+        let (process, _) = capture_ambient_inputs(false);
+        let layers = dotenv_layers_snapshot();
+        let secrets = INJECTED_VARS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        ambient_value_from_layers(key, &process.env_vars, &layers, &secrets)
+    }
+
+    /// Whether any environment or secret layer contains the key, including
+    /// empty and non-Unicode process values.
     pub fn contains_key(&self, key: &str) -> bool {
-        self.get(key).is_some()
+        self.env_vars.contains_key(key)
+            || self.non_unicode_values.contains(key)
+            || self.secrets.contains_key(key)
+    }
+
+    /// Whether a non-empty process or dotenv value exists without consulting
+    /// the injected-secret fallback.
+    pub(crate) fn has_non_empty_env_value(&self, key: &str) -> bool {
+        self.env_vars
+            .get(key)
+            .is_some_and(|value| !value.is_empty())
+    }
+
+    /// Return the raw environment value, including an empty value.
+    #[cfg(feature = "postgres")]
+    pub(crate) fn raw_env_value(&self, key: &str) -> Option<&str> {
+        self.env_vars.get(key).map(String::as_str)
+    }
+
+    /// Whether a process environment value was present but not valid UTF-8.
+    #[cfg(feature = "postgres")]
+    pub(crate) fn has_non_unicode_value(&self, key: &str) -> bool {
+        self.non_unicode_values.contains(key)
     }
 
     /// Add or replace an env var in the snapshot.
     pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         let key = key.into();
         let value = value.into();
-        self.env_vars.insert(key.clone(), value);
+        self.env_vars.insert(key.clone(), value.clone());
+        self.non_unicode_values.remove(&key);
+        if self.ambient_source {
+            self.explicit_env_overrides.insert(key.clone(), value);
+        }
         if key == AXINITE_BASE_DIR_ENV {
-            self.base_dir = resolve_base_dir_snapshot(&self.env_vars);
+            self.base_dir =
+                resolve_base_dir_snapshot(&self.env_vars, self.home_dir_fallback.as_deref());
         }
         self
     }
@@ -127,116 +323,75 @@ impl EnvContext {
         self.base_dir.clone()
     }
 }
-fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "sole sanctioned ambient environment boundary; all other code reads via EnvContext"
-    )]
-    let env_vars = collect_utf8_env_vars(std::env::vars_os());
-    let secrets = match INJECTED_VARS.lock() {
-        Ok(map) => map.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
+fn capture_ambient_inputs(
+    include_secrets: bool,
+) -> (&'static ProcessEnvSnapshot, HashMap<String, String>) {
+    let process = PROCESS_ENV_SNAPSHOT.get_or_init(|| {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "sole sanctioned ambient environment boundary; all other code reads via EnvContext"
+        )]
+        let (env_vars, non_unicode_values) = collect_utf8_env_vars(std::env::vars_os());
+        ProcessEnvSnapshot {
+            env_vars,
+            non_unicode_values,
+            home_dir_fallback: dirs::home_dir(),
+        }
+    });
+    let secrets = if include_secrets {
+        INJECTED_VARS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    } else {
+        HashMap::new()
     };
-    (env_vars, secrets)
+    (process, secrets)
+}
+
+fn ambient_value_from_layers(
+    key: &str,
+    process: &HashMap<String, String>,
+    layers: &DotenvLayers,
+    secrets: &HashMap<String, String>,
+) -> Option<String> {
+    process
+        .get(key)
+        .or_else(|| layers.cwd_values().get(key))
+        .or_else(|| layers.bootstrap_values().get(key))
+        .filter(|value| !value.is_empty())
+        .or_else(|| secrets.get(key).filter(|value| !value.is_empty()))
+        .cloned()
+}
+
+fn dotenv_layers_snapshot() -> Arc<DotenvLayers> {
+    DOTENV_LAYERS
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 fn collect_utf8_env_vars(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
-) -> HashMap<String, String> {
-    vars.into_iter()
-        .filter_map(
-            |(key, value)| match (key.into_string(), value.into_string()) {
-                (Ok(key), Ok(value)) => Some((key, value)),
-                _ => None,
-            },
-        )
-        .collect()
-}
-
-fn default_base_dir() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        home.join(".axinite")
-    } else {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("/tmp"))
-            .join(".axinite")
+) -> (HashMap<String, String>, HashSet<String>) {
+    let mut env_vars = HashMap::new();
+    let mut non_unicode_values = HashSet::new();
+    for (key, value) in vars {
+        let Ok(key) = key.into_string() else {
+            continue;
+        };
+        match value.into_string() {
+            Ok(value) => {
+                env_vars.insert(key, value);
+            }
+            Err(_) => {
+                non_unicode_values.insert(key);
+            }
+        }
     }
-}
-
-fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {
-    env_vars
-        .get(AXINITE_BASE_DIR_ENV)
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(default_base_dir)
+    (env_vars, non_unicode_values)
 }
 
 #[cfg(test)]
-mod tests {
-    //! Unit tests for `EnvContext` environment and secret lookup precedence.
-
-    use super::EnvContext;
-    use std::collections::HashMap;
-    use std::path::PathBuf;
-
-    #[test]
-    fn get_prefers_env_over_secret() {
-        let ctx = EnvContext::for_testing(
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::from("env"))]),
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::from("secret"))]),
-        );
-
-        assert_eq!(ctx.get("OPENAI_API_KEY"), Some("env"));
-    }
-
-    #[test]
-    fn empty_env_value_falls_back_to_secret() {
-        let ctx = EnvContext::for_testing(
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::new())]),
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::from("secret"))]),
-        );
-
-        assert_eq!(ctx.get("OPENAI_API_KEY"), Some("secret"));
-    }
-
-    #[test]
-    fn builder_helpers_populate_context() {
-        let ctx = EnvContext::default()
-            .with_env("A", "1")
-            .with_secret("B", "2");
-
-        assert_eq!(ctx.get("A"), Some("1"));
-        assert_eq!(ctx.get("B"), Some("2"));
-    }
-
-    #[test]
-    fn base_dir_uses_snapshot_override() {
-        let ctx = EnvContext::default().with_env("AXINITE_BASE_DIR", "/tmp/axinite");
-
-        assert_eq!(ctx.axinite_base_dir(), PathBuf::from("/tmp/axinite"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn ambient_snapshot_skips_non_utf8_entries() {
-        use super::collect_utf8_env_vars;
-        use std::ffi::OsString;
-        use std::os::unix::ffi::OsStringExt;
-
-        let env_vars = collect_utf8_env_vars([
-            (OsString::from("VALID_KEY"), OsString::from("valid")),
-            (
-                OsString::from_vec(b"BAD\xffKEY".to_vec()),
-                OsString::from("ignored"),
-            ),
-            (
-                OsString::from("BAD_VALUE"),
-                OsString::from_vec(b"bad\xffvalue".to_vec()),
-            ),
-        ]);
-
-        assert_eq!(env_vars.get("VALID_KEY"), Some(&String::from("valid")));
-        assert!(!env_vars.contains_key("BAD_VALUE"));
-        assert_eq!(env_vars.len(), 1);
-    }
-}
+#[path = "context/tests.rs"]
+mod tests;

@@ -49,12 +49,73 @@ trusted, not verified, here.
 
 Table 2. Trusted dependencies that replaced in-tree unsafe code.
 
-| Dependency     | Replaces                                   | What is trusted                                                                                                                                              |
-| -------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rustix` 1.1.4 | `libc::syscall(SYS_openat2)` and `geteuid` | Correct `open_how` layout, syscall number, and `OwnedFd` construction on the `linux_raw` backend.                                                            |
-| `zeroize` 1.8  | The manual volatile-free zeroing in `Drop` | Volatile overwrite of the `String` buffer that the optimizer may not elide, and `ZeroizeOnDrop` coverage.                                                    |
-| `dotenvy`      | (unchanged) `set_var` while loading `.env` | Sound only while no other thread uses the environment. `main` loads before the Tokio runtime, but `Config::from_env*` reloads from async code; see ADR 0015. |
-| `wit-bindgen`  | (unchanged) canonical-ABI shims            | Pinned at 0.36 and 0.41 in the component manifests; the host's tests load the built components.                                                              |
+| Dependency       | Replaces                                       | What is trusted                                                                                                                                                                |
+| ---------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rustix` 1.1.4   | `libc::syscall(SYS_openat2)` and `geteuid`     | Correct `open_how` layout, syscall number, and `OwnedFd` construction on the `linux_raw` backend.                                                                              |
+| `zeroize` 1.8    | The manual volatile-free zeroing in `Drop`     | Volatile overwrite of the `String` buffer that the optimizer may not elide, and `ZeroizeOnDrop` coverage.                                                                      |
+| `dotenvy` 0.15.7 | `.env` format parsing through `from_read_iter` | The mutating loader APIs remain in the dependency but Axinite does not call them. `clippy::disallowed_methods` bans them; the normal-dependency source scan is recorded below. |
+| `wit-bindgen`    | (unchanged) canonical-ABI shims                | Pinned at 0.36 and 0.41 in the component manifests; the host's tests load the built components.                                                                                |
+
+## Runtime environment mutation scan (issue #468)
+
+On 2026-10-25, the locked normal dependency graph contained 612 distinct
+packages. It was captured with:
+
+```sh
+cargo tree --locked -e normal --prefix none --format '{p}' \
+  > /tmp/axinite-468-normal-tree.txt
+cargo tree --locked -e normal -i dotenvy
+cargo vendor --locked --versioned-dirs /tmp/axinite-468-vendor
+```
+
+The vendored source scan selected the exact name/version pairs in that tree,
+then searched every Rust source file in each matching directory, including
+tests, documentation examples and build scripts, for `env::set_var` and
+`env::remove_var`. It found 71 textual hits across the 612 packages. There are
+no Axinite calls to either function. The three Axinite matches are comments:
+`src/config/runtime_support.rs:249`, `src/setup/wizard/provider_flows.rs:130`
+and `src/setup/wizard/provider_vendors.rs:208`.
+
+The dependency matches are accounted for below. Build scripts are listed
+separately because they run in Cargo's build process and are not part of the
+Axinite runtime call path.
+
+| Source matches                                                                                                                                                                                                                                                                        | Disposition                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aws-lc-sys-0.45.0/builder/cmake_builder.rs:138,142,712`; `builder/main.rs:93,102,113,115,229,244`                                                                                                                                                                                    | Build-script support code; not linked into Axinite at runtime.                                                                                                                         |
+| `blake3-1.8.5/build.rs:313`                                                                                                                                                                                                                                                           | Build script; not linked into Axinite at runtime.                                                                                                                                      |
+| `rquickjs-sys-0.9.0/build.rs:161,163,189,190,195`                                                                                                                                                                                                                                     | Build script; not linked into Axinite at runtime.                                                                                                                                      |
+| `async-process-2.5.0/tests/std.rs:367,369`; `deadpool-0.12.3/tests/managed_config.rs:22,30-31`; `deadpool-postgres-0.14.1/tests/postgres.rs:227,236-237`; `zbus-5.17.0/tests/basic.rs:413,420`                                                                                        | Dependency tests only.                                                                                                                                                                 |
+| `blocking-1.6.2/src/lib.rs:1006-1022`; `crossterm-0.29.0/src/style/types/colored.rs:311-317`; `home-0.5.12/src/windows.rs:66-80`; `refinery-core-0.8.16/src/config.rs:436,458`; `rustyline-18.0.1/src/tty/mod.rs:252,255`; `tracing-subscriber-0.3.23/src/fmt/fmt_layer.rs:1617-1637` | `#[cfg(test)]` code only.                                                                                                                                                              |
+| `dotenvy-0.15.7/src/parse.rs:524,531`; `tests/test-variable-substitution.rs:10-11`; `tests/common/mod.rs:7`; `tests/integration/util/testenv.rs:297,301,316`                                                                                                                          | `dotenvy` tests only.                                                                                                                                                                  |
+| `clap_builder-4.6.0/src/builder/arg.rs:2069,2099-2100,2136,2160,2184`; `nix-0.31.3/src/env.rs:32`; `wasmtime-internal-core-48.0.7/src/error/error.rs:317`                                                                                                                             | Documentation examples or comments only.                                                                                                                                               |
+| `dotenvy-0.15.7/src/iter.rs:35,52`                                                                                                                                                                                                                                                    | Definitions of `Iter::load` and `Iter::load_override`. Axinite uses only `from_read_iter`; the mutating methods and other dotenvy mutators are banned by `clippy::disallowed_methods`. |
+| `clap_complete-4.6.5/src/env/mod.rs:227`                                                                                                                                                                                                                                              | The environment-completion API removes its trigger variable when `CompleteEnv::try_complete` runs. Axinite has no `CompleteEnv` reference or call.                                     |
+| `nix-0.31.3/src/env.rs:52`                                                                                                                                                                                                                                                            | Fallback implementation inside unsafe `nix::env::clearenv`; Axinite has no `clearenv` reference or call.                                                                               |
+| `openssl-probe-0.2.1/src/lib.rs:58`                                                                                                                                                                                                                                                   | Environment write inside unsafe `try_init_openssl_env_vars`; no caller exists in the scanned dependency sources or Axinite.                                                            |
+
+The normal-tree reverse-dependency query reports `axinite` as the only runtime
+consumer of `dotenvy`. The source scan found no call from Axinite to the
+mutating iterator methods. `clippy.toml` also bans `dotenvy::dotenv`,
+`dotenv_override`, `from_path`, `from_path_override`, `from_filename`,
+`from_filename_override`, `from_read`, `from_read_override`, `var`, `vars`,
+`Iter::load` and `Iter::load_override`, each with the reason
+`mutates the process environment; use DotenvLayers`.
+
+The runtime snapshot reads the ambient environment in `capture_ambient_inputs`,
+using `std::env::vars_os()` so non-Unicode process values are preserved for
+named controls. It also captures `dirs::home_dir()` there as the platform
+home-directory fallback when no home variable supplies one. Configuration reads
+then use `EnvContext`. The remaining process-only reads serve host state,
+explicit test controls, build-directory overrides (`CARGO_TARGET_DIR`,
+`AXINITE_TOOLS_SRC`, and `AXINITE_CHANNELS_SRC`), the container worker token
+(`AXINITE_WORKER_TOKEN`), the Docker restart control (`AXINITE_IN_DOCKER`), and
+the PostgreSQL test harness. Host state includes `HOME` and `XDG_RUNTIME_DIR`
+for shell forwarding and Docker socket discovery. These values are captured with
+`EnvContext::capture_process()` and are never loaded from `.env`. None of the
+reads writes to the environment. The existing scoped
+`clippy::disallowed_methods` expectation covers only that snapshot boundary.
+`#![forbid(unsafe_code)]` remains in place.
 
 ## What the boundary contract checks
 

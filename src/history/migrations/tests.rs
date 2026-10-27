@@ -47,16 +47,15 @@ async fn run_repair_postgres_refinery_history_case(
 ) -> anyhow::Result<()> {
     use anyhow::Context as _;
 
-    use crate::config::Config;
-    use crate::history::Store;
+    use crate::testing::postgres::try_test_pg_db;
 
-    let _ = dotenvy::dotenv();
-    let config = Config::from_env()
+    let Some(database) = try_test_pg_db()
         .await
-        .context("Config::from_env failed")?;
-    let store = Store::new(&config.database)
-        .await
-        .context("Failed to connect to database")?;
+        .context("PostgreSQL test harness failed")?
+    else {
+        return Ok(());
+    };
+    let store = database.into_store();
     let mut client = store.conn().await.context("Failed to get connection")?;
     create_temp_refinery_history_table(&client).await;
 
@@ -128,14 +127,15 @@ fn plan_migration_history_rewrites_matches_fixed_released_rows() {
 #[tokio::test]
 #[ignore]
 async fn stage_and_finalize_migration_history_rewrites_two_phases() {
-    use crate::config::Config;
-    use crate::history::Store;
+    use crate::testing::postgres::try_test_pg_db;
 
-    let _ = dotenvy::dotenv();
-    let config = Config::from_env().await.expect("Config::from_env failed");
-    let store = Store::new(&config.database)
+    let Some(database) = try_test_pg_db()
         .await
-        .expect("Failed to connect to database");
+        .expect("PostgreSQL test harness should succeed")
+    else {
+        return;
+    };
+    let store = database.into_store();
     let mut client = store.conn().await.expect("Failed to get connection");
     create_temp_refinery_history_table(&client).await;
     seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS).await;

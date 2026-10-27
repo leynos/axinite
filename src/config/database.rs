@@ -1,5 +1,5 @@
-//! Database configuration: backend selection and connection settings
-//! resolved from the environment.
+//! Database configuration: backend selection and connection settings resolved
+//! from an immutable environment snapshot.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -156,8 +156,8 @@ impl DatabaseConfig {
     /// Resolve the database URL for the chosen backend.
     ///
     /// The PostgreSQL URL is required only when using the postgres backend.
-    /// For the libsql backend, default to an empty placeholder.
-    /// DATABASE_URL is loaded from ~/.axinite/.env via dotenvy early in startup.
+    /// For the libSQL backend, default to an empty placeholder.
+    /// `DATABASE_URL` may come from an immutable dotenv layer in `EnvContext`.
     fn resolve_url(ctx: &EnvContext, backend: DatabaseBackend) -> Result<String, ConfigError> {
         optional_env_from(ctx, EnvKey("DATABASE_URL"))?
             .or_else(|| (backend == DatabaseBackend::LibSql).then(|| "unused://libsql".to_string()))
@@ -202,18 +202,17 @@ const _: () = {
 };
 
 impl SslMode {
-    /// Read from `DATABASE_SSLMODE` env var, defaulting to `Prefer`.
+    /// Read from `DATABASE_SSLMODE` in the ambient configuration snapshot.
     ///
     /// Silently falls back to `Prefer` on missing or unparsable values.
     /// Used by lightweight CLI tools (status, doctor) that don't run the
     /// full config pipeline.
     pub fn from_env() -> Self {
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "owning ambient database-mode boundary for lightweight CLI tools"
-        )]
-        std::env::var("DATABASE_SSLMODE")
-            .ok()
+        Self::from_context(&EnvContext::capture_ambient())
+    }
+
+    pub(crate) fn from_context(ctx: &EnvContext) -> Self {
+        ctx.get("DATABASE_SSLMODE")
             .and_then(|s| s.parse().ok())
             .unwrap_or_default()
     }
@@ -228,8 +227,8 @@ const DATABASE_BACKEND_ENV: &str = "DATABASE_BACKEND";
 /// `axinite.db` (or the pre-rename `ironclaw.db`) present under `base_dir`,
 /// libSQL is the only backend that can work. An explicit `DATABASE_BACKEND`,
 /// even an empty one, always wins. The default lives in the captured snapshot
-/// rather than in the process environment so that the host never has to call
-/// the unsafe `std::env::set_var`.
+/// rather than in the process environment so config resolution never writes
+/// to process-global state.
 pub(crate) fn autodetect_libsql_backend(env_vars: &mut HashMap<String, String>, base_dir: &Path) {
     if env_vars.contains_key(DATABASE_BACKEND_ENV) {
         return;
@@ -237,16 +236,6 @@ pub(crate) fn autodetect_libsql_backend(env_vars: &mut HashMap<String, String>, 
     if default_libsql_path_in(base_dir).exists() {
         env_vars.insert(DATABASE_BACKEND_ENV.to_string(), "libsql".to_string());
     }
-}
-
-/// Name of the backend the ambient environment selects, defaulting to
-/// `postgres`.
-///
-/// Used by lightweight CLI tools (status, doctor) that do not run the full
-/// config pipeline. It reads the same snapshot, including the libSQL
-/// autodetection, that `Config` resolution does.
-pub(crate) fn ambient_backend_name() -> String {
-    backend_name_from(&EnvContext::capture_ambient())
 }
 
 /// Name of the backend `ctx` selects, defaulting to `postgres`.

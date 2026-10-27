@@ -61,6 +61,8 @@ impl NativeTunnel for CustomTunnel {
             bail!("Custom tunnel start_command is empty");
         }
 
+        // Custom commands inherit the host environment without dotenv layers;
+        // see docs/configuration-guide.md#child-process-environment.
         let mut child = Command::new(parts[0])
             .args(&parts[1..])
             .stdout(std::process::Stdio::piped())

@@ -1,7 +1,7 @@
 //! LLM configuration loading: backend selection, provider resolution, and
 //! session settings drawn from the environment and persisted settings.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
@@ -138,6 +138,11 @@ fn parse_extra_headers(val: &str) -> Result<Vec<(String, String)>, ConfigError> 
 /// Get the default session file path (~/.axinite/session.json).
 pub fn default_session_path() -> PathBuf {
     axinite_base_dir().join("session.json")
+}
+
+/// Resolve the default session file path within an explicit Axinite base directory.
+pub(crate) fn default_session_path_in(base_dir: &Path) -> PathBuf {
+    base_dir.join("session.json")
 }
 
 #[cfg(test)]

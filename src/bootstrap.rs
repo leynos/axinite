@@ -1,15 +1,16 @@
 //! Bootstrap helpers for Axinite.
 //!
-//! The only setting that truly needs disk persistence before the database is
-//! available is `DATABASE_URL` (chicken-and-egg: can't connect to DB without
-//! it). Everything else is auto-detected or read from env vars.
+//! Bootstrap settings needed before a database connection are persisted in
+//! `.env`. `DotenvLayers` parses those files into `EnvContext`; values are not
+//! copied into the process environment.
 //!
-//! File: `~/.axinite/.env` (standard dotenvy format)
+//! Default file: `~/.axinite/.env` (standard dotenvy format)
 
 mod migration;
 mod pid_lock;
 pub mod tools;
 
+pub(crate) use migration::migrate_bootstrap_json_to_env;
 pub use migration::{MigrationError, migrate_disk_to_db};
 pub use pid_lock::{PidLock, PidLockError, pid_lock_path};
 
@@ -17,7 +18,6 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use crate::config::EnvContext;
-use migration::migrate_bootstrap_json_to_env;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
@@ -35,56 +35,43 @@ pub fn compute_axinite_base_dir() -> PathBuf {
 
 /// Compute the Axinite base directory from an explicit environment snapshot.
 pub fn compute_axinite_base_dir_from(ctx: &EnvContext) -> PathBuf {
-    ctx.get(AXINITE_BASE_DIR_ENV)
-        .map(PathBuf::from)
-        .map(|path| {
-            if path.as_os_str().is_empty() {
-                default_base_dir()
-            } else if !path.is_absolute() {
-                eprintln!(
-                    "Warning: AXINITE_BASE_DIR is a relative path '{}', resolved against current directory",
-                    path.display()
-                );
-                path
-            } else {
-                path
-            }
-        })
-        .unwrap_or_else(default_base_dir)
+    if let Some(path) = relative_base_dir(ctx) {
+        eprintln!(
+            "Warning: AXINITE_BASE_DIR is a relative path '{}', resolved against current directory",
+            path.display()
+        );
+    }
+    ctx.axinite_base_dir()
 }
 
-/// Get the default Axinite base directory (~/.axinite).
-///
-/// Logs a warning if the home directory cannot be determined and falls back to
-/// the current directory.
-fn default_base_dir() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        home.join(".axinite")
-    } else {
-        eprintln!("Warning: Could not determine home directory, using current directory");
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("/tmp"))
-            .join(".axinite")
-    }
+fn relative_base_dir(ctx: &EnvContext) -> Option<PathBuf> {
+    ctx.get(AXINITE_BASE_DIR_ENV)
+        .map(PathBuf::from)
+        .filter(|path| !path.is_absolute())
 }
 
 /// Get the Axinite base directory.
 ///
-/// Override with `AXINITE_BASE_DIR` environment variable.
+/// Override with `AXINITE_BASE_DIR` from the process environment or the
+/// current-directory `.env` layer. The bootstrap `.env` cannot relocate itself.
 /// Defaults to `~/.axinite` (or `./.axinite` if home directory cannot be determined).
 ///
-/// Thread-safe: the value is computed once and cached in a `LazyLock`.
+/// The dotenv snapshot is refreshed before the first access; the selected root
+/// is then cached for the lifetime of the process.
 ///
 /// # Environment Variable Behaviour
 /// - If `AXINITE_BASE_DIR` is set to a non-empty path, that path is used.
 /// - If `AXINITE_BASE_DIR` is set to an empty string, it is treated as unset.
-/// - If `AXINITE_BASE_DIR` contains null bytes, a warning is printed and the default is used.
-/// - If the home directory cannot be determined, a warning is printed and the current directory is used.
+/// - Relative paths are resolved against the captured current directory.
+/// - If no home directory is available, the current directory is used.
 ///
 /// # Returns
 /// A `PathBuf` pointing to the base directory. The path is not validated
 /// for existence.
 pub fn axinite_base_dir() -> PathBuf {
+    if LazyLock::get(&AXINITE_BASE_DIR).is_none() {
+        EnvContext::refresh_dotenv_layers();
+    }
     AXINITE_BASE_DIR.clone()
 }
 
@@ -93,46 +80,21 @@ pub fn axinite_env_path() -> PathBuf {
     axinite_base_dir().join(".env")
 }
 
-/// Load env vars from `~/.axinite/.env` (in addition to the standard `.env`).
-///
-/// Call this **after** `dotenvy::dotenv()` so that the standard `./.env`
-/// takes priority over `~/.axinite/.env`. dotenvy never overwrites
-/// existing env vars, so the effective priority is:
-///
-///   explicit env vars > `./.env` > `~/.axinite/.env` > auto-detect
-///
-/// If `~/.axinite/.env` doesn't exist but the legacy `bootstrap.json` does,
-/// extracts `DATABASE_URL` from it and writes the `.env` file (one-time
-/// upgrade from the old config format).
-///
-/// The libsql backend default for cloud instances (`DATABASE_BACKEND` unset
-/// and `~/.axinite/axinite.db`, or the pre-rename `ironclaw.db`, present) is
-/// not applied here. It is part of the `EnvContext` snapshot instead, so no
-/// code mutates the process environment after startup; see
-/// [`EnvContext::capture_ambient`].
-pub fn load_axinite_env() {
-    let path = axinite_env_path();
-
-    if !path.exists() {
-        // One-time upgrade: extract DATABASE_URL from legacy bootstrap.json
-        migrate_bootstrap_json_to_env(&path);
-    }
-
-    if path.exists() {
-        let _ = dotenvy::from_path(&path);
-    }
+/// Return the already cached root without causing its lazy initialization.
+pub(crate) fn cached_axinite_base_dir() -> Option<PathBuf> {
+    LazyLock::get(&AXINITE_BASE_DIR).cloned()
 }
 
 /// Write database bootstrap vars to `~/.axinite/.env`.
 ///
-/// These settings form the chicken-and-egg layer: they must be available
-/// from the filesystem (env vars) BEFORE any database connection, because
-/// they determine which database to connect to. Everything else is stored
-/// in the database itself.
+/// These settings form the chicken-and-egg layer: they must be available from
+/// the filesystem before any database connection because they determine which
+/// database to connect to. `EnvContext` reads them without exporting them to
+/// the process environment. Everything else is stored in the database itself.
 ///
 /// Creates the parent directory if it doesn't exist.
 /// Values are double-quoted so that `#` (common in URL-encoded passwords)
-/// and other shell-special characters are preserved by dotenvy.
+/// and other shell-special characters are preserved by the dotenv parser.
 pub fn save_bootstrap_env(vars: &[(&str, &str)]) -> std::io::Result<()> {
     save_bootstrap_env_to(&axinite_env_path(), vars)
 }
@@ -140,7 +102,7 @@ pub fn save_bootstrap_env(vars: &[(&str, &str)]) -> std::io::Result<()> {
 /// Write bootstrap vars to an arbitrary path (testable variant).
 ///
 /// Values are double-quoted and escaped so that `#`, `"`, `\` and other
-/// shell-special characters are preserved by dotenvy.
+/// shell-special characters are preserved by the dotenv parser.
 pub fn save_bootstrap_env_to(path: &std::path::Path, vars: &[(&str, &str)]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         ambient_fs::create_dir_all(parent)?;

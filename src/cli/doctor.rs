@@ -11,19 +11,21 @@ mod subsystem_checks;
 mod tests;
 
 use core_checks::{
-    check_database, check_llm_config, check_nearai_session, check_settings_file,
-    check_workspace_dir, check_workspace_search,
+    check_database, check_nearai_session, check_settings_file, check_workspace_dir,
+    check_workspace_search,
 };
 use external_checks::{check_binary, check_docker_daemon, check_service_installed};
 use subsystem_checks::{
-    check_embeddings, check_gateway_config, check_mcp_config, check_routines_config, check_secrets,
-    check_skills,
+    check_embeddings_with_context, check_gateway_config_with_context, check_mcp_config,
+    check_routines_config_with_context, check_secrets, check_skills,
 };
 
+use crate::config::EnvContext;
 use crate::settings::Settings;
 
 async fn run_core_checks(
     settings: &Settings,
+    env_context: &EnvContext,
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
@@ -37,35 +39,35 @@ async fn run_core_checks(
     );
     check(
         "NEAR AI session",
-        check_nearai_session().await,
+        check_nearai_session(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "LLM configuration",
-        check_llm_config(settings),
+        core_checks::check_llm_config_with_context(env_context, settings),
         passed,
         failed,
         skipped,
     );
     check(
         "Database backend",
-        check_database().await,
+        check_database(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "Workspace search",
-        check_workspace_search().await,
+        check_workspace_search(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "Workspace directory",
-        check_workspace_dir(),
+        check_workspace_dir(env_context),
         passed,
         failed,
         skipped,
@@ -74,27 +76,28 @@ async fn run_core_checks(
 
 async fn run_subsystem_checks(
     settings: &Settings,
+    env_context: &EnvContext,
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
 ) {
     check(
         "Embeddings",
-        check_embeddings(settings),
+        check_embeddings_with_context(env_context, settings),
         passed,
         failed,
         skipped,
     );
     check(
         "Routines config",
-        check_routines_config(),
+        check_routines_config_with_context(env_context),
         passed,
         failed,
         skipped,
     );
     check(
         "Gateway config",
-        check_gateway_config(settings),
+        check_gateway_config_with_context(env_context, settings),
         passed,
         failed,
         skipped,
@@ -106,8 +109,20 @@ async fn run_subsystem_checks(
         failed,
         skipped,
     );
-    check("Skills", check_skills().await, passed, failed, skipped);
-    check("Secrets", check_secrets(settings), passed, failed, skipped);
+    check(
+        "Skills",
+        check_skills(env_context).await,
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "Secrets",
+        check_secrets(settings, env_context),
+        passed,
+        failed,
+        skipped,
+    );
     check(
         "Service",
         check_service_installed(),
@@ -158,10 +173,26 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     let mut skipped = 0u32;
 
     // Load settings once for checks that need them.
+    EnvContext::refresh_dotenv_layers();
+    let env_context = EnvContext::capture_ambient();
     let settings = Settings::load();
 
-    run_core_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
-    run_subsystem_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
+    run_core_checks(
+        &settings,
+        &env_context,
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+    )
+    .await;
+    run_subsystem_checks(
+        &settings,
+        &env_context,
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+    )
+    .await;
     run_external_binary_checks(&mut passed, &mut failed, &mut skipped).await;
 
     // ── Summary ───────────────────────────────────────────────

@@ -2,9 +2,6 @@
 //! configuration, database backend, workspace search, and workspace
 //! directory.
 
-use std::path::PathBuf;
-
-use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -33,23 +30,18 @@ pub(super) fn check_settings_file() -> CheckResult {
 
 // ── NEAR AI session ─────────────────────────────────────────
 
-pub(super) async fn check_nearai_session() -> CheckResult {
-    let session_path = crate::config::llm::default_session_path();
+pub(super) async fn check_nearai_session(ctx: &EnvContext) -> CheckResult {
+    let session_path = crate::config::llm::default_session_path_in(&ctx.axinite_base_dir());
     if !session_path.exists() {
-        return missing_session_result(&session_path);
+        return missing_session_result(&session_path, ctx);
     }
     verify_session_file(&session_path)
 }
 
 /// Result when no session file exists: pass in API-key mode, otherwise
 /// direct the user to onboarding.
-fn missing_session_result(session_path: &std::path::Path) -> CheckResult {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("NEARAI_API_KEY")
-    }
-    .is_ok()
-    {
+fn missing_session_result(session_path: &std::path::Path, ctx: &EnvContext) -> CheckResult {
+    if ctx.contains_key("NEARAI_API_KEY") {
         return CheckResult::Pass("API key configured".into());
     }
     CheckResult::Fail(format!(
@@ -71,10 +63,6 @@ fn verify_session_file(session_path: &std::path::Path) -> CheckResult {
 
 // ── LLM configuration ──────────────────────────────────────
 
-pub(super) fn check_llm_config(settings: &Settings) -> CheckResult {
-    check_llm_config_with_context(&EnvContext::capture_ambient(), settings)
-}
-
 pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
     match crate::llm::LlmConfig::resolve_from(ctx, settings) {
         Ok(config) => {
@@ -93,23 +81,21 @@ pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Setting
 }
 
 // ── Database ────────────────────────────────────────────────
-pub(super) async fn check_database() -> CheckResult {
-    let backend = crate::config::ambient_backend_name();
+pub(super) async fn check_database(ctx: &EnvContext) -> CheckResult {
+    let backend = crate::config::backend_name_from(ctx);
 
     match backend.as_str() {
-        "libsql" | "turso" | "sqlite" => check_libsql_database(),
-        _ => check_postgres_database().await,
+        "libsql" | "turso" | "sqlite" => check_libsql_database(ctx),
+        _ => check_postgres_database(ctx).await,
     }
 }
 
 /// Report whether the configured libSQL database file already exists.
-fn check_libsql_database() -> CheckResult {
-    let path = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("LIBSQL_PATH")
-    }
-    .map(PathBuf::from)
-    .unwrap_or_else(|_| crate::config::default_libsql_path());
+fn check_libsql_database(ctx: &EnvContext) -> CheckResult {
+    let path = ctx
+        .get("LIBSQL_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| crate::config::default_libsql_path_in(&ctx.axinite_base_dir()));
 
     if path.exists() {
         CheckResult::Pass(format!("libSQL database exists ({})", path.display()))
@@ -122,17 +108,12 @@ fn check_libsql_database() -> CheckResult {
 }
 
 /// Attempt a PostgreSQL connection, or report the missing `DATABASE_URL`.
-async fn check_postgres_database() -> CheckResult {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_URL")
-    }
-    .is_err()
-    {
+async fn check_postgres_database(ctx: &EnvContext) -> CheckResult {
+    if !ctx.contains_key("DATABASE_URL") {
         return CheckResult::Fail("DATABASE_URL not set".into());
     }
 
-    match try_pg_connect().await {
+    match try_pg_connect(ctx).await {
         Ok(()) => CheckResult::Pass("PostgreSQL connected".into()),
         Err(e) => CheckResult::Fail(format!("PostgreSQL connection failed: {e}")),
     }
@@ -141,18 +122,17 @@ async fn check_postgres_database() -> CheckResult {
 /// Acquire a PostgreSQL client from `DATABASE_URL` with a 5-second
 /// connection timeout. Shared by the connection and pgvector checks.
 #[cfg(feature = "postgres")]
-async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
-    let url = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_URL")
+async fn pg_client_from_env(ctx: &EnvContext) -> Result<deadpool_postgres::Client, String> {
+    if !ctx.contains_key("DATABASE_URL") {
+        return Err("DATABASE_URL not set".to_string());
     }
-    .map_err(|_| "DATABASE_URL not set".to_string())?;
+    let url = ctx.get_owned("DATABASE_URL").unwrap_or_default();
 
     let config = deadpool_postgres::Config {
         url: Some(url),
         ..Default::default()
     };
-    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
+    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_context(ctx))
         .map_err(|e| format!("pool error: {e}"))?;
 
     tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
@@ -162,8 +142,8 @@ async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
 }
 
 #[cfg(feature = "postgres")]
-async fn try_pg_connect() -> Result<(), String> {
-    let client = pg_client_from_env().await?;
+async fn try_pg_connect(ctx: &EnvContext) -> Result<(), String> {
+    let client = pg_client_from_env(ctx).await?;
 
     client
         .execute("SELECT 1", &[])
@@ -174,13 +154,13 @@ async fn try_pg_connect() -> Result<(), String> {
 }
 
 #[cfg(not(feature = "postgres"))]
-async fn try_pg_connect() -> Result<(), String> {
+async fn try_pg_connect(_ctx: &EnvContext) -> Result<(), String> {
     Err("postgres feature not compiled in".into())
 }
 
 // ── Workspace search ────────────────────────────────────────
-pub(super) async fn check_workspace_search() -> CheckResult {
-    let backend = crate::config::ambient_backend_name();
+pub(super) async fn check_workspace_search(ctx: &EnvContext) -> CheckResult {
+    let backend = crate::config::backend_name_from(ctx);
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => {
@@ -191,13 +171,8 @@ pub(super) async fn check_workspace_search() -> CheckResult {
             // PostgreSQL with pgvector
             #[cfg(feature = "postgres")]
             {
-                if {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                    std::env::var("DATABASE_URL")
-                }
-                .is_ok()
-                {
-                    match try_pgvector_check().await {
+                if ctx.contains_key("DATABASE_URL") {
+                    match try_pgvector_check(ctx).await {
                         Ok(()) => CheckResult::Pass("hybrid search (pgvector)".into()),
                         Err(e) => {
                             CheckResult::Fail(format!("pgvector extension check failed: {}", e))
@@ -216,8 +191,8 @@ pub(super) async fn check_workspace_search() -> CheckResult {
 }
 
 #[cfg(feature = "postgres")]
-async fn try_pgvector_check() -> Result<(), String> {
-    let client = pg_client_from_env().await?;
+async fn try_pgvector_check(ctx: &EnvContext) -> Result<(), String> {
+    let client = pg_client_from_env(ctx).await?;
 
     // Check if pgvector extension is available
     let row = client
@@ -231,8 +206,8 @@ async fn try_pgvector_check() -> Result<(), String> {
 
 // ── Workspace directory ─────────────────────────────────────
 
-pub(super) fn check_workspace_dir() -> CheckResult {
-    let dir = axinite_base_dir();
+pub(super) fn check_workspace_dir(ctx: &EnvContext) -> CheckResult {
+    let dir = ctx.axinite_base_dir();
 
     if dir.exists() {
         if dir.is_dir() {

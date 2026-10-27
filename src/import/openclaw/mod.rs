@@ -42,10 +42,7 @@ impl OpenClawImporter {
 
     /// Detect if an OpenClaw installation exists at the default location (~/.openclaw).
     pub fn detect() -> Option<PathBuf> {
-        if let Ok(home) = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("HOME")
-        } {
+        if let Some(home) = crate::config::EnvContext::capture_ambient().get("HOME") {
             let openclaw_dir = PathBuf::from(home).join(".openclaw");
             let config_file = openclaw_dir.join("openclaw.json");
             if config_file.exists() {

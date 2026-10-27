@@ -2,12 +2,17 @@
 
 use super::*;
 
+fn validate_attachment_paths(paths: &[String]) -> Result<(), crate::error::ChannelError> {
+    let sandbox = tempfile::tempdir().expect("temporary attachment sandbox should be created");
+    SignalChannel::validate_attachment_paths(paths, sandbox.path())
+}
+
 // ── attachment path validation ───────────────────────────────────
 
 #[test]
 fn validate_attachment_paths_rejects_double_dot() {
     let paths = vec!["../etc/passwd".to_string()];
-    let result = SignalChannel::validate_attachment_paths(&paths);
+    let result = validate_attachment_paths(&paths);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("forbidden") || err.contains("sandbox"));
@@ -18,12 +23,7 @@ fn validate_attachment_paths_accepts_normal_paths() {
     use ambient_fs as fs;
 
     // Create test files in sandbox
-    let base_dir = crate::bootstrap::axinite_base_dir();
-
-    // Create sandbox directory if it doesn't exist (needed for CI)
-    let _ = fs::create_dir_all(&base_dir);
-
-    let temp_dir = tempfile::tempdir_in(&base_dir).expect("temp dir should be created in base dir");
+    let temp_dir = tempfile::tempdir().expect("temporary attachment sandbox should be created");
     let file1 = temp_dir.path().join("file.txt");
     let file2 = temp_dir.path().join("report.pdf");
     fs::write(&file1, "test").expect("file1 should be written");
@@ -33,28 +33,28 @@ fn validate_attachment_paths_accepts_normal_paths() {
         file1.to_string_lossy().to_string(),
         file2.to_string_lossy().to_string(),
     ];
-    let result = SignalChannel::validate_attachment_paths(&paths);
+    let result = SignalChannel::validate_attachment_paths(&paths, temp_dir.path());
     assert!(result.is_ok());
 }
 
 #[test]
 fn validate_attachment_paths_rejects_nested_traversal() {
     let paths = vec!["foo/../bar/../../secret.txt".to_string()];
-    let result = SignalChannel::validate_attachment_paths(&paths);
+    let result = validate_attachment_paths(&paths);
     assert!(result.is_err());
 }
 
 #[test]
 fn validate_attachment_paths_empty_ok() {
     let paths: Vec<String> = vec![];
-    let result = SignalChannel::validate_attachment_paths(&paths);
+    let result = validate_attachment_paths(&paths);
     assert!(result.is_ok());
 }
 
 #[test]
 fn validate_attachment_paths_rejects_path_outside_sandbox() {
     let paths = vec!["/tmp/evil.txt".to_string()];
-    let result = SignalChannel::validate_attachment_paths(&paths);
+    let result = validate_attachment_paths(&paths);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("sandbox"));
@@ -63,14 +63,14 @@ fn validate_attachment_paths_rejects_path_outside_sandbox() {
 #[test]
 fn validate_attachment_paths_rejects_url_encoded_traversal() {
     let paths = vec!["%2e%2e%2fetc/passwd".to_string()];
-    let result = SignalChannel::validate_attachment_paths(&paths);
+    let result = validate_attachment_paths(&paths);
     assert!(result.is_err());
 }
 
 #[test]
 fn validate_attachment_paths_rejects_null_byte() {
     let paths = vec!["file\0.txt".to_string()];
-    let result = SignalChannel::validate_attachment_paths(&paths);
+    let result = validate_attachment_paths(&paths);
     assert!(result.is_err());
 }
 

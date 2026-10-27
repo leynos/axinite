@@ -42,9 +42,10 @@ Uses the native Converse API via `aws-sdk-bedrockruntime` (`bedrock.rs`).
 Requires `--features bedrock` at build time — not in default features due to
 heavy AWS SDK dependencies.
 
-**Auth:** Standard AWS credential chain — IAM credentials (`AWS_ACCESS_KEY_ID`/
-`AWS_SECRET_ACCESS_KEY`), SSO profiles (`AWS_PROFILE`), or instance roles. The
-SDK resolves auth automatically from the environment.
+**Auth:** A complete `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` pair in
+the captured configuration, with an optional `AWS_SESSION_TOKEN`, is supplied
+to the SDK explicitly. Without a complete pair, the standard AWS credential
+chain resolves SSO profiles (`AWS_PROFILE`), instance roles, and other sources.
 
 **Config:**
 

@@ -324,18 +324,18 @@ ______________________________________________________________________
 
 ## 9. Configuration System
 
-| Feature                            | OpenClaw                       | IronClaw         | Notes                                                |
-| ---------------------------------- | ------------------------------ | ---------------- | ---------------------------------------------------- |
-| Primary config file                | ✅ `~/.openclaw/openclaw.json` | ✅ `.env`        | Different formats                                    |
-| JSON5 support                      | ✅                             | ❌               | Comments, trailing commas                            |
-| YAML alternative                   | ✅                             | ❌               |                                                      |
-| Environment variable interpolation | ✅                             | ✅               | `${VAR}`                                             |
-| Config validation/schema           | ✅                             | ✅               | Type-safe Config struct + `openclaw config validate` |
-| Hot-reload                         | ✅                             | ❌               |                                                      |
-| Legacy migration                   | ✅                             | ➖               |                                                      |
-| State directory                    | ✅ `~/.openclaw-state/`        | ✅ `~/.axinite/` |                                                      |
-| Credentials directory              | ✅                             | ✅               | Session files                                        |
-| Full model compat fields in schema | ✅                             | ❌               | pi-ai model compat exposed in config                 |
+| Feature                            | OpenClaw                       | IronClaw         | Notes                                                                                                                                        |
+| ---------------------------------- | ------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primary config file                | ✅ `~/.openclaw/openclaw.json` | ✅ `.env`        | Different formats                                                                                                                            |
+| JSON5 support                      | ✅                             | ❌               | Comments, trailing commas                                                                                                                    |
+| YAML alternative                   | ✅                             | ❌               |                                                                                                                                              |
+| Environment variable interpolation | ✅                             | ✅               | Within-file `${VAR}`; dotenv values stay in `EnvContext` and are not exported to the process. Cross-file dotenv substitution is unsupported. |
+| Config validation/schema           | ✅                             | ✅               | Type-safe Config struct + `openclaw config validate`                                                                                         |
+| Hot-reload                         | ✅                             | ❌               |                                                                                                                                              |
+| Legacy migration                   | ✅                             | ➖               |                                                                                                                                              |
+| State directory                    | ✅ `~/.openclaw-state/`        | ✅ `~/.axinite/` |                                                                                                                                              |
+| Credentials directory              | ✅                             | ✅               | Session files                                                                                                                                |
+| Full model compat fields in schema | ✅                             | ❌               | pi-ai model compat exposed in config                                                                                                         |
 
 ### Owner: _Unassigned_
 

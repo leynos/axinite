@@ -1,11 +1,20 @@
 //! Tests for bootstrap JSON migration and upsert helpers.
 
+use crate::config::dotenv_layers::DotenvLayers;
 use crate::test_support::ExpectValid;
-use std::process::Command;
+use std::collections::HashMap;
 
 use tempfile::tempdir;
 
 use super::super::*;
+
+fn parse_bootstrap_env(env_path: &std::path::Path) -> HashMap<String, String> {
+    let bytes = ambient_fs::read(env_path).expect_valid("read bootstrap dotenv file");
+    let base_dir = env_path.parent().expect_valid("dotenv file has a parent");
+    DotenvLayers::from_contents(None, Some(&bytes), base_dir)
+        .bootstrap_values()
+        .clone()
+}
 
 fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
     assert!(env_path.exists(), ".env must exist after migration");
@@ -56,31 +65,7 @@ fn test_migrate_bootstrap_json_to_env() {
 }
 
 #[test]
-fn load_axinite_env_migrates_bootstrap_json_to_env() {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("AXINITE_LOAD_ENV_CHILD")
-    }
-    .ok()
-    .as_deref()
-        == Some("1")
-    {
-        let base_dir = std::path::PathBuf::from(
-            {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("AXINITE_BASE_DIR")
-            }
-            .expect_valid("AXINITE_BASE_DIR missing"),
-        );
-        let env_path = base_dir.join(".env");
-
-        load_axinite_env();
-
-        assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary");
-        assert_bootstrap_file_renamed(&base_dir);
-        return;
-    }
-
+fn dotenv_layers_migrate_bootstrap_json_to_env() {
     let dir = tempdir().expect_valid("create temp dir for load_axinite_env migration");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
@@ -92,22 +77,22 @@ fn load_axinite_env_migrates_bootstrap_json_to_env() {
     )
     .expect_valid("write bootstrap.json");
 
-    let current_exe = std::env::current_exe().expect_valid("locate current test binary");
-    let status = Command::new(current_exe)
-        .args([
-            "--exact",
-            "bootstrap::tests::migration::load_axinite_env_migrates_bootstrap_json_to_env",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .env("AXINITE_LOAD_ENV_CHILD", "1")
-        .env("AXINITE_BASE_DIR", dir.path())
-        .env_remove("DATABASE_URL")
-        .env_remove("DATABASE_BACKEND")
-        .status()
-        .expect_valid("spawn load_axinite_env boundary test");
+    let process = HashMap::from([(
+        String::from("AXINITE_BASE_DIR"),
+        dir.path().to_string_lossy().into_owned(),
+    )]);
+    let layers = DotenvLayers::load(dir.path(), &process, None);
 
-    assert!(status.success(), "child boundary test failed: {status}");
+    let env_path = dir.path().join(".env");
+    assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary");
+    assert_bootstrap_file_renamed(dir.path());
+    assert_eq!(
+        layers
+            .bootstrap_values()
+            .get("DATABASE_URL")
+            .map(String::as_str),
+        Some("postgres://localhost/axinite_public_boundary")
+    );
 }
 
 #[test]
@@ -151,14 +136,11 @@ fn upsert_bootstrap_vars_creates_file_if_missing() {
     upsert_bootstrap_vars_to(&env_path, &vars).expect_valid("upsert vars into missing file");
 
     assert!(env_path.exists());
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect_valid("parse newly created bootstrap env")
-        .filter_map(|result| result.ok())
-        .collect();
+    let parsed = parse_bootstrap_env(&env_path);
     assert_eq!(parsed.len(), 1);
     assert_eq!(
-        parsed[0],
-        ("DATABASE_BACKEND".to_string(), "libsql".to_string())
+        parsed.get("DATABASE_BACKEND").map(String::as_str),
+        Some("libsql")
     );
 }
 

@@ -320,6 +320,7 @@ pub(super) fn resolve_oauth_refresh_config(
 ) -> Option<OAuthRefreshConfig> {
     let auth = cap_file.auth.as_ref()?;
     let oauth = auth.oauth.as_ref()?;
+    let env_context = crate::config::EnvContext::capture_ambient();
 
     let builtin = crate::cli::oauth_defaults::builtin_credentials(&auth.secret_name);
 
@@ -327,13 +328,10 @@ pub(super) fn resolve_oauth_refresh_config(
         .client_id
         .clone()
         .or_else(|| {
-            oauth.client_id_env.as_ref().and_then(|env| {
-                {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                    std::env::var(env)
-                }
-                .ok()
-            })
+            oauth
+                .client_id_env
+                .as_ref()
+                .and_then(|env| env_context.get_owned(env))
         })
         .or_else(|| builtin.as_ref().map(|c| c.client_id.to_string()))?;
 
@@ -341,13 +339,10 @@ pub(super) fn resolve_oauth_refresh_config(
         .client_secret
         .clone()
         .or_else(|| {
-            oauth.client_secret_env.as_ref().and_then(|env| {
-                {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                    std::env::var(env)
-                }
-                .ok()
-            })
+            oauth
+                .client_secret_env
+                .as_ref()
+                .and_then(|env| env_context.get_owned(env))
         })
         .or_else(|| builtin.as_ref().map(|c| c.client_secret.to_string()));
 

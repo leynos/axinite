@@ -76,8 +76,10 @@ impl GatewayChannel {
         });
 
         let env_flag_overlay = handlers::features::env_flag_overlay(&env_context);
+        let restart_enabled = EnvContext::capture_process().is_docker_restart_environment();
         let state = Arc::new(GatewayState {
             env_flag_overlay,
+            restart_enabled,
             msg_tx: tokio::sync::RwLock::new(None),
             sse: SseManager::new(),
             workspace: None,
@@ -118,6 +120,7 @@ impl GatewayChannel {
     fn rebuild_state(&mut self, mutate: impl FnOnce(&mut GatewayState)) {
         let mut new_state = GatewayState {
             env_flag_overlay: self.state.env_flag_overlay.clone(),
+            restart_enabled: self.state.restart_enabled,
             msg_tx: tokio::sync::RwLock::new(None),
             // Preserve the existing broadcast channel so sender handles remain valid.
             sse: SseManager::from_sender(self.state.sse.sender()),

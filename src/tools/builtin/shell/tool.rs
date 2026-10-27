@@ -46,10 +46,14 @@ impl std::fmt::Debug for ShellTool {
 impl ShellTool {
     /// Create a new shell tool with default settings.
     pub fn new() -> Self {
-        Self::from_context(EnvContext::capture_ambient())
+        Self::from_context(EnvContext::capture_process())
     }
 
-    /// Create a shell tool that reads child-process settings from `env`.
+    /// Create a shell tool that reads safe child-process settings from `env`.
+    ///
+    /// Callers that intend to forward only real process values should pass
+    /// [`EnvContext::capture_process`]. Dotenv values are configuration inputs
+    /// and are not forwarded by the built-in shell tool.
     pub fn from_context(env: EnvContext) -> Self {
         Self {
             env,
