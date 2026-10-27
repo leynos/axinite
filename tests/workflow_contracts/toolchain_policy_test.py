@@ -24,12 +24,14 @@ import re
 import typing as typ
 
 import pytest
-import yaml
 
 from _build_standard import DATED_NIGHTLY, REPOSITORY_ROOT, read_toml
 from _build_standard_workflows import iter_jobs, steps_of
 from _estate import read_workflows
+from _sources import read_text
+from _workflow_files import workflow_paths
 from _workflow_policy import WORKFLOW_DIR
+from dependabot_config import read_dependabot
 
 NIGHTLY_IN_TEXT = re.compile(r"nightly-\d{4}-\d{2}-\d{2}")
 EXACT_RELEASE = re.compile(r"^\d+\.\d+(\.\d+)?$")
@@ -74,7 +76,7 @@ def _pin_violations(channel: str) -> list[str]:
     return [f"RT-022: the channel {channel!r} is not an exact pin"]
 
 
-def _dependabot_violations(dependabot: dict[str, typ.Any]) -> list[str]:
+def _dependabot_violations(dependabot: cabc.Mapping[str, typ.Any]) -> list[str]:
     """RT-024: a rust-toolchain entry for `/` on a daily or weekly schedule."""
     entries = [
         entry
@@ -168,19 +170,16 @@ def estate() -> dict[str, typ.Any]:
     }
     return {
         "pin": read_toml("rust-toolchain.toml"),
-        "dependabot": yaml.safe_load(
-            (REPOSITORY_ROOT / ".github/dependabot.yml").read_text(encoding="utf-8")
-        ),
+        "dependabot": read_dependabot(REPOSITORY_ROOT / ".github/dependabot.yml"),
         "msrvs": declared_msrvs(root, members),
         "documents": {
             name: dict(document)
             for name, document in read_workflows(WORKFLOW_DIR).items()
         },
         "texts": {
-            path.name: path.read_text(encoding="utf-8")
-            for path in sorted(WORKFLOW_DIR.glob("*.y*ml"))
+            path.name: read_text(path) for path in workflow_paths(WORKFLOW_DIR)
         },
-        "dockerignore": (REPOSITORY_ROOT / ".dockerignore").read_text(encoding="utf-8"),
+        "dockerignore": read_text(REPOSITORY_ROOT / ".dockerignore"),
     }
 
 

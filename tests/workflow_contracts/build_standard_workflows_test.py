@@ -24,13 +24,12 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import copy
-import subprocess
 import typing as typ
 
 import pytest
 import yaml
 
-from _build_standard_make import dry_run, parse_invocations
+from _build_standard_make import MakeDryRunError, dry_run, parse_invocations
 from _build_standard_judge import judge_all
 from _build_standard_workflow_mutations import TEXT_MUTATIONS, WORKFLOW_MUTATIONS
 from _build_standard_workflows import (
@@ -72,7 +71,7 @@ def compiling_targets(documents: dict[str, dict[str, typ.Any]]) -> set[str]:
     for target in make_targets_in(documents):
         try:
             lines = dry_run(target)
-        except subprocess.CalledProcessError:
+        except MakeDryRunError:
             continue
         invocations, _ = parse_invocations(lines)
         if any(invocation.verb in COMPILE_VERBS for invocation in invocations):

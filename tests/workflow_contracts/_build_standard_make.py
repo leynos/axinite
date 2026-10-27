@@ -32,6 +32,41 @@ CARGO_VERBS = {"build", "check", "clippy", "test", "nextest", "install", "fmt", 
 PREFLIGHT = "./scripts/check-build-tools.sh"
 
 
+class MakeDryRunError(RuntimeError):
+    """A Make target could not be evaluated for the routing contract.
+
+    Attributes
+    ----------
+    target
+        The Make target whose recipe could not be evaluated.
+    root
+        The directory in which Make was run.
+    returncode
+        The process status when Make started but failed, or ``None`` when it
+        could not be started.
+    stderr
+        The captured diagnostic from Make, when one was available.
+    """
+
+    def __init__(
+        self,
+        target: str,
+        root: Path,
+        reason: str,
+        *,
+        returncode: int | None = None,
+        stderr: str | None = None,
+    ) -> None:
+        self.target = target
+        self.root = root
+        self.returncode = returncode
+        self.stderr = stderr
+        message = f"make --dry-run {target!r} in {root}: {reason}"
+        if stderr and stderr.strip():
+            message = f"{message}: {stderr.strip()}"
+        super().__init__(message)
+
+
 class Invocation(typ.NamedTuple):
     """One Cargo (or Whitaker) command a Make recipe emits.
 
@@ -80,6 +115,11 @@ def dry_run(
     -------
     list of str
         The emitted command lines.
+
+    Raises
+    ------
+    MakeDryRunError
+        If Make cannot be started or fails to evaluate the requested target.
     """
     command = [
         "make",
@@ -91,9 +131,27 @@ def dry_run(
     ]
     command.extend(f"{key}={value}" for key, value in (extra or {}).items())
     environment = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent-home"}
-    completed = subprocess.run(  # noqa: S603 - fixed argv, repository Makefile
-        command, cwd=root, env=environment, check=True, capture_output=True, text=True
-    )
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed argv, repository Makefile
+            command,
+            cwd=root,
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise MakeDryRunError(
+            target,
+            root,
+            f"exited with status {error.returncode}",
+            returncode=error.returncode,
+            stderr=error.stderr,
+        ) from error
+    except OSError as error:
+        raise MakeDryRunError(
+            target, root, f"could not start ({error.strerror or error})"
+        ) from error
     return completed.stdout.splitlines()
 
 

@@ -22,13 +22,20 @@ from __future__ import annotations
 import collections.abc as cabc
 import re
 import shutil
+import subprocess
 import typing as typ
 from pathlib import Path
 
 import pytest
 
+import _build_standard_make
 from _build_standard import REPOSITORY_ROOT, read_toml
-from _build_standard_make import Invocation, dry_run, parse_invocations
+from _build_standard_make import (
+    Invocation,
+    MakeDryRunError,
+    dry_run,
+    parse_invocations,
+)
 from _build_standard_routing import make_violations, preflight_violations
 
 #: Every target that reaches Cargo or Whitaker, so a recipe that gains a Cargo
@@ -188,6 +195,39 @@ def test_the_executable_is_substituted_on_every_cargo_line(cargo: str) -> None:
         lines = dry_run(target, cargo=cargo)
         hard_coded = [line for line in lines if re.search(r"(^|\s)cargo\s", line)]
         assert hard_coded == [], f"make {target} runs a literal cargo: {hard_coded}"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    (
+        subprocess.CalledProcessError(
+            2, ["make"], stderr="No rule to make target 'missing-target'."
+        ),
+        OSError("make is unavailable"),
+    ),
+    ids=("make-failed", "make-unavailable"),
+)
+def test_dry_run_classifies_make_failures(
+    failure: Exception, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed dry run names its target and preserves process diagnostics."""
+
+    def fail_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del args, kwargs
+        raise failure
+
+    monkeypatch.setattr(_build_standard_make.subprocess, "run", fail_run)
+
+    with pytest.raises(MakeDryRunError, match="missing-target") as caught:
+        dry_run("missing-target")
+
+    assert caught.value.target == "missing-target"
+    assert caught.value.root == REPOSITORY_ROOT
+    if isinstance(failure, subprocess.CalledProcessError):
+        assert caught.value.returncode == 2
+        assert caught.value.stderr == "No rule to make target 'missing-target'."
+    else:
+        assert caught.value.returncode is None
 
 
 # -- mutations ----------------------------------------------------------------
