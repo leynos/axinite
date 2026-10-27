@@ -21,6 +21,7 @@ import yaml
 from _suite_keys import NO_DEFAULT_FEATURES
 from _suite_reader import cargo_runs, duplicates_in, suite_runs_for
 from _suite_targets import DEFAULT_PROFILE, WORKSPACE
+from _trigger_reading import MatrixReadError
 
 
 class TestDuplicateDetection:
@@ -47,6 +48,14 @@ class TestDuplicateDetection:
         "    steps:\n"
         "      - run: cargo llvm-cov nextest --features test-helpers"
         " --workspace --lcov\n"
+    )
+    _PLANNED_PACKAGE_MATRIX = (
+        "  packages:\n"
+        "    strategy:\n"
+        "      matrix: '${{ fromJson(needs.plan.outputs.manifest)."
+        "ci.github.artifacts_matrix }}'\n"
+        "    steps:\n"
+        "      - run: dist build ${{ matrix.dist_args }}\n"
     )
 
     def test_it_reports_a_coverage_lane_repeating_a_test_lane(
@@ -91,6 +100,29 @@ class TestDuplicateDetection:
             "a command that ignores the matrix runs the identical suite once "
             "per leg, which is duplication inside a single job"
         )
+
+    def test_build_only_dynamic_matrix_does_not_enter_suite_accounting(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """A planned artefact matrix is unrelated to the test-suite scan."""
+        documents = {
+            "one.yml": self._workflow("pull_request", self._PLANNED_PACKAGE_MATRIX)
+        }
+        assert suite_runs_for(documents, "pull_request", defaults) == [], (
+            "a build-only cargo-dist matrix must not be parsed as a test matrix"
+        )
+
+    def test_unreadable_matrix_still_fails_for_a_suite_job(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """A computed matrix cannot hide a known workspace test command."""
+        suite_job = self._PLANNED_PACKAGE_MATRIX.replace(
+            "dist build ${{ matrix.dist_args }}",
+            "cargo nextest run --workspace ${{ matrix.flags }}",
+        )
+        documents = {"one.yml": self._workflow("pull_request", suite_job)}
+        with pytest.raises(MatrixReadError, match="cannot read"):
+            suite_runs_for(documents, "pull_request", defaults)
 
     def test_a_guard_that_excludes_the_event_removes_the_duplicate(
         self, defaults: frozenset[str]

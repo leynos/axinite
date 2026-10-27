@@ -1642,6 +1642,15 @@ build without a commit and leave Dependabot nothing to move.
   `rust:` base images specified by their Dockerfiles and do not use the nightly
   toolchain or the development standard.
 
+`release-package-validation.yml` checks release-input pull requests without a
+release tag. It checks out the candidate's exact SHA, takes all five native
+targets from `dist plan`, and builds their local artefacts with empty
+`RUSTFLAGS`. The global job checks that every local manifest and package
+arrived before building installers and verifying the combined checksums.
+Workflow artefacts retain the packages, manifests, logs and tool identities;
+the workflow has read-only repository permission and creates no release. It can
+also be dispatched manually once it is present on the default branch.
+
 ### Provisioning the build tools in CI
 
 A job that compiles on Linux installs the pinned tools before its first
