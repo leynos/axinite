@@ -298,5 +298,5 @@ fn credential_auto_resolved(
     }
     env_var
         .as_ref()
-        .is_some_and(|key| crate::config::EnvContext::capture_ambient().contains_key(key))
+        .is_some_and(|key| crate::config::EnvContext::ambient_contains_key(key))
 }

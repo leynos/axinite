@@ -18,6 +18,8 @@ use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers};
 use crate::llm::config::LlmConfig;
 use crate::settings::Settings;
 
+mod ambient_presence;
+
 mod base_dir;
 
 mod restart;
