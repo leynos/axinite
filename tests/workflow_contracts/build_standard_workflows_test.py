@@ -27,7 +27,6 @@ import copy
 import typing as typ
 
 import pytest
-import yaml
 
 from _build_standard_make import MakeDryRunError, dry_run, parse_invocations
 from _build_standard_judge import judge_all
@@ -41,10 +40,14 @@ from _build_standard_workflows import (
     runs_on_linux,
     steps_of,
 )
-from _estate import read_workflows
+from _estate import read_workflow, read_workflows
+from _sources import read_text
+from _workflow_files import workflow_paths
 from _workflow_policy import WORKFLOW_DIR
 
 COMPILE_VERBS = {"build", "check", "clippy", "test", "nextest"}
+# This word appears only in release.yml's prose comment, not as a Make command.
+NON_MAKEFILE_TARGETS: frozenset[str] = frozenset({"zips"})
 
 
 @pytest.fixture(scope="module")
@@ -59,8 +62,7 @@ def documents() -> dict[str, dict[str, typ.Any]]:
 def texts() -> dict[str, str]:
     """Return every workflow's source text."""
     return {
-        path.name: path.read_text(encoding="utf-8")
-        for path in sorted(WORKFLOW_DIR.glob("*.y*ml"))
+        path.name: read_text(path) for path in workflow_paths(WORKFLOW_DIR)
     }
 
 
@@ -68,14 +70,24 @@ def texts() -> dict[str, str]:
 def compiling_targets(documents: dict[str, dict[str, typ.Any]]) -> set[str]:
     """Return the Make targets workflows name whose recipes reach Cargo."""
     reached: set[str] = set()
+    failed: dict[str, str] = {}
     for target in make_targets_in(documents):
         try:
             lines = dry_run(target)
-        except MakeDryRunError:
+        except MakeDryRunError as error:
+            failed[target] = str(error)
             continue
         invocations, _ = parse_invocations(lines)
         if any(invocation.verb in COMPILE_VERBS for invocation in invocations):
             reached.add(target)
+    unexpected = set(failed) - NON_MAKEFILE_TARGETS
+    if unexpected:
+        failures = {name: failed[name] for name in sorted(unexpected)}
+        pytest.fail(
+            "workflow Make targets must dry-run unless explicitly allow-listed "
+            f"as non-Makefile invocations; failures: {failures}",
+            pytrace=False,
+        )
     return reached
 
 
@@ -236,6 +248,30 @@ def test_matrix_axis_named_linux_does_not_classify_windows_as_linux() -> None:
 
 
 @pytest.mark.parametrize(
+    "values",
+    [
+        pytest.param(["${{ inputs.runner }}"], id="only-unresolved"),
+        pytest.param(
+            ["windows-latest", "${{ inputs.runner }}"],
+            id="resolved-and-unresolved",
+        ),
+    ],
+)
+def test_unresolved_matrix_runner_values_may_select_linux(values: list[str]) -> None:
+    """An expression-valued runner cannot prove that Linux is excluded."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"os": values}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert runs_on_linux(job), "an unresolved runner value may select Linux"
+    assert install_violations("test.yml:unresolved-runner", job, set()), (
+        "an unresolved runner value must require build-tool installation"
+    )
+
+
+@pytest.mark.parametrize(
     "guard",
     [{"if": "false"}, {"continue-on-error": True}],
     ids=("skipped", "soft-failing"),
@@ -297,5 +333,7 @@ def test_workflows_parse_to_the_documents_judged(
     documents: dict[str, dict[str, typ.Any]],
 ) -> None:
     """The documents the judges read are the YAML on disk, not a stale copy."""
-    on_disk = yaml.safe_load((WORKFLOW_DIR / "test.yml").read_text(encoding="utf-8"))
-    assert set(on_disk["jobs"]) == set(documents["test.yml"]["jobs"])
+    on_disk = read_workflow(WORKFLOW_DIR / "test.yml")
+    on_disk_jobs = on_disk["jobs"]
+    assert isinstance(on_disk_jobs, dict), "test.yml must declare workflow jobs"
+    assert set(on_disk_jobs) == set(documents["test.yml"]["jobs"])

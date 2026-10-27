@@ -31,6 +31,7 @@ from _estate import read_workflows
 from _sources import read_text
 from _workflow_files import workflow_paths
 from _workflow_policy import WORKFLOW_DIR
+from contract_sources import is_regular_file, matching_entries
 from dependabot_config import read_dependabot
 
 NIGHTLY_IN_TEXT = re.compile(r"nightly-\d{4}-\d{2}-\d{2}")
@@ -166,7 +167,8 @@ def estate() -> dict[str, typ.Any]:
     root = read_toml("Cargo.toml")
     members = {
         path.parent.name: read_toml(str(path.relative_to(REPOSITORY_ROOT)))
-        for path in sorted((REPOSITORY_ROOT / "crates").glob("*/Cargo.toml"))
+        for path in matching_entries(REPOSITORY_ROOT / "crates", "*/Cargo.toml")
+        if is_regular_file(path)
     }
     return {
         "pin": read_toml("rust-toolchain.toml"),

@@ -14,6 +14,7 @@ import pytest
 
 from _build_standard import REPOSITORY_ROOT
 from _build_standard_scripts import all_script_violations, script_violations
+from contract_sources import is_regular_file, matching_entries, read_source
 
 SCRIPTS = REPOSITORY_ROOT / "scripts"
 JUDGED = ("coverage.sh", "build-all.sh", "build-wasm-extensions.sh")
@@ -23,8 +24,9 @@ JUDGED = ("coverage.sh", "build-all.sh", "build-wasm-extensions.sh")
 def sources() -> dict[str, str]:
     """Return every shell script's source, keyed by file name."""
     return {
-        path.name: path.read_text(encoding="utf-8")
-        for path in sorted(SCRIPTS.glob("*.sh"))
+        path.name: read_source(path)
+        for path in matching_entries(SCRIPTS, "*.sh")
+        if is_regular_file(path)
     }
 
 

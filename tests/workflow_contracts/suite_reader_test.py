@@ -124,6 +124,29 @@ class TestDuplicateDetection:
         with pytest.raises(MatrixReadError, match="cannot read"):
             suite_runs_for(documents, "pull_request", defaults)
 
+    def test_a_readable_matrix_supplies_workspace_scope_to_suite_recognition(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """Suite arguments substituted from a leg still identify its scope."""
+        matrix_job = (
+            "  tests:\n"
+            "    runs-on: ubicloud-standard-4\n"
+            "    strategy:\n"
+            "      matrix:\n"
+            "        include:\n"
+            "          - name: workspace\n"
+            "            args: --workspace\n"
+            "    steps:\n"
+            "      - run: cargo nextest run ${{ matrix.args }} --profile ci\n"
+        )
+        documents = {"one.yml": self._workflow("pull_request", matrix_job)}
+
+        runs = suite_runs_for(documents, "pull_request", defaults)
+
+        assert [(run.scope, run.profile, run.features) for run in runs] == [
+            (WORKSPACE, "ci", defaults)
+        ], "the readable matrix must supply the workspace scope"
+
     def test_a_guard_that_excludes_the_event_removes_the_duplicate(
         self, defaults: frozenset[str]
     ) -> None:

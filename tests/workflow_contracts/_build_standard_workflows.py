@@ -46,6 +46,7 @@ GENERATE_COVERAGE = "leynos/shared-actions/.github/actions/generate-coverage@"
 INSTALL_WHITAKER = "leynos/shared-actions/.github/actions/install-whitaker@"
 LINUX_LABEL = re.compile(r"ubuntu|ubicloud|linux", re.IGNORECASE)
 MATRIX_RUNNER = re.compile(r"\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}")
+UNRESOLVED_EXPRESSION = re.compile(r"\$\{\{.*?\}\}")
 CONFIG_REMOVAL = re.compile(
     r"rm\s+(?:(?:-f|--force)\s+)?\.cargo/config\.toml"
     r"(?:\s+rust-toolchain\.toml)?"
@@ -103,12 +104,17 @@ def _included_axis_values(matrix: Mapping[str, object], name: str) -> list[objec
 
 
 def _matrix_values(job: Mapping[str, object], name: str) -> list[object] | None:
-    """Return declared values for a runner matrix axis, if it is resolvable."""
+    """Return declared values for a runner matrix axis, if they are resolvable."""
     matrix = _job_matrix(job)
     if matrix is None:
         return None
     values = _declared_axis_values(matrix, name) + _included_axis_values(matrix, name)
     if name not in matrix and not values:
+        return None
+    if any(
+        isinstance(value, str) and UNRESOLVED_EXPRESSION.search(value)
+        for value in values
+    ):
         return None
     return values
 
