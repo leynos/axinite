@@ -1,6 +1,6 @@
 /** @file Preview startup follows the initial build and preserves child supervision. */
 import { describe, expect, it, vi } from "vitest";
-import { createBuildReadiness } from "../../scripts/build-output";
+import { createBuildReadiness, pipeOutput } from "../../scripts/build-output";
 import { superviseChildren } from "../../scripts/dev";
 
 function deferred<T>() {
@@ -22,6 +22,77 @@ const flush = async () => {
 };
 
 describe("preview startup supervision", () => {
+  it.each([
+    ["built in 2066", "ms."],
+    ["built in 1.", "64s."],
+    ["\u001B[32mbuilt in 2.", "5s.\u001B[39m"],
+  ])(
+    "starts preview when piped Vite output completes: %s%s",
+    async (first, last) => {
+      const readiness = createBuildReadiness();
+      const stream = new TransformStream<Uint8Array, Uint8Array>();
+      const writer = stream.writable.getWriter();
+      const encode = new TextEncoder();
+      const output = vi.fn();
+      pipeOutput("build", stream.readable, output, readiness.observeLine);
+
+      const buildExit = deferred<number>();
+      const previewExit = deferred<number>();
+      const build = {
+        label: "build",
+        process: { exited: buildExit.promise, kill: vi.fn() },
+      };
+      const preview = {
+        label: "preview",
+        process: { exited: previewExit.promise, kill: vi.fn() },
+      };
+      const start = vi.fn(() => preview);
+      const exit = vi.fn();
+      const run = superviseChildren(
+        [build],
+        { onSignal: () => () => {}, log: vi.fn(), error: vi.fn(), exit },
+        { ready: readiness.ready, start }
+      );
+
+      await writer.write(
+        encode.encode("build started...\nerror: built in 1.64s.\r\n")
+      );
+      await vi.waitFor(() => expect(output).toHaveBeenCalledTimes(2), {
+        timeout: 500,
+      });
+      expect(output).toHaveBeenNthCalledWith(1, "[build] build started...");
+      expect(output).toHaveBeenNthCalledWith(
+        2,
+        "[build] error: built in 1.64s."
+      );
+      expect(start).not.toHaveBeenCalled();
+
+      await writer.write(encode.encode(first));
+      await writer.write(encode.encode(last));
+      expect(start).not.toHaveBeenCalled();
+      await writer.write(encode.encode("\n"));
+      await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1), {
+        timeout: 500,
+      });
+      expect(output).toHaveBeenNthCalledWith(3, `[build] ${first}${last}`);
+
+      await writer.write(encode.encode("built in 9ms.\n"));
+      await vi.waitFor(() => expect(output).toHaveBeenCalledTimes(4), {
+        timeout: 500,
+      });
+      expect(start).toHaveBeenCalledTimes(1);
+      await writer.close();
+      previewExit.resolve(7);
+      await vi.waitFor(
+        () => expect(build.process.kill).toHaveBeenCalledTimes(1),
+        { timeout: 500 }
+      );
+      buildExit.resolve(0);
+      await run;
+      expect(exit).toHaveBeenCalledWith(7);
+    }
+  );
+
   it.each([
     "built in 2066ms.",
     "built in 1.64s.",
