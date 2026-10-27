@@ -21,7 +21,7 @@ GATE_JOB: typ.Final[str] = "coverage-gate"
 CHECKOUT_ACTION: typ.Final[str] = (
     "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
 )
-DOWNLOAD_ARTIFACT_ACTION: typ.Final[str] = (
+DOWNLOAD_ARTEFACT_ACTION: typ.Final[str] = (
     "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
 )
 CODECOV_ACTION: typ.Final[str] = (
@@ -109,8 +109,8 @@ def test_codecov_job_downloads_and_uploads_the_publisher_artefact() -> None:
     )
 
     download = _step(job, "Fetch the libsql-only report")
-    assert download.get("uses") == DOWNLOAD_ARTIFACT_ACTION, (
-        "the Codecov job must use the pinned artifact downloader"
+    assert download.get("uses") == DOWNLOAD_ARTEFACT_ACTION, (
+        "the Codecov job must use the pinned artefact downloader"
     )
     assert _with(download).get("name") == ARTEFACT_NAME, (
         "the Codecov job must download the publisher's LCOV artefact"
