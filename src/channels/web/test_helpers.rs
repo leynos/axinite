@@ -110,11 +110,9 @@ impl TestGatewayBuilder {
             env_flag_overlay: crate::channels::web::handlers::features::env_flag_overlay(
                 &self.env_context,
             ),
-            restart_enabled: self.restart_enabled_override.unwrap_or_else(|| {
-                EnvContext::capture_process()
-                    .get("AXINITE_IN_DOCKER")
-                    .is_some_and(|value| value.eq_ignore_ascii_case("true"))
-            }),
+            restart_enabled: self
+                .restart_enabled_override
+                .unwrap_or_else(|| EnvContext::capture_process().is_docker_restart_environment()),
             msg_tx: tokio::sync::RwLock::new(self.msg_tx),
             sse: SseManager::new(),
             workspace: None,

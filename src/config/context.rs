@@ -20,6 +20,8 @@ use crate::settings::Settings;
 
 mod base_dir;
 
+mod restart;
+
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
 #[derive(Debug)]
