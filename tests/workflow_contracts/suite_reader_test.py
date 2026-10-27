@@ -19,7 +19,7 @@ import typing as typ
 import pytest
 import yaml
 from _suite_keys import NO_DEFAULT_FEATURES
-from _suite_reader import cargo_runs, duplicates_in, suite_runs_for
+from _suite_reader import cargo_runs, duplicates_in, make_runs, suite_runs_for
 from _suite_targets import DEFAULT_PROFILE, WORKSPACE
 from _trigger_reading import MatrixReadError
 
@@ -111,6 +111,69 @@ class TestDuplicateDetection:
         assert suite_runs_for(documents, "pull_request", defaults) == [], (
             "a build-only cargo-dist matrix must not be parsed as a test matrix"
         )
+
+    @pytest.mark.parametrize(
+        "command",
+        ["make -j 2 test-workspace", "make --jobs=2 test-workspace", "make -k test"],
+    )
+    def test_make_options_do_not_hide_suite_in_unreadable_matrix(
+        self, defaults: frozenset[str], command: str
+    ) -> None:
+        """Make options cannot hide a known suite target."""
+        job = self._PLANNED_PACKAGE_MATRIX.replace(
+            "dist build ${{ matrix.dist_args }}", command
+        )
+        with pytest.raises(MatrixReadError, match="cannot read"):
+            suite_runs_for(
+                {"one.yml": self._workflow("pull_request", job)},
+                "pull_request",
+                defaults,
+            )
+
+    @pytest.mark.parametrize(
+        "script", ["${{ matrix.command }}", "echo setup; ${{ matrix.command }}"]
+    )
+    def test_unreadable_matrix_cannot_hide_whole_suite_command(
+        self, defaults: frozenset[str], script: str
+    ) -> None:
+        """A computed script could be a Cargo or Make suite invocation."""
+        job = self._PLANNED_PACKAGE_MATRIX.replace(
+            "dist build ${{ matrix.dist_args }}", script
+        )
+        with pytest.raises(MatrixReadError, match="cannot read"):
+            suite_runs_for(
+                {"one.yml": self._workflow("pull_request", job)},
+                "pull_request",
+                defaults,
+            )
+
+    @pytest.mark.parametrize(
+        "command", ["make -j 2 test-workspace", "make --jobs=2 test-workspace"]
+    )
+    def test_make_options_keep_recognized_suite(
+        self, defaults: frozenset[str], command: str
+    ) -> None:
+        """Options before the target retain the same suite identity."""
+        assert list(make_runs(command, defaults)) == [
+            (WORKSPACE, DEFAULT_PROFILE, defaults)
+        ]
+
+    def test_make_option_argument_is_not_mistaken_for_target(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """A directory named like a suite is not a Make target."""
+        assert list(make_runs("make -C test-workspace build", defaults)) == []
+
+    def test_unknown_job_cannot_claim_dist_setup_exception(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """The cargo-dist setup exemption belongs only to its release jobs."""
+        job = self._PLANNED_PACKAGE_MATRIX.replace(
+            "dist build ${{ matrix.dist_args }}", "${{ matrix.install_dist.run }}"
+        )
+        documents = {"one.yml": self._workflow("pull_request", job)}
+        with pytest.raises(MatrixReadError, match="cannot read"):
+            suite_runs_for(documents, "pull_request", defaults)
 
     def test_unreadable_matrix_still_fails_for_a_suite_job(
         self, defaults: frozenset[str]

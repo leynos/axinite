@@ -289,10 +289,40 @@ def _has_matrix_selected_make_target(script: str) -> bool:
     return False
 
 
+# cargo-dist supplies these installer scripts to its release jobs. Other
+# matrix-supplied scripts are opaque and may run a suite.
+_DIST_SETUP_SCRIPTS = {
+    ("release.yml", "build-local-artifacts", "${{ matrix.install_dist.run }}"),
+    (
+        "release-package-validation.yml",
+        "build-local-artifacts",
+        "${{ matrix.install_dist.run }}",
+    ),
+    (
+        "release-package-validation.yml",
+        "build-local-artifacts",
+        "${{ matrix.packages_install }}",
+    ),
+}
+_MATRIX_SCRIPT_RE = re.compile(r"\$\{\{\s*matrix\.[^{}]+\}\}")
+
+
+def _has_unclassified_matrix_script(job: Job, script: str) -> bool:
+    """Reject opaque commands except the known cargo-dist setup scripts."""
+    for command in split_commands(script):
+        if _MATRIX_SCRIPT_RE.fullmatch(command) and (
+            job.workflow, job.job_id, command
+        ) not in _DIST_SETUP_SCRIPTS:
+            return True
+    return False
+
+
 def _has_recognized_suite_command(job: Job, defaults: frozenset[str]) -> bool:
     """Return whether the job contains a command counted by suite contracts."""
     for step in job.steps:
         script = step_text(step)
+        if _has_unclassified_matrix_script(job, script):
+            return True
         if _has_matrix_scoped_cargo_command(script) or any(
             cargo_runs(script, defaults)
         ):

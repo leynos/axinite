@@ -137,14 +137,18 @@ describe("preview startup supervision", () => {
           },
         }
       );
-      await flush();
+      await vi.waitFor(
+        () => expect(build.process.kill).toHaveBeenCalledTimes(1),
+        {
+          timeout: 500,
+        }
+      );
       expect(error).toHaveBeenCalledWith(
         `[dev] preview failed to start: ${message}`
       );
       expect(error).toHaveBeenCalledWith(
         "[dev] preview exited unexpectedly with code 1"
       );
-      expect(build.process.kill).toHaveBeenCalledTimes(1);
       expect(exit).not.toHaveBeenCalled();
       buildExit.resolve(0);
       await run;
@@ -182,11 +186,16 @@ describe("preview startup supervision", () => {
     await flush();
     expect(start).not.toHaveBeenCalled();
     ready.observeLine("\u001B[32mbuilt in 2066ms.\u001B[39m");
-    await flush();
-    expect(start).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1), {
+      timeout: 500,
+    });
     previewExit.resolve(7);
-    await flush();
-    expect(build.process.kill).toHaveBeenCalledTimes(1);
+    await vi.waitFor(
+      () => expect(build.process.kill).toHaveBeenCalledTimes(1),
+      {
+        timeout: 500,
+      }
+    );
     buildExit.resolve(0);
     await run;
     expect(exit).toHaveBeenCalledWith(7);

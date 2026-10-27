@@ -77,7 +77,11 @@ MAKEFILE_PROFILE_DEFAULT = f"{PROFILE_VARIABLE} ?= {DEFAULT_PROFILE}"
 #: `test` matching the first half of `test-workflow-contracts`, which is a
 #: PyYAML parse rather than a suite.
 MAKE_COMMAND: re.Pattern[str] = re.compile(
-    r"\bmake\s+(?P<target>"
+    r"\bmake\s+(?:(?:-j|--jobs)\s+\d+\s+"
+    r"|(?:-C|-f|-I|-o|-W|--directory|--file|--makefile|--include-dir|"
+    r"--old-file|--what-if)\s+\S+\s+"
+    r"|(?!-(?:C|f|I|o|W)\s|--(?:directory|file|makefile|include-dir|"
+    r"old-file|what-if)\s)--?\S+\s+)*(?P<target>"
     + "|".join(sorted(MAKE_TARGETS, key=len, reverse=True))
     + r")\b(?!-)(?P<args>[^\n]*)"
 )

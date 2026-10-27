@@ -4483,10 +4483,13 @@ following Make targets compose them for contributors:
 
 *Table: front-end Make targets.*
 
-`frontend-stub` starts the mock API and the Vite build watcher first. It starts
-the static preview only after Vite reports that its initial build has finished,
-so the preview does not serve an incomplete bundle. If a child exits
-unexpectedly, the supervisor stops its other children and returns a failure;
-SIGINT and SIGTERM stop the owned children cleanly.
+`frontend-stub` starts the mock API and Vite build watcher first. The preview
+starts only after the watcher reports its initial `built in …` completion line.
+If a child exits before that signal, or shutdown begins, the preview is not
+started. The supervisor also monitors the preview after it starts. A preview
+startup failure reports its cause; an unexpected child exit stops and waits for
+the other owned children and returns a failure. SIGINT and SIGTERM stop the
+owned children cleanly. See the stub runtime section of
+`docs/solidjs-frontend.md` for its ports and lifecycle.
 
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md

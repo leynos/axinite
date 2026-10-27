@@ -69,6 +69,13 @@ gate.
   that serves the built SPA, falls back to the app shell for extension-less
   routes, and proxies `/api/*` to the mock API.
 
+The mock API and watcher start first. The preview starts after the watcher
+emits the initial `built in …` completion line; an early child exit or a
+shutdown signal prevents it from starting. The supervisor monitors the preview
+along with the other children. If preview startup fails, it reports the cause.
+An unexpected child exit stops and waits for the other owned children and
+returns a failure; SIGINT and SIGTERM stop them cleanly.
+
 The mock backend is a contract harness, not a second daemon: it holds
 deterministic in-memory fixtures, ignores authentication, and persists nothing.
 Its fixture clock is fixed at `2026-03-26T11:30:00Z` by default, so timestamps
