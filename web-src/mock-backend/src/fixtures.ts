@@ -147,7 +147,7 @@ const SEED_THREADS: [string, MockThread][] = [
                 has_result: true,
                 has_error: false,
                 result_preview:
-                  '{"markdown":"# This Panda Robot Is Designed To Provide Emotional Support For Seniors\\n\\nBy Prakhar Khanna..."}',
+                  String.raw`{"markdown":"# This Panda Robot Is Designed To Provide Emotional Support For Seniors\n\nBy Prakhar Khanna..."}`,
               },
               {
                 name: "memory_write",
@@ -295,7 +295,7 @@ const SEED_THREADS: [string, MockThread][] = [
                 has_result: true,
                 has_error: false,
                 result_preview:
-                  '{"markdown":"# Axinite Gateway API\\n\\n43 endpoints documented..."}',
+                  String.raw`{"markdown":"# Axinite Gateway API\n\n43 endpoints documented..."}`,
               },
             ],
           },

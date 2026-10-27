@@ -4,6 +4,7 @@
  * Imports expose injected helpers without starting processes or probing ports.
  */
 import net from "node:net";
+import { stripVTControlCharacters } from "node:util";
 import { parsePort } from "../mock-backend/src/ports";
 
 /** Minimal disposable TCP probe capability; it does not reserve a port. */
@@ -81,6 +82,29 @@ export type SupervisorDependencies = {
   exit: (code: number) => void;
 };
 
+type DelayedProcess = { ready: Promise<void>; start: () => ManagedProcess };
+type ProcessExit = { label: string; exitCode: number };
+
+/** Start the delayed child only while supervision is active, then track its exit. */
+async function trackDelayedProcess(
+  delayed: DelayedProcess,
+  owned: ManagedProcess[],
+  isShuttingDown: () => boolean
+): Promise<ProcessExit> {
+  try {
+    await delayed.ready;
+    if (isShuttingDown()) return { label: "preview", exitCode: 0 };
+    const child = delayed.start();
+    owned.push(child);
+    return {
+      label: child.label,
+      exitCode: await child.process.exited.catch(() => 1),
+    };
+  } catch {
+    return { label: "preview", exitCode: 1 };
+  }
+}
+
 /**
  * Waits for a child exit or operator signal, kills owned children once, waits
  * for all exits and removes signal listeners. Signals exit cleanly; an
@@ -88,14 +112,16 @@ export type SupervisorDependencies = {
  */
 export async function superviseChildren(
   managed: ManagedProcess[],
-  deps: SupervisorDependencies
+  deps: SupervisorDependencies,
+  delayed?: DelayedProcess
 ): Promise<void> {
+  const owned = [...managed];
   let shutdown: Promise<void> | undefined;
   const stopAll = (reason: string, exitCode: number): Promise<void> => {
     shutdown ??= Promise.resolve().then(async () => {
       deps.log(`[dev] ${reason}, shutting down child processes`);
-      for (const child of managed) child.process.kill();
-      await Promise.allSettled(managed.map((child) => child.process.exited));
+      for (const child of owned) child.process.kill();
+      await Promise.allSettled(owned.map((child) => child.process.exited));
       deps.exit(exitCode);
     });
     return shutdown;
@@ -109,12 +135,16 @@ export async function superviseChildren(
     }),
   ];
   try {
-    const result = await Promise.race(
-      managed.map(async (child) => ({
-        label: child.label,
-        exitCode: await child.process.exited.catch(() => 1),
-      }))
-    );
+    const exits = owned.map(async (child) => ({
+      label: child.label,
+      exitCode: await child.process.exited.catch(() => 1),
+    }));
+    if (delayed) {
+      exits.push(
+        trackDelayedProcess(delayed, owned, () => shutdown !== undefined)
+      );
+    }
+    const result = await Promise.race(exits);
     if (shutdown) {
       await shutdown;
     } else {
@@ -131,7 +161,8 @@ export async function superviseChildren(
 function pipeOutput(
   label: string,
   stream: ReadableStream<Uint8Array> | null,
-  writer: (line: string) => void
+  writer: (line: string) => void,
+  observeLine?: (line: string) => void
 ): void {
   if (!stream) return;
   const reader = stream.getReader();
@@ -147,7 +178,10 @@ function pipeOutput(
       pending += decoder.decode(value, { stream: true });
       const lines = pending.split(/\r?\n/);
       pending = lines.pop() ?? "";
-      for (const line of lines) writer(`[${label}] ${line}`);
+      for (const line of lines) {
+        writer(`[${label}] ${line}`);
+        observeLine?.(line);
+      }
     }
   })();
 }
@@ -155,7 +189,8 @@ function pipeOutput(
 function spawnManaged(
   label: string,
   cmd: string[],
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  observeLine?: (line: string) => void
 ): ManagedProcess {
   const child = Bun.spawn(cmd, {
     cwd: process.cwd(),
@@ -163,7 +198,7 @@ function spawnManaged(
     stdout: "pipe",
     stderr: "pipe",
   });
-  pipeOutput(label, child.stdout, console.log);
+  pipeOutput(label, child.stdout, console.log, observeLine);
   pipeOutput(label, child.stderr, console.error);
   return { label, process: child };
 }
@@ -186,31 +221,55 @@ async function main(): Promise<void> {
   console.log(
     `[dev] starting mock API on ${apiPort}, static preview on ${previewPort}`
   );
+  const buildEvents = new EventTarget();
+  const buildReady = new Promise<void>((resolve) => {
+    buildEvents.addEventListener("ready", () => resolve(), { once: true });
+  });
   const managed = [
     spawnManaged("mock-api", ["bun", "--watch", "mock-backend/src/server.ts"], {
       ...process.env,
       MOCK_API_PORT: String(apiPort),
     }),
-    spawnManaged("build", ["bunx", "vite", "build", "--watch"]),
-    spawnManaged("preview", ["bun", "mock-backend/src/preview-server.ts"], {
-      ...process.env,
-      MOCK_API_PORT: String(apiPort),
-      PREVIEW_PORT: String(previewPort),
-    }),
+    spawnManaged(
+      "build",
+      ["bunx", "vite", "build", "--watch"],
+      process.env,
+      (line) => {
+        // Vite emits this only after it has written the complete initial bundle.
+        if (
+          /^built in \d+(?:\.\d+)?(?:ms|s)\.$/.test(
+            stripVTControlCharacters(line)
+          )
+        )
+          buildEvents.dispatchEvent(new Event("ready"));
+      }
+    ),
   ];
-  await superviseChildren(managed, {
-    onSignal: (signal, handler) => {
-      process.on(signal, handler);
-      return () => {
-        process.off(signal, handler);
-      };
+  await superviseChildren(
+    managed,
+    {
+      onSignal: (signal, handler) => {
+        process.on(signal, handler);
+        return () => {
+          process.off(signal, handler);
+        };
+      },
+      log: console.log,
+      error: console.error,
+      exit: (code) => {
+        process.exitCode = code;
+      },
     },
-    log: console.log,
-    error: console.error,
-    exit: (code) => {
-      process.exitCode = code;
-    },
-  });
+    {
+      ready: buildReady,
+      start: () =>
+        spawnManaged("preview", ["bun", "mock-backend/src/preview-server.ts"], {
+          ...process.env,
+          MOCK_API_PORT: String(apiPort),
+          PREVIEW_PORT: String(previewPort),
+        }),
+    }
+  );
 }
 
 if (import.meta.main) await main();
