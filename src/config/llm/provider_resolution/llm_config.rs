@@ -171,11 +171,20 @@ impl LlmConfig {
         validate_bedrock_cross_region(&cross_region)?;
         let profile = optional_env_from(ctx, EnvKey("AWS_PROFILE"))?
             .or_else(|| settings.bedrock_profile.clone());
+        let credentials = ctx
+            .get_owned("AWS_ACCESS_KEY_ID")
+            .zip(ctx.get_owned("AWS_SECRET_ACCESS_KEY"))
+            .map(|(access_key_id, secret_access_key)| BedrockCredentials {
+                access_key_id: SecretString::from(access_key_id),
+                secret_access_key: SecretString::from(secret_access_key),
+                session_token: ctx.get_owned("AWS_SESSION_TOKEN").map(SecretString::from),
+            });
         Ok(Some(BedrockConfig {
             region,
             model,
             cross_region,
             profile,
+            credentials,
         }))
     }
 
