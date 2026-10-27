@@ -55,6 +55,10 @@ ignore = [
   '\b[A-Za-z0-9_]+_(?:mold|MOLD)\b|\b(?:mold|MOLD)_[A-Za-z0-9_]+\b|\b[A-Za-z0-9_]+_(?:mold|MOLD)_[A-Za-z0-9_]+\b',
   # The dist-generated release job, whose id keeps the American spelling.
   '\bbuild-local-artifacts\b',
+  # Keep the external GitHub action, cargo-dist flag, and release job identifier.
+  '\bactions/(?:upload|download)-artifact@',
+  '\bbuild-global-artifacts\b',
+  '\bdist build --output-format=json --artifacts=global\b',
   '-PassThru\b',
   '\btokio::test\(flavor\s*=',
   '\bpr-labeler\b',

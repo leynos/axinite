@@ -91,7 +91,7 @@ def test_package_validation_runs_for_release_input_changes(
 
 
 def test_package_validation_cannot_publish(workflow: dict[str, object]) -> None:
-    """Only read access and artifact actions are available to the build jobs."""
+    """Only read access and artefact actions are available to the build jobs."""
     assert workflow.get("permissions") == {"contents": "read"}, (
         "package validation must not receive release-write permission"
     )
@@ -176,7 +176,7 @@ def test_package_jobs_use_the_candidate_pin_and_release_flags(
         )
 
 
-def test_global_packages_require_every_local_artifact(
+def test_global_packages_require_every_local_artefact(
     workflow: dict[str, object],
 ) -> None:
     """Global installers and checksums consume all successful native packages."""
@@ -190,7 +190,7 @@ def test_global_packages_require_every_local_artifact(
     assert (
         upload.inputs.get("name")
         == "release-validation-local-${{ join(matrix.targets, '_') }}"
-    ), "each native package needs a distinct workflow artifact"
+    ), "each native package needs a distinct workflow artefact"
     assert download.inputs.get("pattern") == "release-validation-local-*", (
         "the global job must download every local package"
     )
