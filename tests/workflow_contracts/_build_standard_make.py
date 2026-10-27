@@ -52,19 +52,25 @@ class MakeDryRunError(RuntimeError):
         self,
         target: str,
         root: Path,
-        reason: str,
-        *,
-        returncode: int | None = None,
-        stderr: str | None = None,
+        failure: subprocess.CalledProcessError | OSError,
     ) -> None:
         self.target = target
         self.root = root
-        self.returncode = returncode
-        self.stderr = stderr
+        reason, self.returncode, self.stderr = _failure_details(failure)
         message = f"make --dry-run {target!r} in {root}: {reason}"
-        if stderr and stderr.strip():
-            message = f"{message}: {stderr.strip()}"
+        if self.stderr and self.stderr.strip():
+            message = f"{message}: {self.stderr.strip()}"
         super().__init__(message)
+
+
+def _failure_details(
+    failure: subprocess.CalledProcessError | OSError,
+) -> tuple[str, int | None, str | None]:
+    """Describe a failed Make invocation and retain its available output."""
+    if isinstance(failure, subprocess.CalledProcessError):
+        stderr = failure.stderr if isinstance(failure.stderr, str) else None
+        return f"exited with status {failure.returncode}", failure.returncode, stderr
+    return f"could not start ({failure.strerror or failure})", None, None
 
 
 class Invocation(typ.NamedTuple):
@@ -140,18 +146,8 @@ def dry_run(
             capture_output=True,
             text=True,
         )
-    except subprocess.CalledProcessError as error:
-        raise MakeDryRunError(
-            target,
-            root,
-            f"exited with status {error.returncode}",
-            returncode=error.returncode,
-            stderr=error.stderr,
-        ) from error
-    except OSError as error:
-        raise MakeDryRunError(
-            target, root, f"could not start ({error.strerror or error})"
-        ) from error
+    except (subprocess.CalledProcessError, OSError) as error:
+        raise MakeDryRunError(target, root, error) from error
     return completed.stdout.splitlines()
 
 

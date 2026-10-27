@@ -79,23 +79,35 @@ class Step(typ.NamedTuple):
     inputs: Mapping[str, object]
 
 
-def _matrix_values(job: Mapping[str, object], name: str) -> list[object] | None:
-    """Return declared values for a runner matrix axis, if it is resolvable."""
+def _job_matrix(job: Mapping[str, object]) -> Mapping[str, object] | None:
+    """Return a job's declared matrix, if it is a mapping."""
     strategy = job.get("strategy")
     matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
-    if not isinstance(matrix, dict):
-        return None
+    return matrix if isinstance(matrix, dict) else None
 
-    if name in matrix:
-        declared = matrix[name]
-        values = list(declared) if isinstance(declared, list) else [declared]
-    else:
-        values = []
+
+def _declared_axis_values(matrix: Mapping[str, object], name: str) -> list[object]:
+    """Return values declared directly for one matrix axis."""
+    if name not in matrix:
+        return []
+    declared = matrix[name]
+    return list(declared) if isinstance(declared, list) else [declared]
+
+
+def _included_axis_values(matrix: Mapping[str, object], name: str) -> list[object]:
+    """Return values supplied for one axis by matrix include rows."""
     included = matrix.get("include")
-    if isinstance(included, list):
-        values.extend(
-            row[name] for row in included if isinstance(row, dict) and name in row
-        )
+    if not isinstance(included, list):
+        return []
+    return [row[name] for row in included if isinstance(row, dict) and name in row]
+
+
+def _matrix_values(job: Mapping[str, object], name: str) -> list[object] | None:
+    """Return declared values for a runner matrix axis, if it is resolvable."""
+    matrix = _job_matrix(job)
+    if matrix is None:
+        return None
+    values = _declared_axis_values(matrix, name) + _included_axis_values(matrix, name)
     if name not in matrix and not values:
         return None
     return values
