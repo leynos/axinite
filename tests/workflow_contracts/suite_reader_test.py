@@ -131,7 +131,13 @@ class TestDuplicateDetection:
             )
 
     @pytest.mark.parametrize(
-        "script", ["${{ matrix.command }}", "echo setup; ${{ matrix.command }}"]
+        "script",
+        [
+            "${{ matrix.command }}",
+            "echo setup; ${{ matrix.command }}",
+            "${{ matrix.command }} --workspace",
+            "echo setup; ${{ matrix.command }} --workspace",
+        ],
     )
     def test_unreadable_matrix_cannot_hide_whole_suite_command(
         self, defaults: frozenset[str], script: str
@@ -156,13 +162,15 @@ class TestDuplicateDetection:
         """Options before the target retain the same suite identity."""
         assert list(make_runs(command, defaults)) == [
             (WORKSPACE, DEFAULT_PROFILE, defaults)
-        ]
+        ], "the selected Make target must run the workspace suite"
 
     def test_make_option_argument_is_not_mistaken_for_target(
         self, defaults: frozenset[str]
     ) -> None:
         """A directory named like a suite is not a Make target."""
-        assert list(make_runs("make -C test-workspace build", defaults)) == []
+        assert list(make_runs("make -C test-workspace build", defaults)) == [], (
+            "a Make directory argument must not be counted as a suite target"
+        )
 
     def test_unknown_job_cannot_claim_dist_setup_exception(
         self, defaults: frozenset[str]
@@ -172,6 +180,20 @@ class TestDuplicateDetection:
             "dist build ${{ matrix.dist_args }}", "${{ matrix.install_dist.run }}"
         )
         documents = {"one.yml": self._workflow("pull_request", job)}
+        with pytest.raises(MatrixReadError, match="cannot read"):
+            suite_runs_for(documents, "pull_request", defaults)
+
+    def test_dist_setup_exception_does_not_cover_extra_arguments(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """The exact installer exemption cannot cover an altered command."""
+        job = self._PLANNED_PACKAGE_MATRIX.replace(
+            "  packages:", "  build-local-artifacts:"
+        ).replace(
+            "dist build ${{ matrix.dist_args }}",
+            "${{ matrix.install_dist.run }} --workspace",
+        )
+        documents = {"release.yml": self._workflow("pull_request", job)}
         with pytest.raises(MatrixReadError, match="cannot read"):
             suite_runs_for(documents, "pull_request", defaults)
 
@@ -238,7 +260,7 @@ class TestDuplicateDetection:
         runs = suite_runs_for(documents, "pull_request", defaults)
         assert [(run.scope, run.profile, run.features) for run in runs] == [
             (WORKSPACE, DEFAULT_PROFILE, defaults)
-        ]
+        ], "the selected Make target must run the workspace suite"
 
     def test_a_readable_matrix_supplies_workspace_scope_to_suite_recognition(
         self, defaults: frozenset[str]

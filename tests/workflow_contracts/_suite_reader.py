@@ -304,13 +304,13 @@ _DIST_SETUP_SCRIPTS = {
         "${{ matrix.packages_install }}",
     ),
 }
-_MATRIX_SCRIPT_RE = re.compile(r"\$\{\{\s*matrix\.[^{}]+\}\}")
+_MATRIX_SCRIPT_RE = re.compile(r"\$\{\{\s*matrix\.[^{}]+\}\}(?=\s|$)")
 
 
 def _has_unclassified_matrix_script(job: Job, script: str) -> bool:
     """Reject opaque commands except the known cargo-dist setup scripts."""
     for command in split_commands(script):
-        if _MATRIX_SCRIPT_RE.fullmatch(command) and (
+        if _MATRIX_SCRIPT_RE.match(command) and (
             job.workflow, job.job_id, command
         ) not in _DIST_SETUP_SCRIPTS:
             return True
