@@ -286,3 +286,16 @@ headers).
   parameter, the `#auth-screen` marker, the `sse-status` indicator, and the
   minimal `window.__axinite` hook object (close/reconnect the chat stream,
   inject a chat event). See `tests/e2e/CLAUDE.md`.
+
+## 7. Proposed Effect adoption
+
+[RFC 0019](rfcs/rfc-0019-effect-v4-in-the-axinite-solidjs-front-end.md)
+proposes Effect v4 for application services, failures, and owned asynchronous
+work. This is a proposal, not the current implementation. Solid would retain
+rendering and local state; TanStack Query would retain cache identity and read
+retry policy. Pure policy would remain independent of frameworks and browser
+I/O. Application-owned ports would receive browser adapters at the root; route
+and action scopes would own non-Query work and resource release. Shared reads
+would follow Query cancellation, so removing one observer would not abort work
+needed by another. The RFC and its ExecPlan define the interfaces, migration,
+and verification gates.
