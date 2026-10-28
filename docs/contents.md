@@ -168,6 +168,9 @@
     entrypoint metadata, active-skill injection updates, proportional test
     coverage, and synchronized documentation.
 
+  - [Adopt Effect v4](execplans/adopt-effect-v4.md) plans dependency, error,
+    and concurrency management in the SolidJS application.
+
 ## RFCs
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
@@ -219,6 +222,8 @@
   - [RFC 0018: Adopt the SolidJS browser front end](rfcs/rfc-0018-solidjs-front-end-adoption.md)
     proposes the staged migration from the Rust-embedded browser shell to the
     new SolidJS application proven out in `axinite-mockup`.
+  - [RFC 0019: Effect v4 in the Axinite SolidJS front end](rfcs/rfc-0019-effect-v4-in-the-axinite-solidjs-front-end.md)
+    proposes application-owned effects with existing UI and cache boundaries.
 
 ## ADRs
 
@@ -267,3 +272,5 @@
   moves short jobs off the hosted pool only when it makes them wait.
 - [ADR 0014: Apply Oxlint plug-ins to the front end](adrs/adr-0014-front-end-oxlint-plugins.md)
   records the pinned Unicorn and `ai-deslop` rules and their conflict policy.
+- [ADR 0015: Effect v4 at front-end application boundaries](adrs/adr-0015-effect-v4-at-front-end-application-boundaries.md)
+  proposes the ownership boundary and adoption gates for Effect.

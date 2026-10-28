@@ -4492,4 +4492,23 @@ the other owned children and returns a failure. SIGINT and SIGTERM stop the
 owned children cleanly. See the stub runtime section of
 `docs/solidjs-frontend.md` for its ports and lifecycle.
 
+### Proposed Effect conventions
+
+[RFC 0019](rfcs/rfc-0019-effect-v4-in-the-axinite-solidjs-front-end.md) and the
+[Effect ExecPlan](execplans/adopt-effect-v4.md) propose conventions for future
+application workflows. Effect is not installed by this planning change.
+Prefer generators for dependent operations and branches, short pipelines for
+transformations and policy, and ordinary pure functions for domain logic.
+Execute effects only at framework boundaries; keep Query cache/retry ownership
+and Solid state ownership explicit. Scope non-Query work to its route or
+action; shared reads follow Query cancellation. Separate expected failures,
+defects, and cancellation.
+
+The proposed new unit and workflow behaviour suites use `bun:test`; existing
+rendered Vitest and Playwright suites remain. The implementation plan adds
+explicit test discovery and aggregate-gate integration, plus property tests
+and an in-place proof of the pure restart transition contract. Its proposed
+Make targets do not exist yet. Follow the plan's feasibility gate before
+adopting these conventions in production code.
+
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
