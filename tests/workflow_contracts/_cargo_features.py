@@ -4,7 +4,7 @@ The coverage contracts need to know whether a leg bears the `postgres`
 feature, which is a default feature and so is enabled by any leg that does not
 pass `--no-default-features`, and whether it has the embedded cluster the
 Postgres tests run on. This module reads Cargo's feature syntax from a leg's
-flags and the root package's default set from its manifest.
+flags and accepts the root package's default set from its caller.
 """
 
 from __future__ import annotations
@@ -13,9 +13,6 @@ import re
 import shlex
 import typing as typ
 
-import tomllib
-from _workflow_policy import REPOSITORY_ROOT
-
 #: The feature whose presence makes a leg Postgres-bearing.
 POSTGRES_FEATURE: typ.Final[str] = "postgres"
 
@@ -23,19 +20,6 @@ POSTGRES_FEATURE: typ.Final[str] = "postgres"
 #: naming it on a leg that is meant to be database-free would give that leg a
 #: database after all.
 EMBEDDED_FEATURE: typ.Final[str] = "embedded-postgres"
-
-
-def _default_features() -> frozenset[str]:
-    """Return the root package's default feature set.
-
-    Read rather than restated, because `postgres` being a default feature is
-    the whole reason a leg can bear Postgres without naming it.
-    """
-    manifest = tomllib.loads(
-        (REPOSITORY_ROOT / "Cargo.toml").read_text(encoding="utf-8")
-    )
-    declared = manifest.get("features", {}).get("default", [])
-    return frozenset(str(name) for name in declared)
 
 
 #: How Cargo spells a feature list. The long and short flags each take their
@@ -102,13 +86,16 @@ def _features_named_by(token: str, following: str | None) -> set[str]:
     return set()
 
 
-def _enables_postgres(flags: str) -> bool:
+def _enables_postgres(flags: str, default_features: frozenset[str]) -> bool:
     """Report whether a leg's flags compile the `postgres` feature.
 
     Parameters
     ----------
     flags
         The leg's `flags` value, as handed to `cargo llvm-cov nextest`.
+
+    default_features
+        The default feature set read from the root manifest by the caller.
 
     Returns
     -------
@@ -125,7 +112,7 @@ def _enables_postgres(flags: str) -> bool:
     # Cargo enables the defaults unless the command turns them off, so a leg
     # that names nothing still gets every member of `default`.
     if "--no-default-features" not in tokens:
-        named |= _default_features()
+        named |= default_features
     return POSTGRES_FEATURE in named
 
 

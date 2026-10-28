@@ -295,12 +295,12 @@ _DIST_SETUP_SCRIPTS = {
     ("release.yml", "build-local-artifacts", "${{ matrix.install_dist.run }}"),
     (
         "release-package-validation.yml",
-        "build-local-artifacts",
+        "build-local-artefacts",
         "${{ matrix.install_dist.run }}",
     ),
     (
         "release-package-validation.yml",
-        "build-local-artifacts",
+        "build-local-artefacts",
         "${{ matrix.packages_install }}",
     ),
 }

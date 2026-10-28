@@ -73,8 +73,15 @@ def _needs(job: dict[str, object]) -> set[str]:
 
 def test_libsql_publisher_saves_a_short_lived_lcov_artefact() -> None:
     """Fail the publisher if it cannot hand off its report to Codecov."""
+    publisher = _job(PUBLISHER_JOB)
+    checkout = next(
+        step for step in _steps(publisher)
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert checkout.get("uses") == CHECKOUT_ACTION
+    assert _with(checkout).get("persist-credentials") is False
     upload = _step(
-        _job(PUBLISHER_JOB), "Save the libsql-only report for the Codecov upload"
+        publisher, "Save the libsql-only report for the Codecov upload"
     )
 
     assert upload.get("uses") == "actions/upload-artifact@v7", (
@@ -146,6 +153,7 @@ def test_codecov_job_downloads_and_uploads_the_publisher_artefact() -> None:
 def test_coverage_gate_checks_every_required_job_result() -> None:
     """The successful roll-up must depend on and check all coverage jobs."""
     gate = _job(GATE_JOB)
+    assert "if" not in gate, "the shared CV-005 contract forbids a job condition"
     assert _needs(gate) == GATED_JOBS, (
         "the coverage gate must depend on every coverage and compile-contract job"
     )

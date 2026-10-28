@@ -12,6 +12,8 @@
 - [Testing strategy](testing-strategy.md) explains how the repository designs
   tests, runs them locally, exercises them in CI, and supports periodic or ad
   hoc validation.
+- [CI coverage design](ci-coverage-design.md) describes the CodeScene
+  publisher, pull-request ratchet, and Codecov report hand-off.
 - [User's guide](users-guide.md) explains current operator-visible behaviour and
   day-to-day usage expectations for the shipped runtime.
 - [Migration notes for 0.19.0](migrations/0.19.0.md) describe the gateway UI

@@ -32,6 +32,7 @@ from _cargo_features import (
     _enables_postgres,
     _has_embedded_cluster,
 )
+from _suite_targets import read_default_features
 from _workflow_files import load
 from _workflow_policy import WORKFLOW_DIR, step_text
 
@@ -174,7 +175,7 @@ def test_every_leg_of_the_postgres_job_compiles_postgres() -> None:
     """
     for leg in _legs():
         name = leg.get("name")
-        assert _enables_postgres(str(leg.get("flags", ""))), (
+        assert _enables_postgres(str(leg.get("flags", "")), read_default_features()), (
             f"the {name!r} leg's flags {leg.get('flags')!r} do not compile "
             "postgres, so it belongs in coverage-libsql"
         )
@@ -325,6 +326,6 @@ def test_every_spelling_of_a_feature_list_is_read(
     it is the only narrow case expected to be false, so a reader that answered
     true for everything would fail it.
     """
-    assert _enables_postgres(flags) is expected, (
+    assert _enables_postgres(flags, read_default_features()) is expected, (
         f"{flags!r} should read as postgres={expected}"
     )

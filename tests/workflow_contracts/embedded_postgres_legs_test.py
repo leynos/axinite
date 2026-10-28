@@ -20,6 +20,7 @@ import typing as typ
 
 import pytest
 from _cargo_features import EMBEDDED_FEATURE, _enables_postgres, _features_named_by
+from _suite_targets import read_default_features
 from _trigger_reading import matrix_legs
 from _workflow_files import jobs_of
 from _workflow_policy import Job
@@ -73,7 +74,7 @@ def test_every_postgres_leg_enables_the_embedded_cluster(
     """
     for leg in matrix_legs(_tests_job(estate), event):
         flags = leg.get("flags", "")
-        postgres = _enables_postgres(flags)
+        postgres = _enables_postgres(flags, read_default_features())
         embedded = EMBEDDED_FEATURE in _named_features(flags)
         assert postgres == embedded, (
             f"on {event} the {leg.get('name')!r} leg has flags {flags!r}: "

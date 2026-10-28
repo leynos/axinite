@@ -261,7 +261,7 @@ audit: rust-audit
 # Workspace members, including the TLS integration patch, share the root lockfile.
 rust-audit:
 	find . \
-		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './.uv-cache/*' -o -path './.uv-tools/*' -o -path './crates/*' \) -prune -o \
 		-name Cargo.toml -exec sh -c 'set -e; audit_command=$$1; shift; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \

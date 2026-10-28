@@ -172,6 +172,21 @@ class TestDuplicateDetection:
             "a Make directory argument must not be counted as a suite target"
         )
 
+    @pytest.mark.parametrize(
+        "script", ["${{ matrix.install_dist.run }}", "${{ matrix.packages_install }}"]
+    )
+    def test_package_validation_dist_setup_uses_renamed_job(
+        self, defaults: frozenset[str], script: str
+    ) -> None:
+        """Recognize only the release plan's setup scripts in its renamed job."""
+        job = self._PLANNED_PACKAGE_MATRIX.replace(
+            "  packages:", "  build-local-artefacts:"
+        ).replace("dist build ${{ matrix.dist_args }}", script)
+        documents = {
+            "release-package-validation.yml": self._workflow("pull_request", job)
+        }
+        assert suite_runs_for(documents, "pull_request", defaults) == []
+
     def test_unknown_job_cannot_claim_dist_setup_exception(
         self, defaults: frozenset[str]
     ) -> None:

@@ -220,6 +220,13 @@ def test_audit_executes_multiword_command_override(
     workspace_dir.mkdir()
     (sdk_dir / "Cargo.toml").write_text(manifest)
     (workspace_dir / "Cargo.toml").write_text(manifest)
+    cached_dirs = [
+        audit_root / ".uv-cache/git-v1/checkouts/example",
+        audit_root / ".uv-tools/example",
+    ]
+    for cached_dir in cached_dirs:
+        cached_dir.mkdir(parents=True)
+        (cached_dir / "Cargo.toml").write_text(manifest)
     (locked_manifest_dir / "Cargo.lock").write_bytes(
         (REPOSITORY_ROOT / "Cargo.lock").read_bytes()
     )
@@ -286,6 +293,12 @@ def test_audit_executes_multiword_command_override(
     observed_manifest_dirs = {
         Path(manifest_dir).resolve() for manifest_dir, _ in commands
     }
+    assert all(path.resolve() not in observed_manifest_dirs for path in cached_dirs), (
+        "uv cache and tool environments are not repository audit targets"
+    )
+    assert {locked_manifest_dir.resolve(), unlocked_manifest_dir.resolve()} <= (
+        observed_manifest_dirs
+    ), "repository manifests must still be audited"
     assert sdk_dir.resolve() not in observed_manifest_dirs, (
         "the workspace TLS patch must share the root audit graph"
     )
