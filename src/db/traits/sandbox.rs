@@ -43,10 +43,10 @@ impl fmt::Display for SandboxMode {
     }
 }
 
-impl TryFrom<&str> for SandboxMode {
-    type Error = SandboxModeParseError;
+impl std::str::FromStr for SandboxMode {
+    type Err = SandboxModeParseError;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "worker" => Ok(Self::Worker),
             "claude_code" => Ok(Self::ClaudeCode),
@@ -54,6 +54,14 @@ impl TryFrom<&str> for SandboxMode {
                 value: other.to_owned(),
             }),
         }
+    }
+}
+
+impl std::convert::TryFrom<&str> for SandboxMode {
+    type Error = SandboxModeParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -297,5 +305,18 @@ impl From<String> for SandboxJobStatus {
 impl fmt::Display for SandboxJobStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Compile-time guard for the sandbox mode parse error type.
+
+    use super::{SandboxMode, SandboxModeParseError};
+
+    #[test]
+    fn sandbox_mode_keeps_its_parse_error_type() {
+        fn assert_error_type<T: std::str::FromStr<Err = SandboxModeParseError>>() {}
+        assert_error_type::<SandboxMode>();
     }
 }

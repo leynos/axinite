@@ -12,6 +12,22 @@ carry the workspace's patch overrides. See the
 [transport patch notes](../crates/hyper-rustls/UPSTREAM.md) for the dependency
 rationale.
 
+To build from source, use a complete repository checkout and install the pinned
+build tools:
+
+```sh
+make install-build-tools
+export PATH="$HOME/.local/bin:$PATH"
+cargo build
+```
+
+This selects the dated nightly in `rust-toolchain.toml` and installs the pinned
+`mold` linker on Linux. Install `clang` with your system package manager on
+Linux. The installer does not change the current shell's `PATH`; the export
+above makes the installed linker available to bare Cargo commands. Make targets
+add the tool directory automatically. See the developers' guide for the build
+standard and its deliberate exclusions.
+
 ## Skill bundle installs
 
 Axinite now validates passive multi-file skill bundles when a skill is

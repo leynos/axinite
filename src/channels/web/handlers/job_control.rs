@@ -45,10 +45,10 @@ pub(super) enum SandboxJobStatus {
     Interrupted,
 }
 
-impl TryFrom<&str> for SandboxJobStatus {
-    type Error = String;
+impl std::str::FromStr for SandboxJobStatus {
+    type Err = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "creating" => Ok(Self::Creating),
             "running" => Ok(Self::Running),
@@ -81,7 +81,9 @@ async fn load_sandbox_job(
         .map_err(|e| internal_error("Failed to load sandbox job", e))?;
     record
         .map(|record| {
-            let status = SandboxJobStatus::try_from(record.status.as_str())
+            let status = record
+                .status
+                .parse::<SandboxJobStatus>()
                 .map_err(|e| internal_error("Failed to parse sandbox job status", e))?;
             Ok(LoadedSandboxJob { record, status })
         })
@@ -160,4 +162,36 @@ pub async fn jobs_restart_handler(
     }
 
     Err((StatusCode::NOT_FOUND, "Job not found".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    //! Behavioural and compile-time contracts for stored sandbox job statuses.
+
+    use super::SandboxJobStatus;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::creating("creating", SandboxJobStatus::Creating)]
+    #[case::running("running", SandboxJobStatus::Running)]
+    #[case::failed("failed", SandboxJobStatus::Failed)]
+    #[case::interrupted("interrupted", SandboxJobStatus::Interrupted)]
+    fn parses_known_sandbox_job_statuses(#[case] input: &str, #[case] expected: SandboxJobStatus) {
+        assert_eq!(input.parse::<SandboxJobStatus>(), Ok(expected));
+    }
+
+    #[test]
+    fn reports_the_unexpected_sandbox_job_status() {
+        let error = "queued"
+            .parse::<SandboxJobStatus>()
+            .expect_err("unknown sandbox job statuses should fail to parse");
+
+        assert_eq!(error, "unexpected sandbox job status 'queued'");
+    }
+
+    #[test]
+    fn sandbox_job_status_keeps_its_string_parse_error() {
+        fn assert_error_type<T: std::str::FromStr<Err = String>>() {}
+        assert_error_type::<SandboxJobStatus>();
+    }
 }

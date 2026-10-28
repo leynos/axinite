@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Make a dated nightly the default for development builds and use the pinned
+  `mold` linker on Linux. Release, coverage, Docker, Whitaker, and MSRV routes
+  keep their explicit toolchain and flag boundaries; Cranelift is not enabled.
 - Serve the SolidJS gateway UI by default, retaining the legacy shell as a
   startup-selected rollback path
   ([#275](https://github.com/leynos/axinite/pull/275))

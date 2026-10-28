@@ -39,10 +39,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install mold
-        uses: rui314/setup-mold@v1
+      # The pinned `mold` (tools/mold/VERSION, verified against
+      # tools/mold/SHA256SUMS) and the toolchain's components and targets,
+      # before anything compiles. Unconditional: `.cargo/config.toml` names
+      # mold for every Linux build and `make` checks it, so a job that
+      # skips this step fails at link time instead.
+      - name: Install build tools
+        run: make install-build-tools
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
@@ -81,9 +84,6 @@ jobs:
       # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
       CARGO_COMPONENT_VERSION: '0.21.1'
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
-        -C link-arg=-fuse-ld=mold
     steps:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6
@@ -105,36 +105,35 @@ jobs:
       - name: Start resource sampler
         run: ./scripts/ci-resource-sampler.sh start
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-          targets: wasm32-wasip2
-
       - name: Install clang
         run: sudo apt-get update && sudo apt-get install -y clang
-
-      - name: Install mold
-        uses: rui314/setup-mold@v1
 
       # sccache belongs to setup-rust: it exports Ubicloud's cache-proxy
       # credentials, clears the v2 cache-service flag the proxy does not
       # serve, installs and starts sccache and names it as the wrapper.
-      # The toolchain, its targets and components stay with the step
-      # above, so this passes an empty `rustflags` (the mold flags live
-      # in CARGO_TARGET_*_RUSTFLAGS, which RUSTFLAGS would displace),
+      # The toolchain, its targets and components come from
+      # `rust-toolchain.toml` (no `toolchain` input), so this passes an
+      # empty `rustflags` (the development standard lives in
+      # `.cargo/config.toml`, which an exported RUSTFLAGS would displace),
       # leaves the Cargo registry to this job's own cache step, and
       # installs no second cargo-binstall.
       - name: Setup Rust
         id: setup-rust
         uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
         with:
-          toolchain: stable
           rustflags: ''
           cache-provider: external
           install-binstall: 'false'
           # `any`: the fork arm lands on a GitHub-hosted runner, where
           # setup-rust keeps sccache on local disk.
           expect-cache: any
+      # The pinned `mold` (tools/mold/VERSION, verified against
+      # tools/mold/SHA256SUMS) and the toolchain's components and targets,
+      # before anything compiles. Unconditional: `.cargo/config.toml` names
+      # mold for every Linux build and `make` checks it, so a job that
+      # skips this step fails at link time instead.
+      - name: Install build tools
+        run: make install-build-tools
       - name: Restore Cargo registry and index
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -182,12 +181,19 @@ jobs:
       # leaves the registry to the restore step above and compiler output to
       # sccache. The report stays on the runner: nothing downstream reads an
       # artefact from a pull request.
+      # This versioned path starts the ratchet from the pinned nightly's first
+      # main-owned baseline; dispatches compare but never publish it.
       - name: Generate coverage
         # The coverage profile leaves compile-contract compilation to the
         # separate job above. The action has no profile input; nextest reads
         # the variable, and a composite action's steps inherit its env.
         env:
           NEXTEST_PROFILE: coverage
+          # Coverage is a measurement, not a development build. An exported
+          # (even empty) RUSTFLAGS displaces every `rustflags` table in
+          # `.cargo/config.toml`, so coverage keeps neither `-Zthreads=8` nor
+          # `mold`; the instrumentation flags are added on top of it.
+          RUSTFLAGS: ''
         uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
         with:
           features: libsql,test-helpers
@@ -204,6 +210,7 @@ jobs:
           format: lcov
           output-path: lcov.info
           with-ratchet: 'true'
+          baseline-rust-file: .coverage-baseline.rust.nightly-2026-10-16
           publish-artefact: 'false'
           cache-provider: external
       # Report the hit rate so a wrapper that is silently doing nothing shows

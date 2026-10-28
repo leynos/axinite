@@ -26,23 +26,26 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
 #: its default-feature tests remain part of the workspace suite.
 WORKSPACE = "workspace"
 GITHUB_TOOL_MANIFEST = "tools-src/github/Cargo.toml"
+CRANELIFT_PROBE_MANIFEST = "tests/probes/cranelift-unwind/Cargo.toml"
 GITHUB_TOOL_SCOPE = f"crate:{GITHUB_TOOL_MANIFEST}"
+CRANELIFT_PROBE_SCOPE = f"crate:{CRANELIFT_PROBE_MANIFEST}"
 LIBSQL_TRANSPORT_SCOPE = "crate:crates/hyper-rustls/Cargo.toml"
 #: What each Make target runs, and whether the features it runs under come
 #: from the step's `TEST_FEATURES`. A workflow step says `make test-workspace`
 #: and only the Makefile says what that is; the mapping is asserted against it
-#: below rather than assumed. `make test` is here because it is what the
-#: `tests` legs used to call, and a contract that could not read it would have
-#: reported the duplication it caused as nothing at all.
+#: below rather than assumed. `make test` is the developer aggregate, so its
+#: scopes are read from the prerequisites and compared with the suite targets.
 MAKE_TARGETS: dict[str, tuple[tuple[str, bool], ...]] = {
     "test": (
         (WORKSPACE, True),
         (GITHUB_TOOL_SCOPE, False),
         (LIBSQL_TRANSPORT_SCOPE, False),
+        (CRANELIFT_PROBE_SCOPE, False),
     ),
     "test-workspace": ((WORKSPACE, True),),
     "test-github-tool": ((GITHUB_TOOL_SCOPE, False),),
     "test-libsql-transport": ((LIBSQL_TRANSPORT_SCOPE, False),),
+    "test-cranelift-probe": ((CRANELIFT_PROBE_SCOPE, False),),
 }
 #: The build `test-workspace` has to perform before its suite. The metadata
 #: and schema tests load the artefact it produces, so a recipe that runs the
@@ -58,6 +61,9 @@ WORKSPACE_RECIPE = (
 #: satisfy any check that merely refused a `--manifest-path` line.
 WORKSPACE_RECIPE_LINES: tuple[str, ...] = (WASM_PREREQUISITE, WORKSPACE_RECIPE)
 GITHUB_TOOL_RECIPE = "$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)"
+CRANELIFT_PROBE_RECIPE = (
+    "$(CARGO_COMMAND) test --manifest-path $(CRANELIFT_PROBE_MANIFEST)"
+)
 #: The variable a workflow step uses to hand feature flags to a Make target.
 #: The flags arrive as one shell word, `TEST_FEATURES="--features x"`, so the
 #: selection is inside a token rather than beside it.
@@ -71,7 +77,11 @@ MAKEFILE_PROFILE_DEFAULT = f"{PROFILE_VARIABLE} ?= {DEFAULT_PROFILE}"
 #: `test` matching the first half of `test-workflow-contracts`, which is a
 #: PyYAML parse rather than a suite.
 MAKE_COMMAND: re.Pattern[str] = re.compile(
-    r"\bmake\s+(?P<target>"
+    r"\bmake\s+(?:(?:-j|--jobs)\s+\d+\s+"
+    r"|(?:-C|-f|-I|-o|-W|--directory|--file|--makefile|--include-dir|"
+    r"--old-file|--what-if)\s+\S+\s+"
+    r"|(?!-(?:C|f|I|o|W)\s|--(?:directory|file|makefile|include-dir|"
+    r"old-file|what-if)\s)--?\S+\s+)*(?P<target>"
     + "|".join(sorted(MAKE_TARGETS, key=len, reverse=True))
     + r")\b(?!-)(?P<args>[^\n]*)"
 )
@@ -83,9 +93,7 @@ NO_DEFAULT_FEATURES = ":no-default-features"
 #: The manifest whose `default` feature list every command inherits unless it
 #: passes `--no-default-features`.
 # The transport matrix leg has a fixed feature selection independent of TEST_FEATURES.
-FIXED_FEATURES = {
-    LIBSQL_TRANSPORT_SCOPE: frozenset({ALL_FEATURES})
-}
+FIXED_FEATURES = {LIBSQL_TRANSPORT_SCOPE: frozenset({ALL_FEATURES})}
 ROOT_MANIFEST = REPOSITORY_ROOT / "Cargo.toml"
 #: The Makefile that says what each target above actually runs.
 MAKEFILE = REPOSITORY_ROOT / "Makefile"

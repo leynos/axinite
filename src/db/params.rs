@@ -78,15 +78,27 @@ mod tests {
         #[case] expected_mode: Option<SandboxMode>,
         #[case] expected_error: Option<&str>,
     ) {
-        let actual = SandboxMode::try_from(input);
+        let parsed = input.parse::<SandboxMode>();
+        let converted = SandboxMode::try_from(input);
         match (expected_mode, expected_error) {
-            (Some(expected_mode), None) => assert_eq!(actual, Ok(expected_mode)),
-            (None, Some(expected_error)) => assert_eq!(
-                actual
-                    .expect_err("invalid sandbox mode should fail")
-                    .to_string(),
-                expected_error
-            ),
+            (Some(expected_mode), None) => {
+                assert_eq!(parsed, Ok(expected_mode));
+                assert_eq!(converted, Ok(expected_mode));
+            }
+            (None, Some(expected_error)) => {
+                assert_eq!(
+                    parsed
+                        .expect_err("invalid sandbox mode should fail to parse")
+                        .to_string(),
+                    expected_error
+                );
+                assert_eq!(
+                    converted
+                        .expect_err("invalid sandbox mode should fail to convert")
+                        .to_string(),
+                    expected_error
+                );
+            }
             _ => panic!("invalid test case"),
         }
     }

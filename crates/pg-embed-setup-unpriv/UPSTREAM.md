@@ -26,6 +26,10 @@ tables. Template rollback also uses one cleanup path while retaining the
 distinction between returned setup errors and resumed panics. These local
 refactors preserve the upstream test scenarios and failure behaviour.
 
+The local manifests declare Rust 1.95, raised from the upstream 1.92, to match
+Axinite's single workspace MSRV and its check-only CI job. The path-patched
+package is covered by that job along with the rest of the checked estate.
+
 This local source patch is selected through the root `[patch.crates-io]`
 section. Remove it when an upstream release includes the guarded sweep and
 claim sequence, and emits the platform cfg without compiler warnings.

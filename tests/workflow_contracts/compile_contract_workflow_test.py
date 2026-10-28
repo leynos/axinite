@@ -50,9 +50,12 @@ def _step(job: Mapping[object, object], name: str) -> dict[object, object]:
 
 def _assert_fast_linker_installed(job: Mapping[object, object], workflow: str) -> None:
     """The Linux linker configuration requires its configured linker."""
-    step = _step(job, "Install mold")
-    assert str(step.get("uses", "")).startswith("rui314/setup-mold@"), (
-        f"{workflow} must install the configured linker required by .cargo/config.toml"
+    step = _step(job, "Install build tools")
+    assert step.get("run") == "make install-build-tools", (
+        f"{workflow} must install the pinned linker .cargo/config.toml requires"
+    )
+    assert "if" not in step and "continue-on-error" not in step, (
+        f"{workflow} must install the build tools unconditionally"
     )
 
 

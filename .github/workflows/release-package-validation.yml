@@ -1,0 +1,265 @@
+name: Release package validation
+
+"on":
+  pull_request:
+    paths:
+      - '.cargo/**'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-package-validation.yml'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - 'build.rs'
+      - 'rust-toolchain.toml'
+      - 'scripts/build-*.sh'
+  workflow_dispatch:
+
+# Package validation can upload workflow artefacts but cannot create a release.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-package-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_DIST_VERSION: '0.30.3'
+
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    outputs:
+      manifest: ${{ steps.plan.outputs.manifest }}
+    env:
+      RUSTFLAGS: ''
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal
+      - name: Install dist
+        shell: bash
+        run: >-
+          curl --proto '=https' --tlsv1.2 -LsSf
+          "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh"
+          | sh
+      - name: Record candidate and tools
+        shell: bash
+        run: |
+          {
+            git rev-parse HEAD
+            printf '%s %s\n' "$RUNNER_OS" "$RUNNER_ARCH"
+            rustc --version
+            dist --version
+          } | tee validation-context.txt
+      - name: Plan package builds
+        id: plan
+        shell: bash
+        run: |
+          dist plan --output-format=json > plan-dist-manifest.json
+          echo "manifest=$(jq -c . plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload plan evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-validation-plan
+          path: |
+            plan-dist-manifest.json
+            validation-context.txt
+          if-no-files-found: error
+
+  build-local-artifacts:
+    name: Package (${{ join(matrix.targets, ', ') }})
+    needs: plan
+    if: ${{ fromJson(needs.plan.outputs.manifest).ci.github.artifacts_matrix.include != null }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.manifest).ci.github.artifacts_matrix }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container && matrix.container.image || null }}
+    timeout-minutes: 90
+    env:
+      RUSTFLAGS: ''
+      BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+    steps:
+      - name: Enable Windows long paths
+        run: git config --global core.longpaths true
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal
+      - name: Check Linux linker
+        if: runner.os == 'Linux'
+        run: clang --version
+      - name: Install dist
+        run: ${{ matrix.install_dist.run }}
+      - name: Install dependencies
+        run: ${{ matrix.packages_install }}
+      - name: Record candidate and tools
+        shell: bash
+        run: |
+          {
+            git rev-parse HEAD
+            printf '%s %s\n' "$RUNNER_OS" "$RUNNER_ARCH"
+            rustc --version
+            dist --version
+          } | tee validation-context.txt
+      - name: Build local artefacts
+        shell: bash
+        run: |
+          dist_status=0
+          printf '%s\n' 'dist build --print=linkage --output-format=json ${{ matrix.dist_args }}' > dist-build.log
+          dist build --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json 2>> dist-build.log || dist_status=$?
+          printf 'dist exit status: %s\n' "$dist_status" >> dist-build.log
+          cat dist-build.log
+          exit "$dist_status"
+      - name: Verify local checksums
+        shell: bash
+        run: |
+          (
+            cd target/distrib
+            found_checksum=false
+            for checksum in *.sha256; do
+              [ -f "$checksum" ] || continue
+              found_checksum=true
+              if [ "$RUNNER_OS" = macOS ]; then
+                shasum -a 256 -c "$checksum"
+              else
+                sha256sum -c "$checksum"
+              fi
+            done
+            [ "$found_checksum" = true ]
+          ) | tee checksum-results.txt
+      - name: Collect local artefacts
+        id: cargo-dist
+        shell: bash
+        run: |
+          echo 'paths<<EOF' >> "$GITHUB_OUTPUT"
+          dist print-upload-files-from-manifest --manifest dist-manifest.json >> "$GITHUB_OUTPUT"
+          echo 'EOF' >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: Upload local artefacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-validation-local-${{ join(matrix.targets, '_') }}
+          path: |
+            ${{ steps.cargo-dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+          if-no-files-found: error
+      - name: Upload local evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-validation-evidence-${{ join(matrix.targets, '_') }}
+          path: |
+            dist-manifest.json
+            dist-build.log
+            validation-context.txt
+            checksum-results.txt
+          if-no-files-found: error
+
+  build-global-artifacts:
+    needs:
+      - plan
+      - build-local-artifacts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: ''
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal
+      - name: Install dist
+        shell: bash
+        run: >-
+          curl --proto '=https' --tlsv1.2 -LsSf
+          "https://github.com/axodotdev/cargo-dist/releases/download/v${CARGO_DIST_VERSION}/cargo-dist-installer.sh"
+          | sh
+      - name: Record candidate and tools
+        shell: bash
+        run: |
+          {
+            git rev-parse HEAD
+            printf '%s %s\n' "$RUNNER_OS" "$RUNNER_ARCH"
+            rustc --version
+            dist --version
+          } | tee validation-context.txt
+      - name: Fetch plan
+        uses: actions/download-artifact@v8
+        with:
+          name: release-validation-plan
+          path: target/plan
+      - name: Fetch every local artefact
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-validation-local-*
+          path: target/distrib
+          merge-multiple: true
+      - name: Verify complete local hand-off
+        shell: bash
+        run: |
+          jq -r '.ci.github.artifacts_matrix.include[] | .targets | join("-")' target/plan/plan-dist-manifest.json |
+          while IFS= read -r target_group; do
+            manifest="target/distrib/${target_group}-dist-manifest.json"
+            test -s "$manifest"
+            jq -r '.upload_files[] | gsub("\\\\"; "/") | split("/") | last' "$manifest" |
+            while IFS= read -r artefact; do
+              test -s "target/distrib/$artefact"
+              printf '%s: %s\n' "$target_group" "$artefact"
+            done
+          done | tee local-handoff-results.txt
+      - name: Build global artefacts
+        shell: bash
+        run: |
+          dist_status=0
+          printf '%s\n' 'dist build --output-format=json --artifacts=global' > dist-build.log
+          dist build --output-format=json --artifacts=global > dist-manifest.json 2>> dist-build.log || dist_status=$?
+          printf 'dist exit status: %s\n' "$dist_status" >> dist-build.log
+          cat dist-build.log
+          exit "$dist_status"
+      - name: Verify combined checksums
+        shell: bash
+        run: |
+          (cd target/distrib && sha256sum -c sha256.sum) | tee checksum-results.txt
+      - name: Collect global artefacts
+        id: cargo-dist
+        shell: bash
+        run: |
+          echo 'paths<<EOF' >> "$GITHUB_OUTPUT"
+          dist print-upload-files-from-manifest --manifest dist-manifest.json >> "$GITHUB_OUTPUT"
+          echo 'EOF' >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json target/distrib/global-dist-manifest.json
+      - name: Upload global artefacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-validation-global
+          path: |
+            ${{ steps.cargo-dist.outputs.paths }}
+            target/distrib/global-dist-manifest.json
+          if-no-files-found: error
+      - name: Upload global evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-validation-global-evidence
+          path: |
+            dist-manifest.json
+            dist-build.log
+            validation-context.txt
+            local-handoff-results.txt
+            checksum-results.txt
+          if-no-files-found: error

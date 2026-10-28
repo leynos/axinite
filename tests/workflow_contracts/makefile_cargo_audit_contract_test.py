@@ -15,6 +15,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 AUDIT_FLAGS = (
     "--ignore RUSTSEC-2025-0141",
     "--ignore RUSTSEC-2024-0370",
+    "--ignore RUSTSEC-2026-0391",
+    "--ignore RUSTSEC-2026-0398",
+    "--ignore RUSTSEC-2026-0403",
+    "--ignore RUSTSEC-2026-0410",
 )
 
 

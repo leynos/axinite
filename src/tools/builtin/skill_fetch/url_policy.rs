@@ -12,10 +12,10 @@ impl HttpsUrl {
     }
 }
 
-impl TryFrom<&str> for HttpsUrl {
-    type Error = ToolError;
+impl std::str::FromStr for HttpsUrl {
+    type Err = ToolError;
 
-    fn try_from(url_str: &str) -> Result<Self, Self::Error> {
+    fn from_str(url_str: &str) -> Result<Self, Self::Err> {
         let parsed = reqwest::Url::parse(url_str)
             .map_err(|e| ToolError::ExecutionFailed(format!("Invalid URL: {}", e)))?;
 
@@ -175,5 +175,19 @@ fn is_link_local_ip(ip: &IpAddr) -> bool {
             let segments = v6.segments();
             (segments[0] & 0xffc0) == 0xfe80
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Compile-time guard for the URL parser's tool error boundary.
+
+    use super::HttpsUrl;
+    use crate::tools::tool::ToolError;
+
+    #[test]
+    fn https_url_keeps_its_tool_error_parse_boundary() {
+        fn assert_error_type<T: std::str::FromStr<Err = ToolError>>() {}
+        assert_error_type::<HttpsUrl>();
     }
 }

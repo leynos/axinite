@@ -81,14 +81,16 @@ jobs:
       # shards keep full dispatch legs inside the step timeout.
       shard-count: 8
       # Mirror the CI test environment (test.yml "Tests" job): free
-      # runner disk, the clang+mold linker demanded by
-      # .cargo/config.toml, the wasm32-wasip2 target, cargo-component,
+      # runner disk, the clang linker driver and the pinned mold that
+      # .cargo/config.toml demands (installed by `make install-build-tools`,
+      # never the distribution's), the wasm32-wasip2 target, cargo-component,
       # and the prebuilt WASM artefacts the integration tests load
       # (the Telegram channel tests hard-fail in CI when absent).
       setup-commands: |
         sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
         sudo apt-get update
-        sudo apt-get install -y clang mold
+        sudo apt-get install -y clang
+        make install-build-tools
         rustup target add wasm32-wasip2
         cargo binstall --no-confirm --strategies crate-meta-data,quick-install \
           cargo-component@0.21.1 cargo-nextest@0.9.140

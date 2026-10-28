@@ -1,0 +1,339 @@
+"""Contracts for how the workflows provision and exclude the build standard.
+
+The standard is only as good as the jobs that install what it needs and the
+jobs that opt out of it. These contracts derive both from what a job runs:
+
+* every Linux job that compiles installs the pinned build tools first, with an
+  unconditional, hard-failing step, whether it compiles through Cargo directly,
+  through a Make target whose evaluated recipe reaches Cargo, through the WASM
+  builder, through the coverage action, or through a reusable workflow's
+  ``setup-commands``;
+* coverage jobs use step-level ``RUSTFLAGS: ''``, which keeps the parallel
+  frontend and Linux linker flag out of those builds;
+* release jobs exclude it with ``RUSTFLAGS``;
+* the Whitaker job installs the rolling suite through the shared action without
+  pinning it, then runs ``make lint-whitaker``; no Whitaker-related workflow
+  step assigns ``RUSTFLAGS``.
+
+The Make half is evaluated rather than assumed. Each judge is also run against
+mutated copies of the real workflows, and must reject every one.
+
+Run via ``make test-workflow-contracts``.
+"""
+
+from __future__ import annotations
+
+import copy
+import typing as typ
+
+import pytest
+
+from _build_standard_make import MakeDryRunError, dry_run, parse_invocations
+from _build_standard_judge import judge_all
+from _build_standard_workflow_mutations import TEXT_MUTATIONS, WORKFLOW_MUTATIONS
+from _build_standard_workflows import (
+    INSTALL_TARGET,
+    Step,
+    compiles,
+    install_violations,
+    make_targets_in,
+    runs_on_linux,
+    steps_of,
+)
+from _estate import read_workflow, read_workflows
+from _sources import read_text
+from _workflow_files import workflow_paths
+from _workflow_policy import WORKFLOW_DIR
+
+COMPILE_VERBS = {"build", "check", "clippy", "test", "nextest"}
+# This word appears only in release.yml's prose comment, not as a Make command.
+NON_MAKEFILE_TARGETS: frozenset[str] = frozenset({"zips"})
+
+
+@pytest.fixture(scope="module")
+def documents() -> dict[str, dict[str, typ.Any]]:
+    """Return every workflow, parsed, including the dist-generated one."""
+    return {
+        name: dict(document) for name, document in read_workflows(WORKFLOW_DIR).items()
+    }
+
+
+@pytest.fixture(scope="module")
+def texts() -> dict[str, str]:
+    """Return every workflow's source text."""
+    return {
+        path.name: read_text(path) for path in workflow_paths(WORKFLOW_DIR)
+    }
+
+
+@pytest.fixture(scope="module")
+def compiling_targets(documents: dict[str, dict[str, typ.Any]]) -> set[str]:
+    """Return the Make targets workflows name whose recipes reach Cargo."""
+    reached: set[str] = set()
+    failed: dict[str, str] = {}
+    for target in make_targets_in(documents):
+        try:
+            lines = dry_run(target)
+        except MakeDryRunError as error:
+            failed[target] = str(error)
+            continue
+        invocations, _ = parse_invocations(lines)
+        if any(invocation.verb in COMPILE_VERBS for invocation in invocations):
+            reached.add(target)
+    unexpected = set(failed) - NON_MAKEFILE_TARGETS
+    if unexpected:
+        failures = {name: failed[name] for name in sorted(unexpected)}
+        pytest.fail(
+            "workflow Make targets must dry-run unless explicitly allow-listed "
+            f"as non-Makefile invocations; failures: {failures}",
+            pytrace=False,
+        )
+    return reached
+
+
+def _linux_compiling_jobs(
+    documents: dict[str, dict[str, typ.Any]], targets: set[str]
+) -> list[str]:
+    """Return `workflow:job` for each Linux job with a compiling step."""
+    found: list[str] = []
+    for name, document in documents.items():
+        for job_id, job in (document.get("jobs") or {}).items():
+            if runs_on_linux(job) and any(
+                compiles(step, targets) for step in steps_of(job)
+            ):
+                found.append(f"{name}:{job_id}")
+    return found
+
+
+def test_the_repository_conforms(
+    documents: dict[str, dict[str, typ.Any]],
+    texts: dict[str, str],
+    compiling_targets: set[str],
+) -> None:
+    """No workflow violates the provisioning, exclusion or Whitaker contracts."""
+    problems = judge_all(documents, compiling_targets, texts=texts)
+    assert problems == []
+
+
+def test_make_reachability_was_derived_not_assumed(compiling_targets: set[str]) -> None:
+    """The Make half of the compile test saw the targets suites run through."""
+    expected = {
+        "test-workspace",
+        "test-github-tool",
+        "test-libsql-transport",
+        "lint-libsql-transport",
+        "build-github-tool-wasm",
+    }
+    assert expected <= compiling_targets, f"missing {expected - compiling_targets}"
+    assert INSTALL_TARGET not in compiling_targets, (
+        "installing the tools does not compile"
+    )
+    assert "check-fmt" not in compiling_targets
+
+
+def test_the_set_of_judged_jobs_is_not_empty(
+    documents: dict[str, dict[str, typ.Any]], compiling_targets: set[str]
+) -> None:
+    """A reader that found no compiling Linux job would pass vacuously."""
+    judged = _linux_compiling_jobs(documents, compiling_targets)
+    assert len(judged) >= 12, (
+        f"expected the estate's compiling Linux jobs, found {judged}"
+    )
+    for expected in (
+        "test.yml:tests",
+        "test.yml:github-tool-tests",
+        "coverage.yml:coverage",
+        "e2e.yml:build",
+        "mutation-testing.yml:mutation",
+    ):
+        assert expected in judged, (
+            f"{expected} was not recognized as compiling on Linux"
+        )
+
+
+def test_runner_forms_are_all_read(documents: dict[str, dict[str, typ.Any]]) -> None:
+    """Scalar, list, mapping and chained `runs-on` are all placed on Linux."""
+    scalar = {"runs-on": "ubuntu-latest"}
+    chain = {
+        "runs-on": "${{ github.event_name == 'schedule' && 'ubuntu-latest' || 'ubicloud-standard-4' }}"
+    }
+    listed = {"runs-on": ["self-hosted", "linux"]}
+    mapped = {"runs-on": {"group": "g", "labels": ["ubicloud-standard-2"]}}
+    caller = {"uses": "org/repo/.github/workflows/w.yml@" + "0" * 40}
+    windows = {"runs-on": "windows-latest"}
+    macos = {"runs-on": "macos-14"}
+    assert all(runs_on_linux(job) for job in (scalar, chain, listed, mapped, caller))
+    assert not any(runs_on_linux(job) for job in (windows, macos))
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["cargo -q test", "cargo +nightly --quiet --locked test"],
+    ids=("quiet", "toolchain-and-options"),
+)
+def test_cargo_global_boolean_options_do_not_hide_compile_verbs(command: str) -> None:
+    """Common Cargo flags before a verb still identify a compile step."""
+    step = Step("Compile", command, "", False, {}, {})
+
+    assert compiles(step, set()), f"Cargo compile options hid the verb in {command!r}"
+
+
+def test_make_variable_assignments_do_not_hide_compiling_targets() -> None:
+    """A Make assignment before a target does not hide its recipe."""
+    job = {
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {"name": "Compile", "run": "make TEST_FEATURES=x test-workspace"}
+        ],
+    }
+
+    assert install_violations("test.yml:assigned-target", job, {"test-workspace"}), (
+        "the assigned test-workspace target must require tool installation"
+    )
+
+
+def test_linux_matrix_runner_still_requires_build_tool_installation() -> None:
+    """A Linux value in a runner matrix keeps the install contract active."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"os": ["ubuntu-latest", "windows-latest"]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert install_violations("test.yml:matrix-runner", job, set()), (
+        "a matrix containing an Ubuntu runner must require tool installation"
+    )
+
+
+def test_windows_only_matrix_runner_does_not_require_linux_build_tools() -> None:
+    """A resolved Windows-only runner matrix is not classified as Linux."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"os": ["windows-latest"]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert not runs_on_linux(job), "a Windows-only matrix must not be classified Linux"
+    assert install_violations("test.yml:windows-matrix", job, set()) == [], (
+        "a Windows-only matrix must not require Linux build-tool installation"
+    )
+
+
+def test_windows_only_include_matrix_does_not_require_linux_build_tools() -> None:
+    """An include-only Windows axis resolves without declared matrix axes."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"include": [{"os": "windows-latest"}]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert not runs_on_linux(job), "an included Windows runner must not be classified Linux"
+    assert install_violations("test.yml:include-only-windows", job, set()) == [], (
+        "an included Windows runner must not require Linux build-tool installation"
+    )
+
+
+def test_matrix_axis_named_linux_does_not_classify_windows_as_linux() -> None:
+    """The axis name is not a runner label when its resolved value is Windows."""
+    job = {
+        "runs-on": "${{ matrix.linux_runner }}",
+        "strategy": {"matrix": {"linux_runner": ["windows-latest"]}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert not runs_on_linux(job), "a Windows matrix value must override its Linux-named axis"
+    assert install_violations("test.yml:linux-named-windows", job, set()) == [], (
+        "a Windows matrix value must not require Linux build-tool installation"
+    )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        pytest.param(["${{ inputs.runner }}"], id="only-unresolved"),
+        pytest.param(
+            ["windows-latest", "${{ inputs.runner }}"],
+            id="resolved-and-unresolved",
+        ),
+    ],
+)
+def test_unresolved_matrix_runner_values_may_select_linux(values: list[str]) -> None:
+    """An expression-valued runner cannot prove that Linux is excluded."""
+    job = {
+        "runs-on": "${{ matrix.os }}",
+        "strategy": {"matrix": {"os": values}},
+        "steps": [{"name": "Compile", "run": "cargo test"}],
+    }
+
+    assert runs_on_linux(job), "an unresolved runner value may select Linux"
+    assert install_violations("test.yml:unresolved-runner", job, set()), (
+        "an unresolved runner value must require build-tool installation"
+    )
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [{"if": "false"}, {"continue-on-error": True}],
+    ids=("skipped", "soft-failing"),
+)
+def test_non_guaranteed_configuration_removal_does_not_exempt_compile(
+    guard: dict[str, object],
+) -> None:
+    """Only a guaranteed removal can replace the build-tools install."""
+    job = {
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {"name": "Remove config", "run": "rm .cargo/config.toml", **guard},
+            {"name": "Compile", "run": "cargo test"},
+        ],
+    }
+
+    assert install_violations("test.yml:guarded-removal", job, set())
+
+
+@pytest.mark.parametrize(
+    "name", sorted(WORKFLOW_MUTATIONS), ids=sorted(WORKFLOW_MUTATIONS)
+)
+def test_each_structural_mutation_is_detected(
+    name: str,
+    documents: dict[str, dict[str, typ.Any]],
+    texts: dict[str, str],
+    compiling_targets: set[str],
+) -> None:
+    """Breaking provisioning, exclusion or Whitaker wiring one way is reported."""
+    mutate, fragment = WORKFLOW_MUTATIONS[name]
+    mutated = copy.deepcopy(documents)
+    mutate(mutated)
+    problems = judge_all(mutated, compiling_targets, texts=texts)
+    assert any(fragment in problem for problem in problems), (
+        f"the mutation {name!r} was not reported as {fragment!r}: {problems}"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(TEXT_MUTATIONS), ids=sorted(TEXT_MUTATIONS))
+def test_each_retired_mechanism_is_detected(
+    name: str,
+    documents: dict[str, dict[str, typ.Any]],
+    texts: dict[str, str],
+    compiling_targets: set[str],
+) -> None:
+    """A mechanism the standard replaced may not come back."""
+    mutated_texts = dict(texts)
+    mutated_texts["test.yml"] += TEXT_MUTATIONS[name]
+    assert judge_all(documents, compiling_targets, texts=mutated_texts)
+
+
+def test_the_mutations_executed() -> None:
+    """Prove the parametrized cases exist, so none can be discovered away."""
+    assert len(WORKFLOW_MUTATIONS) == 19
+    assert len(TEXT_MUTATIONS) == 4
+
+
+def test_workflows_parse_to_the_documents_judged(
+    documents: dict[str, dict[str, typ.Any]],
+) -> None:
+    """The documents the judges read are the YAML on disk, not a stale copy."""
+    on_disk = read_workflow(WORKFLOW_DIR / "test.yml")
+    on_disk_jobs = on_disk["jobs"]
+    assert isinstance(on_disk_jobs, dict), "test.yml must declare workflow jobs"
+    assert set(on_disk_jobs) == set(documents["test.yml"]["jobs"])

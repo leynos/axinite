@@ -29,6 +29,7 @@ PUBLISHER = "coverage.yml"
 PUBLISHER_JOB = "coverage"
 PULL_REQUEST_LANE = "codescene-coverage.yml"
 PULL_REQUEST_JOB = "coverage-check"
+BASELINE_RUST_FILE = ".coverage-baseline.rust.nightly-2026-10-16"
 
 #: The shared actions. Each is pinned to a full commit SHA; which commit is
 #: Dependabot's to move, so the contract asserts the shape and not the value
@@ -285,6 +286,20 @@ def test_the_lane_and_its_baseline_measure_the_same_selection(
     baseline = _generator(workflows, PUBLISHER, PUBLISHER_JOB)
     differing = [key for key in SELECTION_INPUTS if lane.get(key) != baseline.get(key)]
     assert not differing, f"the lane and the baseline differ on {differing}"
+
+
+def test_the_lane_and_main_writer_share_the_bootstrap_baseline_file(
+    workflows: Workflows,
+) -> None:
+    """The nightly bootstrap has one path, written only by the main push."""
+    lane = _generator(workflows, PULL_REQUEST_LANE, PULL_REQUEST_JOB)
+    baseline = _generator(workflows, PUBLISHER, PUBLISHER_JOB)
+    assert lane.get("baseline-rust-file") == BASELINE_RUST_FILE, (
+        "the PR lane must compare against the versioned nightly baseline"
+    )
+    assert baseline.get("baseline-rust-file") == BASELINE_RUST_FILE, (
+        "the main-owned writer must publish the same versioned nightly baseline"
+    )
 
 
 def test_every_shared_coverage_action_is_pinned_to_a_commit(

@@ -28,7 +28,7 @@ from _suite_targets import (
     PROFILE_VARIABLE,
     WORKSPACE,
 )
-from _trigger_reading import matrix_legs, runs_on_event, triggers
+from _trigger_reading import MatrixReadError, matrix_legs, runs_on_event, triggers
 from _workflow_files import jobs_of
 from _workflow_policy import Job, step_text
 from suite_actions import admits_leg, runs_suite_through_action
@@ -186,10 +186,11 @@ def make_runs(
 ) -> Iterator[tuple[str, str, frozenset[str]]]:
     """Yield the scope, profile and features of each Make target in a script.
 
-    Only the workspace half reads the step's variables. `make test-github-tool`
-    runs plain `cargo test` over one crate: it takes no features and no
-    nextest profile, so giving it the step's would invent a difference between
-    two identical runs.
+    Only the workspace suite reads the step's variables. The GitHub tool and
+    standalone probe run plain `cargo test` over fixed crate scopes; neither
+    takes features or a nextest profile, so giving either the step's values
+    would invent a difference between identical runs. The TLS target has its
+    own fixed feature set.
 
     Parameters
     ----------
@@ -269,24 +270,86 @@ def action_runs(
     yield WORKSPACE, str(profile), feature_key(arguments, defaults)
 
 
+def _has_matrix_scoped_cargo_command(script: str) -> bool:
+    """Detect a test command whose unresolved matrix may supply its scope."""
+    for command in split_commands(script):
+        for pattern in CARGO_COMMANDS:
+            match = pattern.search(command)
+            if match is not None and MATRIX_REFERENCE_RE.search(match["args"]):
+                return True
+    return False
+
+
+def _has_matrix_selected_make_target(script: str) -> bool:
+    """Detect Make arguments that could expand to an unrecognized suite target."""
+    for command in split_commands(script):
+        make = re.search(r"\bmake\s+", command)
+        if make is not None and MATRIX_REFERENCE_RE.search(command[make.end() :]):
+            return True
+    return False
+
+
+# cargo-dist supplies these installer scripts to its release jobs. Other
+# matrix-supplied scripts are opaque and may run a suite.
+_DIST_SETUP_SCRIPTS = {
+    ("release.yml", "build-local-artifacts", "${{ matrix.install_dist.run }}"),
+    (
+        "release-package-validation.yml",
+        "build-local-artifacts",
+        "${{ matrix.install_dist.run }}",
+    ),
+    (
+        "release-package-validation.yml",
+        "build-local-artifacts",
+        "${{ matrix.packages_install }}",
+    ),
+}
+_MATRIX_SCRIPT_RE = re.compile(r"\$\{\{\s*matrix\.[^{}]+\}\}(?=\s|$)")
+
+
+def _has_unclassified_matrix_script(job: Job, script: str) -> bool:
+    """Reject opaque commands except the known cargo-dist setup scripts."""
+    for command in split_commands(script):
+        if _MATRIX_SCRIPT_RE.match(command) and (
+            job.workflow, job.job_id, command
+        ) not in _DIST_SETUP_SCRIPTS:
+            return True
+    return False
+
+
+def _has_recognized_suite_command(job: Job, defaults: frozenset[str]) -> bool:
+    """Return whether the job contains a command counted by suite contracts."""
+    for step in job.steps:
+        script = step_text(step)
+        if _has_unclassified_matrix_script(job, script):
+            return True
+        if _has_matrix_scoped_cargo_command(script) or any(
+            cargo_runs(script, defaults)
+        ):
+            return True
+        if _has_matrix_selected_make_target(script) or any(
+            make_runs(script, defaults)
+        ):
+            return True
+        if any(action_runs(step, defaults)):
+            return True
+    return False
+
+
 def suite_runs_in(job: Job, event: str, defaults: frozenset[str]) -> Iterator[SuiteRun]:
-    """Yield every suite run a job performs on an event.
+    """Yield suite runs performed by a job for an event.
 
-    Parameters
-    ----------
-    job
-        The job to read.
-    event
-        A `github.event_name` value, which selects the matrix legs.
-    defaults
-        The root manifest's `default` feature list.
-
-    Yields
-    ------
-    SuiteRun
-        One entry per leg per suite command, in workflow order.
+    An unreadable matrix is excused only when the job has no recognized suite
+    or command whose matrix arguments could supply a suite scope or target.
     """
-    for leg in matrix_legs(job, event):
+    try:
+        legs = matrix_legs(job, event)
+    except MatrixReadError:
+        if _has_recognized_suite_command(job, defaults):
+            raise
+        return
+
+    for leg in legs:
         for step in job.steps:
             # A step whose `if` names one leg runs on that leg alone; any
             # other condition is read as admitting every leg.

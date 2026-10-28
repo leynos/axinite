@@ -26,9 +26,13 @@ if ! command -v rustup &>/dev/null; then
 fi
 echo "[1/6] rustup found: $(rustup --version 2>/dev/null | head -1)"
 
-# 2. Add WASM target (required by build.rs for channel compilation)
-echo "[2/6] Adding wasm32-wasip2 target..."
-rustup target add wasm32-wasip2
+# 2. Install the pinned build tools: the dated nightly in rust-toolchain.toml
+#    with its components and the wasm32-wasip2 target (required by build.rs for
+#    channel compilation), and the pinned mold linker that .cargo/config.toml
+#    names on Linux. clang must already be installed; the check says so if not.
+echo "[2/6] Installing the pinned toolchain and build tools..."
+make install-build-tools
+make check-build-tools
 
 # 3. Install wasm-tools (required by build.rs for WASM component model)
 echo "[3/6] Installing wasm-tools..."

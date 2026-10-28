@@ -208,6 +208,12 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "ubicloud-standard-4",
         "compiles the workspace to wasm32-wasip2, 277 s",
     ),
+    ("test.yml", "msrv"): (
+        "ubicloud-standard-4",
+        "checks every target of the workspace on the stable MSRV compiler and "
+        "runs no tests; provisional, on the shape of the other whole-workspace "
+        "compiles, until the first run reports a peak",
+    ),
     ("test.yml", "docker-build"): (
         "ubicloud-standard-4",
         "off the critical path, so it takes the cheaper shape: 605 s at half "

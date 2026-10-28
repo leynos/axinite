@@ -20,8 +20,10 @@ def write_lockfile(
     unrelated_dependency: str | None = None,
     additional_packages: str = "",
 ) -> None:
-    """Write the minimum lock graph containing the three documented audit paths."""
-    root_dependencies = ' "rust_decimal", "libsql", "pdf-extract",'
+    """Write the minimum lock graph containing all documented audit paths."""
+    root_dependencies = (
+        ' "rust_decimal", "libsql", "pdf-extract", "wasmtime-internal-cache",'
+    )
     if unrelated_dependency is not None:
         root_dependencies += f' "{unrelated_dependency}",'
 
@@ -46,7 +48,7 @@ version = "0.7.46"
 [[package]]
 name = "libsql"
 version = "0.9.30"
-dependencies = ["h2"]
+dependencies = ["h2 0.3.27"]
 
 [[package]]
 name = "h2"
@@ -65,6 +67,24 @@ dependencies = ["ttf-parser"]
 [[package]]
 name = "ttf-parser"
 version = "0.25.1"
+[[package]]
+name = "wasmtime-internal-cache"
+version = "48.0.7"
+dependencies = ["zstd 0.13.3"]
+
+[[package]]
+name = "zstd"
+version = "0.13.3"
+dependencies = ["zstd-safe 7.2.4"]
+
+[[package]]
+name = "zstd-safe"
+version = "7.2.4"
+dependencies = ["zstd-sys 2.0.16+zstd.1.5.7"]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.16+zstd.1.5.7"
 {additional_packages}
 """
     )
@@ -104,7 +124,27 @@ version = "1.0.0"
     assert verify(lockfile).returncode == 0
 
 
-@pytest.mark.parametrize("unrelated_dependency", ["rkyv", "h2", "ttf-parser"])
+def test_audit_ignores_accept_fixed_h2_version_outside_libsql(
+    tmp_path: Path,
+) -> None:
+    """Keep the vulnerable h2 path scoped while allowing its fixed release."""
+    lockfile = tmp_path / "Cargo.lock"
+    write_lockfile(lockfile)
+    contents = lockfile.read_text().replace(
+        '"wasmtime-internal-cache",',
+        '"wasmtime-internal-cache", "h2 0.4.16",',
+        1,
+    )
+    contents += '\n[[package]]\nname = "h2"\nversion = "0.4.16"\n'
+    lockfile.write_text(contents)
+
+    assert verify(lockfile).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "unrelated_dependency",
+    ["rkyv", "h2", "ttf-parser", "zstd", "zstd-safe", "zstd-sys"],
+)
 def test_audit_ignores_reject_unrelated_dependency_paths(
     tmp_path: Path,
     unrelated_dependency: str,

@@ -17,6 +17,13 @@ jobs:
     # Cargo registry key would be a second writer.
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Release orchestration takes none of the development standard in
+      # `.cargo/config.toml`: an exported (even empty) RUSTFLAGS displaces its
+      # `rustflags` tables. No crate here is published
+      # (`publish = false`), so nothing compiles; the exclusion keeps a later
+      # packaging step on the production route.
+      RUSTFLAGS: ''
     permissions:
       contents: write
     steps:
@@ -26,9 +33,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # The toolchain is the dated nightly in `rust-toolchain.toml`; rustup
+      # installs it with the components and targets the file lists.
       - &install-rust
         name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup toolchain install --profile minimal
       # Generating a GitHub token, so that PRs and tags created by
       # the release-plz-action can trigger actions workflows.
       - name: Generate GitHub token
@@ -54,6 +63,9 @@ jobs:
     # Release orchestration; see release-plz-release.
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # No development standard here either; see release-plz-release.
+      RUSTFLAGS: ''
     permissions:
       contents: write
       pull-requests: write

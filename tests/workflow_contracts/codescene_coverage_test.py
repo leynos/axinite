@@ -129,10 +129,9 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Free disk space",
         "actions/checkout@v6",
         "Start resource sampler",
-        "dtolnay/rust-toolchain@stable",
         "Install clang",
-        "Install mold",
         "Setup Rust",
+        "Install build tools",
         "Restore Cargo registry and index",
         "Install cargo-binstall",
         "Install cargo-component",
@@ -144,13 +143,12 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Report resource peaks",
     ], "coverage-check setup and report steps must stay ordered"
 
-    rust = next(
-        step for step in steps if step.get("uses") == "dtolnay/rust-toolchain@stable"
+    # The toolchain, its llvm-tools component and the WASM target come from
+    # `rust-toolchain.toml` through setup-rust, which is given no `toolchain`.
+    setup = next(step for step in steps if step.get("name") == "Setup Rust")
+    assert "toolchain" not in setup.get("with", {}), (
+        "coverage-check must take its toolchain from rust-toolchain.toml"
     )
-    assert rust.get("with") == {
-        "components": "llvm-tools-preview",
-        "targets": "wasm32-wasip2",
-    }, "coverage-check must install the proven Rust components and WASM target"
 
     # The registry cache carries no compiler output. sccache owns that from
     # the migration wave onwards; a target archive here would be a second
@@ -217,7 +215,13 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     generator = _find_step(job, "Generate coverage")
     # The compile-contract job runs the same selection under `ci`; coverage
     # uses a profile that excludes those fixture compilations.
-    assert generator.get("env") == {"NEXTEST_PROFILE": "coverage"}, (
+    # `RUSTFLAGS` is empty on purpose: it displaces the development standard's
+    # rustflags tables, which coverage must not take.
+    # `build_standard_workflows_test.py` holds that exclusion.
+    assert generator.get("env") == {
+        "NEXTEST_PROFILE": "coverage",
+        "RUSTFLAGS": "",
+    }, (
         "coverage-check must use the filtered coverage profile after the "
         f"separate compile-contract run; its env is {generator.get('env')}"
     )
@@ -229,6 +233,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "format": "lcov",
         "output-path": "lcov.info",
         "with-ratchet": "true",
+        "baseline-rust-file": ".coverage-baseline.rust.nightly-2026-10-16",
         "publish-artefact": "false",
         "cache-provider": "external",
     }, (

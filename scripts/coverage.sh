@@ -31,6 +31,12 @@ if ! command -v cargo-llvm-cov &>/dev/null; then
     exit 1
 fi
 
+# Coverage is a measurement, not a development build, so it takes none of the
+# development standard in .cargo/config.toml. An exported (even empty) RUSTFLAGS
+# displaces the configuration's `rustflags` tables, which drops `-Zthreads=8`
+# and the `mold` link flag while cargo-llvm-cov adds its instrumentation.
+export RUSTFLAGS="${RUSTFLAGS-}"
+
 # Clean stale profiling data to avoid "mismatched data" warnings.
 cargo llvm-cov clean --workspace 2>/dev/null || true
 
