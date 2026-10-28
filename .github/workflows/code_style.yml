@@ -54,7 +54,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -162,7 +162,7 @@ jobs:
             flags: "--no-default-features --features libsql"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -281,7 +281,7 @@ jobs:
             flags: "--no-default-features --features libsql"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # The toolchain is the dated nightly in `rust-toolchain.toml`; rustup
       # installs it with the components and targets the file lists.
       - name: Install Rust
