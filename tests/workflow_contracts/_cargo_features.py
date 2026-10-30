@@ -100,7 +100,9 @@ def _enables_postgres(flags: str, default_features: frozenset[str]) -> bool:
     Returns
     -------
     bool
-        True when the resolved feature set contains `postgres`.
+        True when the resolved feature set contains `postgres`, either
+        directly or through `embedded-postgres`, which enables it in the root
+        manifest.
     """
     tokens = shlex.split(flags, comments=False, posix=True)
     if "--all-features" in tokens:
@@ -113,7 +115,9 @@ def _enables_postgres(flags: str, default_features: frozenset[str]) -> bool:
     # that names nothing still gets every member of `default`.
     if "--no-default-features" not in tokens:
         named |= default_features
-    return POSTGRES_FEATURE in named
+    # `embedded-postgres` lists `postgres` among the features it enables, so
+    # naming it alone still compiles a PostgreSQL-bearing leg.
+    return POSTGRES_FEATURE in named or EMBEDDED_FEATURE in named
 
 
 def _has_embedded_cluster(flags: str) -> bool:

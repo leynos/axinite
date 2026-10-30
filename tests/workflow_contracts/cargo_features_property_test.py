@@ -1,4 +1,12 @@
-"""Property contracts for Cargo feature selection in coverage legs."""
+"""Property contracts for Cargo feature selection in coverage legs.
+
+The coverage contracts decide whether a leg compiles PostgreSQL from its
+Cargo flags. Cargo accepts several spellings of the same feature list, so
+these properties hold the reader to every spelling, including features that
+enable `postgres` indirectly.
+
+Run via ``make test-workflow-contracts``.
+"""
 
 from __future__ import annotations
 
@@ -64,6 +72,7 @@ def test_equivalent_feature_flag_forms_resolve_postgres(case: FeatureCase) -> No
     expected = (
         case.all_features
         or "postgres" in case.features
+        or "embedded-postgres" in case.features
         or (case.default_postgres and not case.no_defaults)
     )
     rendered = " ".join(flags)

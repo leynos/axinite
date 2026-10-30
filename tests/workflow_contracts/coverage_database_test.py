@@ -290,6 +290,11 @@ def test_the_libsql_job_compiles_without_postgres() -> None:
             "--no-default-features --features postgres", True, id="narrow-but-postgres"
         ),
         pytest.param(
+            "--no-default-features --features embedded-postgres",
+            True,
+            id="narrow-but-embedded-postgres",
+        ),
+        pytest.param(
             "--no-default-features --features libsql,postgres",
             True,
             id="comma-separated",
