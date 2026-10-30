@@ -6,17 +6,18 @@ is which tests a per-test allowance was sized for. Neither can see a
 value being deleted or changed, because both compare one figure against
 another and every comparison still holds afterwards.
 
-``grace-period`` is the clearest case. All three profiles and both
-compile-contract overrides set five seconds, and ``termination_allowance``
+``grace-period`` is the clearest case. All three profiles, and each
+compile-contract override, set five seconds, and ``termination_allowance``
 reads whatever it finds, falling back to nextest's ten-second default. So
 deleting every ``grace-period`` in the file *raises* the computed
 requirement and leaves the ordering assertions passing, while the wait
 between `SIGTERM` and `SIGKILL` silently doubles. The nested trybuild
-override's 1,500 s is the next: the budget assertion accepts anything at or
-above the allowance, so an override raised to an hour would pass while
-sitting above the 30 m whole-run budget for its tests. And the whole-run
-budget itself is only ever compared with the largest per-test allowance,
-so the documented thirty minutes could become forty without a failure.
+override's 1,500 s is the next, and the database-surface override's 2,400 s
+beside it: the budget assertion accepts anything at or above the allowance,
+so an override raised to an hour would pass while sitting above the 45 m
+whole-run budget for its tests. And the whole-run budget itself is only ever
+compared with the largest per-test allowance, so the documented forty-five
+minutes could become fifty without a failure.
 
 Pinned by value, therefore, not by relation: these are the figures
 ``docs/developers-guide.md`` records, and a change to any of them is a
@@ -32,7 +33,7 @@ import pytest
 import tomllib
 from _workflow_policy import REPOSITORY_ROOT
 from compile_contract_inventory import REQUIRED_COMPILE_CONTRACT_BINARIES
-from nextest_config import Profile, binaries_selected
+from nextest_config import Profile, binaries_selected, seconds
 from timeout_budgets import base_slow_timeout, global_timeout
 
 #: The profiles the configuration is allowed to declare. Pinned as a set
@@ -56,9 +57,9 @@ REQUIRED_BASE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
 
 #: The whole-run budget every profile declares, in seconds. Read through
 #: the duration grammar rather than matched as text, so the assertion is
-#: about the thirty minutes the guide documents and not about which of
-#: the spellings of thirty minutes the file happens to use.
-REQUIRED_GLOBAL_TIMEOUT_SECONDS: typ.Final[float] = 30 * 60.0
+#: about the forty-five minutes the guide documents and not about which of
+#: the spellings of forty-five minutes the file happens to use.
+REQUIRED_GLOBAL_TIMEOUT_SECONDS: typ.Final[float] = 45 * 60.0
 
 #: The compile-contract override's ``slow-timeout``, field by field.
 #: ``compile_contract_budget_test`` asserts the allowance is *at least*
@@ -66,6 +67,17 @@ REQUIRED_GLOBAL_TIMEOUT_SECONDS: typ.Final[float] = 30 * 60.0
 #: override raised past the whole-run budget passing.
 REQUIRED_OVERRIDE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
     "period": "1500s",
+    "terminate-after": "1",
+    "grace-period": "5s",
+}
+
+#: ``db_surface_compile_contracts`` is a nested Cargo session that took about
+#: 945 s on GitHub-hosted runners and exceeded 1,500 s on
+#: ``ubicloud-standard-4``. It alone is allowed 2,400 s, five minutes below
+#: the whole-run budget, and every other trybuild test keeps the shared
+#: 1,500 s allowance.
+REQUIRED_DB_SURFACE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
+    "period": "2400s",
     "terminate-after": "1",
     "grace-period": "5s",
 }
@@ -156,11 +168,11 @@ def test_each_profile_pins_its_base_slow_timeout_field_by_field(
 def test_each_profile_pins_the_documented_whole_run_budget(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
-    """Thirty minutes is a documented figure, not merely a large one.
+    """Forty-five minutes is a documented figure, not merely a large one.
 
     The ordering assertion requires the whole-run budget to sit above
-    the largest per-test allowance, which 40 m and 60 m satisfy as well
-    as 30 m does. The guide's table says thirty minutes and says why:
+    the largest per-test allowance, which 50 m and 60 m satisfy as well
+    as 45 m does. The guide's table says forty-five minutes and says why:
     above the largest per-test allowance in either profile, and twice
     the longest instrumented run measured. A budget that drifted from
     it would leave the guide describing a value the runner does not use.
@@ -183,13 +195,16 @@ def test_each_profile_pins_its_compile_contract_override(
     binary a profile runs is allowed *at least* the longer budget, which
     is the right shape for that question and says nothing about the
     value: an override raised to an hour would satisfy it while sitting
-    above the 30 m whole-run budget for every test it matched, so the
+    above the 45 m whole-run budget for every test it matched, so the
     run would end before the allowance could be used.
 
-    Default and ci each declare two overrides: first one naming only
-    `schema_helpers_ui` and preserving its exact 300 s ordinary bound, then
-    the shared one naming both required targets and allowing trybuild
-    1,500 s. They also carry the Postgres group override (pinned by
+    Default and ci each declare three overrides selecting compile-contract
+    binaries, in this order: first one naming only `schema_helpers_ui` and
+    preserving its exact 300 s ordinary bound; then the database-surface one
+    naming only `trybuild`, which allows `db_surface_compile_contracts`
+    2,400 s; then the shared one naming both required targets and allowing
+    the other trybuild tests 1,500 s. They also carry the Postgres group
+    override (pinned by
     ``test_each_profile_pins_its_postgres_group_override``). Coverage declares
     none; it inherits the ci override and filters the binaries out. The
     counts are pinned because a second matching override would change the
@@ -199,18 +214,18 @@ def test_each_profile_pins_its_compile_contract_override(
     contract_overrides = [
         entry for entry in own if binaries_selected(entry.get("filter"))
     ]
-    expected_count = 0 if profile == "coverage" else 2
+    expected_count = 0 if profile == "coverage" else 3
     assert len(contract_overrides) == expected_count, (
         f"[profile.{profile}] declares {len(contract_overrides)} overrides "
-        f"selecting compile-contract binaries; this contract "
-        f"pins {expected_count}: the `schema_helpers_ui` allowance first, "
-        f"then the shared compile-contract override. nextest applies the "
-        f"first override that sets a field, so order decides the allowance "
-        f"in force"
+        f"selecting compile-contract binaries; this contract pins "
+        f"{expected_count}: the `schema_helpers_ui` allowance first, then the "
+        f"database-surface allowance, then the shared compile-contract "
+        f"override. nextest applies the first override that sets a field, so "
+        f"order decides the allowance in force"
     )
     if not contract_overrides:
         return
-    specific, shared = contract_overrides
+    specific, database_surface, shared = contract_overrides
     assert binaries_selected(specific.get("filter")) == frozenset(
         {"schema_helpers_ui"}
     ), (
@@ -224,6 +239,25 @@ def test_each_profile_pins_its_compile_contract_override(
         f"{specific_fields}, not {REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT}; "
         f"schema fixture code now compiles with its integration target and "
         f"must retain the ordinary 300 s test bound"
+    )
+    database_binaries = binaries_selected(database_surface.get("filter"))
+    assert database_binaries == frozenset({"trybuild"}), (
+        f"[profile.{profile}]'s database-surface override must select only "
+        f"`trybuild`, got {database_surface.get('filter')!r}; it sits between "
+        f"the `schema_helpers_ui` allowance and the shared override, so a "
+        f"broader filter would hand other binaries its allowance"
+    )
+    database_fields = _fields(database_surface.get("slow-timeout"))
+    assert database_fields == REQUIRED_DB_SURFACE_SLOW_TIMEOUT, (
+        f"[profile.{profile}]'s database-surface slow-timeout is "
+        f"{database_fields}, not {REQUIRED_DB_SURFACE_SLOW_TIMEOUT}; the guide "
+        f"records 2,400 s for `db_surface_compile_contracts`"
+    )
+    assert seconds(REQUIRED_DB_SURFACE_SLOW_TIMEOUT["period"]) < global_timeout(
+        nextest_profiles[profile]
+    ), (
+        f"[profile.{profile}]'s database-surface allowance is not below the "
+        f"whole-run budget, so the run would end before that test could use it"
     )
     selected = binaries_selected(shared.get("filter"))
     assert selected == REQUIRED_OVERRIDE_BINARIES, (

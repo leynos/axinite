@@ -80,11 +80,12 @@ PROBE_COMMANDS: dict[str, tuple[str, ...]] = {
 }
 
 #: The installer version the Whitaker step pins, and the shared-actions
-#: revision it pins the action at. The action refuses an installer below 0.2.9,
-#: and the revision is shared-actions #546, which leaves `install-whitaker`
-#: content-identical to the revision concordat's QG-002 rule reviewed.
-WHITAKER_INSTALLER_VERSION = "0.2.9"
-WHITAKER_ACTION_SHA = "6cec89bac47a21cf756d68d638a9a510998e57f8"
+#: revision it pins the action at. The revision is shared-actions #651
+#: (5a99aed7), where install-whitaker defaults to whitaker-installer 0.2.11, and
+#: the action refuses an installer below 0.2.9. This is the revision that
+#: concordat QG-002 approval 5a99aed7 covers.
+WHITAKER_INSTALLER_VERSION = "0.2.11"
+WHITAKER_ACTION_SHA = "5a99aed78ce68dcebd3052b75c31e6f173162b1e"
 
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
@@ -361,10 +362,10 @@ def _run_probe(tmp_path: Path, marker: str | None) -> subprocess.CompletedProces
 @pytest.mark.parametrize(
     ("marker", "should_pass"),
     [
-        pytest.param("0.2.9\n", True, id="the-pinned-version-passes"),
-        pytest.param("0.2.9 cargo-binstall\n", True, id="extra-fields-are-ignored"),
+        pytest.param("0.2.11\n", True, id="the-pinned-version-passes"),
+        pytest.param("0.2.11 cargo-binstall\n", True, id="extra-fields-are-ignored"),
         pytest.param("0.2.8\n", False, id="an-older-installer-fails"),
-        pytest.param("0.2.99\n", False, id="a-longer-version-fails"),
+        pytest.param("0.2.111\n", False, id="a-longer-version-fails"),
         pytest.param(None, False, id="a-missing-marker-fails"),
     ],
 )
