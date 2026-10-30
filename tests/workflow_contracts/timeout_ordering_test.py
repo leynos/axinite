@@ -11,7 +11,7 @@ shared ``generate-coverage`` action: ``coverage.yml``'s ``libsql-only`` leg
 and ``codescene-coverage.yml``'s pull-request lane. Every other lane runs
 ``cargo llvm-cov nextest`` from a ``run:`` step and has no watchdog. Where
 the tier exists it is set explicitly, because the action's 1,800 s default
-equals the 30 m nextest budget and also has to cover the instrumented
+is below the 45 m nextest budget and also has to cover the instrumented
 build, so it would kill a slow but legal run before nextest could report
 it. The contract holds it above the run and the work around it, and below
 the job's ceiling by the same margin the ceiling keeps above the run.

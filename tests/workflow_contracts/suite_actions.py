@@ -5,7 +5,7 @@ action rather than from a `run:` line: `coverage.yml`'s `libsql-only` leg,
 which writes the ratchet baseline, and `codescene-coverage.yml`'s pull-request
 lane. A reading of `run:` lines alone does not see those runs, and the action
 adds the third tier, a wall-clock watchdog on each `cargo` invocation that
-defaults to 1,800 s. That default equals the 30 m nextest whole-run budget
+defaults to 1,800 s. That default is below the 45 m nextest whole-run budget
 and sits under the instrumented build as well, so it would kill a slow but
 legal run before nextest could report it.
 

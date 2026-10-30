@@ -400,9 +400,11 @@ def test_the_first_matching_override_governs_not_the_largest() -> None:
     silent pass as the negated override above: every number in the right
     order while the binary runs under something else.
 
-    The repository's own matching overrides all grant the same period,
-    so nothing in the estate distinguishes the two readings. This is the
-    case that does.
+    The repository's matching overrides for `trybuild` grant two periods:
+    2,400 s for the database-surface test, which comes first, and 1,500 s
+    for the rest. The two readings agree there because the longer one is
+    first, so nothing in the estate distinguishes them. This is the case
+    that does.
     """
     allowed = allowance_for_binary(_example(OVERLAPPING_OVERRIDES), "trybuild")
     assert allowed == FIRST_OVERLAPPING_ALLOWANCE, (
