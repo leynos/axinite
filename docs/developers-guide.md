@@ -3954,8 +3954,7 @@ were unset until this was written.
 
 | Tier                     | What it bounds                     | Where it is set                      | Current value                                                                            |
 | ------------------------ | ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 1,500 s per nested `trybuild` session; 5 s grace |
-| Per-test, database       | one database surface process       | `.config/nextest.toml`, default, ci  | 2,400 s; 5 s grace                                                                       |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 2,400 s per nested `trybuild` session; 5 s grace |
 | nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 45 m                                                                                     |
 | Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                                        |
 | Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                              |
@@ -3993,10 +3992,9 @@ beside the profile a reader selects rather than one section away.
 
 All three therefore set a 300-second base allowance and a 45-minute whole-run
 budget. The default and ci profiles each declare an explicit 300-second
-override for `schema_helpers_ui`, then a 2,400-second override for
-`db_surface_compile_contracts`, then the shared serial-group override that
-allows the other nested `trybuild` sessions 1,500 seconds. Coverage inherits
-the ci overrides.
+override for `schema_helpers_ui`, then the shared serial-group override that
+allows every nested `trybuild` session 2,400 seconds. Coverage inherits the ci
+overrides.
 
 ### The compile-contract binaries are not ordinary tests
 
@@ -4034,13 +4032,12 @@ both run from its one `ui` test.
 
 The per-test timeout applies to the test process. For `trybuild`, nested Cargo
 preparation, fixture compilation and execution all happen inside that process
-and count towards its allowance: 1,500 seconds, or 2,400 seconds for
-`db_surface_compile_contracts`. For `schema_helpers_ui`, the integration target
-compiles before nextest starts the test timer; its `ui` test has the ordinary
-300-second execution bound. Nextest's 45-minute global timer also starts with
-the test run. It does not bound the Cargo build that precedes nextest,
-including a coverage build; the configured Cargo watchdog and job limits remain
-the outer bounds where those are present.
+and count towards its allowance of 2,400 seconds. For `schema_helpers_ui`, the
+integration target compiles before nextest starts the test timer; its `ui` test
+has the ordinary 300-second execution bound. Nextest's 45-minute global timer
+also starts with the test run. It does not bound the Cargo build that precedes
+nextest, including a coverage build; the configured Cargo watchdog and job
+limits remain the outer bounds where those are present.
 
 The source-discovered nested-compiler inventory uses calls to
 `trybuild::TestCases` and must remain exactly `trybuild`. A separate pinned
@@ -4055,9 +4052,9 @@ Contracts also check default-profile inheritance, CI override precedence, and
 that ordinary tests stay outside the compile-contract group. The timeout probe
 scales the periods down and verifies that schema-helper execution is terminated
 at its ordinary 300-second bound while a `trybuild` test survives its
-1,500-second allowance.
+2,400-second allowance.
 
-### Why the nested session needs 1,500 seconds
+### Why the nested session needs 2,400 seconds
 
 The figure comes from a cold cache, which is the state every branch starts in.
 `trybuild` compiles the whole generated project's dependency tree inside the
@@ -4092,22 +4089,18 @@ compile-contract binaries. A branch's first run of `Tests (default)` is
 therefore cold however busy the repository is, and a budget sized against warm
 runs fails every branch once.
 
-1,500 seconds leaves 362 seconds after the measured cold run, which is 29
-seconds less than the 391 seconds the warm run spent on the build and the
-fixtures together — a narrower margin than it looks, and the reason the figure
-should not be trimmed without a fresh measurement. It is also the figure commit
-`730f6f7a` chose for `schema_helpers_ui` when that target carried the same
-cold-cache problem, and it leaves 1,200 seconds below the 45-minute whole-run
-budget, which is the ordering constraint this tier has to satisfy.
+2,400 seconds leaves 1,262 seconds after the measured cold run, and it sits 300
+seconds below the 45-minute whole-run budget, which is the ordering constraint
+this tier has to satisfy. The figure should not be trimmed without a fresh
+measurement. The 1,500-second figure that commit `730f6f7a` chose for
+`schema_helpers_ui` remains the floor the contracts check, and the shared tier
+sits above it.
 
-### The database-surface session needs 2,400 seconds
-
-`db_surface_compile_contracts` is the one nested session given more. It takes
-about 945 seconds on GitHub-hosted runners, but it exceeded 1,500 seconds on
-`ubicloud-standard-4`, where its nested Cargo starts cold with no shared
-target, so it alone is allowed 2,400 seconds: five minutes below the 45-minute
-whole-run budget. Every other `trybuild` test keeps the 1,500-second allowance,
-and the durable fix is tracked separately and is not part of this change.
+The shared tier is 2,400 seconds for every nested session because a nested cold
+cargo session took 945 seconds on GitHub-hosted runners but exceeded 1,500
+seconds on `ubicloud-standard-4`; the allowance only bounds a hang, so the other
+`trybuild` tests lose nothing by it, and a test-scoped tier is deliberately
+left to DF12-109.
 
 ### The values are pinned, not merely ordered
 
@@ -4126,17 +4119,17 @@ ten-second default when it finds none. Deleting every `grace-period` in the
 file therefore *raises* the computed requirement, leaves every assertion
 passing, and doubles the wait a terminated test actually gets.
 
-The 1,500-second and 2,400-second overrides are the next. The compile-contract
-contract asks whether each `trybuild` allowance is *at least* its figure, which
-is the right shape for its own question and says nothing about the value, so an
-override raised to an hour would satisfy it while sitting above the 45-minute
-whole-run budget that contains it: the run would end before the allowance could
-be used. The number of overrides is pinned with it, three in `default` and
-`ci`, because an extra one matching the same binaries would decide the
-allowance in force by file order. And the whole-run budget is only ever
-compared with the largest per-test allowance, so the documented forty-five
-minutes could drift to fifty with nothing failing and this table left
-describing a value the runner does not use.
+The 2,400-second override is the next. The compile-contract contract asks
+whether each `trybuild` allowance is *at least* its figure, which is the right
+shape for its own question and says nothing about the value, so an override
+raised to an hour would satisfy it while sitting above the 45-minute whole-run
+budget that contains it: the run would end before the allowance could be used.
+The number of overrides is pinned with it, two in `default` and `ci`, because
+an extra one matching the same binaries would decide the allowance in force by
+file order. And the whole-run budget is only ever compared with the largest
+per-test allowance, so the documented forty-five minutes could drift to fifty
+with nothing failing and this table left describing a value the runner does not
+use.
 
 The set of profiles is pinned too. Every assertion in this suite is
 parametrized over `default`, `ci` and `coverage`, so a profile carrying looser
@@ -4259,8 +4252,8 @@ one run per leg.
 ### What the values are sized against
 
 The 45 minute whole-run budget is a bound rather than a measurement. It has to
-exceed the largest per-test allowance, the 2,400 second database-surface
-session, and it does so with five minutes to spare.
+exceed the largest per-test allowance, the 2,400 second nested `trybuild`
+allowance, and it does so with five minutes to spare.
 
 The contract also refuses a step that names a suite command without plainly
 running one. `if false; then cargo nextest run; fi` keeps the text and runs
@@ -4347,12 +4340,6 @@ force and certify an inherited allowance sitting above the whole-run budget.
 The result is an upper bound rather than the allowance any one test receives,
 because which override governs a test depends on a filterset this contract
 cannot evaluate statically.
-
-The per-binary reading that checks the nested-compiler allowance works the
-other way. It takes the first override that names the binary, as nextest does,
-rather than the largest, so `trybuild` reads as 2,400 seconds under `ci`, where
-the database-surface override comes first. The check therefore compares 2,400
-seconds against the 1,500-second requirement, and it passes.
 
 Durations are read with the grammar `humantime` accepts, which is what nextest
 deserializes them with: a sequence of components each carrying a unit, written
