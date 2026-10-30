@@ -266,7 +266,10 @@ def required_ceiling(parsed: dict[str, Profile], invocations: int = 1) -> float:
 #: `Tests (default)` on every branch that had not seeded a cache, since `main`
 #: never runs this suite. 1,500 s is the same estimate the 730f6f7a precedent
 #: used for `schema_helpers_ui`: about half again the measured cold
-#: requirement, and five minutes below the 30 minute whole-run budget.
+#: requirement, and twenty minutes below the 45 minute whole-run budget.
+#: `db_surface_compile_contracts` takes its own 2,400 second override, which
+#: is five minutes below that budget; this figure is the one every other
+#: nested session gets.
 NESTED_COMPILER_ALLOWANCE_SECONDS: typ.Final[float] = 1500.0
 #: Compatibility name used by the filterset-reading contracts; this value
 #: now applies only to targets that invoke nested trybuild Cargo.

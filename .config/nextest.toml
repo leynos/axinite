@@ -26,7 +26,7 @@ slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 # profile, and twice the longest instrumented run measured.
 # See "Test timeouts: the tiers this repository sets" in the developers'
 # guide.
-global-timeout = "30m"
+global-timeout = "45m"
 
 [profile.ci]
 # CI runs everything, including the trybuild compile-contract tests.
@@ -38,7 +38,7 @@ default-filter = 'all()'
 # own budgets here keeps the values that govern CI beside the profile a reader
 # selects, rather than one section away.
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
-global-timeout = "30m"
+global-timeout = "45m"
 
 # Coverage instrumentation uses extra rustc flags. Keep the compile-contract
 # tests in the separate required nextest job so their contracts run without
@@ -47,7 +47,7 @@ global-timeout = "30m"
 inherits = "ci"
 default-filter = 'not binary(trybuild) and not binary(schema_helpers_ui)'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
-global-timeout = "30m"
+global-timeout = "45m"
 
 # `trybuild` uses a shared generated project and lock while preparing
 # dependencies, compiling fixtures and running them. Keep both required
@@ -73,6 +73,10 @@ filter = 'binary(schema_helpers_ui)'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.default.overrides]]
+filter = 'binary(trybuild) & test(db_surface_compile_contracts)'
+slow-timeout = { period = "2400s", terminate-after = 1, grace-period = "5s" }
+
+[[profile.default.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
 test-group = 'compile-contracts'
 slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
@@ -80,6 +84,10 @@ slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
 [[profile.ci.overrides]]
 filter = 'binary(schema_helpers_ui)'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
+
+[[profile.ci.overrides]]
+filter = 'binary(trybuild) & test(db_surface_compile_contracts)'
+slow-timeout = { period = "2400s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
