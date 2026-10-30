@@ -71,6 +71,11 @@ REQUIRED_OVERRIDE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
     "grace-period": "5s",
 }
 
+#: The complete filter of the database-surface override, predicate included.
+REQUIRED_DB_SURFACE_FILTER: typ.Final = (
+    "binary(trybuild) & test(db_surface_compile_contracts)"
+)
+
 #: ``db_surface_compile_contracts`` is a nested Cargo session that took about
 #: 945 s on GitHub-hosted runners and exceeded 1,500 s on
 #: ``ubicloud-standard-4``. It alone is allowed 2,400 s, five minutes below
@@ -239,6 +244,12 @@ def test_each_profile_pins_its_compile_contract_override(
         f"{specific_fields}, not {REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT}; "
         f"schema fixture code now compiles with its integration target and "
         f"must retain the ordinary 300 s test bound"
+    )
+    assert database_surface.get("filter") == REQUIRED_DB_SURFACE_FILTER, (
+        f"[profile.{profile}]'s database-surface override filter is "
+        f"{database_surface.get('filter')!r}, not {REQUIRED_DB_SURFACE_FILTER!r}; "
+        f"dropping the `test(...)` predicate would hand every `trybuild` test "
+        f"the longer allowance"
     )
     database_binaries = binaries_selected(database_surface.get("filter"))
     assert database_binaries == frozenset({"trybuild"}), (

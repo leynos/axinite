@@ -1748,18 +1748,18 @@ version before running the complete lint gate. When `cargo-binstall` is
 available, use:
 
 ```bash
-cargo binstall --no-confirm --locked whitaker-installer@0.2.9
+cargo binstall --no-confirm --locked whitaker-installer@0.2.11
 ```
 
 Otherwise, install the same release from crates.io:
 
 ```bash
-cargo install --locked whitaker-installer --version 0.2.9
+cargo install --locked whitaker-installer --version 0.2.11
 ```
 
 Run `whitaker-installer` once after installation to provision the suite, then
 run `make lint` or `make lint-whitaker`. CI installs Whitaker through the shared
-`install-whitaker` action and passes `installer-version: '0.2.9'`, so the
+`install-whitaker` action and passes `installer-version: '0.2.11'`, so the
 tool's behaviour remains reproducible across workflow runs.
 
 ## 10. Integration test fixture wiring
