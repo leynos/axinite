@@ -185,7 +185,9 @@ class TestDuplicateDetection:
         documents = {
             "release-package-validation.yml": self._workflow("pull_request", job)
         }
-        assert suite_runs_for(documents, "pull_request", defaults) == []
+        assert suite_runs_for(documents, "pull_request", defaults) == [], (
+            f"{script!r} in build-local-artefacts is cargo-dist setup, not a suite run"
+        )
 
     def test_unknown_job_cannot_claim_dist_setup_exception(
         self, defaults: frozenset[str]

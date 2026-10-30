@@ -78,8 +78,12 @@ def test_libsql_publisher_saves_a_short_lived_lcov_artefact() -> None:
         step for step in _steps(publisher)
         if str(step.get("uses", "")).startswith("actions/checkout@")
     )
-    assert checkout.get("uses") == CHECKOUT_ACTION
-    assert _with(checkout).get("persist-credentials") is False
+    assert checkout.get("uses") == CHECKOUT_ACTION, (
+        "the publisher must use the pinned checkout action"
+    )
+    assert _with(checkout).get("persist-credentials") is False, (
+        "the publisher checkout must not persist Git credentials"
+    )
     upload = _step(
         publisher, "Save the libsql-only report for the Codecov upload"
     )

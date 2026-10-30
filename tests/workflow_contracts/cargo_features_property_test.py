@@ -66,4 +66,8 @@ def test_equivalent_feature_flag_forms_resolve_postgres(case: FeatureCase) -> No
         or "postgres" in case.features
         or (case.default_postgres and not case.no_defaults)
     )
-    assert _enables_postgres(" ".join(flags), defaults) is expected
+    rendered = " ".join(flags)
+    assert _enables_postgres(rendered, defaults) is expected, (
+        f"{rendered!r} with defaults {sorted(defaults)!r} should read as "
+        f"postgres={expected}"
+    )
