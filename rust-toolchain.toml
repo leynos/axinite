@@ -6,7 +6,7 @@
 # `msrv` job in `.github/workflows/test.yml`; see the "Toolchain policy"
 # section of docs/developers-guide.md.
 [toolchain]
-channel = "nightly-2026-10-16"
+channel = "nightly-2026-10-30"
 components = [
     "rustfmt",
     "clippy",
