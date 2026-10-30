@@ -307,12 +307,12 @@ def test_nextest_terminates_a_test_under_these_fields(
 def test_nextest_gives_schema_helpers_ui_the_ordinary_allowance(
     fixture_crate: Fixture, tmp_path: Path, profile: str
 ) -> None:
-    """Schema execution keeps 300 s while nested trybuild retains 2,400 s.
+    """Schema execution keeps 300 s while nested trybuild retains 1,500 s.
 
     Reading the file shows the explicit schema override before the shared
     group assignment. With periods scaled to seconds, a five-second test in
     `schema_helpers_ui` is terminated by its 300 s bound. Under `ci`, the
-    same test in `trybuild` completes under its 2,400 s allowance.
+    same test in `trybuild` completes under its 1,500 s allowance.
     """
     configuration = tmp_path / f"scaled-{profile}.toml"
     configuration.write_text(_scaled_per_binary_periods(), encoding="utf-8")

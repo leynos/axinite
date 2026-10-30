@@ -25,7 +25,7 @@ FIXTURE_CRATE = (
 )
 
 #: Test duration and scaled equivalents of schema's 300 s and trybuild's
-#: 2,400 s. The nested period stays well above the sleeping test, and the
+#: 1,500 s. The nested period stays well above the sleeping test, and the
 #: schema period stays below it, so both probes discriminate on behaviour
 #: rather than on the file's text.
 ALLOWANCE_SLEEP_SECONDS: typ.Final[int] = 5
@@ -49,7 +49,7 @@ SCHEMA_HELPER_UI_POLICY: typ.Final[TimeoutScalePolicy] = TimeoutScalePolicy(
 )
 NESTED_COMPILER_POLICY: typ.Final[TimeoutScalePolicy] = TimeoutScalePolicy(
     selector="binary(trybuild) | binary(schema_helpers_ui)",
-    expected_period="2400s",
+    expected_period="1500s",
     scaled_period=SCALED_NESTED_COMPILER_PERIOD,
 )
 
