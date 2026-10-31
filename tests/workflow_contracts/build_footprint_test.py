@@ -14,7 +14,12 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import os
+import re
+import shutil
+import subprocess
 import tomllib
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -46,7 +51,9 @@ def test_the_manifest_list_is_not_empty() -> None:
     assert len(MANIFESTS) >= 16, f"expected at least 16 manifests, found {MANIFESTS}"
 
 
-@pytest.mark.parametrize("manifest_path", MANIFESTS, ids=lambda p: str(p.relative_to(ROOT)))
+@pytest.mark.parametrize(
+    "manifest_path", MANIFESTS, ids=lambda p: str(p.relative_to(ROOT))
+)
 def test_development_profile_keeps_the_build_footprint_settings(
     manifest_path: Path,
 ) -> None:
@@ -97,4 +104,104 @@ def test_cargo_config_disables_metadata_embedding_natively() -> None:
     ]
     assert not any("embed-metadata" in str(flag) for flag in flags), (
         "no raw rustc embed-metadata flag may appear in any rustflags source"
+    )
+
+
+# --- Effective Cargo behaviour -------------------------------------------------
+#
+# The checks above read files. These run the pinned Cargo on a one-file crate
+# that carries this repository's own ``[profile.dev]`` table and Cargo
+# configuration, and read the rustc command lines Cargo prints with ``-v``, so
+# the settings are proved at the Cargo boundary and not only on the page.
+
+FIXTURE_LIB: typ.Final[str] = "pub fn footprint() {}\n"
+RUSTC_LINE: typ.Final[re.Pattern[str]] = re.compile(
+    r"Running `.*--crate-name footprint .*`"
+)
+WRAPPER_VARIABLES: typ.Final[tuple[str, ...]] = (
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "CARGO_BUILD_RUSTC_WRAPPER",
+    "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+    "CARGO_INCREMENTAL",
+    "CARGO_PROFILE_DEV_DEBUG",
+    "CARGO_PROFILE_DEV_INCREMENTAL",
+)
+
+
+def _dev_profile_text() -> str:
+    """Return the repository's ``[profile.dev]`` table text, header included."""
+    manifest = (ROOT / "Cargo.toml").read_text("utf-8")
+    match = re.search(r"^\[profile\.dev\]\n(?:(?!\[).*\n?)*", manifest, re.MULTILINE)
+    assert match is not None, "Cargo.toml must carry a [profile.dev] table"
+    return match.group(0)
+
+
+def _compile_fixture(tmp_path: Path, extra_env: dict[str, str] | None = None) -> str:
+    """Build the fixture crate and return the rustc command line Cargo ran.
+
+    The fixture holds the repository's Cargo configuration and ``[profile.dev]``
+    table, and builds under the repository's pinned channel with every
+    wrapper and profile override removed from the environment, so only the
+    repository's own settings and the override under test apply.
+    """
+    channel = tomllib.loads((ROOT / "rust-toolchain.toml").read_text("utf-8"))[
+        "toolchain"
+    ]["channel"]
+    crate = tmp_path / "footprint"
+    (crate / "src").mkdir(parents=True)
+    (crate / ".cargo").mkdir()
+    (crate / "Cargo.toml").write_text(
+        '[package]\nname = "footprint"\nversion = "0.0.0"\nedition = "2024"\n\n'
+        + _dev_profile_text(),
+        "utf-8",
+    )
+    (crate / "src" / "lib.rs").write_text(FIXTURE_LIB, "utf-8")
+    shutil.copy(ROOT / ".cargo" / "config.toml", crate / ".cargo" / "config.toml")
+    env = {k: v for k, v in os.environ.items() if k not in WRAPPER_VARIABLES}
+    env["CARGO_TARGET_DIR"] = str(tmp_path / "target")
+    env.update(extra_env or {})
+    result = subprocess.run(  # noqa: S603 - a fixed command
+        ["cargo", f"+{channel}", "build", "--offline", "-v"],
+        cwd=crate,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"cargo build failed:\n{result.stderr}"
+    lines = RUSTC_LINE.findall(result.stderr)
+    assert lines, f"no rustc command line in Cargo's output:\n{result.stderr}"
+    return lines[0]
+
+
+def test_cargo_builds_by_default_without_incremental_state_or_debug_info(
+    tmp_path: Path,
+) -> None:
+    """A default dev build passes no ``debuginfo`` or ``incremental`` and no embedding."""
+    command = _compile_fixture(tmp_path)
+    assert "-C debuginfo" not in command, f"debug info must be off: {command}"
+    assert "-C incremental" not in command, f"incremental must be off: {command}"
+    assert "-Z embed-metadata=no" in command, (
+        f"Cargo must coordinate metadata natively: {command}"
+    )
+
+
+def test_the_documented_debug_override_turns_debug_info_back_on(
+    tmp_path: Path,
+) -> None:
+    """``CARGO_PROFILE_DEV_DEBUG=true`` restores debug information."""
+    command = _compile_fixture(tmp_path, {"CARGO_PROFILE_DEV_DEBUG": "true"})
+    assert "-C debuginfo=2" in command, (
+        f"the override must restore debug info: {command}"
+    )
+
+
+def test_the_documented_incremental_override_turns_incremental_back_on(
+    tmp_path: Path,
+) -> None:
+    """``CARGO_INCREMENTAL=1`` restores incremental compilation."""
+    command = _compile_fixture(tmp_path, {"CARGO_INCREMENTAL": "1"})
+    assert "-C incremental=" in command, (
+        f"the override must restore incremental: {command}"
     )

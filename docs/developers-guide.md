@@ -557,7 +557,11 @@ set `CARGO_INCREMENTAL=1`. `.cargo/config.toml` also sets
 flags are used, and the pin is not moved to suit the key. The workspace
 toolchain is pinned to `nightly-2026-10-16` in `rust-toolchain.toml`; see
 "Toolchain policy" in section 8.
-`tests/workflow_contracts/build_footprint_test.py` holds the settings.
+`tests/workflow_contracts/build_footprint_test.py` holds the settings. It also
+builds a one-file crate that carries the repository's own `[profile.dev]` table
+and Cargo configuration under the pinned channel and reads the rustc command
+line Cargo prints with `-v`, so the defaults and both overrides are proved at
+the Cargo boundary.
 
 ### Cache ownership
 
