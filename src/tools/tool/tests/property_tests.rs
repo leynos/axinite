@@ -156,26 +156,31 @@ fn node_to_json(node: &Node) -> Value {
 /// object-typed array items.
 fn expected_diagnostics(node: &Node, path: &str, out: &mut Vec<String>) {
     let Node::Object { props, required } = node;
-    for name in required {
-        if !props.iter().any(|(prop_name, _)| prop_name == name) {
-            out.push(format!(
-                "{path}: required key \"{name}\" not found in properties"
-            ));
-        }
-    }
+
+    out.extend(
+        required
+            .iter()
+            .filter(|name| !props.iter().any(|(prop_name, _)| prop_name == *name))
+            .map(|name| format!("{path}: required key \"{name}\" not found in properties")),
+    );
 
     for (name, prop) in props {
-        let prop_path = format!("{path}.{name}");
-        match prop {
-            Prop::Object(child) => expected_diagnostics(child, &prop_path, out),
-            Prop::ArrayObject(child) => {
-                expected_diagnostics(child, &format!("{prop_path}.items"), out);
-            }
-            Prop::ArrayMissingItems => {
-                out.push(format!("{prop_path}: array property missing \"items\""));
-            }
-            Prop::Scalar | Prop::Freeform | Prop::ArrayScalar => {}
+        expected_prop_diagnostics(prop, &format!("{path}.{name}"), out);
+    }
+}
+
+/// Diagnostics contributed by one property, mirroring the validator's dispatch
+/// on the property's declared type.
+fn expected_prop_diagnostics(prop: &Prop, prop_path: &str, out: &mut Vec<String>) {
+    match prop {
+        Prop::Object(child) => expected_diagnostics(child, prop_path, out),
+        Prop::ArrayObject(child) => {
+            expected_diagnostics(child, &format!("{prop_path}.items"), out);
         }
+        Prop::ArrayMissingItems => {
+            out.push(format!("{prop_path}: array property missing \"items\""));
+        }
+        Prop::Scalar | Prop::Freeform | Prop::ArrayScalar => {}
     }
 }
 
