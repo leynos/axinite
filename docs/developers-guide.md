@@ -1641,7 +1641,7 @@ build without a commit and leave Dependabot nothing to move.
   new date, and `make install-build-tools` installs it. Update the date-stamped
   `baseline-rust-file` value in both `.github/workflows/coverage.yml` and
   `.github/workflows/codescene-coverage.yml`, plus the expected values in
-  `tests/workflow_contracts/coverage_publication_test.py` and
+  `tests/workflow_contracts/coverage_parity_test.py` and
   `tests/workflow_contracts/codescene_coverage_test.py`, in the same pull
   request. The main-owned coverage publisher writes that baseline only after
   the bump reaches `main`.

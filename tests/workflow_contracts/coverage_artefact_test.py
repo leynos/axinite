@@ -31,6 +31,16 @@ GATED_JOBS: typ.Final[frozenset[str]] = frozenset(
     {"coverage", PUBLISHER_JOB, CODECOV_JOB, "e2e-coverage", "compile-contracts"}
 )
 
+#: The publisher step that produces the report the hand-off carries, and the
+#: step that saves it. Naming both lets the contract hold their order as well
+#: as their inputs.
+GENERATE_STEP: typ.Final[str] = "Generate coverage and the ratchet baseline"
+SAVE_STEP: typ.Final[str] = "Save the libsql-only report for the Codecov upload"
+
+#: The Codecov job's two halves of the same hand-off.
+FETCH_STEP: typ.Final[str] = "Fetch the libsql-only report"
+UPLOAD_STEP: typ.Final[str] = "Upload to Codecov"
+
 
 def _job(name: str) -> dict[str, object]:
     """Return one required job from the coverage workflow."""
@@ -53,6 +63,20 @@ def _step(job: dict[str, object], name: str) -> dict[str, object]:
     for step in _steps(job):
         if step.get("name") == name:
             return step
+    message = f"the job must declare the {name!r} step"
+    raise AssertionError(message)
+
+
+def _step_index(job: dict[str, object], name: str) -> int:
+    """Return the position of a named step, failing loudly if it was renamed.
+
+    `_step` proves a step exists, not when it runs. A hand-off whose steps are
+    present but reordered still satisfies every input check, so the ordering
+    contracts below need the index as well as the mapping.
+    """
+    for index, step in enumerate(_steps(job)):
+        if step.get("name") == name:
+            return index
     message = f"the job must declare the {name!r} step"
     raise AssertionError(message)
 
@@ -84,8 +108,10 @@ def test_libsql_publisher_saves_a_short_lived_lcov_artefact() -> None:
     assert _with(checkout).get("persist-credentials") is False, (
         "the publisher checkout must not persist Git credentials"
     )
-    upload = _step(
-        publisher, "Save the libsql-only report for the Codecov upload"
+    upload = _step(publisher, SAVE_STEP)
+    assert _step_index(publisher, GENERATE_STEP) < _step_index(publisher, SAVE_STEP), (
+        "the publisher must generate the report before saving it for Codecov; "
+        "saved first, the artefact would carry a report that does not exist yet"
     )
 
     assert upload.get("uses") == "actions/upload-artifact@v7", (
@@ -119,7 +145,11 @@ def test_codecov_job_downloads_and_uploads_the_publisher_artefact() -> None:
         "the Codecov job must have read-only contents and OIDC permissions"
     )
 
-    download = _step(job, "Fetch the libsql-only report")
+    download = _step(job, FETCH_STEP)
+    assert _step_index(job, FETCH_STEP) < _step_index(job, UPLOAD_STEP), (
+        "the Codecov job must download the report before uploading it; uploaded "
+        "first, there is no downloaded report to send"
+    )
     assert download.get("uses") == DOWNLOAD_ARTEFACT_ACTION, (
         "the Codecov job must use the pinned artefact downloader"
     )
@@ -127,7 +157,7 @@ def test_codecov_job_downloads_and_uploads_the_publisher_artefact() -> None:
         "the Codecov job must download the publisher's LCOV artefact"
     )
 
-    upload = _step(job, "Upload to Codecov")
+    upload = _step(job, UPLOAD_STEP)
     assert upload.get("uses") == CODECOV_ACTION, (
         "the Codecov job must use the pinned Codecov action"
     )
@@ -141,9 +171,7 @@ def test_codecov_job_downloads_and_uploads_the_publisher_artefact() -> None:
     assert inputs.get("disable_search") is True, (
         "the Codecov job must upload only the explicit LCOV report"
     )
-    assert inputs.get("use_oidc") is True, (
-        "the Codecov job must authenticate with OIDC"
-    )
+    assert inputs.get("use_oidc") is True, "the Codecov job must authenticate with OIDC"
     assert inputs.get("fail_ci_if_error") is True, (
         "the Codecov job must fail if report upload fails"
     )
