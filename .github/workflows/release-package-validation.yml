@@ -138,6 +138,96 @@ jobs:
             done
             [ "$found_checksum" = true ]
           ) | tee checksum-results.txt
+      - name: Record macOS toolchain and binary evidence
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target='${{ join(matrix.targets, ',') }}'
+          case "$target" in
+            aarch64-apple-darwin) expected_arch=arm64 ;;
+            x86_64-apple-darwin) expected_arch=x86_64 ;;
+            *)
+              echo "unexpected macOS release target: $target" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo
+            echo 'macOS toolchain and binary evidence'
+            sw_vers
+            printf 'uname -m: %s\n' "$(uname -m)"
+            rustc -vV | sed -n 's/^host: /rustc host: /p'
+            xcodebuild -version
+            printf 'xcode-select -p: %s\n' "$(xcode-select -p)"
+            printf 'xcrun --show-sdk-version: %s\n' "$(xcrun --show-sdk-version)"
+            printf 'xcrun --show-sdk-path: %s\n' "$(xcrun --show-sdk-path)"
+          } >> validation-context.txt
+
+          archive="target/distrib/axinite-${target}.tar.gz"
+          if [ ! -f "$archive" ]; then
+            echo "missing macOS package archive: $archive" >&2
+            exit 1
+          fi
+
+          extract_dir=$(mktemp -d)
+          trap 'rm -rf "$extract_dir"' EXIT
+          tar -xzf "$archive" -C "$extract_dir"
+          binary=$(find "$extract_dir" -type f -name axinite | sed -n '1p')
+          if [ -z "$binary" ]; then
+            echo "no axinite executable in $archive" >&2
+            exit 1
+          fi
+
+          archs=$(lipo -archs "$binary")
+          # Mach-O records a deployment target in one of two load commands.
+          # arm64 binaries use LC_BUILD_VERSION; the x86_64 linker still emits
+          # the older LC_VERSION_MIN_MACOSX when the target predates it, so
+          # both forms must be understood for the Intel leg to report values.
+          build_version=$(otool -l "$binary" |
+            awk '
+              $1 == "cmd" && $2 == "LC_BUILD_VERSION" {
+                command = "LC_BUILD_VERSION"
+                next
+              }
+              $1 == "cmd" && $2 == "LC_VERSION_MIN_MACOSX" {
+                command = "LC_VERSION_MIN_MACOSX"
+                next
+              }
+              $1 == "cmd" { command = "" }
+              command == "LC_BUILD_VERSION" && $1 == "minos" {
+                print "LC_BUILD_VERSION minos: " $2
+              }
+              command == "LC_BUILD_VERSION" && $1 == "sdk" {
+                print "LC_BUILD_VERSION sdk: " $2
+                command = ""
+              }
+              command == "LC_VERSION_MIN_MACOSX" && $1 == "version" {
+                print "LC_VERSION_MIN_MACOSX minos: " $2
+              }
+              command == "LC_VERSION_MIN_MACOSX" && $1 == "sdk" {
+                print "LC_VERSION_MIN_MACOSX sdk: " $2
+                command = ""
+              }
+            ')
+          if ! printf '%s\n' "$build_version" | grep -q 'minos: ' ||
+             ! printf '%s\n' "$build_version" | grep -q 'sdk: '; then
+            echo "no deployment target in $binary" >&2
+            exit 1
+          fi
+
+          {
+            printf 'archive: %s\n' "$archive"
+            printf 'executable: %s\n' "${binary#"$extract_dir"/}"
+            printf 'lipo -archs: %s\n' "$archs"
+            printf '%s\n' "$build_version"
+          } >> validation-context.txt
+
+          if [ "$archs" != "$expected_arch" ]; then
+            echo "expected $expected_arch, found $archs in $archive" >&2
+            exit 1
+          fi
       - name: Collect local artefacts
         id: cargo-dist
         shell: bash
