@@ -1,24 +1,6 @@
 # Nextest configuration
 # https://nexte.st/docs/configuration/
 
-# Setup scripts are experimental in the nextest versions the coverage action may
-# install, so the configuration opts in; newer versions accept the entry.
-experimental = ["setup-scripts"]
-
-# Fetch the locked dependencies before any test starts, so a nested Cargo build in a
-# test does not resolve them while holding the shared package-cache lock (the
-# Concordat nested-cargo-offline-tests rule, NC-008).
-[scripts.setup.fetch-locked]
-command = "cargo fetch --locked"
-
-[[profile.default.scripts]]
-filter = "all()"
-setup = "fetch-locked"
-
-[[profile.ci.scripts]]
-filter = "all()"
-setup = "fetch-locked"
-
 [profile.default]
 # Exclude `trybuild` from the local default run. Its tests invoke Cargo to
 # prepare the generated project, compile fixtures and execute them.
