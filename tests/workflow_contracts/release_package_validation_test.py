@@ -185,6 +185,9 @@ def test_macos_packages_record_toolchain_and_binary_evidence(
     )
 
     evidence = _step(local, step_name)
+    assert "set -euo pipefail" in evidence.run, (
+        "the evidence step must fail when extraction or a command fails"
+    )
     for command in (
         "sw_vers",
         "uname -m",
