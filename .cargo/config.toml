@@ -58,3 +58,9 @@ linker = "clang"
 
 [target.aarch64-unknown-linux-gnu]
 linker = "clang"
+
+# Native Cargo metadata setting for dated nightlies from 2026-07-31 (rule
+# `rust-dev-build-footprint`, DF-003): Cargo coordinates metadata output itself.
+# Never use raw rustc metadata flags; they broke build scripts.
+[unstable]
+embed-metadata = false
