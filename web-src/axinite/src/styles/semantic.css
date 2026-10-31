@@ -745,20 +745,9 @@
   border-top: 1px solid rgb(255 255 255 / 0.06);
 }
 
-.dashboard-detail .catalogue-panel-grid--extensions .catalogue-panel {
-  min-height: auto;
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
 .dashboard-detail .catalogue-panel__title {
   font-size: clamp(0.88rem, 1.2vw, 1rem);
   margin-bottom: 0.5rem;
-}
-
-.dashboard-detail .catalogue-panel-grid--extensions .catalogue-panel__content {
-  gap: 0.75rem;
 }
 
 .dashboard-detail .catalogue-form {
@@ -871,10 +860,6 @@
     rgb(15 15 20 / 0.58);
 }
 
-.extensions-detail .catalogue-detail__body {
-  max-width: 60rem;
-}
-
 .catalogue-panel-grid--extensions {
   grid-template-columns: 1fr;
   gap: 1rem;
@@ -959,7 +944,7 @@
   text-align: left;
 }
 
-.catalogue-list--extensions thead th {
+.catalogue-list--extensions :where(thead) th {
   border-top: 0;
   color: #a1a1aa;
   font-size: 0.72rem;
@@ -1090,6 +1075,17 @@
   gap: 1rem;
 }
 
+.dashboard-detail .catalogue-panel-grid--extensions .catalogue-panel {
+  min-height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-detail .catalogue-panel-grid--extensions .catalogue-panel__content {
+  gap: 0.75rem;
+}
+
 .skills-panel .catalogue-form {
   margin-bottom: 0;
 }
@@ -1132,6 +1128,10 @@
 .catalogue-detail__body {
   max-width: 52rem;
   margin: 0 0 1rem;
+}
+
+.extensions-detail .catalogue-detail__body {
+  max-width: 60rem;
 }
 
 .catalogue-detail__meta-grid {

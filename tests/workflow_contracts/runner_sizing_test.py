@@ -163,9 +163,11 @@ def test_the_sampler_starts_after_the_checkout(job: Job) -> None:
 REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
     ("code_style.yml", "format"): (
         "ubicloud-standard-4",
-        "compiles nothing, but `make nixie` renders Mermaid through a headless "
-        "browser and the sampler measured 6,741 MiB of the smaller shape's "
-        "7,940 MiB, which leaves no room for a cold run",
+        (
+            "compiles nothing, but `make nixie` renders Mermaid through a headless "
+            "browser and the sampler measured 6,741 MiB of the smaller shape's "
+            "7,940 MiB, which leaves no room for a cold run"
+        ),
     ),
     ("code_style.yml", "clippy"): (
         "ubicloud-standard-4",
@@ -173,13 +175,22 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("codescene-coverage.yml", "coverage-check"): (
         "ubicloud-standard-4",
-        "off the critical path, so it takes the cheaper shape: 683 s at half "
-        "the rate beats 455 s at full, and it peaked at 7,311 MiB of 15,991, "
-        "or 46 %",
+        (
+            "off the critical path, so it takes the cheaper shape: 683 s at half "
+            "the rate beats 455 s at full, and it peaked at 7,311 MiB of 15,991, "
+            "or 46 %"
+        ),
     ),
     ("coverage.yml", "coverage"): (
         "ubicloud-standard-4",
-        "instrumented workspace build across three feature shapes",
+        "two-shape instrumented workspace; both Postgres test runs use embedded clusters",
+    ),
+    ("coverage.yml", "coverage-libsql"): (
+        "ubicloud-standard-4",
+        (
+            "instrumented libsql-only build, the leg that was a matrix cell "
+            "before it became its own job and kept the shape it had"
+        ),
     ),
     ("coverage.yml", "e2e-coverage"): (
         "ubicloud-standard-4",
@@ -191,14 +202,18 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("test.yml", "github-tool-tests"): (
         "ubicloud-standard-2",
-        "one small out-of-workspace crate, on the same terms as "
-        "telegram-tests; the shape is provisional until the first run on it "
-        "reports a peak",
+        (
+            "one small out-of-workspace crate, on the same terms as "
+            "telegram-tests; the shape is provisional until the first run on it "
+            "reports a peak"
+        ),
     ),
     ("test.yml", "libsql-transport-tests"): (
         "ubicloud-standard-2",
-        "the TLS transport all-features matrix without the application or WASM "
-        "runtime; provisional until its first resource peak is recorded",
+        (
+            "the TLS transport all-features matrix without the application or WASM "
+            "runtime; provisional until its first resource peak is recorded"
+        ),
     ),
     ("test.yml", "telegram-tests"): (
         "ubicloud-standard-2",
@@ -210,32 +225,40 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("test.yml", "msrv"): (
         "ubicloud-standard-4",
-        "checks every target of the workspace on the stable MSRV compiler and "
-        "runs no tests; provisional, on the shape of the other whole-workspace "
-        "compiles, until the first run reports a peak",
+        (
+            "checks every target of the workspace on the stable MSRV compiler and "
+            "runs no tests; provisional, on the shape of the other whole-workspace "
+            "compiles, until the first run reports a peak"
+        ),
     ),
     ("test.yml", "docker-build"): (
         "ubicloud-standard-4",
-        "off the critical path, so it takes the cheaper shape: 605 s at half "
-        "the rate beats 378 s at full, and it peaked at 5,527 MiB of 15,991, "
-        "or 35 %",
+        (
+            "off the critical path, so it takes the cheaper shape: 605 s at half "
+            "the rate beats 378 s at full, and it peaked at 5,527 MiB of 15,991, "
+            "or 35 %"
+        ),
     ),
     ("e2e.yml", "build"): (
         "ubicloud-standard-4",
-        "compiles the workspace under --no-default-features --features libsql "
-        "and peaked at 6,522 and 6,797 MiB on two cold runs, which leaves no "
-        "headroom in the 7,940 MiB a -2 presents; the first run on the new "
-        "shape peaked at 5,746 MiB of 15,991, or 36 %, in 582 s against a "
-        "12 % Rust cache hit rate, where the -8 history is 330 s warm "
-        "(dispatch 34991982816 on 3301e095e)",
+        (
+            "compiles the workspace under --no-default-features --features libsql "
+            "and peaked at 6,522 and 6,797 MiB on two cold runs, which leaves no "
+            "headroom in the 7,940 MiB a -2 presents; the first run on the new "
+            "shape peaked at 5,746 MiB of 15,991, or 36 %, in 582 s against a "
+            "12 % Rust cache hit rate, where the -8 history is 330 s warm "
+            "(dispatch 34991982816 on 3301e095e)"
+        ),
     ),
     ("e2e.yml", "test"): (
         "ubicloud-standard-2",
-        "compiles nothing: it downloads the binary `build` produced and "
-        "drives it from Playwright, peaking at 1,273 to 1,432 MiB across "
-        "nine legs; the first run on the new shape peaked at 916 to 997 MiB "
-        "of 7,940, or 12 %, in 198 to 264 s against 120 to 216 s on the -8 "
-        "(dispatch 34991982816 on 3301e095e)",
+        (
+            "compiles nothing: it downloads the binary `build` produced and "
+            "drives it from Playwright, peaking at 1,273 to 1,432 MiB across "
+            "nine legs; the first run on the new shape peaked at 916 to 997 MiB "
+            "of 7,940, or 12 %, in 198 to 264 s against 120 to 216 s on the -8 "
+            "(dispatch 34991982816 on 3301e095e)"
+        ),
     ),
 }
 

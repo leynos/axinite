@@ -5,13 +5,15 @@ from __future__ import annotations
 import typing as typ
 
 import pytest
-from _strict_workflows import Workflows, jobs, read_workflows, steps
-from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR
+from _workflow_files import jobs_of
+from _workflow_policy import REPOSITORY_ROOT
 from compile_contract_inventory import REQUIRED_COMPILE_CONTRACT_BINARIES
 from contract_sources import read_source
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Mapping
+
+    from _estate import Estate
 
 BASELINE_FLAGS = {
     "all-features": "--all-features",
@@ -28,27 +30,30 @@ class CoverageStep(typ.NamedTuple):
     step_name: str
 
 
-@pytest.fixture(scope="module")
-def workflows() -> Workflows:
-    """Read each workflow through the strict YAML boundary."""
-    return read_workflows(WORKFLOW_DIR)
-
-
-def _job(workflows: Workflows, workflow: str, job_id: str) -> dict[object, object]:
+def _job(estate: Estate, workflow: str, job_id: str) -> Mapping[str, object]:
     """Return a required job, failing with its workflow location."""
-    found = jobs(workflows[workflow]).get(job_id)
-    assert found is not None, f"{workflow} must declare job {job_id!r}"
-    return found
+    for job in jobs_of(workflow, estate[workflow]):
+        if job.job_id == job_id:
+            return job.body
+    message = f"{workflow} must declare job {job_id!r}"
+    raise AssertionError(message)
 
 
-def _step(job: Mapping[object, object], name: str) -> dict[object, object]:
+def steps(job: Mapping[str, object]) -> list[Mapping[str, object]]:
+    """Return a job's step mappings."""
+    declared = job.get("steps")
+    assert isinstance(declared, list), "the job must declare steps"
+    return [step for step in declared if isinstance(step, dict)]
+
+
+def _step(job: Mapping[str, object], name: str) -> Mapping[str, object]:
     """Return one named step from a job."""
     matches = [step for step in steps(job) if step.get("name") == name]
     assert len(matches) == 1, f"expected one {name!r} step; found {len(matches)}"
     return matches[0]
 
 
-def _assert_fast_linker_installed(job: Mapping[object, object], workflow: str) -> None:
+def _assert_fast_linker_installed(job: Mapping[str, object], workflow: str) -> None:
     """The Linux linker configuration requires its configured linker."""
     step = _step(job, "Install build tools")
     assert step.get("run") == "make install-build-tools", (
@@ -59,7 +64,7 @@ def _assert_fast_linker_installed(job: Mapping[object, object], workflow: str) -
     )
 
 
-def _needs(job: Mapping[object, object]) -> set[str]:
+def _needs(job: Mapping[str, object]) -> set[str]:
     """Normalize the GitHub Actions scalar or sequence form of `needs`."""
     declared = job.get("needs", [])
     if isinstance(declared, str):
@@ -84,10 +89,10 @@ def _assert_binary_selection(command: str) -> None:
 
 
 def test_baseline_runs_compile_contracts_for_every_coverage_configuration(
-    workflows: Workflows,
+    estate: Estate,
 ) -> None:
     """The main baseline cannot publish after dropping any feature run."""
-    job = _job(workflows, "coverage.yml", "compile-contracts")
+    job = _job(estate, "coverage.yml", "compile-contracts")
     _assert_fast_linker_installed(job, "coverage.yml")
     strategy = job.get("strategy")
     matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
@@ -108,17 +113,17 @@ def test_baseline_runs_compile_contracts_for_every_coverage_configuration(
     )
     _assert_binary_selection(command)
 
-    gate = _job(workflows, "coverage.yml", "coverage-gate")
+    gate = _job(estate, "coverage.yml", "coverage-gate")
     assert "compile-contracts" in _needs(gate), (
-        "the main coverage roll-up must fail when compile-contracts are missing"
+        "the main coverage roll-up must depend on compile-contracts"
     )
 
 
 def test_pull_request_ratchet_runs_compile_contracts_before_coverage(
-    workflows: Workflows,
+    estate: Estate,
 ) -> None:
     """The PR ratchet and baseline retain the same libSQL contract selection."""
-    job = _job(workflows, "codescene-coverage.yml", "compile-contracts")
+    job = _job(estate, "codescene-coverage.yml", "compile-contracts")
     _assert_fast_linker_installed(job, "codescene-coverage.yml")
     command = str(_step(job, "Run compile-contract tests").get("run", ""))
     _assert_binary_selection(command)
@@ -127,15 +132,15 @@ def test_pull_request_ratchet_runs_compile_contracts_before_coverage(
             f"PR compile contracts must use the ratchet's libSQL selection; "
             f"missing {required!r} in {command!r}"
         )
-    coverage = _job(workflows, "codescene-coverage.yml", "coverage-check")
+    coverage = _job(estate, "codescene-coverage.yml", "coverage-check")
     assert "compile-contracts" in _needs(coverage), (
         "the pull-request coverage lane must wait for compile-contract tests"
     )
 
 
-def test_windows_still_runs_the_non_unix_startup_fixture(workflows: Workflows) -> None:
+def test_windows_still_runs_the_non_unix_startup_fixture(estate: Estate) -> None:
     """The platform-gated fixture stays covered with useful diagnostics."""
-    job = _job(workflows, "test.yml", "windows-build")
+    job = _job(estate, "test.yml", "windows-build")
     diagnostics_test = _step(job, "Test startup compile-contract diagnostics")
     assert diagnostics_test.get("if") == "matrix.name == 'default'", (
         "startup diagnostic behaviour tests must run on the default Windows leg"
@@ -176,7 +181,7 @@ def test_windows_still_runs_the_non_unix_startup_fixture(workflows: Workflows) -
         pytest.param(
             CoverageStep(
                 "coverage.yml",
-                "coverage",
+                "coverage-libsql",
                 "Generate coverage and the ratchet baseline",
             ),
             True,
@@ -192,13 +197,13 @@ def test_windows_still_runs_the_non_unix_startup_fixture(workflows: Workflows) -
     ],
 )
 def test_instrumented_coverage_uses_the_filtered_profile(
-    workflows: Workflows,
+    estate: Estate,
     coverage_step: CoverageStep,
     action: bool,
 ) -> None:
     """Both sides of the ratchet leave fixture compilation to the ci job."""
     step = _step(
-        _job(workflows, coverage_step.workflow, coverage_step.job_id),
+        _job(estate, coverage_step.workflow, coverage_step.job_id),
         coverage_step.step_name,
     )
     location = f"{coverage_step.workflow}:{coverage_step.step_name}"

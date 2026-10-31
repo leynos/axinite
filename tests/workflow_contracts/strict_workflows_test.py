@@ -3,7 +3,7 @@
 The estate's own directory is readable, so each failure is stated against a
 temporary tree: whatever goes wrong must surface as `WorkflowReadError` naming
 the path and what failed, never as a bare `OSError` or `UnicodeDecodeError`
-from inside a function the coverage-publication fixture treats as a query.
+from inside a function the Dependabot reader treats as a query.
 
 Run via ``make test-workflow-contracts``.
 """
