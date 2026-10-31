@@ -142,7 +142,7 @@ jobs:
         if: always() && runner.os == 'macOS'
         shell: bash
         run: |
-          set -u
+          set -euo pipefail
           target='${{ join(matrix.targets, ',') }}'
           case "$target" in
             aarch64-apple-darwin) expected_arch=arm64 ;;
