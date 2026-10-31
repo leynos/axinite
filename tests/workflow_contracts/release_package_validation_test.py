@@ -29,6 +29,14 @@ EXPECTED_TARGETS = {
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
 }
+APPLE_RUNNER_MAPPINGS = {
+    "aarch64-apple-darwin": "macos-15",
+    "x86_64-apple-darwin": "macos-15-intel",
+}
+# Images GitHub has retired or scheduled to retire. Keeping this list explicit
+# means a future migration has to delete an entry rather than silently reuse
+# the label.
+RETIRED_RUNNER_LABELS = frozenset({"macos-14"})
 
 
 def _mapping(value: object, label: str) -> dict[str, object]:
@@ -142,6 +150,66 @@ def test_local_packages_follow_the_complete_release_plan(
     ), "native dependencies must follow the release plan"
     assert "${{ matrix.dist_args }}" in _step(local, "Build local artefacts").run, (
         "the local build must use its target-specific release arguments"
+    )
+
+
+def test_apple_release_runners_avoid_retired_images(
+    dist_configuration: dict[str, object],
+) -> None:
+    """Each Apple target keeps a supported image and its native architecture."""
+    runners = _mapping(
+        dist_configuration.get("github-custom-runners"),
+        "github custom runners",
+    )
+    assert {
+        target: runners.get(target) for target in APPLE_RUNNER_MAPPINGS
+    } == APPLE_RUNNER_MAPPINGS, (
+        "Apple Silicon must use the arm64 macos-15 image and Intel must keep "
+        "macos-15-intel"
+    )
+    retired = RETIRED_RUNNER_LABELS.intersection(
+        value for value in runners.values() if isinstance(value, str)
+    )
+    assert not retired, f"release runners still use retired labels: {sorted(retired)}"
+
+
+def test_macos_packages_record_toolchain_and_binary_evidence(
+    workflow: dict[str, object],
+) -> None:
+    """Apple builds report the host, SDK and binary architecture they produced."""
+    local = _job(workflow, "build-local-artifacts")
+    step_name = "Record macOS toolchain and binary evidence"
+    declared = _declared_step(local, step_name)
+    assert declared.get("if") == "always() && runner.os == 'macOS'", (
+        "the evidence step must run for both Apple legs, even after a failure"
+    )
+
+    evidence = _step(local, step_name)
+    for command in (
+        "sw_vers",
+        "uname -m",
+        "rustc -vV",
+        "xcodebuild -version",
+        "xcode-select -p",
+        "xcrun --show-sdk-version",
+        "xcrun --show-sdk-path",
+        "lipo -archs",
+        "LC_BUILD_VERSION",
+        "validation-context.txt",
+        "arm64",
+        "x86_64",
+    ):
+        assert command in evidence.run, (
+            f"the macOS evidence step must record {command!r}"
+        )
+
+    declared_steps = local.get("steps")
+    assert isinstance(declared_steps, list), "local build steps must be a list"
+    step_names = [
+        step.get("name") for step in declared_steps if isinstance(step, dict)
+    ]
+    assert step_names.index(step_name) > step_names.index("Verify local checksums"), (
+        "binary evidence must follow the checksum check it supplements"
     )
 
 
