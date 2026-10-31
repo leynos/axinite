@@ -931,6 +931,12 @@ name the token, the uploader, the CLI or `codescene.io`, and no job may forward
 proves each one. The tree is read through a loader that refuses a duplicated
 key and reads `on:` in each of its three shapes.
 
+The [CI coverage design](ci-coverage-design.md) records the design these
+operators' notes describe: the CV-005 trust boundary that keeps publication on
+`main`, the ownership of the coverage baseline, and the hand-off of the libSQL
+report to Codecov. It shares the pinned contract in `.github/cv005.toml` and
+the workflows this section reads, so a change to either belongs in both.
+
 ### Writing a workflow contract
 
 Every contract in `tests/workflow_contracts/` reads one parsed view of
