@@ -25,7 +25,7 @@ jobs:
       CARGO_AUDIT_VERSION: '0.22.2'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # The toolchain is the dated nightly in `rust-toolchain.toml`; rustup
       # installs it with the components and targets the file lists.
       - name: Install Rust
