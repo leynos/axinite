@@ -551,10 +551,13 @@ build and every rebuild recompiles whole crates. To debug workspace crates, run
 with `CARGO_PROFILE_DEV_DEBUG=true`. To debug dependencies, add
 `--config 'profile.dev.package."*".debug=true'`, because the environment
 variable does not override the `"*"` package table. To rebuild incrementally,
-set `CARGO_INCREMENTAL=1`. The workspace toolchain is pinned to
-`nightly-2026-10-16` in `rust-toolchain.toml`; see "Toolchain policy" in
-section 8. `tests/workflow_contracts/build_footprint_test.py` holds the
-settings.
+set `CARGO_INCREMENTAL=1`. `.cargo/config.toml` also sets
+`[unstable] embed-metadata = false`, the native Cargo key for nightlies from
+2026-07-31, so Cargo coordinates metadata output itself; no raw rustc metadata
+flags are used, and the pin is not moved to suit the key. The workspace
+toolchain is pinned to `nightly-2026-10-16` in `rust-toolchain.toml`; see
+"Toolchain policy" in section 8.
+`tests/workflow_contracts/build_footprint_test.py` holds the settings.
 
 ### Cache ownership
 

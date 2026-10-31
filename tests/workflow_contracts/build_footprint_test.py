@@ -6,6 +6,9 @@ workspace and each standalone workspace under ``channels-src``, ``tools-src``
 and ``fuzz`` carry their own ``[profile.dev]``, so an edit to any of them must
 not quietly re-enable either.
 
+The nightly pin is past 2026-07-31, so ``.cargo/config.toml`` also carries the
+native ``[unstable] embed-metadata = false`` key (DF-003).
+
 Run via ``make test-workflow-contracts``.
 """
 
@@ -69,4 +72,29 @@ def test_root_dependency_profile_disables_debug_info() -> None:
     )
     assert dependencies.get("split-debuginfo") == "unpacked", (
         'profile.dev.package."*" must keep split-debuginfo = "unpacked"'
+    )
+
+
+def test_cargo_config_disables_metadata_embedding_natively() -> None:
+    """``.cargo/config.toml`` sets the native ``[unstable] embed-metadata = false``.
+
+    The pinned dated nightly is past 2026-07-31, so the native key replaces the
+    older ``no-embed-metadata`` spelling. Raw rustc metadata flags are refused
+    because they broke build scripts.
+    """
+    config_path = ROOT / ".cargo" / "config.toml"
+    config = tomllib.loads(config_path.read_text("utf-8"))
+    assert config.get("unstable", {}).get("embed-metadata") is False, (
+        ".cargo/config.toml must set [unstable] embed-metadata = false"
+    )
+    flags = [
+        *config.get("build", {}).get("rustflags", []),
+        *(
+            flag
+            for table in config.get("target", {}).values()
+            for flag in table.get("rustflags", [])
+        ),
+    ]
+    assert not any("embed-metadata" in str(flag) for flag in flags), (
+        "no raw rustc embed-metadata flag may appear in any rustflags source"
     )
