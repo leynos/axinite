@@ -65,6 +65,28 @@ class Selection:
 
 
 @dataclass(frozen=True)
+class EquivalentForms:
+    """One selection whose meaning every flag spelling must preserve.
+
+    The names, their separator and the switches are held fixed, so only the
+    spelling of the flag varies between the forms compared against the model.
+    """
+
+    features: tuple[str, ...]
+    separator: str
+    defaults: frozenset[str]
+    no_defaults: bool
+    all_features: bool
+
+    @property
+    def selection(self) -> Selection:
+        """Return the selection these names and switches describe."""
+        return Selection(
+            self.features, self.defaults, self.no_defaults, self.all_features
+        )
+
+
+@dataclass(frozen=True)
 class Spelling:
     """One rendering of a selection's explicit features as arguments.
 
@@ -186,40 +208,44 @@ def _spellings(draw: st.DrawFn) -> tuple[Selection, Spelling]:
     return selection, spelling
 
 
+@st.composite
+def _equivalent_forms(draw: st.DrawFn) -> EquivalentForms:
+    """Draw one selection and the separator its names are written with."""
+    return EquivalentForms(
+        features=tuple(
+            draw(st.lists(st.sampled_from(FEATURE_NAMES), min_size=0, max_size=4))
+        ),
+        separator=draw(st.sampled_from(SEPARATORS)),
+        defaults=draw(st.sampled_from(DEFAULT_SETS)),
+        no_defaults=draw(st.booleans()),
+        all_features=draw(st.booleans()),
+    )
+
+
 @settings(max_examples=100)
-@given(
-    features=st.lists(st.sampled_from(FEATURE_NAMES), min_size=0, max_size=4),
-    separator=st.sampled_from(SEPARATORS),
-    defaults=st.sampled_from(DEFAULT_SETS),
-    no_defaults=st.booleans(),
-    all_features=st.booleans(),
-)
+@given(_equivalent_forms())
 def test_equivalent_feature_flag_forms_resolve_both_helpers(
-    features: list[str],
-    separator: str,
-    defaults: frozenset[str],
-    *,
-    no_defaults: bool,
-    all_features: bool,
+    case: EquivalentForms,
 ) -> None:
     """One selection renders to every flag form with the same meaning.
 
-    The names, their separator and the switches are held fixed while only the
-    spelling of the flag changes, so a reader that understands one form and not
-    another fails here even though every form is a valid command.
+    Only the spelling of the flag changes between the forms compared here, so a
+    reader that understands one form and not another fails even though every
+    form is a valid command.
     """
-    selection = Selection(tuple(features), defaults, no_defaults, all_features)
+    selection = case.selection
     expected = _model(selection)
     for form in FLAG_FORMS:
         spelling = Spelling(
-            groups=((tuple(features), separator, form),),
+            groups=((case.features, case.separator, form),),
             switches_first=form in {"long", "short"},
             render_empty=True,
         )
         rendered = _render(selection, spelling)
-        assert _read(rendered, defaults) == expected, (
+        assert _read(rendered, case.defaults) == expected, (
             f"the {form} spelling {rendered!r} with defaults "
-            f"{sorted(defaults)!r} should read as postgres/embedded={expected}"
+            f"{sorted(case.defaults)!r} should read as postgres/embedded="
+            f"{expected}"
         )
 
 
