@@ -48,6 +48,43 @@ fn test_validate_tool_schema_nested_path_uses_child() {
     );
 }
 
+#[test]
+fn test_validate_tool_schema_reports_nested_errors_in_traversal_order() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "config": {
+                "type": "object",
+                "properties": {
+                    "records": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "values": { "type": "array" }
+                            },
+                            "required": ["missing_first", "missing_second"]
+                        }
+                    }
+                },
+                "required": ["missing_config"]
+            }
+        },
+        "required": ["missing_root"]
+    });
+
+    let errors = validate_tool_schema(&schema, "root");
+    let expected_errors: Vec<String> = vec![
+        "root: required key \"missing_root\" not found in properties".into(),
+        "root.config: required key \"missing_config\" not found in properties".into(),
+        "root.config.records.items: required key \"missing_first\" not found in properties".into(),
+        "root.config.records.items: required key \"missing_second\" not found in properties".into(),
+        "root.config.records.items.values: array property missing \"items\"".into(),
+    ];
+
+    assert_eq!(errors, expected_errors);
+}
+
 #[rstest]
 #[case(serde_json::json!({
     "type": "object",
