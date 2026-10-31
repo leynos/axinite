@@ -1688,13 +1688,17 @@ also be dispatched manually once it is present on the default branch.
 The local build job records Apple evidence after the checksum check: `sw_vers`,
 `uname -m`, the Rust host, `xcodebuild -version`, the selected developer
 directory, and the SDK version and path. For each packaged executable it also
-records `lipo -archs` and the `LC_BUILD_VERSION` `minos` and `sdk`, and fails
-when the architecture disagrees with the target: `arm64` for
-`aarch64-apple-darwin`, `x86_64` for `x86_64-apple-darwin`. A manual dispatch
-must select a ref that points at the candidate commit, and the operator must
-confirm that commit in `validation-context.txt` before trusting the evidence.
-Checksums prove package integrity only; they do not prove signing, notarization
-or runtime behaviour.
+records `lipo -archs` and its deployment-target load command, and fails when
+the architecture disagrees with the target: `arm64` for `aarch64-apple-darwin`,
+`x86_64` for `x86_64-apple-darwin`. arm64 binaries encode that target in
+`LC_BUILD_VERSION` (`minos` and `sdk`), while the x86_64 linker still emits the
+older `LC_VERSION_MIN_MACOSX` (`version` reported as `minos`, plus `sdk`) for
+targets that predate the newer command; the step understands both and fails if
+neither yields a minimum version and SDK. A manual dispatch must select a ref
+that points at the candidate commit, and the operator must confirm that commit
+in `validation-context.txt` before trusting the evidence. Checksums prove
+package integrity only; they do not prove signing, notarization or runtime
+behaviour.
 
 ### Provisioning the build tools in CI
 

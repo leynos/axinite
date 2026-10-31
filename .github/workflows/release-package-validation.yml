@@ -181,10 +181,41 @@ jobs:
           fi
 
           archs=$(lipo -archs "$binary")
+          # Mach-O records a deployment target in one of two load commands.
+          # arm64 binaries use LC_BUILD_VERSION; the x86_64 linker still emits
+          # the older LC_VERSION_MIN_MACOSX when the target predates it, so
+          # both forms must be understood for the Intel leg to report values.
           build_version=$(otool -l "$binary" |
-            awk '/LC_BUILD_VERSION/ { in_build=1; next }
-                 in_build && /minos/ { print "minos: " $2 }
-                 in_build && /sdk/ { print "sdk: " $2; in_build=0 }')
+            awk '
+              $1 == "cmd" && $2 == "LC_BUILD_VERSION" {
+                command = "LC_BUILD_VERSION"
+                next
+              }
+              $1 == "cmd" && $2 == "LC_VERSION_MIN_MACOSX" {
+                command = "LC_VERSION_MIN_MACOSX"
+                next
+              }
+              $1 == "cmd" { command = "" }
+              command == "LC_BUILD_VERSION" && $1 == "minos" {
+                print "LC_BUILD_VERSION minos: " $2
+              }
+              command == "LC_BUILD_VERSION" && $1 == "sdk" {
+                print "LC_BUILD_VERSION sdk: " $2
+                command = ""
+              }
+              command == "LC_VERSION_MIN_MACOSX" && $1 == "version" {
+                print "LC_VERSION_MIN_MACOSX minos: " $2
+              }
+              command == "LC_VERSION_MIN_MACOSX" && $1 == "sdk" {
+                print "LC_VERSION_MIN_MACOSX sdk: " $2
+                command = ""
+              }
+            ')
+          if ! printf '%s\n' "$build_version" | grep -q 'minos: ' ||
+             ! printf '%s\n' "$build_version" | grep -q 'sdk: '; then
+            echo "no deployment target in $binary" >&2
+            exit 1
+          fi
 
           {
             printf 'archive: %s\n' "$archive"
