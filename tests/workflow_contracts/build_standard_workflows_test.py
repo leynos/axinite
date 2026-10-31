@@ -161,7 +161,7 @@ def test_runner_forms_are_all_read(documents: dict[str, dict[str, typ.Any]]) -> 
     mapped = {"runs-on": {"group": "g", "labels": ["ubicloud-standard-2"]}}
     caller = {"uses": "org/repo/.github/workflows/w.yml@" + "0" * 40}
     windows = {"runs-on": "windows-latest"}
-    macos = {"runs-on": "macos-14"}
+    macos = {"runs-on": "macos-15"}
     assert all(runs_on_linux(job) for job in (scalar, chain, listed, mapped, caller))
     assert not any(runs_on_linux(job) for job in (windows, macos))
 
