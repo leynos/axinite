@@ -381,7 +381,19 @@ edition-2021 standalone Cargo package with `[workspace]`. Its two
 `vstd::prelude::*` and supplied `fn main() {}` inside `verus!`; their proof
 functions ensured respectively `x + 0 == x` and `x + 1 == x` for `x: int`.
 
+The host operator must provision the managed `build-limits-rustc` and
+`build-limits-rustdoc` wrappers before reproduction. The following checks
+require those wrappers to be the configured tools and require
+`RUSTC_WORKSPACE_WRAPPER` to be absent, matching this run. They stop if the
+host differs; they do not alter the caller's admission settings.
+
 ```bash
+set -u
+: "${RUSTC_WRAPPER:?managed compiler wrapper required}"
+: "${RUSTDOC:?managed rustdoc wrapper required}"
+test "$RUSTC_WRAPPER" = "$(command -v build-limits-rustc)" || exit 1
+test "$RUSTDOC" = "$(command -v build-limits-rustdoc)" || exit 1
+test -z "${RUSTC_WORKSPACE_WRAPPER+x}" || exit 1
 probe="$PWD/target/prover-m1"
 source='git+https://github.com/leynos/rust-prover-tools@592558f7183b554fc749696246984c5d7300d029'
 KANI_HOME="$probe/kani-home" uv tool run --python 3.14 --from "$source" prover-tools kani install \
@@ -675,3 +687,4 @@ work, and no installer or runtime implementation has started.
 - (2026-11-01) Record the successful M1 compatibility plateau and its limits.
 - (2026-11-01) Add reproducible M1 commands and correct review wording.
 - (2026-11-01) Record the compiler wrapper environment and clarify the command.
+- (2026-11-01) Add non-mutating checks for the M1 wrapper prerequisites.
