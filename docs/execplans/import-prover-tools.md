@@ -1,6 +1,6 @@
 # Import Kani and Verus support from Netsuke
 
-Status: DRAFT — awaiting approval before implementation.
+Status: APPROVED
 
 ## Purpose and big picture
 
@@ -22,8 +22,8 @@ Deliberate faults must make those same commands fail. Continuous integration
 results. Ordinary application builds must remain independent of installed
 provers.
 
-This is a pre-implementation plan. This branch does not install tools, add
-proofs, change runtime behaviour, or complete roadmap task 2.2.1.
+This approved plan authorizes the tooling import below. It does not authorize
+implementation of roadmap task 2.2.1 or claim its proof obligations are met.
 
 ## Conformance basis
 
@@ -241,7 +241,7 @@ adoption programme complete.
 - [x] (2026-10-28) Draft the import and verification milestones.
 - [x] (2026-11-01) Refresh the tooling pin against upstream `main` and revise
   installation, Kani execution, multi-file proofs, solver setup, and evidence.
-- [ ] Obtain explicit implementation approval.
+- [x] (2026-11-01) The user explicitly approved implementation of this plan.
 - [ ] M1: Establish pinned compatibility and provenance.
 - [ ] M2: Add tested local command boundaries.
 - [ ] M3: Demonstrate both tools and reject deliberate faults.
@@ -284,6 +284,9 @@ and V1, V2, and V5 below account for that change.
   execution to the package; qualify the pinned Z3/Verus pair, repeated proof
   arguments, and failure propagation at Axinite's boundary. R1–R4 retain their
   scope; no production proof or new runtime dependency is authorized.
+
+- (2026-11-01) Accept the user’s explicit approval and begin the planned
+  implementation within the recorded constraints and tolerances.
 
 ## Plan of work
 
@@ -581,4 +584,5 @@ work, and no installer or runtime implementation has started.
   upstream Kani execution and bounded installer interfaces. Add Z3 setup,
   multi-file Verus checks, and closed-pipe status evidence throughout M1–M4 and
   V1/V2/V5. Preserve the Netsuke donor snapshot and Monty proof scope;
-  implementation remains unapproved.
+  implementation was subsequently approved on 2026-11-01.
+- (2026-11-01) Record explicit user approval before implementation begins.
