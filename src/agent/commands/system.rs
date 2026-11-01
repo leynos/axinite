@@ -119,7 +119,7 @@ impl Agent {
         }
         // Environment check: restart is only available in Docker containers
         let in_docker = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var("AXINITE_IN_DOCKER")
         }
         .map(|v| v.to_lowercase() == "true")

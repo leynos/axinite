@@ -11,7 +11,7 @@ mod files;
 mod memory_and_search;
 fn get_pool() -> deadpool_postgres::Pool {
     let database_url = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("DATABASE_URL")
     }
     .unwrap_or_else(|_| "postgres://localhost/axinite_test".to_string());

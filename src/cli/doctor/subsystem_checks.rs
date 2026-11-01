@@ -186,7 +186,7 @@ pub(super) fn check_secrets(settings: &Settings) -> CheckResult {
         }
         crate::settings::KeySource::Env => {
             if {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                 std::env::var("SECRETS_MASTER_KEY")
             }
             .is_ok()

@@ -25,19 +25,17 @@ pub struct HotReloadManager {
     reload_lock: tokio::sync::Mutex<()>,
 }
 
-/// The collaborators a [`HotReloadManager`] orchestrates.
-///
-/// Bundles the four reload boundaries so that
-/// [`HotReloadManager::new_with_context`] takes the environment snapshot plus
-/// one dependency set.
-pub struct HotReloadDeps {
-    /// Loads configuration from the database or the environment.
+/// Explicit runtime dependencies assembled for a hot-reload manager.
+pub struct HotReloadManagerDependencies {
+    /// Environment snapshot resolved during application startup.
+    pub env_context: EnvContext,
+    /// Loads the configuration for each reload cycle.
     pub config_loader: Arc<dyn ConfigLoader>,
-    /// Restarts HTTP listeners, when one is managed.
+    /// Controls the HTTP listener when configuration changes.
     pub listener_controller: Option<Arc<dyn ListenerController>>,
-    /// Injects secrets into the reload snapshot, when secrets are available.
+    /// Adds secret values to each reload snapshot.
     pub secret_injector: Option<Arc<dyn SecretInjector>>,
-    /// Channel instances that support secret swapping.
+    /// Updates channel credentials after a successful reload.
     pub secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
 }
 
@@ -54,31 +52,23 @@ impl HotReloadManager {
         secret_injector: Option<Arc<dyn SecretInjector>>,
         secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
     ) -> Self {
-        Self::new_with_context(
-            EnvContext::capture_ambient(),
-            HotReloadDeps {
-                config_loader,
-                listener_controller,
-                secret_injector,
-                secret_updaters,
-            },
-        )
+        Self::new_with_context(HotReloadManagerDependencies {
+            env_context: crate::bootstrap::capture_config_env_context(),
+            config_loader,
+            listener_controller,
+            secret_injector,
+            secret_updaters,
+        })
     }
 
     /// Create a hot-reload manager with an explicit environment snapshot.
-    pub fn new_with_context(env_context: EnvContext, deps: HotReloadDeps) -> Self {
-        let HotReloadDeps {
-            config_loader,
-            listener_controller,
-            secret_injector,
-            secret_updaters,
-        } = deps;
+    pub fn new_with_context(dependencies: HotReloadManagerDependencies) -> Self {
         Self {
-            env_context,
-            config_loader,
-            listener_controller,
-            secret_injector,
-            secret_updaters,
+            env_context: dependencies.env_context,
+            config_loader: dependencies.config_loader,
+            listener_controller: dependencies.listener_controller,
+            secret_injector: dependencies.secret_injector,
+            secret_updaters: dependencies.secret_updaters,
             reload_lock: tokio::sync::Mutex::new(()),
         }
     }
@@ -95,6 +85,11 @@ impl HotReloadManager {
     /// If the HTTP channel is removed, the current listener is shut down and
     /// channel secrets are cleared. Errors are logged and returned early; the
     /// reload path never panics.
+    ///
+    /// Each cycle starts from the environment snapshot captured at startup,
+    /// then applies any injected secrets. Changes to process variables or
+    /// `.env` files after startup are not reread; restart the process to apply
+    /// environment-backed settings such as `HTTP_HOST` and `HTTP_PORT`.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         let _reload_guard = self.reload_lock.lock().await;
 

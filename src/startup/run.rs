@@ -14,8 +14,8 @@ use axinite::{
 
 use crate::startup::wasm::WasmWiringContext;
 use crate::startup::{
-    CoreAgentContext, GatewayPhaseContext, run_flow::run_with_side_effects,
-    wasm::wire_wasm_channel_runtime,
+    CoreAgentContext, GatewayPhaseContext, RuntimeManagementContext,
+    run_flow::run_with_side_effects, wasm::wire_wasm_channel_runtime,
 };
 
 /// Runs the agent loop and performs the coordinated shutdown sequence on exit.
@@ -25,11 +25,14 @@ use crate::startup::{
 /// hot-reload handler on Unix, then calls `agent.run().await`. After the agent
 /// exits the function broadcasts shutdown, flushes traces, stops the webhook
 /// server, and tears down any active tunnel.
-pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
+pub(crate) async fn run_agent(mut ctx: GatewayPhaseContext) -> anyhow::Result<()> {
+    prepare_gateway_channels(&mut ctx).await;
+
     let GatewayPhaseContext {
         core:
             CoreAgentContext {
                 config,
+                #[cfg(unix)]
                 env_context,
                 components,
                 side_effects,
@@ -39,8 +42,6 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
             },
         channels,
         webhook_server,
-        loaded_wasm_channel_names,
-        mut wasm_channel_runtime_state,
         #[cfg(unix)]
         http_channel_state,
         session_manager,
@@ -49,17 +50,6 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         routine_engine_slot,
         ..
     } = ctx;
-
-    prepare_channels(ChannelPreparation {
-        components: &components,
-        extension_manager: &components.extension_manager,
-        wasm_channel_runtime_state: &mut wasm_channel_runtime_state,
-        loaded_wasm_channel_names: &loaded_wasm_channel_names,
-        channels: &channels,
-        sse_sender: &sse_sender,
-        wasm_channel_owner_ids: &config.channels.wasm_channel_owner_ids,
-    })
-    .await;
 
     snapshot_workspace_memory(&components).await;
 
@@ -76,16 +66,17 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     )
     .await;
 
-    let shutdown_tx = setup_runtime_management(
-        &components,
-        &config,
-        &env_context,
-        &container_job_manager,
+    let shutdown_tx = setup_runtime_management(&RuntimeManagementContext {
+        components: &components,
+        config: &config,
         #[cfg(unix)]
-        &webhook_server,
+        env_context: &env_context,
+        container_job_manager: &container_job_manager,
         #[cfg(unix)]
-        &http_channel_state,
-    );
+        webhook_server: &webhook_server,
+        #[cfg(unix)]
+        http_channel_state: &http_channel_state,
+    });
 
     let run_result = run_with_side_effects(side_effects, agent, || async {}).await;
 
@@ -100,6 +91,21 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
 
     run_result?;
     Ok(())
+}
+
+/// Completes startup-only channel registration before agent dependencies are built.
+async fn prepare_gateway_channels(ctx: &mut GatewayPhaseContext) {
+    let components = &ctx.core.components;
+    prepare_channels(ChannelPreparation {
+        components,
+        extension_manager: &components.extension_manager,
+        wasm_channel_runtime_state: &mut ctx.wasm_channel_runtime_state,
+        loaded_wasm_channel_names: &ctx.loaded_wasm_channel_names,
+        channels: &ctx.channels,
+        sse_sender: &ctx.sse_sender,
+        wasm_channel_owner_ids: &ctx.core.config.channels.wasm_channel_owner_ids,
+    })
+    .await;
 }
 
 /// Groups the runtime pieces needed to register message tools and wire the
@@ -219,30 +225,19 @@ async fn prepare_agent(
 /// Common setup runs on every platform, while Unix-specific hot-reload wiring
 /// is delegated to `setup_runtime_management_unix`.
 pub(crate) fn setup_runtime_management(
-    components: &AppComponents,
-    config: &Config,
-    env_context: &axinite::config::EnvContext,
-    container_job_manager: &Option<Arc<axinite::orchestrator::ContainerJobManager>>,
-    #[cfg(unix)] webhook_server: &Option<Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
-    #[cfg(unix)] http_channel_state: &Option<Arc<axinite::channels::HttpChannelState>>,
+    context: &RuntimeManagementContext<'_>,
 ) -> tokio::sync::broadcast::Sender<()> {
-    let reaper_context_manager = Arc::clone(&components.context_manager);
-    maybe_spawn_sandbox_reaper(container_job_manager, reaper_context_manager, config);
+    let reaper_context_manager = Arc::clone(&context.components.context_manager);
+    maybe_spawn_sandbox_reaper(
+        context.container_job_manager,
+        reaper_context_manager,
+        context.config,
+    );
 
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
     #[cfg(unix)]
-    crate::startup::unix_runtime::setup_runtime_management_unix(
-        components,
-        env_context,
-        webhook_server,
-        http_channel_state,
-        &shutdown_tx,
-    );
-
-    // The environment snapshot only feeds the Unix hot-reload handler.
-    #[cfg(not(unix))]
-    let _ = env_context;
+    crate::startup::unix_runtime::setup_runtime_management_unix(context, &shutdown_tx);
 
     shutdown_tx
 }

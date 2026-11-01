@@ -77,15 +77,13 @@ async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls()
     .await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
-    let manager = HotReloadManager::new_with_context(
-        EnvContext::default(),
-        HotReloadDeps {
-            config_loader: loader as Arc<dyn ConfigLoader>,
-            listener_controller: Some(controller as Arc<dyn ListenerController>),
-            secret_injector: Some(injector as Arc<dyn SecretInjector>),
-            secret_updaters: Vec::new(),
-        },
-    );
+    let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(controller as Arc<dyn ListenerController>),
+        secret_injector: Some(injector as Arc<dyn SecretInjector>),
+        secret_updaters: Vec::new(),
+    });
 
     let reload = tokio::spawn(async move { manager.perform_reload().await });
 
@@ -117,8 +115,8 @@ async fn reload_lock_is_released_after_dns_timeout() -> Result<(), Box<dyn std::
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let manager = Arc::new(HotReloadManager::new_with_context(
-        EnvContext::default(),
-        HotReloadDeps {
+        HotReloadManagerDependencies {
+            env_context: EnvContext::default(),
             config_loader: loader as Arc<dyn ConfigLoader>,
             listener_controller: Some(controller as Arc<dyn ListenerController>),
             secret_injector: Some(injector as Arc<dyn SecretInjector>),

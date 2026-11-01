@@ -48,3 +48,22 @@ fn test_axinite_base_dir_special_chars() {
     let path = compute_axinite_base_dir_from(&ctx);
     assert_eq!(path, PathBuf::from("/tmp/test_with-special.chars"));
 }
+
+#[test]
+fn saved_axinite_env_values_fill_missing_context_entries() -> std::io::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let env_path = dir.path().join(".env");
+    ambient_fs::write(
+        &env_path,
+        "DATABASE_BACKEND=libsql\nLIBSQL_PATH=/saved/axinite.db\n",
+    )?;
+    let ctx = EnvContext::default()
+        .with_env("AXINITE_BASE_DIR", dir.path().display().to_string())
+        .with_env("DATABASE_BACKEND", "postgres");
+
+    let merged = merge_axinite_env_into_context(&ctx)?;
+
+    assert_eq!(merged.get("DATABASE_BACKEND"), Some("postgres"));
+    assert_eq!(merged.get("LIBSQL_PATH"), Some("/saved/axinite.db"));
+    Ok(())
+}

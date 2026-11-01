@@ -58,7 +58,7 @@ pub struct AppBuilder {
 impl AppBuilder {
     /// Create a new builder.
     pub fn new(params: AppBuilderParams) -> Self {
-        Self::new_with_context(params, EnvContext::capture_ambient())
+        Self::new_with_context(params, crate::bootstrap::capture_config_env_context())
     }
 
     /// Create a builder using the environment snapshot resolved by its owner.
@@ -145,7 +145,6 @@ impl AppBuilder {
     ) -> Result<(AppComponents, RuntimeSideEffects, EnvContext), anyhow::Error> {
         self.init_database().await?;
         self.init_secrets().await?;
-        crate::config::merge_context_secrets_into_legacy_overlay(&self.env_context);
 
         let (llm, cheap_llm, recording_handle) = self.resolve_llm().await?;
         let (safety, tools, embeddings, workspace) = self.init_tools(&llm).await?;

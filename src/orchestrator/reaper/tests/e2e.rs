@@ -9,7 +9,7 @@ const LABEL_JOB_ID: &str = "axinite.job_id";
 const LABEL_CREATED_AT: &str = "axinite.created_at";
 fn should_run_e2e() -> bool {
     {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("AXINITE_E2E_DOCKER_TESTS")
     }
     .is_ok()

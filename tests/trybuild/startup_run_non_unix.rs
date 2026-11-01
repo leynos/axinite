@@ -37,11 +37,29 @@ mod startup {
 
     pub(crate) struct CoreAgentContext {
         pub(crate) config: axinite::config::Config,
+        pub(crate) env_context: axinite::config::EnvContext,
         pub(crate) components: axinite::app::AppComponents,
         pub(crate) side_effects: axinite::app::RuntimeSideEffects,
         pub(crate) active_tunnel: Option<Box<dyn axinite::tunnel::Tunnel>>,
         pub(crate) container_job_manager:
             Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
+    }
+
+    pub(crate) struct RuntimeManagementContext<'a> {
+        pub(crate) components: &'a axinite::app::AppComponents,
+        pub(crate) config: &'a axinite::config::Config,
+        #[cfg(unix)]
+        pub(crate) env_context: &'a axinite::config::EnvContext,
+        pub(crate) container_job_manager: &'a Option<
+            std::sync::Arc<axinite::orchestrator::ContainerJobManager>,
+        >,
+        #[cfg(unix)]
+        pub(crate) webhook_server: &'a Option<
+            std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>,
+        >,
+        #[cfg(unix)]
+        pub(crate) http_channel_state:
+            &'a Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
     }
 
     pub(crate) struct GatewayPhaseContext {
@@ -65,11 +83,7 @@ mod startup {
     #[cfg(unix)]
     pub(crate) mod unix_runtime {
         pub(crate) fn setup_runtime_management_unix(
-            _components: &axinite::app::AppComponents,
-            _webhook_server: &Option<
-                std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>,
-            >,
-            _http_channel_state: &Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
+            _context: &super::RuntimeManagementContext<'_>,
             _shutdown_tx: &tokio::sync::broadcast::Sender<()>,
         ) {
         }
@@ -86,19 +100,9 @@ fn main() {
 
     #[cfg(not(unix))]
     let _ = run_contract::setup_runtime_management
-        as fn(
-            &axinite::app::AppComponents,
-            &axinite::config::Config,
-            &Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
-        ) -> tokio::sync::broadcast::Sender<()>;
+        as fn(&startup::RuntimeManagementContext<'_>) -> tokio::sync::broadcast::Sender<()>;
 
     #[cfg(unix)]
     let _ = run_contract::setup_runtime_management
-        as fn(
-            &axinite::app::AppComponents,
-            &axinite::config::Config,
-            &Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
-            &Option<std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
-            &Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
-        ) -> tokio::sync::broadcast::Sender<()>;
+        as fn(&startup::RuntimeManagementContext<'_>) -> tokio::sync::broadcast::Sender<()>;
 }

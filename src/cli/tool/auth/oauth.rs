@@ -70,8 +70,11 @@ pub(super) async fn auth_tool_oauth(
     println!("  Starting OAuth authentication...");
     println!();
 
-    let listener = oauth_defaults::bind_callback_listener().await?;
-    let redirect_uri = format!("{}/callback", oauth_defaults::callback_url());
+    let listener = oauth_defaults::bind_callback_listener_from(context.env_context).await?;
+    let redirect_uri = format!(
+        "{}/callback",
+        oauth_defaults::callback_url_from(context.env_context)
+    );
 
     let oauth_result = oauth_defaults::build_oauth_url(
         &oauth.authorization_url,

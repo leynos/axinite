@@ -30,7 +30,7 @@ macro_rules! require_telegram_wasm {
             if {
                 #[expect(
                     clippy::disallowed_methods,
-                    reason = "transitional #333: EnvContext"
+                    reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
                 )]
                 std::env::var("CI")
             }.is_ok() {
