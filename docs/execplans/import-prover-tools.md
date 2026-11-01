@@ -360,16 +360,54 @@ successful verification. `false_union_is_subset` returned exit 1 with its
 assertion marked FAILURE. With no `--harness`, the same output-format argument
 ran both: one success, one failure, two total, exit 1. The inherited root
 `.cargo/config.toml` produced an `unused config key unstable.embed-metadata`
-warning from Kani's older Cargo; neither proof result was suppressed or
+warning from Kani's older Cargo; neither proof result was suppressed nor
 misclassified. The first Kani build spent 9 minutes 46 seconds in Cargo under a
 healthy, busy shared admission pool.
 
-The exact transcripts are retained in `/tmp/axinite-prover-m1-*.out`, and the
-probe inputs are under ignored `target/prover-m1/`. They are scratch evidence,
-not the checked-in M3 acceptance fixtures. Conformance: R1 and R2 are advanced,
-the pinned CLI and trust boundaries are unchanged, and no runtime API,
-dependency, persistent format, or architecture deviation was introduced. M2–M4
-remain open.
+The following reproduces the exact prover arguments. The original invocation
+used a clean environment without Git credential overrides, retained managed
+compiler wrappers, and used `uv tool run --python 3.14 --from` the pinned
+source. Install inputs were `tools/kani/VERSION`, `tools/verus/VERSION`, and
+`tools/verus/SHA256SUMS` under the scratch root, copied from the versions and
+checksum above. The Kani package was an edition-2021 standalone Cargo package
+with `[workspace]`. Its two `#[kani::proof]` harnesses generated arbitrary
+`requested: u8` and `permitted: u8`, then asserted respectively that
+`(requested & permitted) & !permitted == 0` and
+`(requested | permitted) & !permitted == 0`. The Verus files each imported
+`vstd::prelude::*` and supplied `fn main() {}` inside `verus!`; their proof
+functions ensured respectively `x + 0 == x` and `x + 1 == x` for `x: int`.
+
+```bash
+probe="$PWD/target/prover-m1"
+source='git+https://github.com/leynos/rust-prover-tools@592558f7183b554fc749696246984c5d7300d029'
+KANI_HOME="$probe/kani-home" uv tool run --python 3.14 --from "$source" prover-tools kani install \
+  --repo-root "$probe" --install-dir "$probe/frontend" --cache-dir "$probe/kani-cache" --no-compile
+uv tool run --offline --python 3.14 --from "$source" prover-tools verus install \
+  --repo-root "$probe" --install-dir "$probe/verus-install"
+uv tool run --offline --python 3.14 --from "$source" prover-tools z3 install --repo-root "$probe"
+export VERUS_Z3_PATH="$probe/.cache/z3/4.16.0/z3"
+uv tool run --offline --python 3.14 --from "$source" prover-tools verus run --repo-root "$probe" \
+  --install-dir "$probe/verus-install" --proof-file "$probe/verus/valid.rs"
+uv tool run --offline --python 3.14 --from "$source" prover-tools verus run --repo-root "$probe" \
+  --install-dir "$probe/verus-install" --proof-file "$probe/verus/invalid.rs"
+uv tool run --offline --python 3.14 --from "$source" prover-tools kani exec \
+  --installation "$probe/kani-home/kani-0.67.0" --cwd "$probe/kani" \
+  --extra-arg=--harness=intersection_is_subset --extra-arg=--output-format=regular
+uv tool run --offline --python 3.14 --from "$source" prover-tools kani exec \
+  --installation "$probe/kani-home/kani-0.67.0" --cwd "$probe/kani" \
+  --extra-arg=--harness=false_union_is_subset --extra-arg=--output-format=regular
+uv tool run --offline --python 3.14 --from "$source" prover-tools kani exec \
+  --installation "$probe/kani-home/kani-0.67.0" --cwd "$probe/kani" --extra-arg=--output-format=regular
+```
+
+The initial Kani install and CLI discovery used network-enabled `uv`;
+subsequent runs used `--offline`. Expected exit statuses are 0 for installation
+and valid proofs, and 1 for the invalid proofs and all-harness Kani command.
+Full local transcripts remain in `/tmp/axinite-prover-m1-*.out`; the inputs
+under ignored `target/prover-m1/` are scratch evidence, not the checked-in M3
+fixtures. Conformance: R1 and R2 are advanced, the pinned CLI and trust
+boundaries are unchanged, and no runtime API, dependency, persistent format, or
+architecture deviation was introduced. M2–M4 remain open.
 
 ### M2 — Add local installation and execution contracts
 
@@ -631,3 +669,4 @@ work, and no installer or runtime implementation has started.
   implementation was subsequently approved on 2026-11-01.
 - (2026-11-01) Record explicit user approval before implementation begins.
 - (2026-11-01) Record the successful M1 compatibility plateau and its limits.
+- (2026-11-01) Add reproducible M1 commands and correct review wording.
