@@ -154,6 +154,11 @@ fn node_to_json(node: &Node) -> Value {
 /// Reference model of the documented validation rules: orphan required keys at
 /// each level, arrays without `items`, and recursion into object properties and
 /// object-typed array items.
+///
+/// Diagnostics are emitted in the order the validator produces them:
+/// required-key errors first, then each property in key order. The generator
+/// only emits `p0`..`pN` names from ordered collections, so its iteration order
+/// is also the sorted order `serde_json`'s default `Map` uses.
 fn expected_diagnostics(node: &Node, path: &str, out: &mut Vec<String>) {
     let Node::Object { props, required } = node;
 
@@ -204,10 +209,12 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
     /// For generated schema trees the validator reports exactly the
-    /// violations the documented rules predict, and every diagnostic at a
-    /// node appears before any diagnostic at its descendants.
+    /// violations the documented rules predict, in the documented order:
+    /// required-key errors for an object precede its property diagnostics,
+    /// sibling properties are visited in key order, and every diagnostic at
+    /// a node appears before any diagnostic at its descendants.
     #[test]
-    fn prop_validate_tool_schema_diagnostics_match_rules_and_preorder(
+    fn prop_validate_tool_schema_diagnostics_match_rules_and_order(
         node in node_strategy(MAX_DEPTH),
     ) {
         let schema = node_to_json(&node);
@@ -216,13 +223,9 @@ proptest! {
         let mut expected = Vec::new();
         expected_diagnostics(&node, "root", &mut expected);
 
-        let mut actual_sorted = actual.clone();
-        let mut expected_sorted = expected;
-        actual_sorted.sort();
-        expected_sorted.sort();
         prop_assert_eq!(
-            &actual_sorted,
-            &expected_sorted,
+            &actual,
+            &expected,
             "diagnostics differ for schema {}",
             schema,
         );

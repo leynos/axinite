@@ -61,6 +61,8 @@ fn test_validate_tool_schema_reports_nested_errors_in_traversal_order() {
                         "items": {
                             "type": "object",
                             "properties": {
+                                "alpha": { "type": "array" },
+                                "beta": { "type": "array" },
                                 "values": { "type": "array" }
                             },
                             "required": ["missing_first", "missing_second"]
@@ -79,6 +81,8 @@ fn test_validate_tool_schema_reports_nested_errors_in_traversal_order() {
         "root.config: required key \"missing_config\" not found in properties".into(),
         "root.config.records.items: required key \"missing_first\" not found in properties".into(),
         "root.config.records.items: required key \"missing_second\" not found in properties".into(),
+        "root.config.records.items.alpha: array property missing \"items\"".into(),
+        "root.config.records.items.beta: array property missing \"items\"".into(),
         "root.config.records.items.values: array property missing \"items\"".into(),
     ];
 
