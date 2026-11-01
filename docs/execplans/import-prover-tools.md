@@ -367,63 +367,113 @@ warning from Kani's older Cargo; neither proof result was suppressed nor
 misclassified. The first Kani build spent 9 minutes 46 seconds in Cargo under a
 healthy, busy shared admission pool.
 
-The following reproduces the exact prover arguments. The original invocation
-used a clean environment without Git credential overrides, retained managed
-compiler wrappers, and invoked the pinned source with
-`uv tool run --python 3.14 --from`. Install inputs were `tools/kani/VERSION`,
-`tools/verus/VERSION`, and `tools/verus/SHA256SUMS` under the scratch root,
-copied from the versions and checksum above. The Kani package was an
-edition-2021 standalone Cargo package with `[workspace]`. Its two
-`#[kani::proof]` harnesses generated arbitrary `requested: u8` and
-`permitted: u8`, then asserted respectively that
-`(requested & permitted) & !permitted == 0` and
-`(requested | permitted) & !permitted == 0`. The Verus files each imported
-`vstd::prelude::*` and supplied `fn main() {}` inside `verus!`; their proof
-functions ensured respectively `x + 0 == x` and `x + 1 == x` for `x: int`.
-
-The host operator must provision the managed `build-limits-rustc` and
-`build-limits-rustdoc` wrappers before reproduction. The following checks
-require those wrappers to be the configured tools and require
-`RUSTC_WORKSPACE_WRAPPER` to be absent, matching this run. They stop if the
-host differs; they do not alter the caller's admission settings.
+The recorded commands below preserve the prover arguments used in M1 and add
+input creation and explicit exit-status checks so they can be repeated from a
+clean checkout. The initial `uv` invocation needs network access; later calls
+use its cached pinned package. Run the block in a clean environment without Git
+credential overrides. The host operator must provision the managed
+`build-limits-rustc` and `build-limits-rustdoc` wrappers first. The
+prerequisite checks require those wrappers and an absent
+`RUSTC_WORKSPACE_WRAPPER`, matching this run; they do not alter compiler
+admission. The block creates a uniquely named scratch directory under `target/`
+and does not delete it.
 
 ```bash
-set -u
+set -euo pipefail
 : "${RUSTC_WRAPPER:?managed compiler wrapper required}"
 : "${RUSTDOC:?managed rustdoc wrapper required}"
-test "$RUSTC_WRAPPER" = "$(command -v build-limits-rustc)" || exit 1
-test "$RUSTDOC" = "$(command -v build-limits-rustdoc)" || exit 1
-test -z "${RUSTC_WORKSPACE_WRAPPER+x}" || exit 1
-probe="$PWD/target/prover-m1"
-source='git+https://github.com/leynos/rust-prover-tools@592558f7183b554fc749696246984c5d7300d029'
-KANI_HOME="$probe/kani-home" uv tool run --python 3.14 --from "$source" prover-tools kani install \
-  --repo-root "$probe" --install-dir "$probe/frontend" --cache-dir "$probe/kani-cache" --no-compile
-uv tool run --offline --python 3.14 --from "$source" prover-tools verus install \
-  --repo-root "$probe" --install-dir "$probe/verus-install"
-uv tool run --offline --python 3.14 --from "$source" prover-tools z3 install --repo-root "$probe"
-export VERUS_Z3_PATH="$probe/.cache/z3/4.16.0/z3"
-uv tool run --offline --python 3.14 --from "$source" prover-tools verus run --repo-root "$probe" \
-  --install-dir "$probe/verus-install" --proof-file "$probe/verus/valid.rs"
-uv tool run --offline --python 3.14 --from "$source" prover-tools verus run --repo-root "$probe" \
-  --install-dir "$probe/verus-install" --proof-file "$probe/verus/invalid.rs"
-uv tool run --offline --python 3.14 --from "$source" prover-tools kani exec \
-  --installation "$probe/kani-home/kani-0.67.0" --cwd "$probe/kani" \
-  --extra-arg=--harness=intersection_is_subset --extra-arg=--output-format=regular
-uv tool run --offline --python 3.14 --from "$source" prover-tools kani exec \
-  --installation "$probe/kani-home/kani-0.67.0" --cwd "$probe/kani" \
+test "$RUSTC_WRAPPER" = "$(command -v build-limits-rustc)"
+test "$RUSTDOC" = "$(command -v build-limits-rustdoc)"
+test -z "${RUSTC_WORKSPACE_WRAPPER+x}"
+mkdir -p target
+probe_dir=$(mktemp -d "$PWD/target/prover-m1-reproduction.XXXXXX")
+mkdir -p "$probe_dir/tools/kani" "$probe_dir/tools/verus" "$probe_dir/kani/src" "$probe_dir/verus"
+printf '%s\n' '0.67.0' > "$probe_dir/tools/kani/VERSION"
+printf '%s\n' '0.2026.10.04.426d8b0' > "$probe_dir/tools/verus/VERSION"
+cat > "$probe_dir/tools/verus/SHA256SUMS" <<'CHECKSUM'
+624018662868563a7bec0dd07be5e4dd0c3d61124b4b55105765884bf2d4d1a0  verus-0.2026.10.04.426d8b0-x86-linux.zip
+CHECKSUM
+cat > "$probe_dir/kani/Cargo.toml" <<'MANIFEST'
+[package]
+name = "kani-compatibility-probe"
+version = "0.1.0"
+edition = "2021"
+[workspace]
+MANIFEST
+cat > "$probe_dir/kani/src/lib.rs" <<'KANI'
+#[cfg(kani)]
+mod proofs {
+    #[kani::proof]
+    fn intersection_is_subset() {
+        let requested: u8 = kani::any();
+        let permitted: u8 = kani::any();
+        assert_eq!((requested & permitted) & !permitted, 0);
+    }
+    #[kani::proof]
+    fn false_union_is_subset() {
+        let requested: u8 = kani::any();
+        let permitted: u8 = kani::any();
+        assert_eq!((requested | permitted) & !permitted, 0);
+    }
+}
+KANI
+cat > "$probe_dir/verus/valid.rs" <<'VALID'
+use vstd::prelude::*;
+verus! {
+proof fn witness(x: int) ensures x + 0 == x { }
+fn main() {}
+}
+VALID
+cat > "$probe_dir/verus/invalid.rs" <<'INVALID'
+use vstd::prelude::*;
+verus! {
+proof fn false_claim(x: int) ensures x + 1 == x { }
+fn main() {}
+}
+INVALID
+prover_source='git+https://github.com/leynos/rust-prover-tools@592558f7183b554fc749696246984c5d7300d029'
+prover() { uv tool run --offline --python 3.14 --from "$prover_source" prover-tools "$@"; }
+expect_proof_failure() {
+  local output=$1
+  local expected=$2
+  shift 2
+  local result=0
+  "$@" > "$output" 2>&1 || result=$?
+  test "$result" -eq 1
+  grep -F "$expected" "$output"
+}
+KANI_HOME="$probe_dir/kani-home" uv tool run --python 3.14 --from "$prover_source" prover-tools kani install \
+  --repo-root "$probe_dir" --install-dir "$probe_dir/frontend" --cache-dir "$probe_dir/kani-cache" --no-compile
+prover verus install --repo-root "$probe_dir" --install-dir "$probe_dir/verus-install"
+prover z3 install --repo-root "$probe_dir"
+export VERUS_Z3_PATH="$probe_dir/.cache/z3/4.16.0/z3"
+"$VERUS_Z3_PATH" --version
+prover verus run --repo-root "$probe_dir" --install-dir "$probe_dir/verus-install" \
+  --proof-file "$probe_dir/verus/valid.rs" | tee "$probe_dir/verus-valid.log"
+grep -F '0 errors' "$probe_dir/verus-valid.log"
+expect_proof_failure "$probe_dir/verus-invalid.log" 'postcondition not satisfied' \
+  prover verus run --repo-root "$probe_dir" --install-dir "$probe_dir/verus-install" \
+  --proof-file "$probe_dir/verus/invalid.rs"
+prover kani exec --installation "$probe_dir/kani-home/kani-0.67.0" --cwd "$probe_dir/kani" \
+  --extra-arg=--harness=intersection_is_subset --extra-arg=--output-format=regular | tee "$probe_dir/kani-valid.log"
+grep -F 'VERIFICATION:- SUCCESSFUL' "$probe_dir/kani-valid.log"
+expect_proof_failure "$probe_dir/kani-invalid.log" 'false_union_is_subset.assertion' \
+  prover kani exec --installation "$probe_dir/kani-home/kani-0.67.0" --cwd "$probe_dir/kani" \
   --extra-arg=--harness=false_union_is_subset --extra-arg=--output-format=regular
-uv tool run --offline --python 3.14 --from "$source" prover-tools kani exec \
-  --installation "$probe/kani-home/kani-0.67.0" --cwd "$probe/kani" --extra-arg=--output-format=regular
+expect_proof_failure "$probe_dir/kani-all.log" '1 failures, 2 total' \
+  prover kani exec --installation "$probe_dir/kani-home/kani-0.67.0" --cwd "$probe_dir/kani" \
+  --extra-arg=--output-format=regular
 ```
 
-The initial Kani install and CLI discovery used network-enabled `uv`;
-subsequent runs used `--offline`. Expected exit statuses are 0 for installation
-and valid proofs, and 1 for the invalid proofs and all-harness Kani command.
-Full local transcripts remain in `/tmp/axinite-prover-m1-*.out`; the inputs
-under ignored `target/prover-m1/` are scratch evidence, not the checked-in M3
-fixtures. Conformance: R1 and R2 are advanced, the pinned CLI and trust
-boundaries are unchanged, and no runtime API, dependency, persistent format, or
-architecture deviation was introduced. M2–M4 remain open.
+Successful setup and valid proofs exit 0. The helper accepts an invalid proof
+only when it exits 1 and its output contains the expected failed assertion or
+postcondition; the all-harness run must additionally report both harnesses. Any
+setup, syntax, missing-tool, or unexpected-status failure stops the block. The
+original transcripts remain in `/tmp/axinite-prover-m1-*.out`; original inputs
+under `target/prover-m1/` and the reproducible scratch directory are not the
+checked-in M3 fixtures. Conformance: R1 and R2 are advanced, the pinned CLI and
+trust boundaries are unchanged, and no runtime API, dependency, persistent
+format, or architecture deviation was introduced. M2–M4 remain open.
 
 ### M2 — Add local installation and execution contracts
 
@@ -688,3 +738,5 @@ work, and no installer or runtime implementation has started.
 - (2026-11-01) Add reproducible M1 commands and correct review wording.
 - (2026-11-01) Record the compiler wrapper environment and clarify the command.
 - (2026-11-01) Add non-mutating checks for the M1 wrapper prerequisites.
+- (2026-11-01) Make the M1 reproduction self-contained and validate expected
+  exits.
