@@ -36,7 +36,10 @@ pub fn bundled_channel_names() -> Vec<&'static str> {
 /// 2. `<CARGO_MANIFEST_DIR>/channels-src/` (dev builds)
 fn channels_src_dir() -> PathBuf {
     if let Ok(dir) = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
         std::env::var("AXINITE_CHANNELS_SRC")
     } {
         return PathBuf::from(dir);

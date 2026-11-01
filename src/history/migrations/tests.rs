@@ -50,7 +50,6 @@ async fn run_repair_postgres_refinery_history_case(
     use crate::config::Config;
     use crate::history::Store;
 
-    let _ = dotenvy::dotenv();
     let config = Config::from_env()
         .await
         .context("Config::from_env failed")?;
@@ -131,7 +130,6 @@ async fn stage_and_finalize_migration_history_rewrites_two_phases() {
     use crate::config::Config;
     use crate::history::Store;
 
-    let _ = dotenvy::dotenv();
     let config = Config::from_env().await.expect("Config::from_env failed");
     let store = Store::new(&config.database)
         .await

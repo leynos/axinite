@@ -16,12 +16,12 @@ use crate::tools::tool::{NativeTool, ToolError};
 use super::super::ShellTool;
 use super::super::policy::MAX_OUTPUT_SIZE;
 
-fn shell_context() -> (TempDir, EnvContext) {
-    let home_dir = tempfile::tempdir().expect("temporary HOME should be created");
+fn shell_context() -> anyhow::Result<(TempDir, EnvContext)> {
+    let home_dir = tempfile::tempdir()?;
     let context = EnvContext::default()
         .with_env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .with_env("HOME", home_dir.path().to_string_lossy());
-    (home_dir, context)
+    Ok((home_dir, context))
 }
 
 #[tokio::test]
@@ -64,9 +64,9 @@ fn test_sandbox_policy_builder() {
 // ── Environment scrubbing tests ────────────────────────────────────
 
 #[tokio::test]
-async fn test_env_scrubbing_hides_secrets() {
+async fn test_env_scrubbing_hides_secrets() -> anyhow::Result<()> {
     let secret_var = "AXINITE_TEST_SECRET_KEY";
-    let (_home_dir, env) = shell_context();
+    let (_home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env.with_env(secret_var, "super_secret_value_12345"));
     let ctx = JobContext::default();
 
@@ -93,11 +93,12 @@ async fn test_env_scrubbing_hides_secrets() {
         output.contains("PATH="),
         "PATH should be forwarded to child processes"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_env_scrubbing_forwards_safe_vars() {
-    let (_home_dir, env) = shell_context();
+async fn test_env_scrubbing_forwards_safe_vars() -> anyhow::Result<()> {
+    let (_home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env);
     let ctx = JobContext::default();
 
@@ -118,11 +119,12 @@ async fn test_env_scrubbing_forwards_safe_vars() {
         !output.is_empty(),
         "HOME should be available in child process"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_env_scrubbing_forwards_explicit_extra_env() {
-    let (_home_dir, env) = shell_context();
+async fn test_env_scrubbing_forwards_explicit_extra_env() -> anyhow::Result<()> {
+    let (_home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env);
     let extra_env = HashMap::from([(
         "AXINITE_INJECTED_TEST_VALUE".to_string(),
@@ -141,10 +143,11 @@ async fn test_env_scrubbing_forwards_explicit_extra_env() {
         .await
         .expect("explicit extra environment should be forwarded");
     assert_eq!(result.result["output"], "allowed");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_env_scrubbing_common_secret_patterns() {
+async fn test_env_scrubbing_common_secret_patterns() -> anyhow::Result<()> {
     // Simulate common secret env vars that agents/tools might set
     let secrets = [
         ("OPENAI_API_KEY", "sk-test-fake-key-123"),
@@ -153,7 +156,7 @@ async fn test_env_scrubbing_common_secret_patterns() {
         ("DATABASE_URL", "postgres://user:pass@localhost/db"),
     ];
 
-    let (_home_dir, env) = shell_context();
+    let (_home_dir, env) = shell_context()?;
     let env = secrets
         .iter()
         .fold(env, |ctx, (name, value)| ctx.with_env(*name, *value));
@@ -173,6 +176,7 @@ async fn test_env_scrubbing_common_secret_patterns() {
             "{name} value leaked through env scrubbing!"
         );
     }
+    Ok(())
 }
 
 // ── Integration: injection blocked at execute_command level ─────────
@@ -276,9 +280,9 @@ async fn test_injection_blocked_with_object_args() {
 }
 
 #[tokio::test]
-async fn test_env_scrubbing_custom_var_hidden() {
+async fn test_env_scrubbing_custom_var_hidden() -> anyhow::Result<()> {
     // Verify that arbitrary values in the input snapshot are not forwarded.
-    let (_home_dir, env) = shell_context();
+    let (_home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env.with_env("AXINITE_QA_TEST_SECRET", "supersecret123"));
     let ctx = JobContext::default();
 
@@ -296,12 +300,13 @@ async fn test_env_scrubbing_custom_var_hidden() {
         !output.contains("supersecret123"),
         "secret value must not appear in child env output"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_env_scrubbing_path_preserved() {
+async fn test_env_scrubbing_path_preserved() -> anyhow::Result<()> {
     // PATH must be preserved for commands to resolve
-    let (_home_dir, env) = shell_context();
+    let (_home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env);
     let ctx = JobContext::default();
 
@@ -315,4 +320,5 @@ async fn test_env_scrubbing_path_preserved() {
         output.contains("PATH="),
         "PATH must be preserved in child env"
     );
+    Ok(())
 }

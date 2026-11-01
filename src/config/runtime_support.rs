@@ -153,7 +153,7 @@ pub async fn inject_llm_keys_from_secrets(
         |env_var| {
             #[expect(
                 clippy::disallowed_methods,
-                reason = "owning ambient secret-injection boundary; callers without a context retain compatibility"
+                reason = "FIXME: legacy ambient secret-presence check; migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
             )]
             let value = std::env::var(env_var);
             matches!(value, Ok(val) if !val.is_empty())

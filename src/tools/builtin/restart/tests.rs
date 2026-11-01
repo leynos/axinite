@@ -11,12 +11,16 @@ fn docker_tool() -> RestartTool {
     )
 }
 
+fn isolated_tool() -> RestartTool {
+    RestartTool::from_context(EnvContext::default())
+}
+
 #[test]
 fn test_restart_tool_approval_handled_at_command_level() {
     // Approval is handled at the /restart command level (web modal confirmation),
     // not at tool execution. Tool execution approval is for user-interactive approvals
     // that happen during job execution. The restart confirmation modal provides that gate.
-    let tool = RestartTool::new();
+    let tool = isolated_tool();
     let approval = NativeTool::requires_approval(&tool, &serde_json::json!({}));
     // Default (Never) allows tool to execute in autonomous jobs created from approved commands
     assert!(matches!(approval, ApprovalRequirement::Never));
@@ -24,13 +28,13 @@ fn test_restart_tool_approval_handled_at_command_level() {
 
 #[test]
 fn test_restart_tool_name() {
-    let tool = RestartTool::new();
+    let tool = isolated_tool();
     assert_eq!(NativeTool::name(&tool), "restart");
 }
 
 #[test]
 fn test_restart_tool_parameters_schema() {
-    let tool = RestartTool::new();
+    let tool = isolated_tool();
     let schema = NativeTool::parameters_schema(&tool);
 
     // Verify schema has delay_secs property with bounds
@@ -44,7 +48,7 @@ fn test_restart_tool_parameters_schema() {
 
 #[test]
 fn test_restart_tool_requires_sanitization() {
-    let tool = RestartTool::new();
+    let tool = isolated_tool();
     assert!(!NativeTool::requires_sanitization(&tool));
 }
 
@@ -94,7 +98,7 @@ async fn test_restart_tool_delay_clamping() {
 
 #[test]
 fn test_restart_tool_description() {
-    let tool = RestartTool::new();
+    let tool = isolated_tool();
     let desc = NativeTool::description(&tool);
     assert!(desc.contains("Restart"));
     assert!(desc.contains("Axinite"));
@@ -104,7 +108,7 @@ fn test_restart_tool_description() {
 
 #[test]
 fn test_restart_tool_schema_completeness() {
-    let tool = RestartTool::new();
+    let tool = isolated_tool();
     let schema = NativeTool::parameters_schema(&tool);
 
     // Verify schema structure
@@ -277,7 +281,7 @@ async fn test_restart_tool_empty_object() {
 
 #[test]
 fn test_restart_tool_approval_consistent_regardless_of_params() {
-    let tool = RestartTool::new();
+    let tool = isolated_tool();
 
     // Approval requirement should be the same regardless of params
     let approval1 = NativeTool::requires_approval(&tool, &serde_json::json!({"delay_secs": 5}));

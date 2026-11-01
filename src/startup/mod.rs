@@ -28,4 +28,4 @@ pub(crate) mod url_sanitize;
 /// WASM channel initialization and runtime wiring.
 pub(crate) mod wasm;
 
-pub(crate) use context::{CoreAgentContext, GatewayPhaseContext};
+pub(crate) use context::{CoreAgentContext, GatewayPhaseContext, RuntimeManagementContext};

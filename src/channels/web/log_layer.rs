@@ -187,7 +187,7 @@ impl LogLevelHandle {
 /// The fmt layer and `WebLogLayer` are attached alongside the reloadable filter.
 pub fn init_tracing(log_broadcaster: Arc<LogBroadcaster>) -> Arc<LogLevelHandle> {
     let raw_filter = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("RUST_LOG")
     }
     .unwrap_or_else(|_| "axinite=info,tower_http=warn".to_string());

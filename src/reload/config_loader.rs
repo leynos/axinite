@@ -66,14 +66,15 @@ impl NativeConfigLoader for DbConfigLoader {
     }
 }
 
-/// Config loader that reads from environment variables.
+/// Config loader that resolves configuration from the supplied environment snapshot.
 pub struct EnvConfigLoader;
 
 impl EnvConfigLoader {
-    /// Create a new environment-based config loader.
+    /// Create a new snapshot-based config loader.
     ///
-    /// Reads configuration from environment variables on each `load` call.
-    /// Consider calling [`Config::from_env`] directly if hot-reload is not required.
+    /// Each `load` call uses the [`EnvContext`] passed to it. The loader does
+    /// not read the process environment. Consider calling
+    /// [`Config::from_env_from_context`] directly if hot-reload is not required.
     pub fn new() -> Self {
         Self
     }

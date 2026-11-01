@@ -21,10 +21,12 @@ use crate::startup::{boot, context::*, orchestrator::setup_orchestrator_context,
 
 /// Acquires the optional PID lock and runs first-run onboarding when requested.
 ///
-/// Returns `None` when no PID lock is configured, `Some(lock)` otherwise.
+/// The returned environment snapshot includes bootstrap values persisted by
+/// successful onboarding.
 pub(crate) async fn phase_pid_and_onboard(
     cli: &Cli,
-) -> anyhow::Result<Option<axinite::bootstrap::PidLock>> {
+    env_context: &EnvContext,
+) -> anyhow::Result<(Option<axinite::bootstrap::PidLock>, EnvContext)> {
     let pid_lock = match axinite::bootstrap::PidLock::acquire() {
         Ok(lock) => Some(lock),
         Err(axinite::bootstrap::PidLockError::AlreadyRunning { pid }) => anyhow::bail!(
@@ -40,17 +42,9 @@ pub(crate) async fn phase_pid_and_onboard(
         }
     };
 
-    run_first_run_onboarding_if_needed(cli).await?;
+    let env_context = run_first_run_onboarding_if_needed(cli, env_context).await?;
 
-    Ok(pid_lock)
-}
-
-/// Loads configuration from environment and TOML, creates the LLM session
-/// manager, and initializes structured tracing.
-pub(crate) async fn phase_load_config_and_tracing(
-    cli: &Cli,
-) -> anyhow::Result<LoadedConfigContext> {
-    phase_load_config_and_tracing_from(cli, &EnvContext::capture_ambient()).await
+    Ok((pid_lock, env_context))
 }
 
 /// Load configuration and tracing from an explicit startup environment snapshot.
@@ -122,6 +116,12 @@ pub(crate) async fn phase_build_components(
         log_broadcaster,
         log_level_handle,
     })
+}
+
+/// Install the compatibility overlay for legacy environment readers at the
+/// production composition boundary after component construction.
+pub(crate) fn install_legacy_env_overlay(built: &BuiltComponentsContext) {
+    axinite::config::merge_context_secrets_into_legacy_overlay(&built.env_context);
 }
 
 /// Starts the managed tunnel (if configured) and sets up the orchestrator
@@ -329,26 +329,39 @@ pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<
 
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 /// Runs first-run onboarding when the required database feature is enabled.
-async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
+async fn run_first_run_onboarding_if_needed(
+    cli: &Cli,
+    env_context: &EnvContext,
+) -> anyhow::Result<EnvContext> {
     if !cli.no_onboard
         && let Some(reason) = axinite::setup::check_onboard_needed()
     {
         println!("Onboarding needed: {reason}");
         println!();
-        let mut wizard = SetupWizard::with_config(SetupConfig {
-            quick: true,
-            ..Default::default()
-        });
+        let mut wizard = SetupWizard::with_config_and_env_context(
+            SetupConfig {
+                quick: true,
+                ..Default::default()
+            },
+            env_context.clone(),
+        );
         wizard.run().await?;
+        Ok(axinite::bootstrap::merge_axinite_env_into_context(
+            env_context,
+        )?)
+    } else {
+        Ok(env_context.clone())
     }
-    Ok(())
 }
 
 #[cfg(not(any(feature = "postgres", feature = "libsql")))]
 /// No-op onboarding stub used when neither database feature is compiled in.
-async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
+async fn run_first_run_onboarding_if_needed(
+    cli: &Cli,
+    env_context: &EnvContext,
+) -> anyhow::Result<EnvContext> {
     let _ = cli;
-    Ok(())
+    Ok(env_context.clone())
 }
 
 async fn load_initial_config_from(

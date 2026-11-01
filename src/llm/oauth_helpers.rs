@@ -131,7 +131,14 @@ fn bind_error(e: std::io::Error) -> OAuthCallbackError {
 /// When `OAUTH_CALLBACK_HOST` is set to a remote address, binds to that
 /// specific address so only connections directed to it are accepted.
 pub async fn bind_callback_listener() -> Result<TcpListener, OAuthCallbackError> {
-    bind_callback_listener_for_host(&callback_host()).await
+    bind_callback_listener_from(&EnvContext::capture_ambient()).await
+}
+
+/// Bind the OAuth callback listener using an explicit environment snapshot.
+pub async fn bind_callback_listener_from(
+    ctx: &EnvContext,
+) -> Result<TcpListener, OAuthCallbackError> {
+    bind_callback_listener_for_host(&callback_host_from(ctx)).await
 }
 
 async fn bind_callback_listener_for_host(host: &str) -> Result<TcpListener, OAuthCallbackError> {
@@ -371,8 +378,9 @@ mod tests {
     #[case("0.0.0.0")]
     #[case("::")]
     #[tokio::test]
-    async fn bind_rejects_wildcard_hosts(#[case] host: &str) {
-        let err = bind_callback_listener_for_host(host)
+    async fn bind_rejects_wildcard_hosts_from_context(#[case] host: &str) {
+        let ctx = EnvContext::default().with_env("OAUTH_CALLBACK_HOST", host);
+        let err = bind_callback_listener_from(&ctx)
             .await
             .expect_err("wildcard hosts must be rejected");
         assert!(

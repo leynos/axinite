@@ -15,7 +15,6 @@ mod heartbeat;
 pub(crate) mod helpers;
 mod hygiene;
 pub(crate) mod llm;
-mod llm_source;
 pub mod relay;
 mod routines;
 mod runtime_support;
@@ -37,13 +36,12 @@ use crate::settings::Settings;
 pub use self::agent::AgentConfig;
 pub use self::builder::BuilderModeConfig;
 pub use self::channels::{ChannelsConfig, CliConfig, GatewayConfig, HttpConfig, SignalConfig};
-pub use self::context::EnvContext;
+pub use self::context::{EnvContext, LlmResolutionContext};
 pub use self::database::{DatabaseBackend, DatabaseConfig, SslMode, default_libsql_path};
 pub use self::embeddings::EmbeddingsConfig;
 pub use self::heartbeat::HeartbeatConfig;
 pub use self::hygiene::HygieneConfig;
 pub use self::llm::default_session_path;
-pub use self::llm_source::LlmSettingsSource;
 pub use self::relay::RelayConfig;
 pub use self::routines::RoutineConfig;
 pub use self::runtime_support::{
@@ -171,12 +169,10 @@ impl Config {
         user_id: &str,
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let _ = dotenvy::dotenv();
-        crate::bootstrap::load_axinite_env();
         Self::from_db_from_context_with_toml(
             store,
             user_id,
-            &EnvContext::capture_ambient(),
+            &crate::bootstrap::capture_config_env_context(),
             toml_path,
         )
         .await
@@ -221,8 +217,9 @@ impl Config {
     /// and by CLI commands that don't have DB access.
     /// Falls back to legacy `settings.json` on disk if present.
     ///
-    /// Loads both `./.env` (standard, higher priority) and `~/.axinite/.env`
-    /// (lower priority) via dotenvy, which never overwrites existing vars.
+    /// The binary loads `./.env` and `~/.axinite/.env` at its synchronous
+    /// startup boundary. Library callers that need a separate environment
+    /// source should use [`Self::from_context`] with an explicit [`EnvContext`].
     pub async fn from_env() -> Result<Self, ConfigError> {
         Self::from_env_with_toml(None).await
     }
@@ -231,10 +228,8 @@ impl Config {
     pub async fn from_env_with_toml(
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let _ = dotenvy::dotenv();
-        crate::bootstrap::load_axinite_env();
         let settings = Settings::load();
-        let ctx = EnvContext::capture_ambient();
+        let ctx = crate::bootstrap::capture_config_env_context();
         let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;
         Self::from_context(&ctx, &merged).await
     }
@@ -326,57 +321,6 @@ impl Config {
     ) -> Result<Self, ConfigError> {
         let merged = runtime_support::merged_settings_with_toml(settings, Some(toml_path))?;
         Self::from_context(ctx, &merged).await
-    }
-
-    /// Re-resolve only the LLM config after credential injection.
-    ///
-    /// Called by `AppBuilder::init_secrets()` after injecting API keys into
-    /// the env overlay. Only rebuilds `self.llm` — all other config fields
-    /// are unaffected, preserving values from the initial config load (or
-    /// from `Config::for_testing()` in test mode).
-    pub async fn re_resolve_llm(
-        &mut self,
-        store: Option<&(dyn crate::db::SettingsStore + Sync)>,
-        user_id: &str,
-        toml_path: Option<&std::path::Path>,
-    ) -> Result<(), ConfigError> {
-        self.re_resolve_llm_with_context(
-            &EnvContext::capture_ambient(),
-            LlmSettingsSource {
-                store,
-                user_id,
-                toml_path,
-            },
-        )
-        .await
-    }
-
-    /// Re-resolve only the LLM config from an explicit environment snapshot.
-    pub async fn re_resolve_llm_with_context(
-        &mut self,
-        ctx: &EnvContext,
-        source: LlmSettingsSource<'_>,
-    ) -> Result<(), ConfigError> {
-        let LlmSettingsSource {
-            store,
-            user_id,
-            toml_path,
-        } = source;
-        let settings = if let Some(store) = store {
-            let mut s = match store
-                .get_all_settings(crate::db::UserId::from(user_id))
-                .await
-            {
-                Ok(map) => Settings::from_db_map(&map),
-                Err(_) => Settings::default(),
-            };
-            runtime_support::apply_toml_overlay(&mut s, toml_path)?;
-            s
-        } else {
-            Settings::default()
-        };
-        self.llm = LlmConfig::resolve_from(ctx, &settings)?;
-        Ok(())
     }
 
     /// Re-resolve just the LLM portion of config from an explicit snapshot.

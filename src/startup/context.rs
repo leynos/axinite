@@ -125,6 +125,21 @@ pub(crate) struct CoreAgentContext {
     pub(in crate::startup) log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
 }
 
+/// Borrowed inputs for starting process-level runtime-management tasks.
+pub(crate) struct RuntimeManagementContext<'a> {
+    pub(in crate::startup) components: &'a AppComponents,
+    pub(in crate::startup) config: &'a Config,
+    #[cfg(unix)]
+    pub(in crate::startup) env_context: &'a EnvContext,
+    pub(in crate::startup) container_job_manager:
+        &'a Option<Arc<axinite::orchestrator::ContainerJobManager>>,
+    #[cfg(unix)]
+    pub(in crate::startup) webhook_server:
+        &'a Option<Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
+    #[cfg(unix)]
+    pub(in crate::startup) http_channel_state: &'a Option<Arc<axinite::channels::HttpChannelState>>,
+}
+
 /// Runtime hand-off from orchestrator setup into channel and hook
 /// initialization.
 ///

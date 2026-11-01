@@ -268,7 +268,7 @@ impl ExtensionManager {
             .unwrap_or(false)
             || auth.env_var.as_ref().is_some_and(|v| {
                 {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                     std::env::var(v)
                 }
                 .is_ok()

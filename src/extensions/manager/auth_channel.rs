@@ -200,12 +200,12 @@ impl ExtensionManager {
             .or_else(|| relay_config.callback_url.clone())
             .unwrap_or_else(|| {
                 let host = {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                     std::env::var("GATEWAY_HOST")
                 }
                 .unwrap_or_else(|_| "127.0.0.1".into());
                 let port = {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                     std::env::var("GATEWAY_PORT")
                 }
                 .unwrap_or_else(|_| "3001".into());

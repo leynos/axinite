@@ -154,7 +154,7 @@ async fn run_import_openclaw(
 
 #[cfg(feature = "import")]
 fn resolve_openclaw_path(path: Option<PathBuf>, env_context: &EnvContext) -> PathBuf {
-    path.or_else(OpenClawImporter::detect)
+    path.or_else(|| OpenClawImporter::detect_from(env_context))
         .unwrap_or_else(|| PathBuf::from(env_context.get("HOME").unwrap_or(".")).join(".openclaw"))
 }
 

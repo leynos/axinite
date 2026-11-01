@@ -9,9 +9,9 @@ mod oauth_gateway;
 mod oauth_platform;
 
 pub use crate::llm::oauth_helpers::{
-    OAUTH_CALLBACK_PORT, OAuthCallbackError, bind_callback_listener, callback_host,
-    callback_host_from, callback_url, callback_url_from, is_loopback_host, landing_html,
-    wait_for_callback,
+    OAUTH_CALLBACK_PORT, OAuthCallbackError, bind_callback_listener, bind_callback_listener_from,
+    callback_host, callback_host_from, callback_url, callback_url_from, is_loopback_host,
+    landing_html, wait_for_callback,
 };
 pub use oauth_credentials::{OAuthCredentials, builtin_credentials};
 pub use oauth_flow::{
