@@ -341,9 +341,12 @@ package-pinned frontend and bundle, installed frontend binaries under
 `target/prover-m1/frontend`, and set up the release under
 `target/prover-m1/kani-home/kani-0.67.0`. Its `toolchain` symlink resolves to
 the shared `nightly-2025-11-21-x86_64-unknown-linux-gnu` installation. The
-Cargo home and managed `RUSTC_WRAPPER` remained unchanged. The package's ISC
-licence permits use with its notice; Axinite declares `MIT OR Apache-2.0`. The
-plan imports package behaviour through the CLI, not copied source.
+Cargo home remained unchanged. The environment retained
+`RUSTC_WRAPPER=/home/leynos/.local/bin/build-limits-rustc` and
+`RUSTDOC=/home/leynos/.local/bin/build-limits-rustdoc`;
+`RUSTC_WORKSPACE_WRAPPER` was unset. The package's ISC licence permits use with
+its notice; Axinite declares `MIT OR Apache-2.0`. The plan imports package
+behaviour through the CLI, not copied source.
 
 The Verus installer verified donor version `0.2026.10.04.426d8b0` against
 SHA-256 `624018662868563a7bec0dd07be5e4dd0c3d61124b4b55105765884bf2d4d1a0`. Z3
@@ -366,12 +369,13 @@ healthy, busy shared admission pool.
 
 The following reproduces the exact prover arguments. The original invocation
 used a clean environment without Git credential overrides, retained managed
-compiler wrappers, and used `uv tool run --python 3.14 --from` the pinned
-source. Install inputs were `tools/kani/VERSION`, `tools/verus/VERSION`, and
-`tools/verus/SHA256SUMS` under the scratch root, copied from the versions and
-checksum above. The Kani package was an edition-2021 standalone Cargo package
-with `[workspace]`. Its two `#[kani::proof]` harnesses generated arbitrary
-`requested: u8` and `permitted: u8`, then asserted respectively that
+compiler wrappers, and invoked the pinned source with
+`uv tool run --python 3.14 --from`. Install inputs were `tools/kani/VERSION`,
+`tools/verus/VERSION`, and `tools/verus/SHA256SUMS` under the scratch root,
+copied from the versions and checksum above. The Kani package was an
+edition-2021 standalone Cargo package with `[workspace]`. Its two
+`#[kani::proof]` harnesses generated arbitrary `requested: u8` and
+`permitted: u8`, then asserted respectively that
 `(requested & permitted) & !permitted == 0` and
 `(requested | permitted) & !permitted == 0`. The Verus files each imported
 `vstd::prelude::*` and supplied `fn main() {}` inside `verus!`; their proof
@@ -670,3 +674,4 @@ work, and no installer or runtime implementation has started.
 - (2026-11-01) Record explicit user approval before implementation begins.
 - (2026-11-01) Record the successful M1 compatibility plateau and its limits.
 - (2026-11-01) Add reproducible M1 commands and correct review wording.
+- (2026-11-01) Record the compiler wrapper environment and clarify the command.
