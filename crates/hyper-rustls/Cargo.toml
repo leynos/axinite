@@ -16,7 +16,6 @@ name = "hyper-rustls"
 publish = false
 version = "0.25.0"
 description = "Rustls+hyper integration for pure rust HTTPS"
-homepage = "https://github.com/rustls/hyper-rustls"
 documentation = "https://docs.rs/hyper-rustls/"
 readme = "README.md"
 license = "Apache-2.0 OR ISC OR MIT"

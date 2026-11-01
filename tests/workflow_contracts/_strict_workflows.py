@@ -1,15 +1,15 @@
 """Reading workflows strictly, in every shape GitHub accepts.
 
-Two readers the coverage-publication contract depends on and that nothing
-else in this directory provides. `parse_strict` refuses a mapping that
+Two readers the Dependabot contract depends on and that nothing else in this
+directory provides. `parse_strict` refuses a mapping that
 declares a key twice, since PyYAML would keep the last value silently and a
 job could carry a label in the discarded half. `triggers` reads `on:` the way
 GitHub does: a bare event, a list, or a mapping, under the string key or the
 boolean `True` PyYAML makes of an unquoted `on:`, and it refuses both at
 once.
 
-Split from `_coverage_publication.py` so neither module outgrows the
-400-line limit; the policy there is what uses these.
+The CV-005 coverage contracts read workflows through the shared library's own
+strict loader, so the only consumer left here is `dependabot_config.py`.
 """
 
 from __future__ import annotations

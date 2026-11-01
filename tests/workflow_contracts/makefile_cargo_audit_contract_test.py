@@ -183,6 +183,102 @@ def test_audit_preserves_full_command_override(
     )
 
 
+def _write_audit_fixture(audit_root: Path) -> None:
+    """Create repository and cached manifests for audit scope checks."""
+    locked_manifest_dir = audit_root / "locked"
+    unlocked_manifest_dir = audit_root / "unlocked"
+    scripts_dir = audit_root / "scripts"
+    locked_manifest_dir.mkdir(parents=True)
+    unlocked_manifest_dir.mkdir()
+    scripts_dir.mkdir()
+
+    manifest = (
+        '[package]\nname = "audit-contract"\nversion = "0.0.0"\nedition = "2024"\n'
+    )
+    (locked_manifest_dir / "Cargo.toml").write_text(manifest)
+    (unlocked_manifest_dir / "Cargo.toml").write_text(manifest)
+    sdk_dir = audit_root / "crates/hyper-rustls"
+    workspace_dir = audit_root / "crates/workspace-member"
+    sdk_dir.mkdir(parents=True)
+    workspace_dir.mkdir()
+    (sdk_dir / "Cargo.toml").write_text(manifest)
+    (workspace_dir / "Cargo.toml").write_text(manifest)
+    cached_dirs = [
+        audit_root / ".uv-cache/git-v1/checkouts/example",
+        audit_root / ".uv-tools/example",
+    ]
+    for cached_dir in cached_dirs:
+        cached_dir.mkdir(parents=True)
+        (cached_dir / "Cargo.toml").write_text(manifest)
+    (locked_manifest_dir / "Cargo.lock").write_bytes(
+        (REPOSITORY_ROOT / "Cargo.lock").read_bytes()
+    )
+    (scripts_dir / "verify_audit_ignore_paths.py").write_text(
+        (REPOSITORY_ROOT / "scripts/verify_audit_ignore_paths.py").read_text()
+    )
+
+
+def _assert_audit_manifest_scope(
+    commands: list[tuple[str, str]], audit_root: Path, utility_bin: Path
+) -> None:
+    """Check repository manifests are audited and generated caches excluded."""
+    locked_manifest_dir = audit_root / "locked"
+    unlocked_manifest_dir = audit_root / "unlocked"
+    sdk_dir = audit_root / "crates/hyper-rustls"
+    workspace_dir = audit_root / "crates/workspace-member"
+    cached_dirs = [
+        audit_root / ".uv-cache/git-v1/checkouts/example",
+        audit_root / ".uv-tools/example",
+    ]
+    selected_manifests = selected_cargo_manifests(utility_bin, audit_root)
+    assert len(commands) == len(selected_manifests), (
+        f"CARGO_AUDIT='cargo +stable audit' logged {len(commands)} calls for "
+        f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
+    )
+
+    expected_manifest_dirs = {
+        (audit_root / manifest).parent.resolve() for manifest in selected_manifests
+    }
+    observed_manifest_dirs = {
+        Path(manifest_dir).resolve() for manifest_dir, _ in commands
+    }
+    assert all(path.resolve() not in observed_manifest_dirs for path in cached_dirs), (
+        "uv cache and tool environments are not repository audit targets"
+    )
+    assert {locked_manifest_dir.resolve(), unlocked_manifest_dir.resolve()} <= (
+        observed_manifest_dirs
+    ), "repository manifests must still be audited"
+    assert sdk_dir.resolve() not in observed_manifest_dirs, (
+        "the workspace TLS patch must share the root audit graph"
+    )
+    assert workspace_dir.resolve() not in observed_manifest_dirs, (
+        "workspace members share the root audit graph"
+    )
+    assert observed_manifest_dirs == expected_manifest_dirs, (
+        "audit subprocesses ran from unexpected manifest directories: "
+        f"{observed_manifest_dirs!r} != {expected_manifest_dirs!r}"
+    )
+    assert any(
+        (manifest_dir / "Cargo.lock").is_file()
+        for manifest_dir in expected_manifest_dirs
+    ), "audit contract must cover manifests with lockfiles"
+    assert any(
+        not (manifest_dir / "Cargo.lock").is_file()
+        for manifest_dir in expected_manifest_dirs
+    ), "audit contract must cover manifests without lockfiles"
+
+
+def _assert_lockfile_scoped_flags(commands: list[tuple[str, str]]) -> None:
+    """Check lockfile-specific advisory flags reach only locked manifests."""
+    pdf_extract_ignore = "--ignore RUSTSEC-2026-0192"
+    for manifest_dir, command in commands:
+        has_lockfile = (Path(manifest_dir) / "Cargo.lock").is_file()
+        assert (pdf_extract_ignore in command) == has_lockfile, (
+            f"{manifest_dir} passed {pdf_extract_ignore!r} with "
+            f"has_lockfile={has_lockfile}: {command!r}"
+        )
+
+
 def test_audit_executes_multiword_command_override(
     tmp_path: Path,
     make_executable: str,
@@ -201,32 +297,7 @@ def test_audit_executes_multiword_command_override(
 
     """
     audit_root = tmp_path / "audit-root"
-    locked_manifest_dir = audit_root / "locked"
-    unlocked_manifest_dir = audit_root / "unlocked"
-    scripts_dir = audit_root / "scripts"
-    locked_manifest_dir.mkdir(parents=True)
-    unlocked_manifest_dir.mkdir()
-    scripts_dir.mkdir()
-
-    manifest = (
-        '[package]\nname = "audit-contract"\nversion = "0.0.0"\n'
-        'edition = "2024"\n'
-    )
-    (locked_manifest_dir / "Cargo.toml").write_text(manifest)
-    (unlocked_manifest_dir / "Cargo.toml").write_text(manifest)
-    sdk_dir = audit_root / "crates/hyper-rustls"
-    workspace_dir = audit_root / "crates/workspace-member"
-    sdk_dir.mkdir(parents=True)
-    workspace_dir.mkdir()
-    (sdk_dir / "Cargo.toml").write_text(manifest)
-    (workspace_dir / "Cargo.toml").write_text(manifest)
-    (locked_manifest_dir / "Cargo.lock").write_bytes(
-        (REPOSITORY_ROOT / "Cargo.lock").read_bytes()
-    )
-    (scripts_dir / "verify_audit_ignore_paths.py").write_text(
-        (REPOSITORY_ROOT / "scripts/verify_audit_ignore_paths.py").read_text()
-    )
-
+    _write_audit_fixture(audit_root)
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     cargo_path = fake_bin / "cargo"
@@ -268,49 +339,10 @@ def test_audit_executes_multiword_command_override(
         commands.append((manifest_dir, command))
     assert commands, "audit should invoke the fake Cargo executable"
     assert all(
-        command.startswith("+stable audit --ignore ")
-        for _, command in commands
-    ), (
-        f"multiword CARGO_AUDIT override emitted unexpected arguments: {commands!r}"
-    )
-    selected_manifests = selected_cargo_manifests(utility_bin, audit_root)
-    assert len(commands) == len(selected_manifests), (
-        f"CARGO_AUDIT='cargo +stable audit' logged {len(commands)} calls for "
-        f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
-    )
-
-    expected_manifest_dirs = {
-        (audit_root / manifest).parent.resolve()
-        for manifest in selected_manifests
-    }
-    observed_manifest_dirs = {
-        Path(manifest_dir).resolve() for manifest_dir, _ in commands
-    }
-    assert sdk_dir.resolve() not in observed_manifest_dirs, (
-        "the workspace TLS patch must share the root audit graph"
-    )
-    assert workspace_dir.resolve() not in observed_manifest_dirs, (
-        "workspace members share the root audit graph"
-    )
-    assert observed_manifest_dirs == expected_manifest_dirs, (
-        "audit subprocesses ran from unexpected manifest directories: "
-        f"{observed_manifest_dirs!r} != {expected_manifest_dirs!r}"
-    )
-    assert any(
-        (manifest_dir / "Cargo.lock").is_file()
-        for manifest_dir in expected_manifest_dirs
-    ), "audit contract must cover manifests with lockfiles"
-    assert any(
-        not (manifest_dir / "Cargo.lock").is_file()
-        for manifest_dir in expected_manifest_dirs
-    ), "audit contract must cover manifests without lockfiles"
-    pdf_extract_ignore = "--ignore RUSTSEC-2026-0192"
-    for manifest_dir, command in commands:
-        has_lockfile = (Path(manifest_dir) / "Cargo.lock").is_file()
-        assert (pdf_extract_ignore in command) == has_lockfile, (
-            f"{manifest_dir} passed {pdf_extract_ignore!r} with "
-            f"has_lockfile={has_lockfile}: {command!r}"
-        )
+        command.startswith("+stable audit --ignore ") for _, command in commands
+    ), f"multiword CARGO_AUDIT override emitted unexpected arguments: {commands!r}"
+    _assert_audit_manifest_scope(commands, audit_root, utility_bin)
+    _assert_lockfile_scoped_flags(commands)
 
 
 @pytest.mark.parametrize(
@@ -385,9 +417,7 @@ def test_audit_uses_custom_subcommand_without_full_command_override(
             "RUSTSEC-2026-0104",
             "RUSTSEC-2025-0134",
         )
-    ), (
-        "patched graphs must not retain obsolete advisory exceptions"
-    )
+    ), "patched graphs must not retain obsolete advisory exceptions"
     assert all(
         command.startswith("audit-contract --ignore ")
         and all(flag in command for flag in AUDIT_FLAGS)

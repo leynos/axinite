@@ -24,10 +24,11 @@ from _workflow_policy import WORKFLOW_DIR
 #: Workflows whose Rust jobs sit on the developer-blocking path, and whose
 #: warm-cache behaviour on `main` is therefore part of the exit evidence.
 #: `coverage.yml` and the scheduled workflows already declare a dispatch of
-#: their own and are not re-asserted here.
+#: their own and are not re-asserted here. `codescene-coverage.yml` is not
+#: listed: the CV-005 library allows its lane the pull-request guard alone, so
+#: a warm run of the same libsql-only selection is a dispatch of `coverage.yml`.
 WARM_RUN_WORKFLOWS: tuple[str, ...] = (
     "code_style.yml",
-    "codescene-coverage.yml",
     "test.yml",
 )
 

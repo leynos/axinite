@@ -96,7 +96,7 @@ def test_package_validation_cannot_publish(workflow: dict[str, object]) -> None:
         "package validation must not receive release-write permission"
     )
     jobs = _mapping(workflow.get("jobs"), "workflow jobs")
-    assert set(jobs) == {"plan", "build-local-artifacts", "build-global-artifacts"}, (
+    assert set(jobs) == {"plan", "build-local-artefacts", "build-global-artefacts"}, (
         "the validation path must contain only planning and package-build jobs"
     )
     for name in jobs:
@@ -126,7 +126,7 @@ def test_local_packages_follow_the_complete_release_plan(
     assert "dist plan --output-format=json" in _step(plan, "Plan package builds").run, (
         "the native matrix must be derived by cargo-dist on the candidate"
     )
-    local = _job(workflow, "build-local-artifacts")
+    local = _job(workflow, "build-local-artefacts")
     assert (
         _mapping(local.get("strategy"), "local strategy").get("matrix")
         == GENERATED_MATRIX
@@ -146,7 +146,7 @@ def test_local_packages_follow_the_complete_release_plan(
 
 
 @pytest.mark.parametrize(
-    "job_id", ["plan", "build-local-artifacts", "build-global-artifacts"]
+    "job_id", ["plan", "build-local-artefacts", "build-global-artefacts"]
 )
 def test_package_jobs_use_the_candidate_pin_and_release_flags(
     workflow: dict[str, object], dist_configuration: dict[str, object], job_id: str
@@ -170,7 +170,7 @@ def test_package_jobs_use_the_candidate_pin_and_release_flags(
     ) == (dist_configuration.get("cargo-dist-version")), (
         "the validation installer must match the configured cargo-dist pin"
     )
-    if job_id != "build-local-artifacts":
+    if job_id != "build-local-artefacts":
         assert "v${CARGO_DIST_VERSION}" in _step(job, "Install dist").run, (
             f"{job_id} must use the declared cargo-dist installer pin"
         )
@@ -180,9 +180,9 @@ def test_global_packages_require_every_local_artefact(
     workflow: dict[str, object],
 ) -> None:
     """Global installers and checksums consume all successful native packages."""
-    local = _job(workflow, "build-local-artifacts")
-    global_job = _job(workflow, "build-global-artifacts")
-    assert set(global_job.get("needs", [])) == {"plan", "build-local-artifacts"}, (
+    local = _job(workflow, "build-local-artefacts")
+    global_job = _job(workflow, "build-global-artefacts")
+    assert set(global_job.get("needs", [])) == {"plan", "build-local-artefacts"}, (
         "global packaging must wait for the complete native matrix"
     )
     upload = _step(local, "Upload local artefacts")
@@ -217,8 +217,8 @@ def test_global_packages_require_every_local_artefact(
 @pytest.mark.parametrize(
     ("job_id", "step_name"),
     [
-        ("build-local-artifacts", "Upload local evidence"),
-        ("build-global-artifacts", "Upload global evidence"),
+        ("build-local-artefacts", "Upload local evidence"),
+        ("build-global-artefacts", "Upload global evidence"),
     ],
 )
 def test_package_evidence_survives_a_build_failure(

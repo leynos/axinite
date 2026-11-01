@@ -160,7 +160,7 @@ obtain an Ubicloud runner at all; see "The fork fallback" below.
 
 | Class                                  | Jobs                                                                                                                                                                 | Runner                                                                          |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Build and test                         | `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`                                                                                                             | `ubicloud-standard-4`                                                           |
+| Build and test                         | `coverage.yml` `coverage` (two matrix legs), `coverage.yml` `coverage-libsql`, `coverage.yml` `e2e-coverage`                                                         | `ubicloud-standard-4`                                                           |
 | Build and test, fork-dependent         | `code_style.yml` `format`, `code_style.yml` `clippy`, `codescene-coverage.yml` `coverage-check`                                                                      | `ubicloud-standard-4` on a branch pull request, `ubuntu-latest` on a fork's     |
 | Build and test, event-dependent        | `test.yml` `tests` (not on `push`), `test.yml` `wasm-wit-compat`                                                                                                     | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`       |
 | Build and test, event-dependent, small | `test.yml` `telegram-tests`, `test.yml` `github-tool-tests`                                                                                                          | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule`       |
@@ -572,8 +572,8 @@ Each mutable cache path has exactly one owner and one explainable key.
 | `~/.cargo/registry`, `~/.cargo/git`                          | The `Restore`/`Save Cargo registry and index` step pair | `runner.os`, `runner.arch`, `runner.environment`, `hashFiles('**/Cargo.lock')`, generation `v1` | `coverage.yml` `coverage` (`all-features` leg) on Linux; `test.yml` `windows-build` (`all-features` leg) on Windows; both only on a push to `main` |
 | `~/.cargo/bin/whitaker-installer`, `~/.local/share/whitaker` | The shared `install-whitaker` action                    | installer version, `hashFiles('dylint.toml')`, `runner.os`, `runner.arch`                       | The action, on any run                                                                                                                             |
 | `~/.cache/uv`                                                | `astral-sh/setup-uv` with `enable-cache: true`          | The action's own lockfile hashing                                                               | The action, on any run                                                                                                                             |
-| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, in `coverage.yml` `coverage` (`libsql-only` leg) on `main` only                                                                        |
-| `.coverage-baseline.rust` (the ratchet baseline)             | The shared `generate-coverage` action                   | `runner.os`, `github.run_id` (newest entry wins)                                                | `coverage.yml` `coverage` (`libsql-only` leg), only on a push to `main`                                                                            |
+| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, in `coverage.yml` `coverage-libsql` on `main` only                                                                                     |
+| `.coverage-baseline.rust` (the ratchet baseline)             | The shared `generate-coverage` action                   | `runner.os`, `github.run_id` (newest entry wins)                                                | `coverage.yml` `coverage-libsql`, only on a push to `main`                                                                                         |
 
 Rules that follow from the table:
 
@@ -635,19 +635,22 @@ instead; see below.
 #### Manual warm-cache runs
 
 Cache behaviour on `main` cannot be read from a pull request, so `test.yml`,
-`code_style.yml`, and `codescene-coverage.yml` each accept `workflow_dispatch`.
-The intended use is the runner-migration exit evidence: merge, let the merge
-push write the caches, then dispatch the same workflow against `main` twice in
-sequence and compare queue time, wall time, and the sccache hit rate.
+`code_style.yml`, and `coverage.yml` each accept `workflow_dispatch`.
+`codescene-coverage.yml` does not: the CV-005 library allows its lane the
+pull-request guard alone (see "The CV-005 contracts" below), so a warm run of
+the same libsql-only selection is a dispatch of `coverage.yml`. The intended
+use is the runner-migration exit evidence: merge, let the merge push write the
+caches, then dispatch the same workflow against `main` twice in sequence and
+compare queue time, wall time, and the sccache hit rate.
 
 A dispatch is a reader. No save step can run, because every save names the
 `push` event, and `generate-coverage` saves the ratchet baseline only on a push
-to `main`, so a manual run of `codescene-coverage.yml` measures and compares
-without advancing anything. Otherwise a dispatch behaves like a push: every job
-runs, including the GitHub-hosted Windows lanes, so a manual run is a full run.
-Its Ubicloud jobs are billed by the minute like any other; the GitHub-hosted
-lanes are not, because this repository is public. The trigger takes no inputs,
-because `gh workflow run --ref` and the Actions UI already choose the ref.
+to `main`, so a manual run of `coverage.yml` measures without advancing the
+baseline. Otherwise a dispatch behaves like a push: every job runs, including
+the GitHub-hosted Windows lanes, so a manual run is a full run. Its Ubicloud
+jobs are billed by the minute like any other; the GitHub-hosted lanes are not,
+because this repository is public. The trigger takes no inputs, because
+`gh workflow run --ref` and the Actions UI already choose the ref.
 `tests/workflow_contracts/warm_dispatch_test.py` asserts both halves.
 
 ### sccache
@@ -733,8 +736,10 @@ On a pull request `test.yml`'s libsql-only leg ran
 `--no-default-features --features libsql --features test-helpers` over the
 workspace, which is exactly what `codescene-coverage.yml` was already running
 under instrumentation. On a push to `main` all three `test.yml` legs repeated
-what `coverage.yml` had just done. The GitHub tool crate was worse: it rode
-along inside `make test`, so it ran once per leg, three times a trigger.
+the three coverage shapes the split `coverage.yml` pipeline had just measured:
+two matrix legs in `coverage` and one separate libsql-only `coverage-libsql`
+job. The GitHub tool crate was worse: it rode along inside `make test`, so it
+ran once per leg, three times a trigger.
 
 The rule is now one lane per suite per trigger, and which lane it is depends on
 the trigger:
@@ -742,7 +747,7 @@ the trigger:
 | Trigger                                     | Workspace suite                                                                            | GitHub tool crate              | libSQL TLS transport                | Telegram channel crate      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ | ----------------------------------- | --------------------------- |
 | `pull_request`                              | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
-| `push` to `main`                            | `coverage.yml` `coverage`, all three legs                                                  | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `push` to `main`                            | `coverage.yml` `coverage` (two matrix legs), `coverage.yml` `coverage-libsql`              | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 | `workflow_dispatch`                         | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 | `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 
@@ -852,10 +857,14 @@ ratchet.
   `with-ratchet: 'true'` and `publish-artefact: 'false'`. It fails when
   coverage falls below the stored baseline, and it holds no token. The file
   keeps its old name so the contracts and this guide stay stable.
-- `coverage.yml` `coverage` is the one publisher and the one baseline writer.
-  Its `libsql-only` leg runs `generate-coverage` with exactly the lane's
+- `coverage.yml` is the one publisher and `coverage-libsql` is its one
+  baseline writer. It runs `generate-coverage` with exactly the lane's
   selection, so the baseline it saves on a push to `main` measures what the
-  pull requests are compared on, and only that leg uploads.
+  pull requests are compared on, and only that job uploads to CodeScene. It is
+  a job of its own, not a matrix leg of `coverage`, because the CV-005 library
+  refuses an `if` on the generate step. Its permissions are `contents: read`
+  alone; the Codecov OIDC upload of its report runs in `codecov-libsql`, which
+  reads `lcov.info` from an artefact.
 - The upload step passes the token as the action's `access-token` input and
   never through an `env`: the action is composite, and a step's environment
   reaches every step nested inside it. Whether the token exists is decided by a
@@ -863,11 +872,17 @@ ratchet.
   `echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"`.
   The expression is evaluated before the shell runs, so nothing is bound and no
   shell conditional can neutralize the write.
-- The upload is guarded on the leg, on that output, and on
-  `github.ref == 'refs/heads/main'`, joined by `&&` alone. The ref guard is
-  needed because `workflow_dispatch` can name any branch.
-- The workflow's concurrency group is `coverage-${{ github.ref }}`, keyed on
-  the ref alone, and never cancels. A cancelled run abandons its upload and its
+- The check step comes after the coverage step and before the upload, and the
+  upload is guarded on that output and on `github.ref == 'refs/heads/main'`,
+  joined by `&&` alone: no `workflow_dispatch` disjunct, no widening. The ref
+  guard is needed because `workflow_dispatch` can name any branch. The ratchet
+  does not depend on the token: it runs, and fails the job on a regression,
+  whether or not the token exists. A skipped upload therefore proves nothing
+  about provisioning, and only a run on `main` that reaches the uploader and
+  receives CodeScene's acknowledgement proves that CodeScene got a report.
+- The workflow's concurrency group is
+  `${{ github.workflow }}-${{ github.ref }}`, keyed on the workflow and the ref
+  alone, and never cancels. A cancelled run abandons its upload and its
   baseline; with no cancellation GitHub keeps one pending run per group, so
   among triggered runs (pushes and dispatches) a newer one replaces an older
   pending one and the latest push's baseline stands. A manual "Re-run jobs" on
@@ -877,39 +892,57 @@ ratchet.
   `main` race. Because a dispatch saves no baseline, a dispatch that replaces a
   pending push leaves the baseline one commit behind until the next push to
   `main`.
-- Merges made by the automerge workflow with `GITHUB_TOKEN` fire no push
-  event, so they reach neither the upload nor the baseline. That is a known
-  exception; a manual dispatch covers it, and no schedule is added.
-- Both shared actions are pinned to a full commit SHA, and nothing passes the
-  withdrawn `installer-checksum` input or the `CODESCENE_CLI_SHA256` variable.
-  The pins must stay at `a5765019` or a commit descended from it, since that is
-  where the checksum inputs were withdrawn. The contract does not check that
-  ancestry: it would have to list the current SHAs, and "Workflow pins and
-  Dependabot" above forbids that. Dependabot only moves a pin forward, so the
-  floor holds unless someone downgrades a pin by hand, and review catches that.
+- Merges made by the automerge workflow (`dependabot-automerge.yml`, which
+  enables auto-merge with `GITHUB_TOKEN`) fire no push event, so they reach
+  neither the upload nor the baseline: the Dependabot merge commits on `main`
+  have no `coverage.yml` push run. That is a known exception. A dispatch on
+  `main` re-runs the upload, but `generate-coverage` saves the baseline only
+  for a push to `main` (`publish-baseline: auto`), so a dispatch leaves the
+  baseline where the last push put it. No schedule is added, and no trigger
+  exists to close the gap.
+- Both shared actions are pinned to a full commit SHA (the CV-005 library for
+  the uploader, `workflow_tooling_test.py` for every shared-actions reference),
+  and nothing passes the withdrawn `installer-checksum` input or the
+  `CODESCENE_CLI_SHA256` variable (the library counts either as contacting
+  CodeScene). The pins must stay at `a5765019` or a commit descended from it,
+  since that is where the checksum inputs were withdrawn. The contract does not
+  check that ancestry: it would have to list the current SHAs, and "Workflow
+  pins and Dependabot" above forbids that. Dependabot only moves a pin forward,
+  so the floor holds unless someone downgrades a pin by hand, and review
+  catches that.
 - The publisher job declares `environment: codescene`. That environment's
   branch policy admits `main` alone, and the CodeScene token is to live there,
   so only a job deploying from `main` can read it. Every job that calls the
   uploader declares the environment, as a name or as `{name: codescene}`; no
   other job declares it; and no job in a workflow a pull request can start
-  declares it. The declaration is on the whole matrix job, so a
+  declares it. The declaration is on the whole `coverage-libsql` job, so a
   `workflow_dispatch` from any branch other than `main` is refused at the
-  environment on all three legs, not only the uploading one.
-  `codescene_environment_test.py` holds the placement and breaks each clause in
-  a constructed workflow.
+  environment before any step of the publisher runs; the matrix `coverage` jobs
+  do not declare it and run anywhere. The shared CV-005 library holds the
+  placement. A non-`main` dispatch of the publisher is therefore not a proof
+  route: the evidence for a change to it is the pull-request lane's run, the
+  offline contracts, and the first run on `main` after it merges.
+- The environment exists with a custom deployment policy that admits the
+  `main` branch alone, and `CS_ACCESS_TOKEN` is an environment secret there,
+  with no repository-level secret behind it. Neither fact is in Git: the
+  workflow declaration does not create or protect the environment, so read both
+  back from the API (`environments/codescene`, its `deployment-branch-policies`
+  and its `secrets`) before relying on them.
 
-`tests/workflow_contracts/coverage_publication_test.py` holds the estate to all
-of this. The pull-request surface it checks is every workflow a pull-request,
-review or merge-queue event starts, every `workflow_run` chained onto one, and
-everything those call through `./` or `$/`, followed transitively. Across that
-surface, no key or scalar may name the token, the uploader, the CLI or
-`codescene.io`, and no job may forward `secrets: inherit`.
-`_strict_workflows.py` reads every workflow through a loader that refuses a
-duplicated key and reads `on:` in each of its three shapes under both key
-spellings. `coverage_publication_reader_test.py` drives each clause with
-constructed workflows, including a `workflow_call`-only callee that curls
-CodeScene with an inherited token. Every clause was proved by a mutation that
-deletes or weakens it.
+The shared CV-005 library holds the estate to all of this. The pull-request
+surface it checks is every workflow a pull-request, review or merge-queue event
+starts, every `workflow_run` chained onto one, and everything those call through
+`./` or `$/`, followed transitively. Across that surface, no key or scalar may
+name the token, the uploader, the CLI or `codescene.io`, and no job may forward
+`secrets: inherit`. Its own suite drives each clause, and its mutation ledger
+proves each one. The tree is read through a loader that refuses a duplicated
+key and reads `on:` in each of its three shapes.
+
+The [CI coverage design](ci-coverage-design.md) records the design these
+operators' notes describe: the CV-005 trust boundary that keeps publication on
+`main`, the ownership of the coverage baseline, and the hand-off of the libSQL
+report to Codecov. It shares the pinned contract in `.github/cv005.toml` and
+the workflows this section reads, so a change to either belongs in both.
 
 ### Writing a workflow contract
 
@@ -1621,7 +1654,7 @@ build without a commit and leave Dependabot nothing to move.
   new date, and `make install-build-tools` installs it. Update the date-stamped
   `baseline-rust-file` value in both `.github/workflows/coverage.yml` and
   `.github/workflows/codescene-coverage.yml`, plus the expected values in
-  `tests/workflow_contracts/coverage_publication_test.py` and
+  `tests/workflow_contracts/coverage_parity_test.py` and
   `tests/workflow_contracts/codescene_coverage_test.py`, in the same pull
   request. The main-owned coverage publisher writes that baseline only after
   the bump reaches `main`.
@@ -2382,26 +2415,29 @@ start.
 failure onto the same `None` as an absent variable, which hands the skip back
 to the lane that asked for it to be gone, and says nothing.
 
-**The coverage job runs on the embedded cluster and promises it.**
-`coverage.yml` starts no database service and exports no database URL: a named
-`TEST_DATABASE_URL` would take precedence over the cluster. Its default leg
-passes `--features embedded-postgres` and its all-features leg has the feature
-through `--all-features`. A step guarded by `matrix.has_postgres` appends
-`AXINITE_REQUIRE_POSTGRES` to `$GITHUB_ENV`, so a leg whose cluster cannot be
-had fails instead of reporting coverage for tests that never ran. The
-`libsql-only` leg runs neither and keeps its skip. `test.yml`'s `Run Tests`
-step derives the same promise from its leg's flags.
+**The coverage jobs run the Postgres legs on the embedded cluster and promise
+it.** `coverage.yml` starts no database service and exports no database URL: a
+named `TEST_DATABASE_URL` would take precedence over the cluster. Every leg of
+the `coverage` matrix bears Postgres: its default leg passes
+`--features embedded-postgres` and its all-features leg has the feature through
+`--all-features`. One unconditional step appends `AXINITE_REQUIRE_POSTGRES` to
+`$GITHUB_ENV`, so a leg whose cluster cannot be had fails instead of reporting
+coverage for tests that never ran. The libsql-only leg is the `coverage-libsql`
+job, the CodeScene publisher: it starts no service, exports neither variable,
+compiles without `postgres` and keeps its skip. `test.yml`'s `Run Tests` step
+derives the same promise from its leg's flags.
 
 `tests/workflow_contracts/coverage_database_test.py` and
 `tests/workflow_contracts/embedded_postgres_legs_test.py` hold the contracts.
-They assert that each coverage leg's `has_postgres` matches whether its flags
-compile the `postgres` feature, resolved against the root manifest's `default`
-list, because `postgres` is a default feature and a leg gets it unless it passes
-`--no-default-features`; that a Postgres-bearing leg enables
-`embedded-postgres` and a libSQL-only one does not, in `coverage.yml` and in
-`test.yml`'s `tests` job on every event; that the coverage job declares no
-`services` and exports no database URL; and that the promise is appended to
-`$GITHUB_ENV` by a step guarded by `matrix.has_postgres`.
+They assert that each leg of the `coverage` matrix compiles the `postgres`
+feature, resolved against the root manifest's `default` list (in
+`_cargo_features.py`), because `postgres` is a default feature and a leg gets
+it unless it passes `--no-default-features`; that each of those legs enables
+`embedded-postgres`, in `coverage.yml` and in `test.yml`'s `tests` job on every
+event; that neither coverage job declares `services` or exports a database URL;
+that exactly one unconditional step of `coverage` appends the promise to
+`$GITHUB_ENV`; and that `coverage-libsql` exports no promise and compiles
+without `postgres`.
 
 The Rust side is tested in three layers, because the first two are each
 satisfied by a defect the third catches. `src/testing/postgres/tests.rs` holds
@@ -4222,10 +4258,37 @@ the coverage and test lanes install, and the contract asserts the versions
 agree. Two versions in the tree would leave the contract certifying the file
 for a runner nothing else runs, with both lanes green.
 
+### The CV-005 contracts
+
+The CodeScene coverage shape (one publisher, one pull-request lane, no token on
+any surface a pull request reaches) is held by the shared `cv005-contracts`
+library in `leynos/shared-actions`, not by a copy here.
+`make test-workflow-contracts` runs it first, from the full commit in
+`CV005_CONTRACTS_REF`, with this repository's parameters in
+`.github/cv005.toml`. A fix to the library is a pin bump.
+
+Four consequences shape `coverage.yml` and `codescene-coverage.yml`:
+
+- The publisher grants `contents: read` at workflow level. A job that needs
+  more, such as the Codecov OIDC upload, declares it itself, and the job that
+  uploads to CodeScene carries `contents: read` alone.
+- No publisher job and no `generate-coverage` step may carry `if:` or
+  `continue-on-error`. The pinned CV-005 contract also rejects a condition on
+  `coverage-gate`. A failed needed job fails the workflow directly; the
+  successful roll-up records the upstream results when every dependency passes.
+- Every publisher checkout sets `persist-credentials: false`.
+- The pull-request lane may carry the pull-request guard and any declared
+  `[[pairing]]` guards, which are AND terms. An OR with `workflow_dispatch`
+  cannot be declared, so the lane has no dispatch.
+
+The repository keeps the assertions that are policy rather than contract:
+timeout ordering, `NEXTEST_PROFILE: coverage`, the database export, and the
+runner shapes.
+
 ### The watchdog tier, and where it exists
 
 Two lanes run the suite through the shared `generate-coverage` action:
-`coverage.yml`'s `libsql-only` leg, which writes the ratchet baseline, and
+`coverage.yml`'s `coverage-libsql` job, which writes the ratchet baseline, and
 `codescene-coverage.yml`'s pull-request lane. The action runs `cargo` under a
 wall-clock watchdog, so those two lanes have the third tier. Every other lane
 runs `cargo llvm-cov nextest` from a `run:` step and has no watchdog.
@@ -4259,9 +4322,9 @@ accident: an action step left at the default, and a
 action. The budget is read as GitHub resolves it: the input first, then the
 variable at step, job and workflow scope, the most specific declaration
 winning. The suite-lane reading counts an action step with `use-cargo-nextest`
-as a run, and counts runs per matrix leg, so `coverage.yml`, which runs the
-suite from a `run:` step on two legs and through the action on the third, is
-one run per leg.
+as a run, and counts runs per matrix leg. `coverage.yml` therefore has two
+matrix-leg runs from `run:` steps and one separate `coverage-libsql` run
+through the action.
 
 ### What the values are sized against
 
@@ -4321,8 +4384,9 @@ The 90 minute ceilings are unchanged, and the contract records why they hold:
 | `coverage.yml` `Coverage (all-features)` | 900 s               | 1,085 s         | 185 s            | 33966708901 |
 | `coverage.yml` `Coverage (default)`      | 856 s               | 1,031 s         | 175 s            | 34051006881 |
 
-*Table: measured coverage-step and whole-job durations, read across six
-successful runs of `coverage.yml` covering three matrix legs each.*
+*Historical timing evidence from six successful runs of the pre-split
+`coverage.yml` workflow; each run covered three matrix legs. The current
+workflow has two `coverage` matrix legs and a separate `coverage-libsql` job.*
 
 The requirement is the whole-run budget, plus a minute for nextest to
 terminate, both taken once per run the lane makes, plus the build and the steps
@@ -4467,19 +4531,19 @@ its job would leave a lane that looks bounded and is not, and so would a
 plausible condition that quietly excluded the event the lane exists for. The
 conditions are pinned by value rather than tested for falsity, because YAML
 parses `false` to a boolean and enumerating falsy spellings would miss the
-plausible ones anyway. `codescene-coverage.yml`'s lane legitimately runs on
-pull requests and on manual dispatch, because `coverage.yml` covers the trunk.
-Whitespace is collapsed before comparison, so refolding a long condition is not
-a change; dropping a clause is. The lane coordinates are compared both ways, so
-a lane appearing without an entry fails too.
+plausible ones anyway. `codescene-coverage.yml`'s lane is pull-request-only;
+its workflow trigger and `REQUIRED_CONDITIONS` admit `pull_request`. Whitespace
+is collapsed before comparison, so refolding a long condition is not a change;
+dropping a clause is. The lane coordinates are compared both ways, so a lane
+appearing without an entry fails too.
 
 ## 39. Front-end workspace
 
 The browser UI is a SolidJS app in `web-src/`, built with Bun (the workspace
-declares `bun >= 1.1.41` in `web-src/package.json`), so Bun is required for
+declares `bun >= 1.4.4` in `web-src/package.json`), so Bun is required for
 front-end work. The gateway embeds the built output. See
 `docs/solidjs-frontend.md` for the architecture, the stub runtime, and the
-serving contract. CI uses Bun 1.3.11; use that version when refreshing the
+serving contract. CI uses Bun 1.4.4; use that version when refreshing the
 embedded bundle so its output is reproducible. `frontend-install` consumes the
 committed `web-src/bun.lock` with `--frozen-lockfile`.
 

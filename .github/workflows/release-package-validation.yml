@@ -72,7 +72,7 @@ jobs:
             validation-context.txt
           if-no-files-found: error
 
-  build-local-artifacts:
+  build-local-artefacts:
     name: Package (${{ join(matrix.targets, ', ') }})
     needs: plan
     if: ${{ fromJson(needs.plan.outputs.manifest).ci.github.artifacts_matrix.include != null }}
@@ -166,10 +166,10 @@ jobs:
             checksum-results.txt
           if-no-files-found: error
 
-  build-global-artifacts:
+  build-global-artefacts:
     needs:
       - plan
-      - build-local-artifacts
+      - build-local-artefacts
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     env:
