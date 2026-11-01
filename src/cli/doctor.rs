@@ -11,8 +11,8 @@ mod subsystem_checks;
 mod tests;
 
 use core_checks::{
-    check_database, check_llm_config, check_nearai_session, check_settings_file,
-    check_workspace_dir, check_workspace_search,
+    check_database_with_context, check_llm_config_with_context, check_nearai_session,
+    check_settings_file, check_workspace_dir, check_workspace_search_with_context,
 };
 use external_checks::{check_binary, check_docker_daemon, check_service_installed};
 use subsystem_checks::{
@@ -28,6 +28,8 @@ async fn run_core_checks(
     failed: &mut u32,
     skipped: &mut u32,
 ) {
+    let env_context = crate::bootstrap::capture_config_env_context();
+
     check(
         "Settings file",
         check_settings_file(),
@@ -44,21 +46,21 @@ async fn run_core_checks(
     );
     check(
         "LLM configuration",
-        check_llm_config(settings),
+        check_llm_config_with_context(&env_context, settings),
         passed,
         failed,
         skipped,
     );
     check(
         "Database backend",
-        check_database().await,
+        check_database_with_context(&env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "Workspace search",
-        check_workspace_search().await,
+        check_workspace_search_with_context(&env_context).await,
         passed,
         failed,
         skipped,

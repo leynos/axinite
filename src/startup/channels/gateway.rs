@@ -45,7 +45,7 @@ pub(crate) struct GatewayContext<'a> {
 }
 
 /// Values produced by [`setup_gateway_channel`] and later threaded into
-/// [`GatewayPhaseContext`].
+/// [`GatewayPhaseContext`](crate::startup::context::GatewayPhaseContext).
 pub(crate) struct GatewaySetup {
     /// Computed web-UI URL including auth token; `None` when the gateway is not
     /// configured.

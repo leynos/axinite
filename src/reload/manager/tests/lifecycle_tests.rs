@@ -38,15 +38,13 @@ impl LifecycleFixture {
         let spy = Arc::new(SpySecretUpdater::new());
         let spy_clone = Arc::clone(&spy);
 
-        let manager = HotReloadManager::new_with_context(
-            EnvContext::default(),
-            HotReloadDeps {
-                config_loader: loader,
-                listener_controller: Some(controller as Arc<dyn ListenerController>),
-                secret_injector: Some(injector as Arc<dyn SecretInjector>),
-                secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
-            },
-        );
+        let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+            env_context: EnvContext::default(),
+            config_loader: loader,
+            listener_controller: Some(controller as Arc<dyn ListenerController>),
+            secret_injector: Some(injector as Arc<dyn SecretInjector>),
+            secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+        });
 
         Self {
             manager,
@@ -64,15 +62,13 @@ async fn reload_uses_startup_context_and_injected_secrets() -> Result<(), Box<dy
     let loader = Arc::new(StubConfigLoader::new_success(config));
     let injector =
         Arc::new(StubSecretInjector::new().with_secret("HTTP_WEBHOOK_SECRET", "reloaded-secret"));
-    let manager = HotReloadManager::new_with_context(
-        EnvContext::default().with_secret("ANTHROPIC_API_KEY", "startup-key"),
-        HotReloadDeps {
-            config_loader: loader.clone(),
-            listener_controller: None,
-            secret_injector: Some(injector),
-            secret_updaters: Vec::new(),
-        },
-    );
+    let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default().with_secret("ANTHROPIC_API_KEY", "startup-key"),
+        config_loader: loader.clone(),
+        listener_controller: None,
+        secret_injector: Some(injector),
+        secret_updaters: Vec::new(),
+    });
 
     manager.perform_reload().await?;
 

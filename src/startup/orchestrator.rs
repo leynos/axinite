@@ -15,12 +15,14 @@ pub(crate) async fn setup_orchestrator_context(
     env_context: &EnvContext,
 ) -> OrchestratorContext {
     let orchestrator = axinite::orchestrator::setup_orchestrator_from_context(
-        config,
-        env_context,
-        &components.llm,
-        &components.tools,
-        components.db.as_ref(),
-        components.secrets_store.as_ref(),
+        axinite::orchestrator::OrchestratorSetupContext {
+            config,
+            env_context,
+            llm: &components.llm,
+            tools: &components.tools,
+            db: components.db.as_ref(),
+            secrets_store: components.secrets_store.as_ref(),
+        },
     )
     .await;
 

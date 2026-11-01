@@ -23,7 +23,7 @@ pub(super) struct OAuthCredentialSources<'a> {
 fn env_var_token(auth: &crate::tools::wasm::AuthCapabilitySchema) -> Option<String> {
     let env_var = auth.env_var.as_ref()?;
     {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var(env_var)
     }
     .ok()
@@ -383,7 +383,10 @@ impl ExtensionManager {
         // 3. Runtime environment variable
         if let Some(env) = sources.env_var_name
             && let Ok(val) = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+                )]
                 std::env::var(env)
             }
         {

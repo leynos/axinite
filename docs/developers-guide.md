@@ -2959,10 +2959,10 @@ triggered by the Unix hangup signal (SIGHUP) in production environments.
 Four trait boundaries separate reload policy from I/O:
 
 - `ConfigLoader` — Loads configuration from database (`DbConfigLoader`) or
-  environment variables (`EnvConfigLoader`).
+  the supplied environment snapshot (`EnvConfigLoader`).
 - `ListenerController` — Controls HTTP listener restarts, implemented by
   `WebhookListenerController` for the webhook server.
-- `SecretInjector` — Injects secrets into an environment variable overlay,
+- `SecretInjector` — Injects secrets into the `EnvContext` snapshot,
   implemented by `DbSecretInjector` for database-backed secrets.
 - `ChannelSecretUpdater` — Propagates rotated or cleared channel secrets
   without restarting the channel. `HotReloadManager` uses this boundary in step
@@ -2979,7 +2979,7 @@ dyn-compatible boxed-future form.
 `HotReloadManager` composes the four boundaries and coordinates the reload
 sequence:
 
-1. Inject secrets into the environment overlay
+1. Inject secrets into the `EnvContext` snapshot
 2. Load new configuration
 3. Restart the HTTP listener if the bind address changed, restart a
    stopped listener when `channels.http` is present, or call `shutdown()` when
@@ -2988,6 +2988,12 @@ sequence:
 
 The manager is created via `create_hot_reload_manager()` which wires together
 the default implementations based on available stores.
+
+The manager starts each reload from the `EnvContext` captured during startup,
+then applies secrets supplied by its injector. It does not reread process
+variables or `.env` files. Restart the process to apply changes to
+environment-backed settings such as `HTTP_HOST` and `HTTP_PORT`; database
+settings and injected secrets follow the reload path.
 
 ### Webhook server lifecycle / listener-based API
 
@@ -3044,9 +3050,11 @@ Adding a new listener controller:
 
 The `src/reload/test_stubs.rs` module provides hand-rolled stubs for testing:
 
-- `StubConfigLoader` — Returns a pre-configured config or error.
+- `StubConfigLoader` — Returns a pre-configured config or error and retains
+  the most recent `EnvContext` snapshot supplied to `load()`.
 - `StubListenerController` — Records restart calls, can simulate failures.
-- `StubSecretInjector` — Records whether `inject()` was called.
+- `StubSecretInjector` — Records whether `inject()` was called and can add a
+  configured key/value to the snapshot.
 - `SpySecretUpdater` — Records all secret update calls.
 
 Use these in unit tests to verify manager behaviour without real I/O. Example

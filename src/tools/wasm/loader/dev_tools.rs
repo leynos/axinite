@@ -44,7 +44,10 @@ pub fn wasm_artifact_path(crate_dir: &Path, binary_name: &str) -> PathBuf {
 /// 2. `<CARGO_MANIFEST_DIR>/tools-src/` (dev builds)
 pub(super) fn tools_src_dir() -> PathBuf {
     if let Ok(dir) = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
         std::env::var("AXINITE_TOOLS_SRC")
     } {
         return PathBuf::from(dir);

@@ -100,12 +100,12 @@ pub(crate) fn docker_feature_disabled_error() -> SandboxError {
 fn unix_socket_candidates() -> Vec<PathBuf> {
     unix_socket_candidates_from_env(
         {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var_os("HOME")
         }
         .map(PathBuf::from),
         {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var_os("XDG_RUNTIME_DIR")
         }
         .map(PathBuf::from),

@@ -22,8 +22,7 @@ use axinite::{
 #[tokio::test]
 #[ignore] // Requires running database and LLM credentials
 async fn test_heartbeat_end_to_end() {
-    // Load .env and set up logging
-    let _ = dotenvy::dotenv();
+    // Config loads optional .env values at its ambient composition boundary.
     let _ = tracing_subscriber::fmt()
         .with_env_filter("axinite=debug")
         .try_init();

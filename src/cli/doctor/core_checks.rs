@@ -45,7 +45,7 @@ pub(super) async fn check_nearai_session() -> CheckResult {
 /// direct the user to onboarding.
 fn missing_session_result(session_path: &std::path::Path) -> CheckResult {
     if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("NEARAI_API_KEY")
     }
     .is_ok()
@@ -71,10 +71,6 @@ fn verify_session_file(session_path: &std::path::Path) -> CheckResult {
 
 // ── LLM configuration ──────────────────────────────────────
 
-pub(super) fn check_llm_config(settings: &Settings) -> CheckResult {
-    check_llm_config_with_context(&EnvContext::capture_ambient(), settings)
-}
-
 pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
     match crate::llm::LlmConfig::resolve_from(ctx, settings) {
         Ok(config) => {
@@ -93,28 +89,21 @@ pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Setting
 }
 
 // ── Database ────────────────────────────────────────────────
-pub(super) async fn check_database() -> CheckResult {
-    let backend = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_BACKEND")
-    }
-    .ok()
-    .unwrap_or_else(|| "postgres".into());
+pub(super) async fn check_database_with_context(ctx: &EnvContext) -> CheckResult {
+    let backend = crate::bootstrap::database_backend_name(ctx);
 
     match backend.as_str() {
-        "libsql" | "turso" | "sqlite" => check_libsql_database(),
+        "libsql" | "turso" | "sqlite" => check_libsql_database(ctx),
         _ => check_postgres_database().await,
     }
 }
 
 /// Report whether the configured libSQL database file already exists.
-fn check_libsql_database() -> CheckResult {
-    let path = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("LIBSQL_PATH")
-    }
-    .map(PathBuf::from)
-    .unwrap_or_else(|_| crate::config::default_libsql_path());
+fn check_libsql_database(ctx: &EnvContext) -> CheckResult {
+    let path = ctx
+        .get_owned("LIBSQL_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(crate::config::default_libsql_path);
 
     if path.exists() {
         CheckResult::Pass(format!("libSQL database exists ({})", path.display()))
@@ -129,7 +118,7 @@ fn check_libsql_database() -> CheckResult {
 /// Attempt a PostgreSQL connection, or report the missing `DATABASE_URL`.
 async fn check_postgres_database() -> CheckResult {
     if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("DATABASE_URL")
     }
     .is_err()
@@ -148,7 +137,7 @@ async fn check_postgres_database() -> CheckResult {
 #[cfg(feature = "postgres")]
 async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
     let url = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("DATABASE_URL")
     }
     .map_err(|_| "DATABASE_URL not set".to_string())?;
@@ -184,13 +173,8 @@ async fn try_pg_connect() -> Result<(), String> {
 }
 
 // ── Workspace search ────────────────────────────────────────
-pub(super) async fn check_workspace_search() -> CheckResult {
-    let backend = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_BACKEND")
-    }
-    .ok()
-    .unwrap_or_else(|| "postgres".into());
+pub(super) async fn check_workspace_search_with_context(ctx: &EnvContext) -> CheckResult {
+    let backend = crate::bootstrap::database_backend_name(ctx);
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => {
@@ -201,12 +185,7 @@ pub(super) async fn check_workspace_search() -> CheckResult {
             // PostgreSQL with pgvector
             #[cfg(feature = "postgres")]
             {
-                if {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                    std::env::var("DATABASE_URL")
-                }
-                .is_ok()
-                {
+                if ctx.get("DATABASE_URL").is_some() {
                     match try_pgvector_check().await {
                         Ok(()) => CheckResult::Pass("hybrid search (pgvector)".into()),
                         Err(e) => {
