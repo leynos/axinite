@@ -1,6 +1,6 @@
 # Import Kani and Verus support from Netsuke
 
-Status: APPROVED
+Status: IN PROGRESS
 
 ## Purpose and big picture
 
@@ -242,7 +242,8 @@ adoption programme complete.
 - [x] (2026-11-01) Refresh the tooling pin against upstream `main` and revise
   installation, Kani execution, multi-file proofs, solver setup, and evidence.
 - [x] (2026-11-01) The user explicitly approved implementation of this plan.
-- [ ] M1: Establish pinned compatibility and provenance.
+- [x] (2026-11-01 04:05Z) M1: Establish pinned compatibility and provenance.
+      Actual installation and positive/negative proof results are recorded below.
 - [ ] M2: Add tested local command boundaries.
 - [ ] M3: Demonstrate both tools and reject deliberate faults.
 - [ ] M4: Integrate CI, documentation, and final validation.
@@ -288,6 +289,10 @@ and V1, V2, and V5 below account for that change.
 - (2026-11-01) Accept the user’s explicit approval and begin the planned
   implementation within the recorded constraints and tolerances.
 
+- (2026-11-01) The M1 probe demonstrated Kani 0.67.0 and the pinned Verus/Z3
+  pair under managed compiler admission. Keep the local Cargo configuration
+  warning documented; no root toolchain or wrapper change is needed.
+
 ## Plan of work
 
 ### M1 — Pin and demonstrate compatibility
@@ -326,6 +331,45 @@ both tools. Missing tools or a refused compiler invocation are inconclusive,
 not proof failures. If compatibility fails, preserve logs, mark the plan
 BLOCKED, and propose a narrower supported boundary. Remove only owned scratch
 sources on recovery; never delete shared caches. M2–M4 remain outstanding.
+
+#### M1 execution evidence
+
+On 2026-11-01 the clean-environment probe used the pinned package commit
+`592558f7183b554fc749696246984c5d7300d029` with Python 3.14. The host is Linux
+x86-64 with glibc 2.39. The Kani installer downloaded and verified the
+package-pinned frontend and bundle, installed frontend binaries under
+`target/prover-m1/frontend`, and set up the release under
+`target/prover-m1/kani-home/kani-0.67.0`. Its `toolchain` symlink resolves to
+the shared `nightly-2025-11-21-x86_64-unknown-linux-gnu` installation. The
+Cargo home and managed `RUSTC_WRAPPER` remained unchanged. The package's ISC
+licence permits use with its notice; Axinite declares `MIT OR Apache-2.0`. The
+plan imports package behaviour through the CLI, not copied source.
+
+The Verus installer verified donor version `0.2026.10.04.426d8b0` against
+SHA-256 `624018662868563a7bec0dd07be5e4dd0c3d61124b4b55105765884bf2d4d1a0`. Z3
+4.16.0 installed from the pinned package and passed `z3 --version`. Verus
+selected toolchain `1.98.1-x86_64-unknown-linux-gnu` and verified a valid
+integer lemma with `2 verified, 0 errors`; an impossible postcondition returned
+exit 1 with `1 errors`. This establishes compatibility for the observed host
+and lemmas, not for arbitrary future proofs.
+
+Kani's `kani exec` used the selected release root, scratch proof working
+directory, `--extra-arg=--output-format=regular`, and the real admission
+wrapper. The named `intersection_is_subset` harness returned exit 0 and one
+successful verification. `false_union_is_subset` returned exit 1 with its
+assertion marked FAILURE. With no `--harness`, the same output-format argument
+ran both: one success, one failure, two total, exit 1. The inherited root
+`.cargo/config.toml` produced an `unused config key unstable.embed-metadata`
+warning from Kani's older Cargo; neither proof result was suppressed or
+misclassified. The first Kani build spent 9 minutes 46 seconds in Cargo under a
+healthy, busy shared admission pool.
+
+The exact transcripts are retained in `/tmp/axinite-prover-m1-*.out`, and the
+probe inputs are under ignored `target/prover-m1/`. They are scratch evidence,
+not the checked-in M3 acceptance fixtures. Conformance: R1 and R2 are advanced,
+the pinned CLI and trust boundaries are unchanged, and no runtime API,
+dependency, persistent format, or architecture deviation was introduced. M2–M4
+remain open.
 
 ### M2 — Add local installation and execution contracts
 
@@ -586,3 +630,4 @@ work, and no installer or runtime implementation has started.
   V1/V2/V5. Preserve the Netsuke donor snapshot and Monty proof scope;
   implementation was subsequently approved on 2026-11-01.
 - (2026-11-01) Record explicit user approval before implementation begins.
+- (2026-11-01) Record the successful M1 compatibility plateau and its limits.
