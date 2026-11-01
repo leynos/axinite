@@ -9,6 +9,8 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
 from _build_standard_workflows import Step, steps_of
@@ -67,6 +69,30 @@ def _declared_step(job: dict[str, object], name: str) -> dict[str, object]:
     ]
     assert len(found) == 1, f"expected one declared step {name!r}"
     return found[0]
+
+
+def _deployment_target_awk(script: str) -> str:
+    """Return the awk program the evidence step applies to ``otool -l`` output."""
+    marker = "awk '"
+    start = script.index(marker) + len(marker)
+    end = script.index("'", start)
+    program = script[start:end]
+    assert "LC_VERSION_MIN_MACOSX" in program, (
+        "the deployment-target parser must understand the legacy load command"
+    )
+    return program
+
+
+def _read_deployment_target(program: str, otool_output: str) -> list[str]:
+    """Run the workflow's parser over recorded ``otool -l`` output."""
+    finished = subprocess.run(  # noqa: S603 S607 - fixed awk, workflow-owned text
+        ["awk", program],
+        input=otool_output,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return finished.stdout.splitlines()
 
 
 @pytest.fixture(scope="module")
@@ -217,6 +243,35 @@ def test_macos_packages_record_toolchain_and_binary_evidence(
     assert step_names.index(step_name) > step_names.index("Verify local checksums"), (
         "binary evidence must follow the checksum check it supplements"
     )
+
+
+@pytest.mark.parametrize(
+    ("load_command", "expected"),
+    [
+        (
+            "LC_BUILD_VERSION\n  cmdsize 32\n platform 1\n    minos 11.0\n"
+            "      sdk 15.5",
+            ["LC_BUILD_VERSION minos: 11.0", "LC_BUILD_VERSION sdk: 15.5"],
+        ),
+        (
+            "LC_VERSION_MIN_MACOSX\n  cmdsize 16\n  version 10.12\n"
+            "      sdk 15.5",
+            [
+                "LC_VERSION_MIN_MACOSX minos: 10.12",
+                "LC_VERSION_MIN_MACOSX sdk: 15.5",
+            ],
+        ),
+    ],
+)
+def test_macos_deployment_target_parser_reads_otool_output(
+    workflow: dict[str, object], load_command: str, expected: list[str]
+) -> None:
+    """The parser extracts a minimum version and SDK from either load command."""
+    local = _job(workflow, "build-local-artifacts")
+    evidence = _step(local, "Record macOS toolchain and binary evidence")
+    program = _deployment_target_awk(evidence.run)
+    otool_output = f"Load command 12\n      cmd {load_command}\n"
+    assert _read_deployment_target(program, otool_output) == expected
 
 
 @pytest.mark.parametrize(
