@@ -5,15 +5,25 @@ use super::*;
 impl SetupWizard {
     /// Create a new setup wizard.
     pub fn new() -> Self {
-        Self::with_config_and_env(SetupConfig::default(), EnvContext::capture_ambient())
+        Self::with_config_and_env_context(
+            SetupConfig::default(),
+            crate::bootstrap::capture_config_env_context(),
+        )
     }
 
     /// Create a wizard with an explicit environment snapshot.
     pub fn with_env_context(env_context: EnvContext) -> Self {
-        Self::with_config_and_env(SetupConfig::default(), env_context)
+        Self::with_config_and_env_context(SetupConfig::default(), env_context)
     }
 
-    fn with_config_and_env(config: SetupConfig, env_context: EnvContext) -> Self {
+    /// Create a wizard with custom configuration and an explicit environment
+    /// snapshot.
+    ///
+    /// # Parameters
+    ///
+    /// - `config`: wizard mode flags.
+    /// - `env_context`: environment snapshot used for setup lookups.
+    pub fn with_config_and_env_context(config: SetupConfig, env_context: EnvContext) -> Self {
         Self {
             config,
             env_context,
@@ -30,7 +40,7 @@ impl SetupWizard {
 
     /// Create a wizard with custom configuration.
     pub fn with_config(config: SetupConfig) -> Self {
-        Self::with_config_and_env(config, EnvContext::capture_ambient())
+        Self::with_config_and_env_context(config, crate::bootstrap::capture_config_env_context())
     }
 
     /// Set the session manager (for reusing existing auth).

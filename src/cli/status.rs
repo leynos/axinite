@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use crate::bootstrap::axinite_base_dir;
+use crate::config::EnvContext;
 use crate::settings::Settings;
 
 /// Load settings from JSON and TOML config files, matching the runtime
@@ -41,27 +42,22 @@ fn default_tools_dir() -> PathBuf {
 fn default_channels_dir() -> PathBuf {
     axinite_base_dir().join("channels")
 }
-fn db_backend_name() -> String {
-    {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-        std::env::var("DATABASE_BACKEND")
-    }
-    .ok()
-    .unwrap_or_else(|| "postgres".to_string())
+fn db_backend_name(ctx: &EnvContext) -> String {
+    crate::bootstrap::database_backend_name(ctx)
 }
 async fn print_database_status(db_backend: &str) {
     print!("  Database:    ");
     match db_backend {
         "libsql" | "turso" | "sqlite" => {
             let path = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                 std::env::var("LIBSQL_PATH")
             }
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| crate::config::default_libsql_path());
             if path.exists() {
                 let turso = if {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                     std::env::var("LIBSQL_URL")
                 }
                 .is_ok()
@@ -77,7 +73,7 @@ async fn print_database_status(db_backend: &str) {
         }
         _ => {
             if {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                 std::env::var("DATABASE_URL")
             }
             .is_ok()
@@ -119,7 +115,7 @@ fn print_secrets_status() {
     // triggering macOS system password dialogs on a simple status check)
     print!("  Secrets:     ");
     if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("SECRETS_MASTER_KEY")
     }
     .is_ok()
@@ -137,12 +133,12 @@ fn print_embeddings_status(settings: &Settings) {
     print!("  Embeddings:  ");
     let emb_enabled = settings.embeddings.enabled
         || {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var("OPENAI_API_KEY")
         }
         .is_ok()
         || {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var("EMBEDDING_ENABLED")
         }
         .map(|v| v == "true")
@@ -192,7 +188,7 @@ fn print_channels_status(settings: &Settings) {
 fn print_heartbeat_status(settings: &Settings) {
     print!("  Heartbeat:   ");
     let hb_enabled = settings.heartbeat.enabled || {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("HEARTBEAT_ENABLED")
     }
     .map(|v| v == "true")
@@ -230,7 +226,8 @@ pub async fn run_status_command() -> anyhow::Result<()> {
         env!("CARGO_PKG_VERSION")
     );
 
-    let db_backend = db_backend_name();
+    let env_context = crate::bootstrap::capture_config_env_context();
+    let db_backend = db_backend_name(&env_context);
     print_database_status(&db_backend).await;
     print_search_status(&db_backend);
     print_session_status();
@@ -259,7 +256,7 @@ pub async fn run_status_command() -> anyhow::Result<()> {
 #[cfg(feature = "postgres")]
 async fn check_database() -> anyhow::Result<()> {
     let url = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("DATABASE_URL")
     }
     .map_err(|_| anyhow::anyhow!("DATABASE_URL not set"))?;
@@ -302,99 +299,4 @@ fn count_wasm_files(dir: &std::path::Path) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    //! Unit tests for status command settings loading.
-
-    use super::load_settings_from;
-
-    /// Regression test for #354: load_settings_from must read config.toml.
-    #[test]
-    fn reads_toml_heartbeat_enabled() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("config.toml");
-
-        // No JSON file — only TOML
-        ambient_fs::write(
-            &toml_path,
-            "[heartbeat]\nenabled = true\ninterval_secs = 600",
-        )
-        .expect("write toml");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 600);
-    }
-
-    /// Without any config files, defaults are returned.
-    #[test]
-    fn defaults_without_config_files() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let settings = load_settings_from(
-            &dir.path().join("nonexistent.json"),
-            &dir.path().join("nonexistent.toml"),
-        );
-        assert!(!settings.heartbeat.enabled);
-    }
-
-    /// settings.json is respected.
-    #[test]
-    fn reads_json_heartbeat_enabled() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("nonexistent.toml");
-
-        ambient_fs::write(
-            &json_path,
-            r#"{"heartbeat":{"enabled":true,"interval_secs":900}}"#,
-        )
-        .expect("write json");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 900);
-    }
-
-    /// TOML overlay wins over JSON settings.
-    #[test]
-    fn toml_overlay_wins_over_json() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("config.toml");
-
-        ambient_fs::write(
-            &json_path,
-            r#"{"heartbeat":{"enabled":false,"interval_secs":100}}"#,
-        )
-        .expect("write json");
-        ambient_fs::write(
-            &toml_path,
-            "[heartbeat]\nenabled = true\ninterval_secs = 200",
-        )
-        .expect("write toml");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 200);
-    }
-
-    /// Invalid TOML is warned but doesn't crash; falls back to JSON/defaults.
-    #[test]
-    fn invalid_toml_falls_back_gracefully() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("config.toml");
-
-        ambient_fs::write(
-            &json_path,
-            r#"{"heartbeat":{"enabled":true,"interval_secs":500}}"#,
-        )
-        .expect("write json");
-        ambient_fs::write(&toml_path, "this is not valid toml [[[").expect("write bad toml");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        // Should fall back to JSON values, not crash
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 500);
-    }
-}
+mod tests;

@@ -113,7 +113,7 @@ pub(super) fn resolve_env_credentials(
 ) -> Vec<(String, String)> {
     resolve_env_credentials_with_reader(allowed_keys, already_injected, |placeholder| {
         {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var(placeholder)
         }
         .ok()

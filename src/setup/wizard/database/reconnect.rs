@@ -1,5 +1,6 @@
 //! Reconnection helpers for the database setup step.
 
+#[cfg(feature = "libsql")]
 use super::super::database_ops::LibsqlConnParams;
 use super::super::*;
 

@@ -1,13 +1,40 @@
 //! Unit tests for doctor diagnostic checks and result formatting.
 
 use super::CheckResult;
-use super::core_checks::check_llm_config_with_context;
+use super::core_checks::{
+    check_database_with_context, check_llm_config_with_context, check_workspace_search_with_context,
+};
 use super::external_checks::check_binary;
 use super::subsystem_checks::{
     check_embeddings_with_context, check_routines_config_with_context, check_secrets,
 };
 use crate::config::EnvContext;
 use crate::settings::Settings;
+
+#[tokio::test]
+async fn database_and_search_checks_use_auto_detected_libsql_backend() {
+    let db_file = tempfile::NamedTempFile::new().expect("create libSQL marker file");
+    let context =
+        crate::bootstrap::with_libsql_backend_autodetection(EnvContext::default(), db_file.path())
+            .with_env("LIBSQL_PATH", db_file.path().to_string_lossy());
+
+    match check_database_with_context(&context).await {
+        CheckResult::Pass(message) => assert!(message.contains("libSQL database exists")),
+        other => panic!(
+            "expected libSQL database result, got: {}",
+            format_result(&other)
+        ),
+    }
+    match check_workspace_search_with_context(&context).await {
+        CheckResult::Pass(message) => {
+            assert!(message.contains("brute-force cosine"));
+        }
+        other => panic!(
+            "expected libSQL search result, got: {}",
+            format_result(&other)
+        ),
+    }
+}
 
 #[test]
 fn check_binary_finds_sh() {

@@ -294,7 +294,10 @@ pub async fn create_session_manager(config: SessionConfig) -> Arc<SessionManager
     // tokens. Hosting providers set this env var and expect it to be used
     // directly — no file persistence needed.
     if let Ok(token) = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
         std::env::var("NEARAI_SESSION_TOKEN")
     } && !token.is_empty()
     {

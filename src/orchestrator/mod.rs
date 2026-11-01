@@ -70,6 +70,27 @@ pub struct OrchestratorSetup {
     pub docker_status: crate::sandbox::DockerStatus,
 }
 
+struct OrchestratorRuntime {
+    container_job_manager: Option<Arc<ContainerJobManager>>,
+    job_event_tx: Option<broadcast::Sender<(Uuid, SseEvent)>>,
+}
+
+/// Startup inputs required to set up the container orchestrator.
+pub struct OrchestratorSetupContext<'a> {
+    /// Resolved application configuration.
+    pub config: &'a crate::config::Config,
+    /// Environment snapshot resolved during application startup.
+    pub env_context: &'a EnvContext,
+    /// Configured language model provider.
+    pub llm: &'a Arc<dyn LlmProvider>,
+    /// Available tools for orchestrator jobs.
+    pub tools: &'a Arc<ToolRegistry>,
+    /// Optional database used by the orchestrator API.
+    pub db: Option<&'a Arc<dyn Database>>,
+    /// Optional store used to retrieve channel secrets.
+    pub secrets_store: Option<&'a Arc<dyn SecretsStore + Send + Sync>>,
+}
+
 /// Detect Docker availability, create the container job manager, and start
 /// the orchestrator internal API in the background.
 pub async fn setup_orchestrator(
@@ -80,23 +101,38 @@ pub async fn setup_orchestrator(
     secrets_store: Option<&Arc<dyn SecretsStore + Send + Sync>>,
 ) -> OrchestratorSetup {
     let env_context = EnvContext::capture_ambient();
-    setup_orchestrator_from_context(config, &env_context, llm, tools, db, secrets_store).await
+    setup_orchestrator_from_context(OrchestratorSetupContext {
+        config,
+        env_context: &env_context,
+        llm,
+        tools,
+        db,
+        secrets_store,
+    })
+    .await
 }
 
 /// Set up the orchestrator from the environment snapshot resolved at startup.
 pub async fn setup_orchestrator_from_context(
-    config: &crate::config::Config,
-    env_context: &EnvContext,
-    llm: &Arc<dyn LlmProvider>,
-    tools: &Arc<ToolRegistry>,
-    db: Option<&Arc<dyn Database>>,
-    secrets_store: Option<&Arc<dyn SecretsStore + Send + Sync>>,
+    context: OrchestratorSetupContext<'_>,
 ) -> OrchestratorSetup {
     let prompt_queue = Arc::new(Mutex::new(
         HashMap::<Uuid, VecDeque<api::PendingPrompt>>::new(),
     ));
 
-    let docker_status = if config.sandbox.enabled {
+    let docker_status = detect_docker_status(context.config.sandbox.enabled).await;
+    let runtime = start_orchestrator_if_enabled(&context, docker_status, Arc::clone(&prompt_queue));
+
+    OrchestratorSetup {
+        container_job_manager: runtime.container_job_manager,
+        job_event_tx: runtime.job_event_tx,
+        prompt_queue,
+        docker_status,
+    }
+}
+
+async fn detect_docker_status(sandbox_enabled: bool) -> crate::sandbox::DockerStatus {
+    if sandbox_enabled {
         let detection = crate::sandbox::check_docker().await;
         match detection.status {
             crate::sandbox::DockerStatus::Available => {
@@ -119,29 +155,35 @@ pub async fn setup_orchestrator_from_context(
         detection.status
     } else {
         crate::sandbox::DockerStatus::Disabled
-    };
+    }
+}
 
-    let (job_event_tx, container_job_manager) = if config.sandbox.enabled && docker_status.is_ok() {
+fn start_orchestrator_if_enabled(
+    context: &OrchestratorSetupContext<'_>,
+    docker_status: crate::sandbox::DockerStatus,
+    prompt_queue: Arc<Mutex<HashMap<Uuid, VecDeque<api::PendingPrompt>>>>,
+) -> OrchestratorRuntime {
+    if context.config.sandbox.enabled && docker_status.is_ok() {
         let (tx, _) = broadcast::channel(256);
         let job_event_tx = Some(tx);
 
         let token_store = TokenStore::new();
         let job_config = container_job_config(
-            config,
-            env_context,
+            context.config,
+            context.env_context,
             crate::config::ClaudeCodeConfig::extract_oauth_token,
         );
         let jm = Arc::new(ContainerJobManager::new(job_config, token_store.clone()));
 
         let orchestrator_state = api::OrchestratorState {
-            llm: Arc::clone(llm),
-            tools: Arc::clone(tools),
+            llm: Arc::clone(context.llm),
+            tools: Arc::clone(context.tools),
             job_manager: Arc::clone(&jm),
             token_store,
             job_event_tx: job_event_tx.clone(),
-            prompt_queue: Arc::clone(&prompt_queue),
-            store: db.cloned(),
-            secrets_store: secrets_store.cloned(),
+            prompt_queue,
+            store: context.db.cloned(),
+            secrets_store: context.secrets_store.cloned(),
             user_id: "default".to_string(),
         };
 
@@ -151,23 +193,22 @@ pub async fn setup_orchestrator_from_context(
             }
         });
 
-        if config.claude_code.enabled {
+        if context.config.claude_code.enabled {
             tracing::info!(
                 "Claude Code sandbox mode available (model: {}, max_turns: {})",
-                config.claude_code.model,
-                config.claude_code.max_turns
+                context.config.claude_code.model,
+                context.config.claude_code.max_turns
             );
         }
-        (job_event_tx, Some(jm))
+        OrchestratorRuntime {
+            job_event_tx,
+            container_job_manager: Some(jm),
+        }
     } else {
-        (None, None)
-    };
-
-    OrchestratorSetup {
-        container_job_manager,
-        job_event_tx,
-        prompt_queue,
-        docker_status,
+        OrchestratorRuntime {
+            job_event_tx: None,
+            container_job_manager: None,
+        }
     }
 }
 

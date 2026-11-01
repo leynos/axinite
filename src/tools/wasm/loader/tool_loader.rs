@@ -329,7 +329,7 @@ pub(super) fn resolve_oauth_refresh_config(
         .or_else(|| {
             oauth.client_id_env.as_ref().and_then(|env| {
                 {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                     std::env::var(env)
                 }
                 .ok()
@@ -343,7 +343,7 @@ pub(super) fn resolve_oauth_refresh_config(
         .or_else(|| {
             oauth.client_secret_env.as_ref().and_then(|env| {
                 {
-                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
                     std::env::var(env)
                 }
                 .ok()

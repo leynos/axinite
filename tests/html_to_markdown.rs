@@ -252,7 +252,7 @@ fn convert_test_pages_to_markdown() {
         }
 
         if {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var("HTML_TO_MD_VERBOSE")
         }
         .is_ok()

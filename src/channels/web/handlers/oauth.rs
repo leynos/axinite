@@ -150,7 +150,7 @@ async fn complete_gateway_oauth_flow(
     use crate::cli::oauth_defaults;
 
     let exchange_proxy_url = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("AXINITE_OAUTH_EXCHANGE_URL")
     }
     .ok();

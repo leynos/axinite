@@ -9,6 +9,7 @@ pub mod settings;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::config::EnvContext;
 use crate::db::{Database, SettingKey, UserId};
 use crate::import::{ImportError, ImportOptions, ImportStats};
 use crate::secrets::SecretsStore;
@@ -42,10 +43,12 @@ impl OpenClawImporter {
 
     /// Detect if an OpenClaw installation exists at the default location (~/.openclaw).
     pub fn detect() -> Option<PathBuf> {
-        if let Ok(home) = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("HOME")
-        } {
+        Self::detect_from(&EnvContext::capture_ambient())
+    }
+
+    /// Detect an OpenClaw installation using the supplied environment snapshot.
+    pub fn detect_from(env_context: &EnvContext) -> Option<PathBuf> {
+        if let Some(home) = env_context.get("HOME") {
             let openclaw_dir = PathBuf::from(home).join(".openclaw");
             let config_file = openclaw_dir.join("openclaw.json");
             if config_file.exists() {
@@ -226,5 +229,32 @@ impl OpenClawImporter {
         }
 
         Ok(stats)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for environment-injected OpenClaw installation detection.
+
+    use super::OpenClawImporter;
+    use crate::config::EnvContext;
+
+    #[test]
+    fn detect_from_uses_the_supplied_home_directory() {
+        let home = tempfile::tempdir().expect("temporary home directory should be created");
+        let openclaw_dir = home.path().join(".openclaw");
+        ambient_fs::create_dir_all(&openclaw_dir).expect("OpenClaw directory should be created");
+        ambient_fs::write(openclaw_dir.join("openclaw.json"), "{}")
+            .expect("OpenClaw config should be created");
+        let home_path = home
+            .path()
+            .to_str()
+            .expect("temporary path should be UTF-8");
+        let env_context = EnvContext::default().with_env("HOME", home_path);
+
+        assert_eq!(
+            OpenClawImporter::detect_from(&env_context),
+            Some(openclaw_dir)
+        );
     }
 }

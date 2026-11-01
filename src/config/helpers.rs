@@ -82,7 +82,7 @@ pub(crate) fn optional_env(key: EnvKey) -> Result<Option<String>, ConfigError> {
     // Check real env vars first (always win over injected secrets)
     #[expect(
         clippy::disallowed_methods,
-        reason = "owning ambient configuration boundary; callers without a context retain compatibility"
+        reason = "FIXME: legacy ambient fallback; migrate callers to EnvContext, see https://github.com/leynos/axinite/issues/333"
     )]
     match std::env::var(key.as_str()) {
         Ok(val) if val.is_empty() => {}

@@ -94,7 +94,7 @@ fn test_pid_lock_creates_parent_dirs() {
 #[test]
 fn test_pid_lock_child_helper_holds_lock() {
     if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("AXINITE_PID_LOCK_CHILD")
     }
     .ok()
@@ -106,13 +106,13 @@ fn test_pid_lock_child_helper_holds_lock() {
 
     let pid_path = PathBuf::from(
         {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var("AXINITE_PID_LOCK_PATH")
         }
         .expect("AXINITE_PID_LOCK_PATH missing"),
     );
     let hold_ms = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("AXINITE_PID_LOCK_HOLD_MS")
     }
     .ok()

@@ -46,12 +46,12 @@ pub use wizard::{SetupConfig, SetupWizard};
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 pub fn check_onboard_needed() -> Option<&'static str> {
     let has_db = {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("DATABASE_URL")
     }
     .is_ok()
         || {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var("LIBSQL_PATH")
         }
         .is_ok()
@@ -62,7 +62,7 @@ pub fn check_onboard_needed() -> Option<&'static str> {
     }
 
     if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("ONBOARD_COMPLETED")
     }
     .map(|v| v == "true")
@@ -72,7 +72,7 @@ pub fn check_onboard_needed() -> Option<&'static str> {
     }
 
     if {
-        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
         std::env::var("NEARAI_API_KEY")
     }
     .is_err()

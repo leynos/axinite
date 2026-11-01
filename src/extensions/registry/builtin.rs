@@ -140,7 +140,7 @@ fn slack_relay_entry(relay_url: String) -> RegistryEntry {
 pub fn builtin_entries() -> Vec<RegistryEntry> {
     builtin_entries_with_relay(
         {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
             std::env::var("CHANNEL_RELAY_URL")
         }
         .ok(),

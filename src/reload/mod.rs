@@ -22,7 +22,7 @@ mod test_stubs;
 pub use config_loader::{ConfigLoader, DbConfigLoader, EnvConfigLoader};
 pub use error::ReloadError;
 pub use listener_controller::{ListenerController, WebhookListenerController};
-pub use manager::{HotReloadDeps, HotReloadManager};
+pub use manager::{HotReloadManager, HotReloadManagerDependencies};
 pub use secret_injector::{DbSecretInjector, SecretInjector};
 
 use std::sync::Arc;
@@ -39,6 +39,20 @@ use crate::secrets::SecretsStore;
 /// Multi-tenant behaviour is not supported; all reload operations use this
 /// hardcoded user context.
 const DEFAULT_USER_ID: &str = "default";
+
+/// Inputs used to construct the default hot-reload implementations.
+pub struct HotReloadManagerFactoryContext {
+    /// Environment snapshot resolved during application startup.
+    pub env_context: EnvContext,
+    /// Settings store used by the database-backed config loader.
+    pub settings_store: Option<Arc<dyn SettingsStore>>,
+    /// Webhook server controlled by the reload manager.
+    pub webhook_server: Option<Arc<Mutex<WebhookServer>>>,
+    /// Secret store used by the database-backed secret injector.
+    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// Channel secret updaters registered for reload cycles.
+    pub secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
+}
 
 fn default_user_id() -> UserId {
     UserId::from(DEFAULT_USER_ID)
@@ -58,41 +72,26 @@ pub fn create_hot_reload_manager(
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
 ) -> HotReloadManager {
-    create_hot_reload_manager_from_context(
-        EnvContext::capture_ambient(),
-        HotReloadWiring {
-            settings_store,
-            webhook_server,
-            secrets_store,
-            secret_updaters,
-        },
-    )
-}
-
-/// Stores and handles from which [`create_hot_reload_manager_from_context`]
-/// builds the default reload collaborators.
-pub struct HotReloadWiring {
-    /// Settings store; selects the database-backed config loader when present.
-    pub settings_store: Option<Arc<dyn SettingsStore>>,
-    /// Webhook server whose listener is restarted on reload.
-    pub webhook_server: Option<Arc<Mutex<WebhookServer>>>,
-    /// Secrets store; enables secret injection into the reload snapshot.
-    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    /// Channel instances that support secret swapping.
-    pub secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
-}
-
-/// Create a hot-reload manager using the resolved startup environment snapshot.
-pub fn create_hot_reload_manager_from_context(
-    env_context: EnvContext,
-    wiring: HotReloadWiring,
-) -> HotReloadManager {
-    let HotReloadWiring {
+    create_hot_reload_manager_from_context(HotReloadManagerFactoryContext {
+        env_context: crate::bootstrap::capture_config_env_context(),
         settings_store,
         webhook_server,
         secrets_store,
         secret_updaters,
-    } = wiring;
+    })
+}
+
+/// Create a hot-reload manager using the resolved startup environment snapshot.
+pub fn create_hot_reload_manager_from_context(
+    context: HotReloadManagerFactoryContext,
+) -> HotReloadManager {
+    let HotReloadManagerFactoryContext {
+        env_context,
+        settings_store,
+        webhook_server,
+        secrets_store,
+        secret_updaters,
+    } = context;
     let default_user_id = default_user_id();
 
     // Instantiate config loader based on whether settings store is present
@@ -110,13 +109,11 @@ pub fn create_hot_reload_manager_from_context(
         Arc::new(DbSecretInjector::new(ss, default_user_id.clone())) as Arc<dyn SecretInjector>
     });
 
-    HotReloadManager::new_with_context(
+    HotReloadManager::new_with_context(HotReloadManagerDependencies {
         env_context,
-        HotReloadDeps {
-            config_loader,
-            listener_controller,
-            secret_injector,
-            secret_updaters,
-        },
-    )
+        config_loader,
+        listener_controller,
+        secret_injector,
+        secret_updaters,
+    })
 }

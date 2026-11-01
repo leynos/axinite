@@ -31,12 +31,12 @@ extend `EnvContext::default()` with `with_env(...)`; they must never call
 `std::env::set_var` or `std::env::remove_var` in process.
 
 `clippy.toml` disallows direct environment reads and writes. A remaining legacy
-reader may use a narrowly scoped
-`#[expect(clippy::disallowed_methods, reason =
-"transitional #333: EnvContext")]`.
-The expectation is deliberately stale-detecting: remove it with the direct
-call when the dependency is injected. Owning composition boundaries use the
-same lint expectation with an explanation of why their ambient capture is
+reader may use a narrowly scoped `#[expect(clippy::disallowed_methods)]` with a
+reason that identifies the `EnvContext` migration and links issue #333. The
+reason includes `FIXME` so the transitional expectation is easy to find and
+remove. The expectation is deliberately stale-detecting: remove it with the
+direct call when the dependency is injected. Owning composition boundaries use
+the same lint expectation with an explanation of why their ambient capture is
 required.
 
 The `mockable` walkthrough below is general Rust background. Axinite code uses
@@ -233,13 +233,12 @@ ______________________________________________________________________
   `std::env` or `SystemTime::now` makes code difficult to test exhaustively.
 - **The Solution is Dependency Injection:** Pass dependencies into functions as
   arguments.
-- **Use** `mockable` **Traits:** Abstract dependencies behind traits such as
-  `impl Env` or `impl Clock`.
-- **`Mock*` for Tests:** Use `MockEnv` and `MockClock` in unit tests for
-  isolated, deterministic control.
-- **`Real*` for Production:** Use `RealEnv` and `RealClock` in the application
-  to interact with the actual system.
-- **`RealEnv` is NOT a Scope Guard:** `RealEnv` directly mutates the global
-  process environment without automatic cleanup. For integration tests that
-  require modifying the live environment, consider a crate such as `temp_env`.
-  For unit tests, `MockEnv` is preferable.
+- **Use dependency seams:** Abstract external dependencies behind interfaces;
+  Axinite uses `EnvContext` for environment inputs and injected clocks for
+  time-dependent behaviour.
+- **Use isolated test inputs:** General `mockable` examples use `MockEnv` and
+  `MockClock`; Axinite tests build an `EnvContext` snapshot instead.
+- **Capture production inputs at composition boundaries:** Axinite captures
+  ambient environment once and passes the resulting `EnvContext` to readers.
+- **Never mutate the process environment in Axinite tests:** Mutexes, RAII
+  restoration guards, and `temp_env` do not make in-process mutation safe.

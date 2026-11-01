@@ -133,7 +133,7 @@ pub(crate) fn env_flag_overlay(env: &EnvContext) -> HashMap<&'static str, bool> 
     FLAG_DEFAULTS
         .iter()
         .filter_map(|(name, _)| {
-            env.get(&flag_env_var(name))
+            env.env_var_raw(&flag_env_var(name))
                 .map(|raw| (*name, parse_env_flag(raw)))
         })
         .collect()
