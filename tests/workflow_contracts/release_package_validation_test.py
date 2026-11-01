@@ -9,6 +9,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 
 import pytest
@@ -93,6 +94,30 @@ def _read_deployment_target(program: str, otool_output: str) -> list[str]:
         text=True,
     )
     return finished.stdout.splitlines()
+
+
+def _architecture_case(script: str) -> str:
+    """Return the shell ``case`` block that maps a target to its architecture."""
+    start = script.index('case "$target" in')
+    end = script.index("esac", start) + len("esac")
+    return script[start:end]
+
+
+def _expected_architecture(
+    case_block: str, target: str
+) -> subprocess.CompletedProcess[str]:
+    """Run the workflow's target mapping for one release target."""
+    program = (
+        f"target={shlex.quote(target)}\n"
+        f"{case_block}\n"
+        "printf '%s' \"$expected_arch\""
+    )
+    return subprocess.run(  # noqa: S603 S607 - fixed bash, workflow-owned text
+        ["bash", "-c", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -272,6 +297,36 @@ def test_macos_deployment_target_parser_reads_otool_output(
     program = _deployment_target_awk(evidence.run)
     otool_output = f"Load command 12\n      cmd {load_command}\n"
     assert _read_deployment_target(program, otool_output) == expected
+
+
+@pytest.mark.parametrize(
+    ("target", "expected_arch"),
+    [
+        ("aarch64-apple-darwin", "arm64"),
+        ("x86_64-apple-darwin", "x86_64"),
+    ],
+)
+def test_macos_evidence_step_maps_each_apple_target_to_its_architecture(
+    workflow: dict[str, object], target: str, expected_arch: str
+) -> None:
+    """The step expects the architecture its Apple target actually produces."""
+    local = _job(workflow, "build-local-artifacts")
+    evidence = _step(local, "Record macOS toolchain and binary evidence")
+    finished = _expected_architecture(_architecture_case(evidence.run), target)
+    assert finished.returncode == 0, finished.stderr
+    assert finished.stdout == expected_arch
+
+
+def test_macos_evidence_step_rejects_an_unplanned_apple_target(
+    workflow: dict[str, object],
+) -> None:
+    """A macOS leg outside the two planned targets cannot claim evidence."""
+    local = _job(workflow, "build-local-artifacts")
+    evidence = _step(local, "Record macOS toolchain and binary evidence")
+    case_block = _architecture_case(evidence.run)
+    finished = _expected_architecture(case_block, "aarch64-apple-ios")
+    assert finished.returncode == 1
+    assert "unexpected macOS release target" in finished.stderr
 
 
 @pytest.mark.parametrize(
