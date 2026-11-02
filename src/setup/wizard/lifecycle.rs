@@ -38,6 +38,16 @@ impl SetupWizard {
         }
     }
 
+    /// Snapshot including every credential collected during this run.
+    ///
+    /// Startup captures `EnvContext` before onboarding and resolves
+    /// configuration from it afterwards. Returning the wizard's updated
+    /// snapshot lets the caller carry wizard-entered secrets forward without
+    /// re-reading the process environment or the legacy ambient overlay.
+    pub fn env_context(&self) -> &EnvContext {
+        &self.env_context
+    }
+
     /// Create a wizard with custom configuration.
     pub fn with_config(config: SetupConfig) -> Self {
         Self::with_config_and_env_context(config, crate::bootstrap::capture_config_env_context())

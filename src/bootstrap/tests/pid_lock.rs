@@ -27,8 +27,8 @@ fn test_pid_lock_acquire_and_drop() {
     assert!(!pid_path.exists());
 }
 
-#[test]
 /// Verify that a second acquisition of a held PID lock reports the owning process.
+#[test]
 fn test_pid_lock_rejects_second_acquire() {
     let dir = tempdir().expect("create temp dir for double-acquire test");
     let pid_path = dir.path().join("axinite.pid");
@@ -124,8 +124,8 @@ fn test_pid_lock_child_helper_holds_lock() {
     thread::sleep(Duration::from_millis(hold_ms));
 }
 
-#[test]
 /// Verify that a lock held by another process is reported as already running.
+#[test]
 fn test_pid_lock_rejects_lock_held_by_other_process() {
     let dir = tempdir().expect("create temp dir for external pid lock test");
     let pid_path = dir.path().join("axinite.pid");

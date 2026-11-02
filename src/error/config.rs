@@ -41,3 +41,14 @@ impl From<std::io::Error> for ConfigError {
         Self::Io(Arc::new(err))
     }
 }
+
+impl From<crate::settings::SettingsError> for ConfigError {
+    /// Report a settings-file failure at the configuration boundary.
+    ///
+    /// [`crate::settings::Settings::load_from`] already treats a missing file
+    /// as "use defaults", so any error here means the persisted configuration
+    /// exists but could not be turned into settings.
+    fn from(err: crate::settings::SettingsError) -> Self {
+        Self::ParseError(err.to_string())
+    }
+}

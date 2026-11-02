@@ -16,7 +16,13 @@ use crate::settings::Settings;
 /// Paths are derived from the caller's environment snapshot rather than the
 /// ambient process environment.
 fn load_settings_from(json_path: &std::path::Path, toml_path: &std::path::Path) -> Settings {
-    let mut settings = Settings::load_from(json_path);
+    let mut settings = match Settings::load_from(json_path) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("Warning: {error}; continuing with default settings");
+            Settings::default()
+        }
+    };
 
     match Settings::load_toml(toml_path) {
         Ok(Some(toml_settings)) => {

@@ -119,16 +119,19 @@ before channels and background services start.
 
 1. `main()` loads `.env` files and the per-user `~/.axinite/.env` bootstrap
    file before starting Tokio. This avoids mutating process environment after
-   worker threads exist.
+   worker threads exist. It then captures one `EnvContext` snapshot at the
+   process boundary; nothing later re-reads process variables or `.env` files.
 2. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
    through to the agent runtime for `axinite run` or no subcommand.
 3. The host acquires a PID lock to prevent accidental double-starts of the main
    process.
 4. If onboarding is still required and onboarding has not been suppressed, the
-   setup wizard runs before the rest of the runtime is built.
-5. Startup captures one `EnvContext` snapshot at the process boundary and
-   passes it through onboarding, which may merge additional values into it.
-   `Config::from_context(...)` then builds the initial configuration from that
+   setup wizard runs before the rest of the runtime is built. It receives the
+   captured snapshot, records credentials it collects in its own copy, and
+   startup merges `.env` into that updated copy. A key entered during a
+   `--no-db` first run therefore reaches configuration resolution even though
+   the secrets store is unavailable.
+5. `Config::from_context(...)` builds the initial configuration from that
    snapshot, optional TOML, and defaults. The config layer never rereads
    process variables while resolving sub-configs, so tests and internal callers
    get deterministic resolution from the same inputs the runtime uses. The

@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use axinite::{
     app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
-    channels::{ChannelManager, web::log_layer::LogBroadcaster},
+    channels::ChannelManager,
     cli::Cli,
     config::{Config, EnvContext},
     hooks::bootstrap_hooks,
-    llm::create_session_manager,
 };
 
 #[cfg(any(feature = "postgres", feature = "libsql"))]
@@ -19,6 +18,8 @@ use crate::startup::channels::{
     setup_gateway_channel,
 };
 use crate::startup::{boot, context::*, orchestrator::setup_orchestrator_context, run};
+
+pub(crate) use crate::startup::config_load::phase_load_config_and_tracing_from;
 
 /// Acquires the optional PID lock and runs first-run onboarding when requested.
 ///
@@ -46,36 +47,6 @@ pub(crate) async fn phase_pid_and_onboard(
     let env_context = run_first_run_onboarding_if_needed(cli, env_context).await?;
 
     Ok((pid_lock, env_context))
-}
-
-/// Load configuration and tracing from an explicit startup environment snapshot.
-pub(crate) async fn phase_load_config_and_tracing_from(
-    cli: &Cli,
-    env: &EnvContext,
-) -> anyhow::Result<LoadedConfigContext> {
-    let toml_path = cli.config.clone();
-    let config = load_initial_config_from(env, toml_path.as_deref()).await?;
-
-    let session = create_session_manager(config.llm.session.clone()).await;
-    let log_broadcaster = Arc::new(LogBroadcaster::new());
-    let log_level_handle =
-        axinite::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
-
-    tracing::debug!("Starting Axinite...");
-    tracing::debug!("Loaded configuration for agent: {}", config.agent.name);
-    tracing::debug!("LLM backend: {}", config.llm.backend);
-
-    Ok(LoadedConfigContext {
-        config,
-        env_context: env.clone(),
-        toml_path,
-        session,
-        log_broadcaster,
-        log_level_handle,
-        workspace_import_dir: env
-            .get("WORKSPACE_IMPORT_DIR")
-            .map(std::path::PathBuf::from),
-    })
 }
 
 /// Constructs all application components and runtime side-effects via
@@ -329,8 +300,8 @@ pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<
     run::run_agent(ctx).await
 }
 
-#[cfg(any(feature = "postgres", feature = "libsql"))]
 /// Runs first-run onboarding when the required database feature is enabled.
+#[cfg(any(feature = "postgres", feature = "libsql"))]
 async fn run_first_run_onboarding_if_needed(
     cli: &Cli,
     env_context: &EnvContext,
@@ -348,50 +319,26 @@ async fn run_first_run_onboarding_if_needed(
             env_context.clone(),
         );
         wizard.run().await?;
+        // The wizard's own snapshot carries credentials entered during
+        // onboarding (for example an API key stored while the database is
+        // unavailable), so merge `.env` on top of that rather than on the
+        // snapshot captured before onboarding.
         Ok(axinite::bootstrap::merge_axinite_env_into_context(
-            env_context,
+            wizard.env_context(),
         )?)
     } else {
         Ok(env_context.clone())
     }
 }
 
-#[cfg(not(any(feature = "postgres", feature = "libsql")))]
 /// No-op onboarding stub used when neither database feature is compiled in.
+#[cfg(not(any(feature = "postgres", feature = "libsql")))]
 async fn run_first_run_onboarding_if_needed(
     cli: &Cli,
     env_context: &EnvContext,
 ) -> anyhow::Result<EnvContext> {
     let _ = cli;
     Ok(env_context.clone())
-}
-
-async fn load_initial_config_from(
-    env: &EnvContext,
-    toml_path: Option<&std::path::Path>,
-) -> anyhow::Result<Config> {
-    let settings = load_settings_from_context(env);
-    // `None` still applies the default `~/.axinite/config.toml` overlay, so
-    // omitting `--config` does not silently drop settings that only exist
-    // there. The reload path applies the same default overlay.
-    let result = Config::from_context_with_optional_toml(env, &settings, toml_path).await;
-    match result {
-        Ok(c) => Ok(c),
-        Err(axinite::error::ConfigError::MissingRequired { key, hint }) => {
-            anyhow::bail!(
-                "Configuration error: Missing required setting '{}'. {}. \
-                 Run 'axinite onboard' to configure, or set the required environment variables.",
-                key,
-                hint
-            );
-        }
-        Err(e) => Err(e.into()),
-    }
-}
-
-fn load_settings_from_context(env: &EnvContext) -> axinite::settings::Settings {
-    let settings_path = env.axinite_base_dir().join("settings.json");
-    axinite::settings::Settings::load_from(&settings_path)
 }
 
 #[cfg(test)]

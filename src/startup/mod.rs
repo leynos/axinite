@@ -10,6 +10,8 @@
 pub(crate) mod boot;
 /// Channel wiring and gateway setup.
 pub(crate) mod channels;
+/// Configuration and tracing loading from the startup environment snapshot.
+pub(crate) mod config_load;
 /// Startup context structs shared across phase functions.
 pub(crate) mod context;
 /// Startup wiring for container orchestration.

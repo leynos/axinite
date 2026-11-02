@@ -2166,10 +2166,15 @@ later.
 
 ### Environment snapshot ownership
 
-Startup owns exactly one environment snapshot. `phase_prepare` captures it
-once, onboarding may merge additional values into it, and
-`phase_load_config_and_tracing_from` loads configuration from that snapshot with
-`Config::from_context` rather than rereading process state.
+Startup owns exactly one environment snapshot. `main()` captures it once with
+`capture_config_env_context()` before the Tokio runtime starts, after loading
+`.env` files. `phase_pid_and_onboard` then supplies that snapshot to the setup
+wizard, which records any credential it collects in its own copy; the phase
+returns the wizard's updated snapshot with `.env` merged on top. A key entered
+during a `--no-db` first run therefore survives into configuration resolution
+even though the secrets store is unavailable.
+`phase_load_config_and_tracing_from` loads configuration from the resulting
+snapshot with `Config::from_context` rather than rereading process state.
 
 `AppBuilder::new_with_context(params, env_context)` accepts that snapshot and
 `build_components_with_context()` returns the updated snapshot alongside the

@@ -142,8 +142,8 @@ fn is_disallowed_ipv6(v6: &std::net::Ipv6Addr) -> bool {
     blocked.into_iter().any(|is_blocked| is_blocked)
 }
 
-#[cfg(feature = "html-to-markdown")]
 /// Heuristic: treat as HTML if the `Content-Type` header contains `text/html`.
+#[cfg(feature = "html-to-markdown")]
 pub(super) fn is_html_response(headers: &HashMap<String, String>) -> bool {
     headers
         .iter()

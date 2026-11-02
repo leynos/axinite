@@ -162,7 +162,14 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     // Capture the environment once and derive settings from the same snapshot
     // so every check observes a consistent view.
     let env_context = crate::bootstrap::capture_config_env_context();
-    let settings = Settings::load_from(&env_context.axinite_base_dir().join("settings.json"));
+    let settings = match Settings::load_from(&env_context.axinite_base_dir().join("settings.json"))
+    {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("Warning: {error}; continuing with default settings");
+            Settings::default()
+        }
+    };
 
     run_core_checks(
         &env_context,
