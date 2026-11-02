@@ -282,3 +282,6 @@ async fn resolve_declared_secret(
     let secrets = secrets_store.as_ref()?;
     secrets.get_decrypted("default", name).await.ok()
 }
+
+#[cfg(test)]
+mod tests;
