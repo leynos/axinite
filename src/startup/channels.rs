@@ -14,7 +14,7 @@ use axinite::{
         ChannelManager, HttpChannel, ReplChannel, SignalChannel, WebhookServer, WebhookServerConfig,
     },
     cli::Cli,
-    config::Config,
+    config::{Config, EnvContext},
 };
 
 use crate::startup::wasm::{WasmChannelRuntimeState, WasmChannelsInit, init_wasm_channels};
@@ -157,17 +157,30 @@ async fn build_webhook_server(
     Ok(Some(Arc::new(tokio::sync::Mutex::new(server))))
 }
 
+/// Inputs for initializing the configured channels.
+pub(crate) struct ChannelSetupRequest<'a> {
+    pub cli: &'a Cli,
+    pub config: &'a Config,
+    pub components: &'a AppComponents,
+    pub env_context: &'a EnvContext,
+    pub channels: &'a ChannelManager,
+}
+
 /// Initializes all configured channels (REPL, signal, HTTP, and WASM) and starts
 /// the webhook server when any channel has registered HTTP routes.
 ///
 /// Returns a [`ChannelSetup`] bundle that carries the started webhook server,
 /// the list of enabled channel names, and the optional WASM runtime state.
 pub(crate) async fn setup_channels(
-    cli: &Cli,
-    config: &Config,
-    components: &AppComponents,
-    channels: &ChannelManager,
+    request: ChannelSetupRequest<'_>,
 ) -> anyhow::Result<ChannelSetup> {
+    let ChannelSetupRequest {
+        cli,
+        config,
+        components,
+        env_context,
+        channels,
+    } = request;
     let mut channel_names: Vec<String> = Vec::new();
     let mut webhook_routes: Vec<axum::Router> = Vec::new();
     let (loaded_wasm_channel_names, wasm_channel_runtime_state, http, webhook_routes) = {
@@ -188,7 +201,7 @@ pub(crate) async fn setup_channels(
                 runtime_state: None,
             }
         } else {
-            init_wasm_channels(config, components, &mut reg).await
+            init_wasm_channels(config, components, env_context, &mut reg).await
         };
 
         setup_signal_channel(cli, config, &mut reg).await?;

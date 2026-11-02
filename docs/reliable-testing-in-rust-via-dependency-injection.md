@@ -240,5 +240,6 @@ ______________________________________________________________________
   `MockClock`; Axinite tests build an `EnvContext` snapshot instead.
 - **Capture production inputs at composition boundaries:** Axinite captures
   ambient environment once and passes the resulting `EnvContext` to readers.
-- **Never mutate the process environment in Axinite tests:** Mutexes, RAII
-  restoration guards, and `temp_env` do not make in-process mutation safe.
+- **Never mutate the process environment in Axinite tests:** Mutexes, resource
+  acquisition is initialization (RAII) restoration guards, and `temp_env` do
+  not make in-process mutation safe.

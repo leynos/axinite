@@ -15,7 +15,8 @@ use axinite::{
 use axinite::setup::{SetupConfig, SetupWizard};
 
 use crate::startup::channels::{
-    ChannelSetup, GatewayContext, GatewaySetup, setup_channels, setup_gateway_channel,
+    ChannelSetup, ChannelSetupRequest, GatewayContext, GatewaySetup, setup_channels,
+    setup_gateway_channel,
 };
 use crate::startup::{boot, context::*, orchestrator::setup_orchestrator_context, run};
 
@@ -237,12 +238,13 @@ pub(crate) async fn phase_init_channels_and_hooks(
         wasm_channel_runtime_state,
         #[cfg(unix)]
         http_channel_state,
-    } = setup_channels(
+    } = setup_channels(ChannelSetupRequest {
         cli,
-        &agent_ctx.core.config,
-        &agent_ctx.core.components,
-        channels.as_ref(),
-    )
+        config: &agent_ctx.core.config,
+        components: &agent_ctx.core.components,
+        env_context: &agent_ctx.core.env_context,
+        channels: channels.as_ref(),
+    })
     .await?;
 
     bootstrap_and_log_hooks(
@@ -369,10 +371,10 @@ async fn load_initial_config_from(
     toml_path: Option<&std::path::Path>,
 ) -> anyhow::Result<Config> {
     let settings = load_settings_from_context(env);
-    let result = match toml_path {
-        Some(path) => Config::from_context_with_toml(env, &settings, path).await,
-        None => Config::from_context(env, &settings).await,
-    };
+    // `None` still applies the default `~/.axinite/config.toml` overlay, so
+    // omitting `--config` does not silently drop settings that only exist
+    // there. The reload path applies the same default overlay.
+    let result = Config::from_context_with_optional_toml(env, &settings, toml_path).await;
     match result {
         Ok(c) => Ok(c),
         Err(axinite::error::ConfigError::MissingRequired { key, hint }) => {

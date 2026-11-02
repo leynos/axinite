@@ -64,7 +64,9 @@ impl SetupWizard {
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
-            crate::bootstrap::upsert_bootstrap_vars(&pairs).map_err(|e| {
+            let env_path =
+                crate::bootstrap::compute_axinite_base_dir_from(&self.env_context).join(".env");
+            crate::bootstrap::upsert_bootstrap_vars_to(&env_path, &pairs).map_err(|e| {
                 SetupError::Io(std::io::Error::other(format!(
                     "Failed to save bootstrap env to .env: {}",
                     e

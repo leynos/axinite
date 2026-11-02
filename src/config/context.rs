@@ -69,14 +69,34 @@ impl EnvContext {
         }
     }
 
+    /// Look up a raw environment value in the snapshot.
+    ///
+    /// Windows environment variable names are case-insensitive, so a
+    /// mixed-case spelling such as `Path` still resolves there, matching the
+    /// previous `std::env` behaviour. Unix names stay exact-case.
+    fn lookup_env(&self, key: &str) -> Option<&str> {
+        if let Some(value) = self.env_vars.get(key) {
+            return Some(value.as_str());
+        }
+        #[cfg(windows)]
+        {
+            self.env_vars
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(key))
+                .map(|(_, value)| value.as_str())
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
+    }
+
     /// Get a value from the snapshot, preferring env vars over injected secrets.
     ///
     /// Empty strings are treated as unset so they do not block fallback lookup.
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.env_vars
-            .get(key)
+        self.lookup_env(key)
             .filter(|value| !value.is_empty())
-            .map(String::as_str)
             .or_else(|| {
                 self.secrets
                     .get(key)
@@ -100,12 +120,15 @@ impl EnvContext {
     /// Unlike [`Self::contains_key`], this ignores the secret overlay and does
     /// not treat an empty environment value as absent.
     pub(crate) fn contains_env_var(&self, key: &str) -> bool {
-        self.env_vars.contains_key(key)
+        self.lookup_env(key).is_some()
     }
 
     /// Raw environment value for `key`, including empty strings; ignores secrets.
+    ///
+    /// Windows lookups are case-insensitive, so a captured `Path` entry is
+    /// found when callers ask for `PATH`.
     pub(crate) fn env_var_raw(&self, key: &str) -> Option<&str> {
-        self.env_vars.get(key).map(String::as_str)
+        self.lookup_env(key)
     }
 
     /// Add or replace an env var in the snapshot.
@@ -282,6 +305,16 @@ mod tests {
 
         assert!(ctx.contains_env_var("EMPTY_BACKEND"));
         assert!(!ctx.contains_env_var("SECRET_BACKEND"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn lookup_is_case_insensitive_on_windows() {
+        let ctx = EnvContext::default().with_env("Path", r"C:\Windows\System32");
+
+        assert_eq!(ctx.get("PATH"), Some(r"C:\Windows\System32"));
+        assert!(ctx.contains_env_var("PATH"));
+        assert_eq!(ctx.env_var_raw("PATH"), Some(r"C:\Windows\System32"));
     }
 
     #[test]

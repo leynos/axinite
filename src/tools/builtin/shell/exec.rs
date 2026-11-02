@@ -77,7 +77,10 @@ impl ShellTool {
         // session tokens, credentials) is stripped from child processes.
         command.env_clear();
         for var in SAFE_ENV_VARS {
-            if let Some(val) = self.env.get(var) {
+            // Forward the raw snapshot value, including an explicitly empty
+            // one: `PATH=""` is a deliberate scrubbing choice, and dropping it
+            // would let the child fall back to a default search path.
+            if let Some(val) = self.env.env_var_raw(var) {
                 command.env(var, val);
             }
         }
