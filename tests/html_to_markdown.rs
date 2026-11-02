@@ -186,6 +186,7 @@ proptest! {
 }
 
 #[test]
+/// Convert every page under `tests/test-pages` and compare it with its expected Markdown.
 fn convert_test_pages_to_markdown() {
     let test_pages = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

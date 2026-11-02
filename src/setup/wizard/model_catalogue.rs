@@ -237,6 +237,7 @@ pub(super) fn is_openai_chat_model(model_id: &str) -> bool {
     is_chat_family(&id) && !is_non_chat_variant(&id)
 }
 
+/// Rank an OpenAI model id so the catalogue lists preferred models first.
 fn openai_model_priority(model_id: &str) -> usize {
     let id = model_id.to_ascii_lowercase();
 

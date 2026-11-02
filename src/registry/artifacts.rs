@@ -51,6 +51,8 @@ fn repo_shared_target_dir(crate_dir: &Path) -> Option<PathBuf> {
     shared.exists().then_some(shared)
 }
 
+/// List the cargo target directories to search, ordered by preference and
+/// deduplicated.
 fn candidate_target_dirs_from(crate_dir: &Path, ctx: &EnvContext) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 

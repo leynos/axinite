@@ -131,6 +131,7 @@ pub async fn setup_orchestrator_from_context(
     }
 }
 
+/// Probe Docker when the sandbox is enabled and log why it is unavailable.
 async fn detect_docker_status(sandbox_enabled: bool) -> crate::sandbox::DockerStatus {
     if sandbox_enabled {
         let detection = crate::sandbox::check_docker().await;

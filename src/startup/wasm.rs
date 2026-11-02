@@ -135,6 +135,7 @@ fn empty_wasm_channels_init() -> WasmChannelsInit {
     }
 }
 
+/// Check that the configured WASM channels directory exists and is readable.
 async fn validate_wasm_channels_dir(config: &Config) -> bool {
     let metadata = match tokio::fs::metadata(&config.channels.wasm_channels_dir).await {
         Ok(metadata) => ambient_fs::Metadata::from_std(metadata),

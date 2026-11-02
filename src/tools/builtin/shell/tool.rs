@@ -113,6 +113,7 @@ impl NativeTool for ShellTool {
         "shell"
     }
 
+    /// Describe shell execution and its sandbox and timeout behaviour.
     fn description(&self) -> &str {
         "Execute shell commands. Use for running builds, tests, git operations, and other CLI tasks. \
          Commands run in a subprocess with captured output. Long-running commands have a timeout. \

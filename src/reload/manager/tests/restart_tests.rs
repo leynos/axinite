@@ -322,6 +322,7 @@ async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
 }
 
 #[tokio::test]
+/// Verify that listener restart retries each candidate address until one succeeds.
 async fn maybe_restart_listener_retries_multiple_candidates_until_success()
 -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");

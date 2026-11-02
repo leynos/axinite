@@ -58,6 +58,8 @@ fn is_invalid_project_id(project_id: &str) -> bool {
     has_path_separator || is_traversal_or_empty
 }
 
+/// Serve a file from a project directory after validating the project ID and
+/// confirming the canonical path stays inside the project root.
 async fn serve_project_file(project_id: &str, path: &str) -> axum::response::Response {
     if is_invalid_project_id(project_id) {
         return (StatusCode::BAD_REQUEST, "Invalid project ID").into_response();
