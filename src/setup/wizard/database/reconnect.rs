@@ -65,7 +65,7 @@ impl SetupWizard {
             .env_context
             .get_owned("LIBSQL_PATH")
             .unwrap_or_else(|| {
-                crate::config::default_libsql_path()
+                crate::config::default_libsql_path_in(&self.env_context.axinite_base_dir())
                     .to_string_lossy()
                     .to_string()
             });

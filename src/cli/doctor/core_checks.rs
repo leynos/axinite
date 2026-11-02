@@ -4,7 +4,6 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -12,8 +11,8 @@ use super::CheckResult;
 
 // ── Settings file ───────────────────────────────────────────
 
-pub(super) fn check_settings_file() -> CheckResult {
-    let path = Settings::default_path();
+pub(super) fn check_settings_file(ctx: &EnvContext) -> CheckResult {
+    let path = ctx.axinite_base_dir().join("settings.json");
     if !path.exists() {
         return CheckResult::Pass("no settings file (defaults will be used)".into());
     }
@@ -33,23 +32,18 @@ pub(super) fn check_settings_file() -> CheckResult {
 
 // ── NEAR AI session ─────────────────────────────────────────
 
-pub(super) async fn check_nearai_session() -> CheckResult {
-    let session_path = crate::config::llm::default_session_path();
+pub(super) async fn check_nearai_session(ctx: &EnvContext) -> CheckResult {
+    let session_path = ctx.axinite_base_dir().join("session.json");
     if !session_path.exists() {
-        return missing_session_result(&session_path);
+        return missing_session_result(ctx, &session_path);
     }
     verify_session_file(&session_path)
 }
 
 /// Result when no session file exists: pass in API-key mode, otherwise
 /// direct the user to onboarding.
-fn missing_session_result(session_path: &std::path::Path) -> CheckResult {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("NEARAI_API_KEY")
-    }
-    .is_ok()
-    {
+fn missing_session_result(ctx: &EnvContext, session_path: &std::path::Path) -> CheckResult {
+    if ctx.contains_env_var("NEARAI_API_KEY") {
         return CheckResult::Pass("API key configured".into());
     }
     CheckResult::Fail(format!(
@@ -94,7 +88,7 @@ pub(super) async fn check_database_with_context(ctx: &EnvContext) -> CheckResult
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => check_libsql_database(ctx),
-        _ => check_postgres_database().await,
+        _ => check_postgres_database(ctx).await,
     }
 }
 
@@ -103,7 +97,7 @@ fn check_libsql_database(ctx: &EnvContext) -> CheckResult {
     let path = ctx
         .get_owned("LIBSQL_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(crate::config::default_libsql_path);
+        .unwrap_or_else(|| crate::config::default_libsql_path_in(&ctx.axinite_base_dir()));
 
     if path.exists() {
         CheckResult::Pass(format!("libSQL database exists ({})", path.display()))
@@ -116,17 +110,12 @@ fn check_libsql_database(ctx: &EnvContext) -> CheckResult {
 }
 
 /// Attempt a PostgreSQL connection, or report the missing `DATABASE_URL`.
-async fn check_postgres_database() -> CheckResult {
-    if {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("DATABASE_URL")
-    }
-    .is_err()
-    {
+async fn check_postgres_database(ctx: &EnvContext) -> CheckResult {
+    if ctx.get("DATABASE_URL").is_none() {
         return CheckResult::Fail("DATABASE_URL not set".into());
     }
 
-    match try_pg_connect().await {
+    match try_pg_connect(ctx).await {
         Ok(()) => CheckResult::Pass("PostgreSQL connected".into()),
         Err(e) => CheckResult::Fail(format!("PostgreSQL connection failed: {e}")),
     }
@@ -135,18 +124,16 @@ async fn check_postgres_database() -> CheckResult {
 /// Acquire a PostgreSQL client from `DATABASE_URL` with a 5-second
 /// connection timeout. Shared by the connection and pgvector checks.
 #[cfg(feature = "postgres")]
-async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
-    let url = {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("DATABASE_URL")
-    }
-    .map_err(|_| "DATABASE_URL not set".to_string())?;
+async fn pg_client_from_env(ctx: &EnvContext) -> Result<deadpool_postgres::Client, String> {
+    let url = ctx
+        .get("DATABASE_URL")
+        .ok_or_else(|| "DATABASE_URL not set".to_string())?;
 
     let config = deadpool_postgres::Config {
-        url: Some(url),
+        url: Some(url.to_string()),
         ..Default::default()
     };
-    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
+    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_context(ctx))
         .map_err(|e| format!("pool error: {e}"))?;
 
     tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
@@ -156,8 +143,8 @@ async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
 }
 
 #[cfg(feature = "postgres")]
-async fn try_pg_connect() -> Result<(), String> {
-    let client = pg_client_from_env().await?;
+async fn try_pg_connect(ctx: &EnvContext) -> Result<(), String> {
+    let client = pg_client_from_env(ctx).await?;
 
     client
         .execute("SELECT 1", &[])
@@ -168,7 +155,7 @@ async fn try_pg_connect() -> Result<(), String> {
 }
 
 #[cfg(not(feature = "postgres"))]
-async fn try_pg_connect() -> Result<(), String> {
+async fn try_pg_connect(_ctx: &EnvContext) -> Result<(), String> {
     Err("postgres feature not compiled in".into())
 }
 
@@ -186,7 +173,7 @@ pub(super) async fn check_workspace_search_with_context(ctx: &EnvContext) -> Che
             #[cfg(feature = "postgres")]
             {
                 if ctx.get("DATABASE_URL").is_some() {
-                    match try_pgvector_check().await {
+                    match try_pgvector_check(ctx).await {
                         Ok(()) => CheckResult::Pass("hybrid search (pgvector)".into()),
                         Err(e) => {
                             CheckResult::Fail(format!("pgvector extension check failed: {}", e))
@@ -205,8 +192,8 @@ pub(super) async fn check_workspace_search_with_context(ctx: &EnvContext) -> Che
 }
 
 #[cfg(feature = "postgres")]
-async fn try_pgvector_check() -> Result<(), String> {
-    let client = pg_client_from_env().await?;
+async fn try_pgvector_check(ctx: &EnvContext) -> Result<(), String> {
+    let client = pg_client_from_env(ctx).await?;
 
     // Check if pgvector extension is available
     let row = client
@@ -220,8 +207,8 @@ async fn try_pgvector_check() -> Result<(), String> {
 
 // ── Workspace directory ─────────────────────────────────────
 
-pub(super) fn check_workspace_dir() -> CheckResult {
-    let dir = axinite_base_dir();
+pub(super) fn check_workspace_dir(ctx: &EnvContext) -> CheckResult {
+    let dir = ctx.axinite_base_dir();
 
     if dir.exists() {
         if dir.is_dir() {

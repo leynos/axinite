@@ -20,54 +20,54 @@ use subsystem_checks::{
     check_skills,
 };
 
+use crate::config::EnvContext;
 use crate::settings::Settings;
 
 async fn run_core_checks(
+    env_context: &EnvContext,
     settings: &Settings,
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
 ) {
-    let env_context = crate::bootstrap::capture_config_env_context();
-
     check(
         "Settings file",
-        check_settings_file(),
+        check_settings_file(env_context),
         passed,
         failed,
         skipped,
     );
     check(
         "NEAR AI session",
-        check_nearai_session().await,
+        check_nearai_session(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "LLM configuration",
-        check_llm_config_with_context(&env_context, settings),
+        check_llm_config_with_context(env_context, settings),
         passed,
         failed,
         skipped,
     );
     check(
         "Database backend",
-        check_database_with_context(&env_context).await,
+        check_database_with_context(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "Workspace search",
-        check_workspace_search_with_context(&env_context).await,
+        check_workspace_search_with_context(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "Workspace directory",
-        check_workspace_dir(),
+        check_workspace_dir(env_context),
         passed,
         failed,
         skipped,
@@ -159,10 +159,19 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     let mut failed = 0u32;
     let mut skipped = 0u32;
 
-    // Load settings once for checks that need them.
-    let settings = Settings::load();
+    // Capture the environment once and derive settings from the same snapshot
+    // so every check observes a consistent view.
+    let env_context = crate::bootstrap::capture_config_env_context();
+    let settings = Settings::load_from(&env_context.axinite_base_dir().join("settings.json"));
 
-    run_core_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
+    run_core_checks(
+        &env_context,
+        &settings,
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+    )
+    .await;
     run_subsystem_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
     run_external_binary_checks(&mut passed, &mut failed, &mut skipped).await;
 

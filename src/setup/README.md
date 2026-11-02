@@ -41,15 +41,24 @@ ______________________________________________________________________
 3. If Command::Run or no command:
    a. Load .env files (dotenvy::dotenv() then load_axinite_env())
    b. check_onboard_needed() → run wizard if needed
-   c. Config::from_env()     → build config from env vars
-   d. Create SessionManager  → load session token
-   e. ensure_authenticated() → validate session (NEAR AI only)
-   f. ... rest of agent startup
+   c. Capture EnvContext     → snapshot env vars and injected secrets
+   d. Config::from_context_with_optional_toml(&ctx, ...) → build config
+   e. Create SessionManager  → load session token
+   f. ensure_authenticated() → validate session (NEAR AI only)
+   g. ... rest of agent startup
 ```
 
-**Critical ordering:** `.env` files must be loaded (step 3a) before
-`Config::from_env()` (step 3c) because bootstrap vars like `DATABASE_BACKEND`
-live in `~/.axinite/.env`.
+**Critical ordering:** `.env` files must be loaded (step 3a) before the
+`EnvContext` snapshot is captured (step 3c) because bootstrap vars like
+`DATABASE_BACKEND` live in `~/.axinite/.env`.
+
+**Environment access:** startup captures the ambient environment once and
+threads the resulting `EnvContext` through composition. Constructors such as
+`SetupWizard::with_env_context` and `with_config_and_env_context` accept an
+explicit snapshot, and setup lookups (`default_libsql_path_in`,
+`upsert_bootstrap_vars_to`, `compute_axinite_base_dir_from`) derive paths from
+that snapshot rather than re-reading the process environment. Tests build an
+`EnvContext` directly and never mutate the process environment.
 
 ______________________________________________________________________
 

@@ -37,6 +37,7 @@ pub use self::agent::AgentConfig;
 pub use self::builder::BuilderModeConfig;
 pub use self::channels::{ChannelsConfig, CliConfig, GatewayConfig, HttpConfig, SignalConfig};
 pub use self::context::{EnvContext, LlmResolutionContext};
+pub(crate) use self::database::default_libsql_path_in;
 pub use self::database::{DatabaseBackend, DatabaseConfig, SslMode, default_libsql_path};
 pub use self::embeddings::EmbeddingsConfig;
 pub use self::heartbeat::HeartbeatConfig;
@@ -207,7 +208,12 @@ impl Config {
             }
         };
 
-        let merged = runtime_support::merged_settings_with_toml(&db_settings, toml_path)?;
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged = runtime_support::merged_settings_with_toml_or_default(
+            &db_settings,
+            toml_path,
+            &default_toml,
+        )?;
         Self::from_context(ctx, &merged).await
     }
 
@@ -238,8 +244,10 @@ impl Config {
     ///
     /// Use this at reload boundaries that already own a current [`EnvContext`].
     pub async fn from_env_from_context(ctx: &EnvContext) -> Result<Self, ConfigError> {
-        let settings = Settings::load();
-        let merged = runtime_support::merged_settings_with_toml(&settings, None)?;
+        let settings = Settings::load_from(&ctx.axinite_base_dir().join("settings.json"));
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged =
+            runtime_support::merged_settings_with_toml_or_default(&settings, None, &default_toml)?;
         Self::from_context(ctx, &merged).await
     }
 
@@ -319,7 +327,26 @@ impl Config {
         settings: &Settings,
         toml_path: &std::path::Path,
     ) -> Result<Self, ConfigError> {
-        let merged = runtime_support::merged_settings_with_toml(settings, Some(toml_path))?;
+        Self::from_context_with_optional_toml(ctx, settings, Some(toml_path)).await
+    }
+
+    /// Build config from an explicit context with an optional TOML overlay.
+    ///
+    /// `Some(path)` merges that file (a missing explicit file is an error).
+    /// `None` merges `<base_dir>/config.toml` when it exists, where `base_dir`
+    /// comes from the snapshot. This keeps startup configuration consistent
+    /// with the reload path, which also applies the default overlay.
+    pub async fn from_context_with_optional_toml(
+        ctx: &EnvContext,
+        settings: &Settings,
+        toml_path: Option<&std::path::Path>,
+    ) -> Result<Self, ConfigError> {
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged = runtime_support::merged_settings_with_toml_or_default(
+            settings,
+            toml_path,
+            &default_toml,
+        )?;
         Self::from_context(ctx, &merged).await
     }
 

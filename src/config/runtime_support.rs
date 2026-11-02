@@ -13,8 +13,24 @@ pub(crate) fn merged_settings_with_toml(
     base: &Settings,
     toml_path: Option<&std::path::Path>,
 ) -> Result<Settings, ConfigError> {
+    merged_settings_with_toml_or_default(base, toml_path, &Settings::default_toml_path())
+}
+
+/// Merge an optional TOML overlay, using `default_path` when none is explicit.
+///
+/// An explicit path must exist; a missing default path is silently skipped.
+/// Snapshot-based callers pass a default derived from [`EnvContext`] so the
+/// overlay follows the same base directory as the rest of the snapshot.
+pub(crate) fn merged_settings_with_toml_or_default(
+    base: &Settings,
+    toml_path: Option<&std::path::Path>,
+    default_path: &std::path::Path,
+) -> Result<Settings, ConfigError> {
     let mut merged = base.clone();
-    apply_toml_overlay(&mut merged, toml_path)?;
+    match toml_path {
+        Some(path) => apply_toml_overlay_at(&mut merged, path, false)?,
+        None => apply_toml_overlay_at(&mut merged, default_path, true)?,
+    }
     Ok(merged)
 }
 

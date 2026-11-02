@@ -103,6 +103,68 @@ async fn from_context_with_toml_merges_settings_before_resolution() {
 }
 
 #[tokio::test]
+async fn from_context_with_optional_toml_applies_default_overlay_when_none() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let base_dir = dir.path().join("axinite-home");
+    fs::create_dir_all(&base_dir).expect("create base dir");
+    fs::write(
+        base_dir.join("config.toml"),
+        concat!("[heartbeat]\n", "enabled = true\n", "interval_secs = 900\n"),
+    )
+    .expect("write default TOML overlay");
+
+    let settings = Settings::default();
+    let ctx = base_context(&base_dir);
+    let config = Config::from_context_with_optional_toml(&ctx, &settings, None)
+        .await
+        .expect("context plus default TOML should resolve");
+
+    assert!(
+        config.heartbeat.enabled,
+        "omitting an explicit TOML path must still apply <base_dir>/config.toml"
+    );
+    assert_eq!(config.heartbeat.interval_secs, 900);
+}
+
+#[tokio::test]
+async fn from_context_with_optional_toml_ignores_absent_default_overlay() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let base_dir = dir.path().join("axinite-home");
+    fs::create_dir_all(&base_dir).expect("create base dir");
+
+    let settings = Settings::default();
+    let ctx = base_context(&base_dir);
+    let config = Config::from_context_with_optional_toml(&ctx, &settings, None)
+        .await
+        .expect("absent default TOML must not be fatal");
+
+    assert!(!config.heartbeat.enabled);
+}
+
+#[tokio::test]
+async fn from_env_from_context_loads_settings_from_snapshot_base_dir() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let base_dir = dir.path().join("axinite-home");
+    fs::create_dir_all(&base_dir).expect("create base dir");
+    fs::write(
+        base_dir.join("settings.json"),
+        r#"{"agent": {"name": "snapshot-agent"}}"#,
+    )
+    .expect("write snapshot settings");
+
+    let ctx = base_context(&base_dir);
+    let config = Config::from_env_from_context(&ctx)
+        .await
+        .expect("snapshot settings should resolve");
+
+    assert_eq!(
+        config.agent.name, "snapshot-agent",
+        "reload must read settings.json from the snapshot's base directory, \
+         not the ambient one"
+    );
+}
+
+#[tokio::test]
 async fn re_resolve_llm_from_rebuilds_llm_against_updated_snapshot() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let base_dir = dir.path().join("axinite-home");

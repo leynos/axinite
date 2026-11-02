@@ -196,9 +196,10 @@ impl SetupWizard {
         print_info("No external database server required.");
         println!();
 
-        let default_path_str = crate::config::default_libsql_path()
-            .to_string_lossy()
-            .to_string();
+        let default_path_str =
+            crate::config::default_libsql_path_in(&self.env_context.axinite_base_dir())
+                .to_string_lossy()
+                .to_string();
         let path_input = optional_input(
             "Database file path",
             Some(&format!("default: {}", default_path_str)),

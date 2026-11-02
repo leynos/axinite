@@ -111,6 +111,6 @@ pub use schema::{
 };
 pub use setup::{
     WasmChannelSetup, WasmChannelSetupRequest, inject_channel_credentials,
-    inject_channel_credentials_from_context, setup_wasm_channels, setup_wasm_channels_from_context,
+    inject_channel_credentials_from_context, setup_wasm_channels_from_context,
 };
 pub use wrapper::{HttpResponse, RespondInvocation, SharedWasmChannel, WasmChannel};

@@ -44,6 +44,9 @@ where
 pub struct DbSecretInjector {
     secrets_store: Arc<dyn SecretsStore + Send + Sync>,
     user_id: UserId,
+    /// Last value successfully injected, retained so a transient retrieval
+    /// error cannot downgrade the live credential to the startup snapshot.
+    last_successful: tokio::sync::Mutex<Option<String>>,
 }
 
 impl DbSecretInjector {
@@ -57,6 +60,7 @@ impl DbSecretInjector {
         Self {
             secrets_store,
             user_id,
+            last_successful: tokio::sync::Mutex::new(None),
         }
     }
 }
@@ -71,7 +75,10 @@ impl DbSecretInjector {
     /// Inject HTTP webhook secret from encrypted store.
     ///
     /// If the secret does not exist, logs and clears the snapshot entry — absence is not an error.
-    /// Other errors are logged but do not fail the reload.
+    /// Other errors are logged but do not fail the reload. In that case the
+    /// last successfully injected value is re-applied, so a transient store or
+    /// decryption failure cannot replace the live credential with the startup
+    /// snapshot (which may be absent, disabling webhook authentication).
     async fn inject_webhook_secret(&self, ctx: &mut EnvContext) {
         let webhook_secret = match self
             .secrets_store
@@ -80,6 +87,7 @@ impl DbSecretInjector {
         {
             Ok(s) => s,
             Err(SecretError::NotFound(_)) => {
+                *self.last_successful.lock().await = None;
                 ctx.remove_secret(HTTP_WEBHOOK_SECRET_KEY);
                 tracing::debug!(
                     "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared snapshot entry"
@@ -88,11 +96,21 @@ impl DbSecretInjector {
             }
             Err(e) => {
                 tracing::error!("Failed to inject {HTTP_WEBHOOK_SECRET_KEY}: {e}");
+                let previous = self.last_successful.lock().await.clone();
+                if let Some(previous) = previous {
+                    ctx.inject_secret(HTTP_WEBHOOK_SECRET_KEY, previous);
+                    tracing::warn!(
+                        "Retained last successfully injected {HTTP_WEBHOOK_SECRET_KEY} \
+                         after retrieval error"
+                    );
+                }
                 return;
             }
         };
 
-        ctx.inject_secret(HTTP_WEBHOOK_SECRET_KEY, webhook_secret.expose());
+        let value = webhook_secret.expose().to_string();
+        *self.last_successful.lock().await = Some(value.clone());
+        ctx.inject_secret(HTTP_WEBHOOK_SECRET_KEY, value);
         tracing::debug!("Injected {HTTP_WEBHOOK_SECRET_KEY} from secrets store");
     }
 }
@@ -261,6 +279,68 @@ mod tests {
             ctx.get(HTTP_WEBHOOK_SECRET_KEY),
             None,
             "inject() should clear the snapshot when the secret is removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn db_secret_injector_reapplies_last_successful_secret_after_store_error() {
+        let mut mock = MockSyncSecretsStore::new();
+        let mut sequence = mockall::Sequence::new();
+        mock.expect_get_decrypted()
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning(|_, _| {
+                Ok(DecryptedSecret::from_bytes(b"rotated-secret".to_vec())
+                    .expect("test secret should decode"))
+            });
+        mock.expect_get_decrypted()
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning(|_, _| Err(SecretError::Database("transient failure".to_string())));
+        mock.expect_get_decrypted()
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning(|_, _| Err(SecretError::NotFound(SECRETS_STORE_KEY.to_string())));
+        mock.expect_get_decrypted()
+            .times(1)
+            .in_sequence(&mut sequence)
+            .returning(|_, _| Err(SecretError::Database("transient failure".to_string())));
+
+        let store: Arc<dyn SecretsStore + Send + Sync> = Arc::new(MockSecretsStore::new(mock));
+        let injector = DbSecretInjector::new(store, UserId::from("test_user"));
+
+        let mut first_cycle = EnvContext::default();
+        NativeSecretInjector::inject(&injector, &mut first_cycle).await;
+        assert_eq!(
+            first_cycle.get(HTTP_WEBHOOK_SECRET_KEY),
+            Some("rotated-secret")
+        );
+
+        // Each reload cycle starts from a fresh snapshot that does not carry
+        // the previous cycle's injected value.
+        let mut second_cycle = EnvContext::default();
+        NativeSecretInjector::inject(&injector, &mut second_cycle).await;
+        assert_eq!(
+            second_cycle.get(HTTP_WEBHOOK_SECRET_KEY),
+            Some("rotated-secret"),
+            "a transient store error must re-apply the last successfully injected secret"
+        );
+
+        let mut third_cycle =
+            EnvContext::default().with_secret(HTTP_WEBHOOK_SECRET_KEY, "stale-secret");
+        NativeSecretInjector::inject(&injector, &mut third_cycle).await;
+        assert_eq!(
+            third_cycle.get(HTTP_WEBHOOK_SECRET_KEY),
+            None,
+            "a missing secret must clear both the snapshot entry and the retained value"
+        );
+
+        let mut fourth_cycle = EnvContext::default();
+        NativeSecretInjector::inject(&injector, &mut fourth_cycle).await;
+        assert_eq!(
+            fourth_cycle.get(HTTP_WEBHOOK_SECRET_KEY),
+            None,
+            "a cleared secret must not be resurrected by a later store error"
         );
     }
 
