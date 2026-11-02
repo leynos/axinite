@@ -466,7 +466,10 @@ def test_macos_deployment_target_parser_reads_otool_output(
     evidence = _step(local, "Record macOS toolchain and binary evidence")
     program = _deployment_target_awk(evidence.run)
     otool_output = f"Load command 12\n      cmd {load_command}\n"
-    assert _read_deployment_target(program, otool_output) == expected
+    failure_message = (
+        f"expected parsed deployment data {expected!r} for {load_command!r}"
+    )
+    assert _read_deployment_target(program, otool_output) == expected, failure_message
 
 
 @pytest.mark.parametrize(
@@ -484,7 +487,9 @@ def test_macos_evidence_step_maps_each_apple_target_to_its_architecture(
     evidence = _step(local, "Record macOS toolchain and binary evidence")
     finished = _expected_architecture(_architecture_case(evidence.run), target)
     assert finished.returncode == 0, finished.stderr
-    assert finished.stdout == expected_arch
+    assert finished.stdout == expected_arch, (
+        f"expected architecture {expected_arch!r}, got {finished.stdout!r}"
+    )
 
 
 def test_macos_evidence_step_rejects_an_unplanned_apple_target(
@@ -495,8 +500,8 @@ def test_macos_evidence_step_rejects_an_unplanned_apple_target(
     evidence = _step(local, "Record macOS toolchain and binary evidence")
     case_block = _architecture_case(evidence.run)
     finished = _expected_architecture(case_block, "aarch64-apple-ios")
-    assert finished.returncode == 1
-    assert "unexpected macOS release target" in finished.stderr
+    assert finished.returncode == 1, finished.stderr
+    assert "unexpected macOS release target" in finished.stderr, finished.stderr
 
 
 @pytest.mark.parametrize("case", APPLE_EVIDENCE_CASES, ids=lambda case: case.target)
@@ -545,8 +550,8 @@ def test_macos_evidence_step_rejects_a_mismatched_architecture(
             archs="x86_64", otool_output=f"Load command 10\n{ARM64_LOAD_COMMAND}"
         ),
     )
-    assert finished.returncode == 1
-    assert "expected arm64, found x86_64" in finished.stderr
+    assert finished.returncode == 1, finished.stderr
+    assert "expected arm64, found x86_64" in finished.stderr, finished.stderr
 
 
 def test_macos_evidence_step_rejects_a_binary_without_a_deployment_target(
@@ -562,8 +567,8 @@ def test_macos_evidence_step_rejects_a_binary_without_a_deployment_target(
             otool_output="Load command 10\n      cmd LC_UUID\n  cmdsize 24\n",
         ),
     )
-    assert finished.returncode == 1
-    assert "no deployment target" in finished.stderr
+    assert finished.returncode == 1, finished.stderr
+    assert "no deployment target" in finished.stderr, finished.stderr
 
 
 def test_macos_evidence_step_requires_the_packaged_archive(
@@ -580,8 +585,8 @@ def test_macos_evidence_step_requires_the_packaged_archive(
             with_archive=False,
         ),
     )
-    assert finished.returncode == 1
-    assert "missing macOS package archive" in finished.stderr
+    assert finished.returncode == 1, finished.stderr
+    assert "missing macOS package archive" in finished.stderr, finished.stderr
 
 
 def test_macos_evidence_step_requires_the_packaged_executable(
@@ -598,8 +603,8 @@ def test_macos_evidence_step_requires_the_packaged_executable(
             with_executable=False,
         ),
     )
-    assert finished.returncode == 1
-    assert "no axinite executable" in finished.stderr
+    assert finished.returncode == 1, finished.stderr
+    assert "no axinite executable" in finished.stderr, finished.stderr
 
 
 @pytest.mark.parametrize("failing_tool", ["uname", "xcode-select", "xcrun", "otool"])
@@ -617,8 +622,8 @@ def test_macos_evidence_step_fails_when_a_toolchain_command_fails(
             failing_tool=failing_tool,
         ),
     )
-    assert finished.returncode == 1
-    assert f"stub {failing_tool} failed" in finished.stderr
+    assert finished.returncode == 1, finished.stderr
+    assert f"stub {failing_tool} failed" in finished.stderr, finished.stderr
 
 
 @pytest.mark.parametrize(
