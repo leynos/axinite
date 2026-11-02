@@ -2157,14 +2157,14 @@ later.
 
 Startup owns exactly one environment snapshot. `phase_prepare` captures it
 once, onboarding may merge additional values into it, and
-`phase_load_config_and_tracing_from` loads configuration from that snapshot
-with `Config::from_context` rather than rereading process state.
+`phase_load_config_and_tracing_from` loads configuration from that snapshot with
+`Config::from_context` rather than rereading process state.
 
 `AppBuilder::new_with_context(params, env_context)` accepts that snapshot and
 `build_components_with_context()` returns the updated snapshot alongside the
-components and side effects. The returned snapshot is the one propagated to
-the orchestrator, gateway, reload manager, and channel setup, so every
-downstream consumer resolves environment-backed settings from the same inputs.
+components and side effects. The returned snapshot is the one propagated to the
+orchestrator, gateway, reload manager, and channel setup, so every downstream
+consumer resolves environment-backed settings from the same inputs.
 
 `AppBuilder::new(params)` remains for callers that do not already own a
 snapshot; it captures the ambient environment once and delegates to
