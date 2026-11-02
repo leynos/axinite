@@ -41,6 +41,8 @@ fn default_channels_dir(ctx: &EnvContext) -> PathBuf {
 fn db_backend_name(ctx: &EnvContext) -> String {
     crate::bootstrap::database_backend_name(ctx)
 }
+
+/// Print the libSQL database path and whether Turso sync is configured.
 fn print_libsql_status(ctx: &EnvContext) {
     let path = ctx
         .get("LIBSQL_PATH")
@@ -58,6 +60,8 @@ fn print_libsql_status(ctx: &EnvContext) {
     }
 }
 
+/// Print the database backend and, for PostgreSQL, whether a connection
+/// succeeds.
 async fn print_database_status(ctx: &EnvContext, db_backend: &str) {
     print!("  Database:    ");
     match db_backend {
@@ -96,6 +100,8 @@ fn print_session_status(ctx: &EnvContext) {
         println!("not found (run `axinite onboard`)");
     }
 }
+
+/// Print whether a secrets master key is configured in the snapshot.
 fn print_secrets_status(ctx: &EnvContext) {
     // Secrets (auto-detect from env only; skip keychain probe to avoid
     // triggering macOS system password dialogs on a simple status check)
@@ -135,6 +141,7 @@ fn print_wasm_tools_status(tools_dir: &std::path::Path) {
     }
 }
 
+/// Print the enabled channels and the WASM channel directory.
 fn print_channels_status(ctx: &EnvContext, settings: &Settings) {
     print!("  Channels:    ");
     let channels_dir = settings

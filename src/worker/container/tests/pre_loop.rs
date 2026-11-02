@@ -71,6 +71,7 @@ enum PreLoopFailureCase {
     HydrateCredentials,
 }
 
+/// Wait for the first result event emitted by the runtime test state.
 async fn poll_result_event(state: &RuntimeTestState) -> serde_json::Value {
     let mut attempts = 0;
     loop {

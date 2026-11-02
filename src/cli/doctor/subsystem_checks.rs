@@ -13,6 +13,8 @@ pub(super) fn check_embeddings(settings: &Settings) -> CheckResult {
     check_embeddings_with_context(&EnvContext::capture_ambient(), settings)
 }
 
+/// Resolve the embeddings configuration from the supplied snapshot and report
+/// whether credentials are present.
 pub(super) fn check_embeddings_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
     let config = match crate::config::EmbeddingsConfig::resolve_from(ctx, settings) {
         Ok(config) => config,
@@ -67,6 +69,8 @@ pub(super) fn check_routines_config() -> CheckResult {
     check_routines_config_with_context(&EnvContext::capture_ambient())
 }
 
+/// Resolve the routine configuration from the supplied snapshot and report
+/// whether routines are enabled.
 pub(super) fn check_routines_config_with_context(ctx: &EnvContext) -> CheckResult {
     match crate::config::RoutineConfig::resolve_from(ctx) {
         Ok(config) => {
@@ -85,6 +89,7 @@ pub(super) fn check_routines_config_with_context(ctx: &EnvContext) -> CheckResul
 
 // ── Gateway config ──────────────────────────────────────────
 
+/// Report the gateway bind address and whether an auth token is configured.
 pub(super) fn check_gateway_config(settings: &Settings) -> CheckResult {
     // Use the same resolve() path as runtime so invalid env values
     // (e.g. GATEWAY_PORT=abc) are caught here too.
@@ -111,6 +116,7 @@ pub(super) fn check_gateway_config(settings: &Settings) -> CheckResult {
 
 // ── MCP servers ─────────────────────────────────────────────
 
+/// Load the MCP server configuration and validate every enabled server.
 pub(super) async fn check_mcp_config() -> CheckResult {
     let file = match crate::tools::mcp::config::load_mcp_servers().await {
         Ok(file) => file,
@@ -179,6 +185,8 @@ pub(super) async fn check_skills() -> CheckResult {
 }
 
 // ── Secrets ─────────────────────────────────────────────────
+
+/// Report the configured secrets master-key source and whether it is usable.
 pub(super) fn check_secrets(settings: &Settings) -> CheckResult {
     match settings.secrets_master_key_source {
         crate::settings::KeySource::Keychain => {

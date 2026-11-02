@@ -228,6 +228,8 @@ impl WorkerRuntime {
         Ok(())
     }
 
+    /// Fetch credentials from the orchestrator and install them as the child
+    /// process environment overlay.
     async fn hydrate_credentials(&mut self) -> Result<(), WorkerError> {
         let credentials = self.client.fetch_credentials().await?;
         let mut env_map = HashMap::new();

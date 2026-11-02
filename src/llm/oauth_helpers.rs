@@ -128,6 +128,8 @@ pub async fn bind_callback_listener_from(
     bind_callback_listener_for_host(&callback_host_from(ctx)).await
 }
 
+/// Bind the OAuth callback listener on the given host, rejecting wildcard
+/// addresses and reporting port conflicts explicitly.
 async fn bind_callback_listener_for_host(host: &str) -> Result<TcpListener, OAuthCallbackError> {
     if is_wildcard_host(host) {
         return Err(OAuthCallbackError::Io(format!(

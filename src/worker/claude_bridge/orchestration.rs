@@ -99,6 +99,8 @@ impl ClaudeBridgeRuntime {
         self.has_copied_auth().await
     }
 
+    /// Fetch the job description and the credentials to inject into the child
+    /// process environment.
     async fn fetch_job_and_env(&self) -> Result<(String, HashMap<String, String>), WorkerError> {
         let job = self.client.get_job().await?;
         tracing::info!(

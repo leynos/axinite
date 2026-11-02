@@ -177,6 +177,29 @@ If a hosted-visible remote tool is selected, the worker sends one generic
 execution request to the orchestrator rather than using tool-family-specific
 proxy routes.
 
+## Configuration reload
+
+On Unix, Axinite reloads configuration without a restart when it receives
+`SIGHUP`; on every platform the same reload sequence is available to code that
+drives the hot-reload manager directly. A reload:
+
+1. applies secrets supplied by the configured secret injector;
+2. loads the new configuration from the settings source in use; and
+3. restarts the HTTP listener when its bind address changed, starts it when
+   `channels.http` is added, and stops it when `channels.http` is removed.
+
+A reload never rereads process environment variables or `.env` files. Every
+reload starts from the environment snapshot captured once at startup, so
+environment-backed settings such as `HTTP_HOST`, `HTTP_PORT`, API keys, and
+other `*_ENV`-style overrides keep their startup values until the process
+restarts. To apply a change to any of those settings, edit the environment of
+the service unit and restart the daemon rather than signalling it.
+
+Settings that live in the database, and secrets delivered by the injector,
+follow the reload path and take effect without a restart. If a reload fails,
+Axinite keeps serving the previous configuration; check the daemon log for the
+reported error before restarting.
+
 ## HTML-to-Markdown conversion for HTTP responses
 
 When the built-in `http` tool fetches an HTML response, Axinite converts it to
@@ -318,7 +341,10 @@ curl -X PUT http://127.0.0.1:3000/api/settings/feature_flag:route_logs \
 The value must be a JSON boolean or the string `"true"` or `"false"`
 (case-insensitive). Flag names use lowercase letters, digits, and underscores.
 The gateway stores overrides per deployment and applies writes without a
-restart. Environment variables take precedence over stored values. To remove a
+restart. `FEATURE_FLAG_<NAME>` environment variables in the startup
+environment snapshot take precedence over stored values; as with other
+environment-backed settings, changing them requires a process restart rather
+than a reload. To remove a
 persisted override, delete its row from `feature_flag_overrides`, then restart
 each gateway process that has cached that deployment. Deleting the row alone
 does not clear its in-memory override. The settings `DELETE` route rejects

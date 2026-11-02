@@ -21,6 +21,7 @@ use axinite::{
 
 #[tokio::test]
 #[ignore] // Requires running database and LLM credentials
+/// Exercise the heartbeat end to end against a live database and LLM.
 async fn test_heartbeat_end_to_end() {
     // This test does not load `.env` files. Export `DATABASE_URL` and the LLM
     // credentials in the process environment before running it.

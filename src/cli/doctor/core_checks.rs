@@ -11,6 +11,7 @@ use super::CheckResult;
 
 // ── Settings file ───────────────────────────────────────────
 
+/// Report whether the settings file is absent, valid, or malformed.
 pub(super) fn check_settings_file(ctx: &EnvContext) -> CheckResult {
     let path = ctx.axinite_base_dir().join("settings.json");
     if !path.exists() {
@@ -65,6 +66,8 @@ fn verify_session_file(session_path: &std::path::Path) -> CheckResult {
 
 // ── LLM configuration ──────────────────────────────────────
 
+/// Resolve the LLM configuration from the supplied snapshot and report the
+/// active backend and model.
 pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
     match crate::llm::LlmConfig::resolve_from(ctx, settings) {
         Ok(config) => {
@@ -160,6 +163,8 @@ async fn try_pg_connect(_ctx: &EnvContext) -> Result<(), String> {
 }
 
 // ── Workspace search ────────────────────────────────────────
+
+/// Report the workspace search mode for the configured database backend.
 pub(super) async fn check_workspace_search_with_context(ctx: &EnvContext) -> CheckResult {
     let backend = crate::bootstrap::database_backend_name(ctx);
 
@@ -207,6 +212,7 @@ async fn try_pgvector_check(ctx: &EnvContext) -> Result<(), String> {
 
 // ── Workspace directory ─────────────────────────────────────
 
+/// Report whether the Axinite base directory exists and is a directory.
 pub(super) fn check_workspace_dir(ctx: &EnvContext) -> CheckResult {
     let dir = ctx.axinite_base_dir();
 

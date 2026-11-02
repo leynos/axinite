@@ -64,6 +64,8 @@ impl LogBroadcaster {
         }
     }
 
+    /// Scrub secrets from a log entry, retain it in the ring buffer, and
+    /// broadcast it to live subscribers.
     pub fn send(&self, mut entry: LogEntry) {
         // Scrub secrets from the message before it reaches any subscriber.
         // This is defence-in-depth: even if code elsewhere accidentally logs
@@ -251,6 +253,8 @@ impl MessageVisitor {
 }
 
 impl Visit for MessageVisitor {
+    /// Capture the `message` field as the entry text and record every other
+    /// field as a `name=value` pair.
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
             self.message = format!("{:?}", value);

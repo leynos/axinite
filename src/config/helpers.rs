@@ -78,6 +78,12 @@ pub(crate) fn optional_env_from(
 ) -> Result<Option<String>, ConfigError> {
     Ok(ctx.get_owned(key.as_str()))
 }
+
+/// Read an optional value from the ambient process environment, falling back
+/// to the injected-variable overlay.
+///
+/// Retained for legacy callers; new code should use [`optional_env_from`] with
+/// an explicit [`EnvContext`].
 pub(crate) fn optional_env(key: EnvKey) -> Result<Option<String>, ConfigError> {
     // Check real env vars first (always win over injected secrets)
     #[expect(
