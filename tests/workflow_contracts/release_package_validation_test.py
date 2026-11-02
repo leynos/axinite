@@ -13,6 +13,7 @@ import os
 import shlex
 import subprocess
 import tarfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -186,36 +187,37 @@ def _write_archive(workspace: Path, target: str) -> Path:
     return archive
 
 
-def _evidence_environment(
-    tmp_path: Path, archs: str, otool_output: str
-) -> dict[str, str]:
+@dataclass(frozen=True)
+class _MacOSFacts:
+    """The macOS facts the stand-in tools report for one package."""
+
+    archs: str
+    otool_output: str
+    with_archive: bool = True
+
+
+def _evidence_environment(tmp_path: Path, facts: _MacOSFacts) -> dict[str, str]:
     """Build an environment whose tools report the requested macOS facts."""
     _write_stub_tools(tmp_path / "bin")
     otool_file = tmp_path / "otool.txt"
-    otool_file.write_text(otool_output)
+    otool_file.write_text(facts.otool_output)
     environment = os.environ.copy()
     environment["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{environment['PATH']}"
-    environment["STUB_UNAME"] = archs
-    environment["STUB_RUSTC_HOST"] = f"{archs}-apple-darwin"
+    environment["STUB_UNAME"] = facts.archs
+    environment["STUB_RUSTC_HOST"] = f"{facts.archs}-apple-darwin"
     environment["STUB_SDK"] = "15.5"
-    environment["STUB_LIPO_ARCHS"] = archs
+    environment["STUB_LIPO_ARCHS"] = facts.archs
     environment["STUB_OTOOL_OUTPUT"] = str(otool_file)
     return environment
 
 
 def _run_evidence_step(
-    tmp_path: Path,
-    script: str,
-    target: str,
-    *,
-    archs: str,
-    otool_output: str,
-    with_archive: bool = True,
+    tmp_path: Path, script: str, target: str, facts: _MacOSFacts
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     """Execute the workflow's evidence step against stubbed macOS tools."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    if with_archive:
+    if facts.with_archive:
         _write_archive(workspace, target)
     program = script.replace(TARGET_EXPRESSION, target)
     assert program != script or TARGET_EXPRESSION not in script, (
@@ -224,7 +226,7 @@ def _run_evidence_step(
     finished = subprocess.run(  # noqa: S603 S607 - fixed bash, workflow-owned text
         ["bash", "-c", program],
         cwd=workspace,
-        env=_evidence_environment(tmp_path, archs, otool_output),
+        env=_evidence_environment(tmp_path, facts),
         check=False,
         capture_output=True,
         text=True,
@@ -475,8 +477,7 @@ def test_macos_evidence_step_records_a_complete_context(
         tmp_path,
         _evidence_script(workflow),
         target,
-        archs=arch,
-        otool_output=f"Load command 10\n{load_command}",
+        _MacOSFacts(archs=arch, otool_output=f"Load command 10\n{load_command}"),
     )
     assert finished.returncode == 0, finished.stderr
     context = (workspace / "validation-context.txt").read_text()
@@ -505,8 +506,9 @@ def test_macos_evidence_step_rejects_a_mismatched_architecture(
         tmp_path,
         _evidence_script(workflow),
         "aarch64-apple-darwin",
-        archs="x86_64",
-        otool_output=f"Load command 10\n{ARM64_LOAD_COMMAND}",
+        _MacOSFacts(
+            archs="x86_64", otool_output=f"Load command 10\n{ARM64_LOAD_COMMAND}"
+        ),
     )
     assert finished.returncode == 1
     assert "expected arm64, found x86_64" in finished.stderr
@@ -520,8 +522,10 @@ def test_macos_evidence_step_rejects_a_binary_without_a_deployment_target(
         tmp_path,
         _evidence_script(workflow),
         "aarch64-apple-darwin",
-        archs="arm64",
-        otool_output="Load command 10\n      cmd LC_UUID\n  cmdsize 24\n",
+        _MacOSFacts(
+            archs="arm64",
+            otool_output="Load command 10\n      cmd LC_UUID\n  cmdsize 24\n",
+        ),
     )
     assert finished.returncode == 1
     assert "no deployment target" in finished.stderr
@@ -535,9 +539,11 @@ def test_macos_evidence_step_requires_the_packaged_archive(
         tmp_path,
         _evidence_script(workflow),
         "x86_64-apple-darwin",
-        archs="x86_64",
-        otool_output=f"Load command 10\n{INTEL_LOAD_COMMAND}",
-        with_archive=False,
+        _MacOSFacts(
+            archs="x86_64",
+            otool_output=f"Load command 10\n{INTEL_LOAD_COMMAND}",
+            with_archive=False,
+        ),
     )
     assert finished.returncode == 1
     assert "missing macOS package archive" in finished.stderr
