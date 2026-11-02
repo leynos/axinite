@@ -271,7 +271,7 @@ mod tests {
             Ok(false)
         }
 
-        async fn record_usage<'a>(&'a self, _secret_id: Uuid) -> Result<(), SecretError> {
+        async fn record_usage(&self, _secret_id: Uuid) -> Result<(), SecretError> {
             Ok(())
         }
 
