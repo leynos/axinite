@@ -138,6 +138,7 @@ impl NativeListenerController for StubListenerController {
         self.is_running.load(Ordering::SeqCst)
     }
 
+    /// Record the restart attempt and fail for addresses the test marked as unavailable.
     async fn restart_with_addr(&self, addr: SocketAddr) -> Result<(), ChannelError> {
         self.restart_calls.lock().await.push(addr);
 
@@ -212,6 +213,7 @@ impl Default for StubSecretInjector {
 }
 
 impl NativeSecretInjector for StubSecretInjector {
+    /// Record the injection call and apply the configured secret or simulated failure.
     async fn inject<'a>(&'a self, ctx: &'a mut EnvContext) {
         *self.called.lock().await = true;
         if self.should_fail {

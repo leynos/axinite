@@ -13,6 +13,7 @@ fn make_recorder(stub: Arc<StubLlm>) -> std::io::Result<RecordingLlm> {
 }
 
 #[tokio::test]
+/// Verify that the recorder captures user input before the first model response.
 async fn captures_user_input_before_first_response() {
     let stub = Arc::new(StubLlm::new("hello back"));
     let recorder = make_recorder(stub).expect("failed to create temp dir");
@@ -38,6 +39,7 @@ async fn captures_user_input_before_first_response() {
 }
 
 #[tokio::test]
+/// Verify that the recorder captures a text response verbatim.
 async fn captures_text_response_correctly() {
     let stub = Arc::new(StubLlm::new("test response"));
     let recorder = make_recorder(stub).expect("failed to create temp dir");

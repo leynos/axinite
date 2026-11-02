@@ -43,6 +43,8 @@ pub async fn connect_docker() -> Result<DockerConnection> {
     }
 }
 
+/// Connect to the Docker daemon, trying local defaults and then well-known
+/// user-owned socket locations.
 #[cfg(feature = "docker")]
 async fn connect_docker_inner() -> Result<DockerConnection> {
     // First try bollard defaults (checks DOCKER_HOST env var, then /var/run/docker.sock).

@@ -262,6 +262,8 @@ impl MessageVisitor {
 }
 
 impl Visit for MessageVisitor {
+    /// Capture the `message` field as the entry text and record every other
+    /// field as a `name=value` pair.
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
             self.message = format!("{:?}", value);

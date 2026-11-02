@@ -324,6 +324,7 @@ async fn read_failures_have_safe_request_correlation_and_bounded_category() {
 #[case::healthy_store(false)]
 #[case::failing_store(true)]
 #[tokio::test]
+/// Verify that a snapshot query through the settings adapter emits no telemetry observations, whether the store succeeds or fails.
 async fn snapshot_query_with_settings_adapter_emits_no_observations(#[case] fails: bool) {
     use super::telemetry::test_support::RecordingObserver;
     use crate::testing::null_db::CapturingStore;

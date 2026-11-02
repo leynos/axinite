@@ -187,6 +187,8 @@ pub async fn build_extension_manager(
     manager
 }
 
+/// Load registry catalogue entries, appending built-in entries and falling
+/// back to an empty list when the catalogue cannot be read.
 fn load_catalog_entries(relay_url: Option<String>) -> Vec<RegistryEntry> {
     let mut entries = match crate::registry::RegistryCatalog::load_or_embedded() {
         Ok(catalogue) => {

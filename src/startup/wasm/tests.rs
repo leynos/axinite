@@ -90,6 +90,7 @@ impl WasmRuntimeWiringPort for FakeRuntimeManager {
         self.relay_channels.lock().await.contains(name)
     }
 
+    /// Record the activation attempt and fail for channels the test marked as failing.
     async fn activate(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
         self.wasm_activation_calls
             .lock()

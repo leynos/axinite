@@ -12,6 +12,7 @@ use crate::config::EnvContext;
 use crate::settings::Settings;
 
 #[tokio::test]
+/// Verify that the database and workspace-search checks report the auto-detected libSQL backend.
 async fn database_and_search_checks_use_auto_detected_libsql_backend() {
     let db_file = tempfile::NamedTempFile::new().expect("create libSQL marker file");
     let context =
@@ -37,6 +38,7 @@ async fn database_and_search_checks_use_auto_detected_libsql_backend() {
 }
 
 #[test]
+/// Verify that an available binary is reported as a pass.
 fn check_binary_finds_sh() {
     match check_binary("sh", &["-c", "echo ok"]) {
         CheckResult::Pass(_) => {}
@@ -45,6 +47,7 @@ fn check_binary_finds_sh() {
 }
 
 #[test]
+/// Verify that a missing binary is reported as a skip rather than a failure.
 fn check_binary_skips_nonexistent() {
     match check_binary("__axinite_nonexistent_binary__", &["--version"]) {
         CheckResult::Skip(_) => {}
@@ -56,6 +59,7 @@ fn check_binary_skips_nonexistent() {
 }
 
 #[test]
+/// Verify that the secrets check skips when no secrets store is configured.
 fn check_secrets_none_returns_skip() {
     let settings = Settings::default();
     match check_secrets(&settings) {
@@ -73,6 +77,7 @@ fn check_secrets_none_returns_skip() {
 }
 
 #[test]
+/// Verify that the LLM check reports the NearAI backend without a Bedrock model.
 fn check_llm_config_shows_nearai_model_for_nearai_backend() {
     let settings = Settings::default();
     let ctx = EnvContext::for_testing(Default::default(), Default::default());
@@ -96,6 +101,7 @@ fn check_llm_config_shows_nearai_model_for_nearai_backend() {
 }
 
 #[test]
+/// Verify that the embeddings check skips when embeddings are disabled by default.
 fn check_embeddings_disabled_by_default_returns_skip() {
     let settings = Settings::default();
     let ctx = EnvContext::for_testing(Default::default(), Default::default());
@@ -114,6 +120,7 @@ fn check_embeddings_disabled_by_default_returns_skip() {
 }
 
 #[test]
+/// Verify that the routines check passes when routines are enabled by default.
 fn check_routines_enabled_by_default() {
     let ctx = EnvContext::for_testing(Default::default(), Default::default());
     match check_routines_config_with_context(&ctx) {
@@ -131,6 +138,7 @@ fn check_routines_enabled_by_default() {
 }
 
 #[test]
+/// Verify that the secrets check fails when an environment-backed key names an unset variable.
 fn check_secrets_env_without_var_returns_fail() {
     let settings = Settings {
         secrets_master_key_source: crate::settings::KeySource::Env,
