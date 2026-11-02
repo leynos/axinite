@@ -153,16 +153,24 @@ jobs:
               ;;
           esac
 
+          # Capture each command before printing it: a failing substitution
+          # inside a printf argument would otherwise be masked by printf's
+          # own success status and leave empty evidence behind.
+          uname_machine=$(uname -m)
+          developer_dir=$(xcode-select -p)
+          sdk_version=$(xcrun --show-sdk-version)
+          sdk_path=$(xcrun --show-sdk-path)
+
           {
             echo
             echo 'macOS toolchain and binary evidence'
             sw_vers
-            printf 'uname -m: %s\n' "$(uname -m)"
+            printf 'uname -m: %s\n' "$uname_machine"
             rustc -vV | sed -n 's/^host: /rustc host: /p'
             xcodebuild -version
-            printf 'xcode-select -p: %s\n' "$(xcode-select -p)"
-            printf 'xcrun --show-sdk-version: %s\n' "$(xcrun --show-sdk-version)"
-            printf 'xcrun --show-sdk-path: %s\n' "$(xcrun --show-sdk-path)"
+            printf 'xcode-select -p: %s\n' "$developer_dir"
+            printf 'xcrun --show-sdk-version: %s\n' "$sdk_version"
+            printf 'xcrun --show-sdk-path: %s\n' "$sdk_path"
           } >> validation-context.txt
 
           archive="target/distrib/axinite-${target}.tar.gz"

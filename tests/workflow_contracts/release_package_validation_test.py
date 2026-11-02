@@ -602,8 +602,9 @@ def test_macos_evidence_step_requires_the_packaged_executable(
     assert "no axinite executable" in finished.stderr
 
 
+@pytest.mark.parametrize("failing_tool", ["uname", "xcode-select", "xcrun", "otool"])
 def test_macos_evidence_step_fails_when_a_toolchain_command_fails(
-    workflow: dict[str, object], tmp_path: Path
+    workflow: dict[str, object], tmp_path: Path, failing_tool: str
 ) -> None:
     """A failing metadata command aborts the step under ``set -euo pipefail``."""
     finished, _ = _run_evidence_step(
@@ -613,11 +614,11 @@ def test_macos_evidence_step_fails_when_a_toolchain_command_fails(
         _MacOSFacts(
             archs="arm64",
             otool_output=f"Load command 10\n{ARM64_LOAD_COMMAND}",
-            failing_tool="otool",
+            failing_tool=failing_tool,
         ),
     )
     assert finished.returncode == 1
-    assert "stub otool failed" in finished.stderr
+    assert f"stub {failing_tool} failed" in finished.stderr
 
 
 @pytest.mark.parametrize(
