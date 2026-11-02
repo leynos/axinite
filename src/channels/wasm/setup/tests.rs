@@ -7,7 +7,10 @@ use super::*;
 #[tokio::test]
 async fn setup_from_empty_directory_serves_webhooks_without_channels() -> anyhow::Result<()> {
     let channels_dir = tempfile::tempdir()?;
-    let env_context = crate::testing::test_utils::test_env_context();
+    // The libSQL backend supplies a placeholder database URL, so this test
+    // does not need a real PostgreSQL connection to build configuration.
+    let env_context =
+        crate::testing::test_utils::test_env_context_with(&[("DATABASE_BACKEND", "libsql")]);
     let mut config = crate::testing::test_utils::test_config_from_context(&env_context).await?;
     config.channels.wasm_channels_dir = channels_dir.path().to_path_buf();
 
