@@ -196,6 +196,38 @@ class _MacOSFacts:
     with_archive: bool = True
 
 
+@dataclass(frozen=True)
+class _AppleEvidence:
+    """The stubbed binary and the fields its evidence must record."""
+
+    target: str
+    arch: str
+    load_command: str
+    expected_loads: tuple[str, ...]
+
+
+APPLE_EVIDENCE_CASES = (
+    _AppleEvidence(
+        target="aarch64-apple-darwin",
+        arch="arm64",
+        load_command=ARM64_LOAD_COMMAND,
+        expected_loads=(
+            "LC_BUILD_VERSION minos: 11.0",
+            "LC_BUILD_VERSION sdk: 15.5",
+        ),
+    ),
+    _AppleEvidence(
+        target="x86_64-apple-darwin",
+        arch="x86_64",
+        load_command=INTEL_LOAD_COMMAND,
+        expected_loads=(
+            "LC_VERSION_MIN_MACOSX minos: 10.12",
+            "LC_VERSION_MIN_MACOSX sdk: 15.5",
+        ),
+    ),
+)
+
+
 def _evidence_environment(tmp_path: Path, facts: _MacOSFacts) -> dict[str, str]:
     """Build an environment whose tools report the requested macOS facts."""
     _write_stub_tools(tmp_path / "bin")
@@ -444,57 +476,36 @@ def test_macos_evidence_step_rejects_an_unplanned_apple_target(
     assert "unexpected macOS release target" in finished.stderr
 
 
-@pytest.mark.parametrize(
-    ("target", "arch", "load_command", "expected_loads"),
-    [
-        (
-            "aarch64-apple-darwin",
-            "arm64",
-            ARM64_LOAD_COMMAND,
-            ["LC_BUILD_VERSION minos: 11.0", "LC_BUILD_VERSION sdk: 15.5"],
-        ),
-        (
-            "x86_64-apple-darwin",
-            "x86_64",
-            INTEL_LOAD_COMMAND,
-            [
-                "LC_VERSION_MIN_MACOSX minos: 10.12",
-                "LC_VERSION_MIN_MACOSX sdk: 15.5",
-            ],
-        ),
-    ],
-)
+@pytest.mark.parametrize("case", APPLE_EVIDENCE_CASES, ids=lambda case: case.target)
 def test_macos_evidence_step_records_a_complete_context(
-    workflow: dict[str, object],
-    tmp_path: Path,
-    target: str,
-    arch: str,
-    load_command: str,
-    expected_loads: list[str],
+    workflow: dict[str, object], tmp_path: Path, case: _AppleEvidence
 ) -> None:
     """The whole step runs and records every field for both Apple targets."""
     finished, workspace = _run_evidence_step(
         tmp_path,
         _evidence_script(workflow),
-        target,
-        _MacOSFacts(archs=arch, otool_output=f"Load command 10\n{load_command}"),
+        case.target,
+        _MacOSFacts(
+            archs=case.arch,
+            otool_output=f"Load command 10\n{case.load_command}",
+        ),
     )
     assert finished.returncode == 0, finished.stderr
     context = (workspace / "validation-context.txt").read_text()
     for field in (
         "ProductName:\t\tmacOS",
-        f"uname -m: {arch}",
-        f"rustc host: {arch}-apple-darwin",
+        f"uname -m: {case.arch}",
+        f"rustc host: {case.arch}-apple-darwin",
         "Xcode 16.4",
         "xcode-select -p: /Applications/Xcode.app/Contents/Developer",
         "xcrun --show-sdk-version: 15.5",
         "xcrun --show-sdk-path: 15.5",
-        f"archive: target/distrib/axinite-{target}.tar.gz",
-        f"executable: axinite-{target}/axinite",
-        f"lipo -archs: {arch}",
+        f"archive: target/distrib/axinite-{case.target}.tar.gz",
+        f"executable: axinite-{case.target}/axinite",
+        f"lipo -archs: {case.arch}",
     ):
         assert field in context, f"the evidence must record {field!r}"
-    for recorded in expected_loads:
+    for recorded in case.expected_loads:
         assert recorded in context, f"the evidence must record {recorded!r}"
 
 
