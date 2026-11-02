@@ -6,11 +6,11 @@ the workflow directory and decides which of the results each kind of contract
 is entitled to see.
 
 Two readings, because two questions. `read_workflows` returns every file.
-`read_estate` drops the dist-generated release workflow, because the suite
-contracts may not judge a file that is regenerated wholesale; the placement and
-cache contracts read the unfiltered one, in order to exempt that workflow by
-name, which is a statement they make rather than one this module makes for
-them.
+`read_estate` drops the dist-generated release workflow, because the generic
+suite contracts exclude a file cargo-dist generates and the repository then
+maintains by hand; the placement and cache contracts read the unfiltered one,
+in order to exempt that workflow by name, which is a statement they make rather
+than one this module makes for them.
 
 `read_workflow` is the same boundary for a contract that judges one named
 file, so it need not reach past it with a bare `read_text` and a parse.
@@ -67,8 +67,9 @@ def read_estate(directory: Path = WORKFLOW_DIR) -> Estate:
     -------
     Mapping
         Each workflow document, keyed by file name, in a mapping the caller
-        cannot alter. The dist-generated release workflow is left out: its
-        contents are regenerated wholesale and nothing here may judge them.
+        cannot alter. The dist-generated release workflow is left out: cargo-dist
+        generates it and the repository then maintains it by hand, so the
+        generic contracts do not judge it.
 
     Raises
     ------
@@ -89,10 +90,10 @@ def read_workflows(directory: Path = WORKFLOW_DIR) -> Estate:
     """Read and parse every workflow file in a directory, generated included.
 
     The unfiltered reading. `read_estate` drops the dist-generated release
-    workflow on top of this, because the suite contracts may not judge a file
-    that is regenerated wholesale; the placement and cache contracts do read
-    it, in order to exempt it by name, which is a statement they make rather
-    than one this reader makes for them.
+    workflow on top of this, because the generic suite contracts exclude a file
+    cargo-dist generates and the repository then maintains by hand; the
+    placement and cache contracts do read it, in order to exempt it by name,
+    which is a statement they make rather than one this reader makes for them.
 
     Parameters
     ----------
