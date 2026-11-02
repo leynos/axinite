@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn creates_with_correct_fields() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     assert_eq!(ch.config.http_url, "http://127.0.0.1:8686");
     assert_eq!(ch.config.account, "+1234567890");
     assert_eq!(ch.config.allow_from.len(), 1);
@@ -18,19 +18,20 @@ fn creates_with_correct_fields() {
 fn strips_trailing_slash() {
     let mut config = make_config();
     config.http_url = "http://127.0.0.1:8686/".to_string();
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert_eq!(ch.config.http_url, "http://127.0.0.1:8686");
 }
 
 #[test]
 fn debug_mode_disabled_by_default() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     assert!(!ch.is_debug());
 }
 
 #[test]
 fn debug_mode_toggle() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
 
     // Initially disabled
     assert!(!ch.is_debug());
@@ -48,7 +49,7 @@ fn debug_mode_toggle() {
 
 #[test]
 fn debug_mode_persists_across_toggles() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
 
     // Multiple toggles
     ch.toggle_debug();
@@ -63,7 +64,7 @@ fn debug_mode_persists_across_toggles() {
 
 #[test]
 fn name_returns_signal() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     assert_eq!(ch.name(), "signal");
 }
 
@@ -73,13 +74,15 @@ fn name_returns_signal() {
 fn strips_multiple_trailing_slashes() {
     let mut config = make_config();
     config.http_url = "http://127.0.0.1:8686///".to_string();
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert_eq!(ch.config.http_url, "http://127.0.0.1:8686");
 }
 
 #[test]
 fn preserves_url_without_trailing_slash() {
     let config = make_config();
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert_eq!(ch.config.http_url, "http://127.0.0.1:8686");
 }

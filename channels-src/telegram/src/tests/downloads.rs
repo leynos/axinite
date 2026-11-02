@@ -1,3 +1,5 @@
+//! Tests for document download decisions, storage, and failure feedback.
+
 use crate::downloads::{
     document_download_failure_feedback, download_and_store_documents, is_downloadable_document,
 };

@@ -2,15 +2,19 @@
 
 use super::*;
 use ambient_fs as fs;
+use anyhow::Context as _;
 
-fn create_test_registry(dir: &Path) -> std::io::Result<()> {
+fn create_test_registry(dir: &Path) -> anyhow::Result<()> {
     let tools_dir = dir.join("tools");
     let channels_dir = dir.join("channels");
-    fs::create_dir_all(&tools_dir)?;
-    fs::create_dir_all(&channels_dir)?;
+    fs::create_dir_all(&tools_dir)
+        .with_context(|| format!("create tools dir {}", tools_dir.display()))?;
+    fs::create_dir_all(&channels_dir)
+        .with_context(|| format!("create channels dir {}", channels_dir.display()))?;
 
+    let slack_path = tools_dir.join("slack.json");
     fs::write(
-        tools_dir.join("slack.json"),
+        &slack_path,
         r#"{
             "name": "slack",
             "display_name": "Slack",
@@ -30,10 +34,12 @@ fn create_test_registry(dir: &Path) -> std::io::Result<()> {
             },
             "tags": ["default", "messaging"]
         }"#,
-    )?;
+    )
+    .with_context(|| format!("write {}", slack_path.display()))?;
 
+    let github_path = tools_dir.join("github.json");
     fs::write(
-        tools_dir.join("github.json"),
+        &github_path,
         r#"{
             "name": "github",
             "display_name": "GitHub",
@@ -48,10 +54,12 @@ fn create_test_registry(dir: &Path) -> std::io::Result<()> {
             },
             "tags": ["default", "development"]
         }"#,
-    )?;
+    )
+    .with_context(|| format!("write {}", github_path.display()))?;
 
+    let telegram_path = channels_dir.join("telegram.json");
     fs::write(
-        channels_dir.join("telegram.json"),
+        &telegram_path,
         r#"{
             "name": "telegram",
             "display_name": "Telegram",
@@ -65,10 +73,12 @@ fn create_test_registry(dir: &Path) -> std::io::Result<()> {
             },
             "tags": ["messaging"]
         }"#,
-    )?;
+    )
+    .with_context(|| format!("write {}", telegram_path.display()))?;
 
+    let bundles_path = dir.join("_bundles.json");
     fs::write(
-        dir.join("_bundles.json"),
+        &bundles_path,
         r#"{
             "bundles": {
                 "default": {
@@ -82,7 +92,8 @@ fn create_test_registry(dir: &Path) -> std::io::Result<()> {
                 }
             }
         }"#,
-    )?;
+    )
+    .with_context(|| format!("write {}", bundles_path.display()))?;
     Ok(())
 }
 

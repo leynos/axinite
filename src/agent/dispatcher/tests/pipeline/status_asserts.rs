@@ -10,6 +10,7 @@ fn has_status(statuses: &[StatusUpdate], predicate: impl Fn(&StatusUpdate) -> bo
     statuses.iter().any(predicate)
 }
 
+/// Assert that a `Thinking` status with `expected` text was recorded.
 #[track_caller]
 pub(super) fn assert_thinking_status(statuses: &[StatusUpdate], expected: &str) {
     assert!(
@@ -21,6 +22,7 @@ pub(super) fn assert_thinking_status(statuses: &[StatusUpdate], expected: &str) 
     );
 }
 
+/// Assert that a `ToolResult` status for `tool_name` has a non-empty preview.
 #[track_caller]
 pub(super) fn assert_tool_result_status(statuses: &[StatusUpdate], tool_name: &str) {
     assert!(
@@ -33,6 +35,7 @@ pub(super) fn assert_tool_result_status(statuses: &[StatusUpdate], tool_name: &s
     );
 }
 
+/// Assert that `tool_name` reported a successful `ToolCompleted` status.
 #[track_caller]
 pub(super) fn assert_tool_completed_status(statuses: &[StatusUpdate], tool_name: &str) {
     assert!(
@@ -45,6 +48,7 @@ pub(super) fn assert_tool_completed_status(statuses: &[StatusUpdate], tool_name:
     );
 }
 
+/// Assert that a `ToolStarted` status for `tool_name` was recorded.
 #[track_caller]
 pub(super) fn assert_tool_started_status(statuses: &[StatusUpdate], tool_name: &str) {
     assert!(

@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn process_envelope_dm_accepted_with_empty_allow_from_groups() {
     // Empty allow_from_groups = DMs only. DMs should be accepted.
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+1111111111"), Some("Hello!"));
     assert!(ch.process_envelope(&env).is_some());
 }
@@ -16,7 +16,8 @@ fn process_envelope_group_denied_with_empty_allow_from_groups() {
     // Empty allow_from_groups = DMs only. Group messages should be denied.
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -39,7 +40,8 @@ fn process_envelope_group_denied_with_empty_allow_from_groups() {
 
 #[test]
 fn process_envelope_group_accepted_when_in_allow_from_groups() {
-    let ch = make_channel_with_allowed_group("group123");
+    let ch = make_channel_with_allowed_group("group123")
+        .expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -81,7 +83,7 @@ fn process_envelope_group_accepted_when_in_allow_from_groups() {
 
 #[test]
 fn process_envelope_valid_dm() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+1111111111"), Some("Hello!"));
     let (msg, target) = ch
         .process_envelope(&env)
@@ -99,7 +101,8 @@ async fn process_envelope_pairing_accepts_already_paired_sender() {
     let mut config = make_config();
     config.allow_from = vec![];
     config.dm_policy = "pairing".to_string();
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let sender = "+9999999998";
     let store = SignalChannel::pairing_store();
@@ -116,7 +119,7 @@ async fn process_envelope_pairing_accepts_already_paired_sender() {
 
 #[test]
 fn process_envelope_denied_sender() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+9999999999"), Some("Hello!"));
     assert!(ch.process_envelope(&env).is_none());
 }
@@ -128,7 +131,8 @@ async fn process_envelope_pairing_creates_request_for_unpaired_sender() {
     let mut config = make_config();
     config.allow_from = vec![];
     config.dm_policy = "pairing".to_string();
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let sender = "+9999999997";
     let env = make_envelope(Some(sender), Some("Hello!"));
@@ -143,14 +147,14 @@ async fn process_envelope_pairing_creates_request_for_unpaired_sender() {
 
 #[test]
 fn process_envelope_empty_message() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+1111111111"), Some(""));
     assert!(ch.process_envelope(&env).is_none());
 }
 
 #[test]
 fn process_envelope_no_data_message() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+1111111111"), None);
     assert!(ch.process_envelope(&env).is_none());
 }
@@ -160,7 +164,8 @@ fn process_envelope_skips_stories() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
     config.ignore_stories = true;
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     let mut env = make_envelope(Some("+1111111111"), Some("story text"));
     env.story_message = Some(serde_json::json!({}));
     assert!(ch.process_envelope(&env).is_none());
@@ -171,7 +176,8 @@ fn process_envelope_skips_attachment_only() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
     config.ignore_attachments = true;
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     let env = Envelope {
         source: Some("+1111111111".to_string()),
         source_number: Some("+1111111111".to_string()),
@@ -194,7 +200,8 @@ fn process_envelope_group_not_in_allow_from_groups() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
     config.allow_from_groups = vec!["allowed_group".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -224,7 +231,8 @@ fn process_envelope_stories_not_skipped_when_disabled() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
     config.ignore_stories = false;
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
