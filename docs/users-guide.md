@@ -341,13 +341,12 @@ curl -X PUT http://127.0.0.1:3000/api/settings/feature_flag:route_logs \
 The value must be a JSON boolean or the string `"true"` or `"false"`
 (case-insensitive). Flag names use lowercase letters, digits, and underscores.
 The gateway stores overrides per deployment and applies writes without a
-restart. `FEATURE_FLAG_<NAME>` environment variables in the startup
-environment snapshot take precedence over stored values; as with other
-environment-backed settings, changing them requires a process restart rather
-than a reload. To remove a
-persisted override, delete its row from `feature_flag_overrides`, then restart
-each gateway process that has cached that deployment. Deleting the row alone
-does not clear its in-memory override. The settings `DELETE` route rejects
+restart. `FEATURE_FLAG_<NAME>` environment variables in the startup environment
+snapshot take precedence over stored values; as with other environment-backed
+settings, changing them requires a process restart rather than a reload. To
+remove a persisted override, delete its row from `feature_flag_overrides`, then
+restart each gateway process that has cached that deployment. Deleting the row
+alone does not clear its in-memory override. The settings `DELETE` route rejects
 `feature_flag:` keys with `400 Bad Request`.
 
 If the gateway cannot load persisted overrides, `GET /api/features` returns
