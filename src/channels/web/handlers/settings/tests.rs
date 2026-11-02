@@ -153,9 +153,9 @@ async fn new_test_store() -> Arc<dyn crate::db::Database> {
     Arc::new(crate::testing::null_db::NullDatabase::new())
 }
 
+/// Verify that a feature-flag override written through the settings API is visible to a later read without a restart.
 #[cfg(feature = "libsql")]
 #[tokio::test]
-/// Verify that a feature-flag override written through the settings API is visible to a later read without a restart.
 async fn put_feature_flag_then_get_reflects_override_without_restart() {
     let env_context = crate::config::EnvContext::default();
     assert!(

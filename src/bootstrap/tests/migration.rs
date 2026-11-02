@@ -55,8 +55,8 @@ fn test_migrate_bootstrap_json_to_env() {
     assert_bootstrap_file_renamed(dir.path());
 }
 
-#[test]
 /// Exercise the `bootstrap.json` to `.env` migration, including the child-process branch that performs the load.
+#[test]
 fn load_axinite_env_migrates_bootstrap_json_to_env() {
     if {
         #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]

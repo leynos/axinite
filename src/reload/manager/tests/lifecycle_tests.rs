@@ -98,6 +98,7 @@ struct Scenario {
     expect_injector_called: Option<bool>,
 }
 
+/// Verify each reload lifecycle scenario's listener, secret, and injector outcomes.
 #[rstest]
 #[case::config_load_failure(Scenario {
     description: "config load failure prevents listener restart",
@@ -141,7 +142,6 @@ struct Scenario {
     expect_injector_called: Some(true),
 })]
 #[tokio::test]
-/// Verify each reload lifecycle scenario's listener, secret, and injector outcomes.
 async fn lifecycle_scenarios(#[case] scenario: Scenario) -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
     let injector = (scenario.injector_factory)();

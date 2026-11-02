@@ -144,7 +144,7 @@ fn toml_json_db_all_agree() {
     // JSON round-trip
     let json = serde_json::to_string_pretty(&original).unwrap();
     ambient_fs::write(&json_path, &json).unwrap();
-    let from_json = Settings::load_from(&json_path);
+    let from_json = Settings::load_from(&json_path).expect("load written settings JSON");
 
     // DB map round-trip
     let db_map = original.to_db_map();
