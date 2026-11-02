@@ -134,7 +134,7 @@ fn test_llm_backend_round_trip() {
     let json = serde_json::to_string_pretty(&settings).unwrap();
     ambient_fs::write(&path, json).unwrap();
 
-    let loaded = Settings::load_from(&path);
+    let loaded = Settings::load_from(&path).expect("load written settings JSON");
     assert_eq!(loaded.llm_backend, Some("anthropic".to_string()));
     assert_eq!(
         loaded.ollama_base_url,

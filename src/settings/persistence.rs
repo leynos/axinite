@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::bootstrap::axinite_base_dir;
 
-use super::Settings;
+use super::{Settings, SettingsError};
 
 impl Settings {
     /// Reconstruct Settings from a flat key-value map (as stored in the DB).
@@ -67,16 +67,37 @@ impl Settings {
         axinite_base_dir().join("settings.json")
     }
 
-    /// Load settings from disk, returning default if not found.
-    pub fn load() -> Self {
+    /// Load settings from disk, returning defaults when the file is absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SettingsError`] when the file exists but cannot be read, or
+    /// when its contents are not valid JSON.
+    pub fn load() -> Result<Self, SettingsError> {
         Self::load_from(&Self::default_path())
     }
 
     /// Load settings from a specific path (used by bootstrap legacy migration).
-    pub fn load_from(path: &std::path::Path) -> Self {
+    ///
+    /// A missing file yields [`Settings::default`] so that a first run and a
+    /// fresh installation need no configuration. Any other read failure, and a
+    /// parse failure, is reported rather than silently replaced by defaults.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SettingsError`] when the file exists but cannot be read, or
+    /// when its contents are not valid JSON.
+    pub fn load_from(path: &std::path::Path) -> Result<Self, SettingsError> {
         match ambient_fs::read_to_string(path) {
-            Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
-            Err(_) => Self::default(),
+            Ok(data) => serde_json::from_str(&data).map_err(|error| SettingsError::Parse {
+                path: path.display().to_string(),
+                message: error.to_string(),
+            }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(error) => Err(SettingsError::Read {
+                path: path.display().to_string(),
+                message: error.to_string(),
+            }),
         }
     }
 

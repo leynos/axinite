@@ -36,21 +36,29 @@ ______________________________________________________________________
 ## Startup Sequence (main.rs)
 
 ```text
-1. Parse CLI args
-2. If Command::Onboard  → load .env, run wizard, exit
-3. If Command::Run or no command:
-   a. Load .env files (dotenvy::dotenv() then load_axinite_env())
-   b. check_onboard_needed() → run wizard if needed
-   c. Capture EnvContext     → snapshot env vars and injected secrets
-   d. Config::from_context_with_optional_toml(&ctx, ...) → build config
-   e. Create SessionManager  → load session token
-   f. ensure_authenticated() → validate session (NEAR AI only)
-   g. ... rest of agent startup
+1. Load .env files (dotenvy::dotenv() then load_axinite_env())
+2. Capture EnvContext     → snapshot env vars and injected secrets
+3. Start the Tokio runtime and parse CLI args
+4. If Command::Onboard  → run wizard, exit
+5. If Command::Run or no command:
+   a. Acquire the PID lock
+   b. check_onboard_needed() → run wizard if needed; merge ~/.axinite/.env
+      into the wizard's snapshot so onboarding credentials are retained
+   c. Config::from_context_with_optional_toml(&ctx, ...) → build config
+   d. Create SessionManager  → load session token
+   e. ensure_authenticated() → validate session (NEAR AI only)
+   f. ... rest of agent startup
 ```
 
-**Critical ordering:** `.env` files must be loaded (step 3a) before the
-`EnvContext` snapshot is captured (step 3c) because bootstrap vars like
+**Critical ordering:** `.env` files must be loaded (step 1) before the
+`EnvContext` snapshot is captured (step 2) because bootstrap vars like
 `DATABASE_BACKEND` live in `~/.axinite/.env`.
+
+The snapshot is also captured before onboarding runs. The wizard records any
+API key it collects in its own `EnvContext`, and startup merges `.env` into
+that snapshot, so a key entered during first-run onboarding is available when
+configuration is resolved afterwards. Process environment variables and `.env`
+files are still not re-read after the initial capture.
 
 **Environment access:** startup captures the ambient environment once and
 threads the resulting `EnvContext` through composition. Constructors such as

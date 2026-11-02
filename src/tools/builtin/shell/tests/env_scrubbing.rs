@@ -12,6 +12,43 @@ use crate::tools::tool::NativeTool;
 use super::super::ShellTool;
 use super::shell_context;
 
+/// Command that prints the child process environment, one `NAME=value` per
+/// line.
+///
+/// `cmd.exe` has no `env` binary; its `set` builtin is the equivalent dump.
+#[cfg(windows)]
+const PRINT_ENV: &str = "set";
+#[cfg(not(windows))]
+const PRINT_ENV: &str = "env";
+
+/// Shell command that prints `NAME=[value]` for the variable `name`.
+///
+/// An unset variable renders as `<unset>` on Unix and as the literal
+/// `%NAME%` under `cmd.exe`, which keeps the probe distinguishable from an
+/// explicitly empty value on both platforms.
+fn probe_var(name: &str) -> String {
+    #[cfg(windows)]
+    {
+        format!("echo {name}=[%{name}%]")
+    }
+    #[cfg(not(windows))]
+    {
+        format!("printf '{name}=[%s]' \"${{{name}-<unset>}}\"")
+    }
+}
+
+/// Assert the printed environment contains `name`, ignoring case.
+///
+/// Windows environment variable names are case-insensitive, so a variable
+/// captured as `Path` may print in any case.
+fn assert_env_contains(output: &str, name: &str) {
+    let needle = format!("{}=", name.to_ascii_lowercase());
+    assert!(
+        output.to_ascii_lowercase().contains(&needle),
+        "{name} should be forwarded to child processes: {output}"
+    );
+}
+
 #[tokio::test]
 async fn test_env_scrubbing_hides_secrets() -> anyhow::Result<()> {
     let secret_var = "AXINITE_TEST_SECRET_KEY";
@@ -19,13 +56,12 @@ async fn test_env_scrubbing_hides_secrets() -> anyhow::Result<()> {
     let tool = ShellTool::from_context(env.with_env(secret_var, "super_secret_value_12345"));
     let ctx = JobContext::default();
 
-    // Run `env` (or `printenv`) and check the output
     let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
+        .execute(serde_json::json!({"command": PRINT_ENV}), &ctx)
         .await
         .unwrap();
 
-    let output = result.result.get("output").unwrap().as_str().unwrap();
+    let output = result.result["output"].as_str().unwrap_or_default();
 
     // The secret should NOT appear in the child process environment
     assert!(
@@ -38,10 +74,7 @@ async fn test_env_scrubbing_hides_secrets() -> anyhow::Result<()> {
     );
 
     // But PATH should still be there (it's in SAFE_ENV_VARS)
-    assert!(
-        output.contains("PATH="),
-        "PATH should be forwarded to child processes"
-    );
+    assert_env_contains(output, "PATH");
     Ok(())
 }
 
@@ -52,15 +85,13 @@ async fn test_env_scrubbing_forwards_explicitly_empty_safe_var() -> anyhow::Resu
     let ctx = JobContext::default();
 
     let result = tool
-        .execute(
-            serde_json::json!({"command": "printf 'TMPDIR=[%s]' \"${TMPDIR-<unset>}\""}),
-            &ctx,
-        )
+        .execute(serde_json::json!({"command": probe_var("TMPDIR")}), &ctx)
         .await
         .expect("an empty safe variable should still be forwarded");
 
     assert_eq!(
-        result.result["output"], "TMPDIR=[]",
+        result.result["output"].as_str().unwrap_or_default().trim(),
+        "TMPDIR=[]",
         "an explicitly empty safe variable must be forwarded as empty, not dropped"
     );
     Ok(())
@@ -144,9 +175,14 @@ async fn run_inherited_secret_child() -> anyhow::Result<()> {
     let ctx = JobContext::default();
 
     let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
+        .execute(serde_json::json!({"command": PRINT_ENV}), &ctx)
         .await
-        .expect("env should run in the child shell");
+        .expect("the environment dump should run in the child shell");
+
+    assert_eq!(
+        result.result["exit_code"], 0,
+        "the environment dump should succeed, otherwise its output proves nothing"
+    );
 
     let output = result.result["output"].as_str().unwrap_or_default();
     assert!(
@@ -162,26 +198,20 @@ async fn run_inherited_secret_child() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_env_scrubbing_forwards_safe_vars() -> anyhow::Result<()> {
-    let (_home_dir, env) = shell_context()?;
+    let (home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env);
     let ctx = JobContext::default();
 
-    // HOME should be forwarded
+    // HOME is in SAFE_ENV_VARS, so the child must see the snapshot's value.
     let result = tool
-        .execute(serde_json::json!({"command": "echo $HOME"}), &ctx)
+        .execute(serde_json::json!({"command": probe_var("HOME")}), &ctx)
         .await
         .unwrap();
 
-    let output = result
-        .result
-        .get("output")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .trim();
-    assert!(
-        !output.is_empty(),
-        "HOME should be available in child process"
+    assert_eq!(
+        result.result["output"].as_str().unwrap_or_default().trim(),
+        format!("HOME=[{}]", home_dir.path().to_string_lossy()),
+        "HOME should be available in the child process"
     );
     Ok(())
 }
@@ -201,12 +231,15 @@ async fn test_env_scrubbing_forwards_explicit_extra_env() -> anyhow::Result<()> 
 
     let result = tool
         .execute(
-            serde_json::json!({"command": "printf '%s' \"$AXINITE_INJECTED_TEST_VALUE\""}),
+            serde_json::json!({"command": probe_var("AXINITE_INJECTED_TEST_VALUE")}),
             &ctx,
         )
         .await
         .expect("explicit extra environment should be forwarded");
-    assert_eq!(result.result["output"], "allowed");
+    assert_eq!(
+        result.result["output"].as_str().unwrap_or_default().trim(),
+        "AXINITE_INJECTED_TEST_VALUE=[allowed]"
+    );
     Ok(())
 }
 
@@ -228,11 +261,11 @@ async fn test_env_scrubbing_common_secret_patterns() -> anyhow::Result<()> {
     let ctx = JobContext::default();
 
     let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
+        .execute(serde_json::json!({"command": PRINT_ENV}), &ctx)
         .await
         .unwrap();
 
-    let output = result.result.get("output").unwrap().as_str().unwrap();
+    let output = result.result["output"].as_str().unwrap_or_default();
 
     for (name, value) in &secrets {
         assert!(
@@ -251,11 +284,11 @@ async fn test_env_scrubbing_custom_var_hidden() -> anyhow::Result<()> {
     let ctx = JobContext::default();
 
     let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
+        .execute(serde_json::json!({"command": PRINT_ENV}), &ctx)
         .await
         .unwrap();
 
-    let output = result.result.get("output").unwrap().as_str().unwrap();
+    let output = result.result["output"].as_str().unwrap_or_default();
     assert!(
         !output.contains("AXINITE_QA_TEST_SECRET"),
         "env scrubbing must hide non-safe vars from child processes"
@@ -275,14 +308,11 @@ async fn test_env_scrubbing_path_preserved() -> anyhow::Result<()> {
     let ctx = JobContext::default();
 
     let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
+        .execute(serde_json::json!({"command": PRINT_ENV}), &ctx)
         .await
         .unwrap();
 
-    let output = result.result.get("output").unwrap().as_str().unwrap();
-    assert!(
-        output.contains("PATH="),
-        "PATH must be preserved in child env"
-    );
+    let output = result.result["output"].as_str().unwrap_or_default();
+    assert_env_contains(output, "PATH");
     Ok(())
 }

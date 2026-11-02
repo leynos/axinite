@@ -254,12 +254,19 @@ pub(super) fn rename_legacy_bootstrap(axinite_dir: &Path) {
     }
 }
 
+/// Read the pre-migration `settings.json` as a JSON object.
+///
+/// Returns `Ok(None)` when the file is absent, so a first run with no legacy
+/// state is not an error. A file that exists but cannot be parsed is reported
+/// as [`MigrationError::Io`] because a silent default would discard the user's
+/// settings during the one-way migration into the database.
 fn read_legacy_state(path: &Path) -> Result<Option<serde_json::Value>, MigrationError> {
     if !path.exists() {
         return Ok(None);
     }
 
-    let settings = crate::settings::Settings::load_from(path);
+    let settings = crate::settings::Settings::load_from(path)
+        .map_err(|error| MigrationError::Io(error.to_string()))?;
     Ok(serde_json::to_value(settings).ok())
 }
 

@@ -216,7 +216,7 @@ impl Config {
     pub async fn from_env_with_toml(
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let settings = Settings::load();
+        let settings = Settings::load()?;
         let ctx = crate::bootstrap::capture_config_env_context();
         let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;
         Self::from_context(&ctx, &merged).await
@@ -226,7 +226,7 @@ impl Config {
     ///
     /// Use this at reload boundaries that already own a current [`EnvContext`].
     pub async fn from_env_from_context(ctx: &EnvContext) -> Result<Self, ConfigError> {
-        let settings = Settings::load_from(&ctx.axinite_base_dir().join("settings.json"));
+        let settings = Settings::load_from(&ctx.axinite_base_dir().join("settings.json"))?;
         let default_toml = ctx.axinite_base_dir().join("config.toml");
         let merged =
             runtime_support::merged_settings_with_toml_or_default(&settings, None, &default_toml)?;
