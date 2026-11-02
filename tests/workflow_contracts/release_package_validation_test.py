@@ -228,7 +228,7 @@ def test_macos_packages_record_toolchain_and_binary_evidence(
     workflow: dict[str, object],
 ) -> None:
     """Apple builds report the host, SDK and binary architecture they produced."""
-    local = _job(workflow, "build-local-artifacts")
+    local = _job(workflow, "build-local-artefacts")
     step_name = "Record macOS toolchain and binary evidence"
     declared = _declared_step(local, step_name)
     assert declared.get("if") == "always() && runner.os == 'macOS'", (
@@ -292,7 +292,7 @@ def test_macos_deployment_target_parser_reads_otool_output(
     workflow: dict[str, object], load_command: str, expected: list[str]
 ) -> None:
     """The parser extracts a minimum version and SDK from either load command."""
-    local = _job(workflow, "build-local-artifacts")
+    local = _job(workflow, "build-local-artefacts")
     evidence = _step(local, "Record macOS toolchain and binary evidence")
     program = _deployment_target_awk(evidence.run)
     otool_output = f"Load command 12\n      cmd {load_command}\n"
@@ -310,7 +310,7 @@ def test_macos_evidence_step_maps_each_apple_target_to_its_architecture(
     workflow: dict[str, object], target: str, expected_arch: str
 ) -> None:
     """The step expects the architecture its Apple target actually produces."""
-    local = _job(workflow, "build-local-artifacts")
+    local = _job(workflow, "build-local-artefacts")
     evidence = _step(local, "Record macOS toolchain and binary evidence")
     finished = _expected_architecture(_architecture_case(evidence.run), target)
     assert finished.returncode == 0, finished.stderr
@@ -321,7 +321,7 @@ def test_macos_evidence_step_rejects_an_unplanned_apple_target(
     workflow: dict[str, object],
 ) -> None:
     """A macOS leg outside the two planned targets cannot claim evidence."""
-    local = _job(workflow, "build-local-artifacts")
+    local = _job(workflow, "build-local-artefacts")
     evidence = _step(local, "Record macOS toolchain and binary evidence")
     case_block = _architecture_case(evidence.run)
     finished = _expected_architecture(case_block, "aarch64-apple-ios")
