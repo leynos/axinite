@@ -16,11 +16,15 @@ async def test_assistant_xss_sanitized(page):
     """The mock LLM's XSS payload is rendered without executable markup."""
     await send_chat_message(page, "Please run the html injection test")
 
-    # Wait for the assistant answer to render (any non-empty markdown block).
+    # Wait for this test's canned payload, not merely any assistant block: the
+    # server keeps conversation history across tests, so an earlier turn would
+    # satisfy a generic "non-empty markdown" wait before the payload renders.
     await page.wait_for_function(
         """() => [...document.querySelectorAll(
             "[data-role='assistant'] .chat-preview__markdown"
-        )].some((el) => (el.textContent || '').trim().length > 0)""",
+        )].some((el) =>
+            (el.textContent || '').toLowerCase().includes('here is some content')
+        )""",
         timeout=20000,
     )
 
@@ -32,11 +36,17 @@ async def test_assistant_xss_sanitized(page):
 
     assert "<script" not in combined, "Script tags were not sanitized"
     assert "<iframe" not in combined, "iframe tags were not sanitized"
-    assert "onerror=" not in combined, "Event handler attributes were not sanitized"
+    assert "<img" not in combined, "img tags were not sanitized"
+    # The renderer escapes source HTML, so the payload legitimately survives as
+    # the literal text `onerror=` inside an escaped text node. The security
+    # property is that it stayed text, which the assertions above and the live
+    # element checks below establish.
+    assert "&lt;script&gt;" in combined, "The payload should be escaped text"
 
-    # No <script> elements should exist anywhere in the assistant turns.
-    script_count = await page.locator(f"{SEL['chat_turn_assistant']} script").count()
-    assert script_count == 0, f"Found {script_count} script elements in chat"
+    # No live elements from the payload may exist in the assistant turns.
+    for tag in ("script", "img", "iframe"):
+        count = await page.locator(f"{SEL['chat_turn_assistant']} {tag}").count()
+        assert count == 0, f"Found {count} live <{tag}> elements in chat"
 
 
 async def test_user_message_rendered_as_plain_text(page):
