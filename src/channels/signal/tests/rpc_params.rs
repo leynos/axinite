@@ -7,7 +7,7 @@ use super::*;
 
 #[test]
 fn build_rpc_params_direct_with_message() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Direct("+5555555555".to_string());
     let params = ch.build_rpc_params(&target, Some("Hello!"), None);
     assert_eq!(params["recipient"], serde_json::json!(["+5555555555"]));
@@ -19,7 +19,7 @@ fn build_rpc_params_direct_with_message() {
 
 #[test]
 fn build_rpc_params_direct_without_message() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Direct("+5555555555".to_string());
     let params = ch.build_rpc_params(&target, None, None);
     assert_eq!(params["recipient"], serde_json::json!(["+5555555555"]));
@@ -30,7 +30,7 @@ fn build_rpc_params_direct_without_message() {
 
 #[test]
 fn build_rpc_params_group_with_message() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Group("abc123".to_string());
     let params = ch.build_rpc_params(&target, Some("Group msg"), None);
     assert_eq!(params["groupId"], "abc123");
@@ -42,7 +42,7 @@ fn build_rpc_params_group_with_message() {
 
 #[test]
 fn build_rpc_params_group_without_message() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Group("abc123".to_string());
     let params = ch.build_rpc_params(&target, None, None);
     assert_eq!(params["groupId"], "abc123");
@@ -52,7 +52,7 @@ fn build_rpc_params_group_without_message() {
 
 #[test]
 fn build_rpc_params_uuid_direct_target() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     let target = RecipientTarget::Direct(uuid.to_string());
     let params = ch.build_rpc_params(&target, Some("hi"), None);
@@ -63,7 +63,7 @@ fn build_rpc_params_uuid_direct_target() {
 
 #[test]
 fn build_rpc_params_with_attachments() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Direct("+5555555555".to_string());
     let attachments = vec!["/path/to/image.png".to_string()];
     let params = ch.build_rpc_params(&target, Some("Check this!"), Some(&attachments));
@@ -77,7 +77,7 @@ fn build_rpc_params_with_attachments() {
 
 #[test]
 fn build_rpc_params_with_multiple_attachments() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Direct("+5555555555".to_string());
     let attachments = vec![
         "/path/to/image.png".to_string(),
@@ -92,7 +92,7 @@ fn build_rpc_params_with_multiple_attachments() {
 
 #[test]
 fn build_rpc_params_with_attachments_no_message() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Direct("+5555555555".to_string());
     let attachments = vec!["/path/to/image.png".to_string()];
     let params = ch.build_rpc_params(&target, None, Some(&attachments));
@@ -105,7 +105,7 @@ fn build_rpc_params_with_attachments_no_message() {
 
 #[test]
 fn build_rpc_params_group_with_attachments() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let target = RecipientTarget::Group("abc123".to_string());
     let attachments = vec!["/path/to/photo.jpg".to_string()];
     let params = ch.build_rpc_params(&target, Some("Group photo"), Some(&attachments));

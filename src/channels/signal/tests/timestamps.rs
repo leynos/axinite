@@ -7,7 +7,8 @@ use super::*;
 fn process_envelope_uses_data_message_timestamp() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -34,7 +35,8 @@ fn process_envelope_uses_data_message_timestamp() {
 fn process_envelope_falls_back_to_envelope_timestamp() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -60,7 +62,8 @@ fn process_envelope_falls_back_to_envelope_timestamp() {
 fn process_envelope_generates_timestamp_when_missing() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),

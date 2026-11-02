@@ -78,7 +78,7 @@ fn validate_attachment_paths_rejects_null_byte() {
 
 #[test]
 fn conversation_context_extracts_sender() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let metadata = serde_json::json!({
         "signal_sender": "+1234567890",
         "signal_sender_uuid": "uuid-123",
@@ -92,7 +92,7 @@ fn conversation_context_extracts_sender() {
 
 #[test]
 fn conversation_context_extracts_group() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let metadata = serde_json::json!({
         "signal_sender": "+1234567890",
         "signal_target": "group:mygroup"
@@ -104,7 +104,7 @@ fn conversation_context_extracts_group() {
 
 #[test]
 fn conversation_context_empty_for_unknown_channel() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let metadata = serde_json::json!({
         "unknown_key": "value"
     });

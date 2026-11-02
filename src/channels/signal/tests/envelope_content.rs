@@ -8,7 +8,8 @@ fn process_envelope_uuid_sender_dm() {
     let uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some(uuid.to_string()),
@@ -43,7 +44,8 @@ fn process_envelope_uuid_sender_in_group() {
     let mut config = make_config_with_allowed_group("testgroup");
     config.ignore_attachments = false;
     config.ignore_stories = false;
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some(uuid.to_string()),
@@ -79,7 +81,7 @@ fn process_envelope_uuid_sender_in_group() {
 
 #[test]
 fn process_envelope_metadata_has_signal_fields() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+1111111111"), Some("Hello!"));
     let (msg, _) = ch
         .process_envelope(&env)
@@ -95,7 +97,8 @@ fn process_envelope_metadata_group_target() {
     config.allow_from = vec!["*".to_string()];
     config.allow_from_groups = vec!["*".to_string()];
     config.group_policy = "allowlist".to_string();
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+2222222222".to_string()),
@@ -129,7 +132,8 @@ fn process_envelope_attachment_with_text_not_skipped() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
     config.ignore_attachments = true;
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -161,7 +165,8 @@ fn process_envelope_attachment_only_not_skipped_when_ignore_disabled() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
     config.ignore_attachments = false;
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),
@@ -194,7 +199,8 @@ fn process_envelope_attachment_only_not_skipped_when_ignore_disabled() {
 fn process_envelope_source_name_sets_user_name() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+3333333333".to_string()),
@@ -220,7 +226,8 @@ fn process_envelope_source_name_sets_user_name() {
 fn process_envelope_empty_source_name_not_set() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+3333333333".to_string()),
@@ -247,7 +254,7 @@ fn process_envelope_empty_source_name_not_set() {
 
 #[test]
 fn process_envelope_no_source_name_not_set() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+1111111111"), Some("hi"));
     let (msg, _) = ch
         .process_envelope(&env)
@@ -259,7 +266,7 @@ fn process_envelope_no_source_name_not_set() {
 
 #[test]
 fn process_envelope_dm_sets_thread_id_to_uuid() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     let env = make_envelope(Some("+1111111111"), Some("DM"));
     let (msg, _) = ch
         .process_envelope(&env)
@@ -279,7 +286,8 @@ fn process_envelope_group_sets_thread_id_to_uuid() {
     config.allow_from = vec!["*".to_string()];
     config.allow_from_groups = vec!["*".to_string()];
     config.group_policy = "allowlist".to_string();
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
 
     let env = Envelope {
         source: Some("+1111111111".to_string()),

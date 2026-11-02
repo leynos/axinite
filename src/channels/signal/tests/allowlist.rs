@@ -7,19 +7,20 @@ use super::*;
 fn wildcard_allows_anyone() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(ch.is_sender_allowed("+9999999999"));
 }
 
 #[test]
 fn specific_sender_allowed() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     assert!(ch.is_sender_allowed("+1111111111"));
 }
 
 #[test]
 fn unknown_sender_denied() {
-    let ch = make_channel();
+    let ch = make_channel().expect("Signal test config should construct a channel");
     assert!(!ch.is_sender_allowed("+9999999999"));
 }
 
@@ -27,7 +28,8 @@ fn unknown_sender_denied() {
 fn empty_allowlist_denies_all() {
     let mut config = make_config();
     config.allow_from = vec![];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(!ch.is_sender_allowed("+1111111111"));
 }
 
@@ -36,7 +38,8 @@ fn uuid_prefix_in_allowlist() {
     let uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     let mut config = make_config();
     config.allow_from = vec![format!("uuid:{uuid}")];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(ch.is_sender_allowed(uuid));
     // Should not match phone numbers.
     assert!(!ch.is_sender_allowed("+1111111111"));
@@ -47,7 +50,8 @@ fn bare_uuid_in_allowlist() {
     let uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     let mut config = make_config();
     config.allow_from = vec![uuid.to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(ch.is_sender_allowed(uuid));
 }
 
@@ -56,7 +60,8 @@ fn group_allowlist_filtering() {
     let mut config = make_config();
     config.allow_from = vec!["*".to_string()];
     config.allow_from_groups = vec!["group123".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(ch.is_group_allowed("group123"));
     assert!(!ch.is_group_allowed("other_group"));
 }
@@ -65,7 +70,8 @@ fn group_allowlist_filtering() {
 fn group_allowlist_wildcard() {
     let mut config = make_config();
     config.allow_from_groups = vec!["*".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(ch.is_group_allowed("any_group"));
 }
 
@@ -73,7 +79,8 @@ fn group_allowlist_wildcard() {
 fn group_allowlist_empty_denies_all() {
     let mut config = make_config();
     config.allow_from_groups = vec![];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(!ch.is_group_allowed("any_group"));
 }
 
@@ -100,7 +107,8 @@ fn multiple_allow_from() {
         "+2222222222".to_string(),
         "a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(),
     ];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(ch.is_sender_allowed("+1111111111"));
     assert!(ch.is_sender_allowed("+2222222222"));
     assert!(ch.is_sender_allowed("a1b2c3d4-e5f6-7890-abcd-ef1234567890"));
@@ -111,7 +119,8 @@ fn multiple_allow_from() {
 fn multiple_allow_from_groups() {
     let mut config = make_config();
     config.allow_from_groups = vec!["group_a".to_string(), "group_b".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     assert!(ch.is_group_allowed("group_a"));
     assert!(ch.is_group_allowed("group_b"));
     assert!(!ch.is_group_allowed("group_c"));
@@ -122,7 +131,8 @@ fn uuid_prefix_normalization_in_allowlist() {
     let uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     let mut config = make_config();
     config.allow_from = vec![format!("uuid:{uuid}"), "+1111111111".to_string()];
-    let ch = make_channel_from_config(config);
+    let ch =
+        make_channel_from_config(config).expect("Signal test config should construct a channel");
     // uuid:-prefixed entry should match bare UUID sender.
     assert!(ch.is_sender_allowed(uuid));
     // Phone numbers still work alongside UUID entries.
