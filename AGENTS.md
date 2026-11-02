@@ -204,8 +204,9 @@ management.
 - `EnvContext` is the sanctioned environment seam. Production captures ambient
   input at an owning composition boundary; tests construct isolated snapshots
   with `EnvContext::for_testing` or `with_env`.
-- Direct process-environment mutation in tests is forbidden. Mutexes and RAII
-  restoration guards do not make it safe.
+- Direct process-environment mutation in tests is forbidden. Mutexes and
+  resource acquisition is initialization (RAII) restoration guards do not make
+  it safe.
 
 ### Dependency Management
 

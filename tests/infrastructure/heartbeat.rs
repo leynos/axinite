@@ -22,7 +22,8 @@ use axinite::{
 #[tokio::test]
 #[ignore] // Requires running database and LLM credentials
 async fn test_heartbeat_end_to_end() {
-    // Config loads optional .env values at its ambient composition boundary.
+    // This test does not load `.env` files. Export `DATABASE_URL` and the LLM
+    // credentials in the process environment before running it.
     let _ = tracing_subscriber::fmt()
         .with_env_filter("axinite=debug")
         .try_init();

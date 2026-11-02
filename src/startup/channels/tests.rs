@@ -6,11 +6,11 @@ use axinite::{
     app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
     cli::Cli,
-    config::Config,
+    config::{Config, EnvContext},
     llm::create_session_manager,
 };
 
-use super::{GatewaySetup, setup_channels};
+use super::{ChannelSetupRequest, GatewaySetup, setup_channels};
 
 async fn build_test_components(config: Config) -> anyhow::Result<AppComponents> {
     let tempdir = tempfile::tempdir()?;
@@ -58,7 +58,14 @@ async fn setup_channels_skips_wasm_and_webhooks_in_cli_only_mode() -> anyhow::Re
     let components = build_test_components(config.clone()).await?;
     let channels = ChannelManager::new();
 
-    let setup = setup_channels(&cli_only(), &config, &components, &channels).await?;
+    let setup = setup_channels(ChannelSetupRequest {
+        cli: &cli_only(),
+        config: &config,
+        components: &components,
+        env_context: &EnvContext::default(),
+        channels: &channels,
+    })
+    .await?;
 
     assert!(setup.loaded_wasm_channel_names.is_empty());
     assert!(setup.wasm_channel_runtime_state.is_none());

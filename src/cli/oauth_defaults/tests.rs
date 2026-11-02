@@ -222,58 +222,27 @@ fn test_use_gateway_callback(#[case] callback_url: Option<&str>, #[case] expecte
     assert_eq!(use_gateway_callback_from(&ctx), expected);
 }
 
-#[test]
-fn test_build_platform_state_with_instance() {
-    let ctx = EnvContext::default().with_env("AXINITE_INSTANCE_NAME", "kind-deer");
-    assert_eq!(
-        build_platform_state_from("abc123", &ctx),
-        "kind-deer:abc123"
-    );
-}
-
-#[test]
-fn test_build_platform_state_without_instance() {
-    assert_eq!(
-        build_platform_state_from("abc123", &EnvContext::default()),
-        "abc123"
-    );
-}
-
-#[test]
-fn test_build_platform_state_with_openclaw_instance() {
-    let ctx = EnvContext::default().with_env("OPENCLAW_INSTANCE_NAME", "quiet-lion");
-    assert_eq!(
-        build_platform_state_from("xyz789", &ctx),
-        "quiet-lion:xyz789"
-    );
-}
-
-#[test]
-fn test_build_platform_state_falls_back_when_new_name_is_empty() {
-    let ctx = EnvContext::default()
-        .with_env("AXINITE_INSTANCE_NAME", "")
-        .with_env("OPENCLAW_INSTANCE_NAME", "quiet-lion");
-    assert_eq!(
-        build_platform_state_from("xyz789", &ctx),
-        "quiet-lion:xyz789"
-    );
-}
-
-#[test]
-fn test_build_platform_state_ignores_colon_in_new_name() {
-    let ctx = EnvContext::default()
-        .with_env("AXINITE_INSTANCE_NAME", "kind:deer")
-        .with_env("OPENCLAW_INSTANCE_NAME", "quiet-lion");
-    assert_eq!(
-        build_platform_state_from("xyz789", &ctx),
-        "quiet-lion:xyz789"
-    );
-}
-
-#[test]
-fn test_build_platform_state_ignores_colon_in_legacy_name() {
-    let ctx = EnvContext::default().with_env("OPENCLAW_INSTANCE_NAME", "quiet:lion");
-    assert_eq!(build_platform_state_from("xyz789", &ctx), "xyz789");
+#[rstest]
+#[case(Some("kind-deer"), None, "abc123", "kind-deer:abc123")]
+#[case(None, None, "abc123", "abc123")]
+#[case(None, Some("quiet-lion"), "xyz789", "quiet-lion:xyz789")]
+#[case(Some(""), Some("quiet-lion"), "xyz789", "quiet-lion:xyz789")]
+#[case(Some("kind:deer"), Some("quiet-lion"), "xyz789", "quiet-lion:xyz789")]
+#[case(None, Some("quiet:lion"), "xyz789", "xyz789")]
+fn test_build_platform_state(
+    #[case] axinite_instance: Option<&str>,
+    #[case] openclaw_instance: Option<&str>,
+    #[case] nonce: &str,
+    #[case] expected: &str,
+) {
+    let mut ctx = EnvContext::default();
+    if let Some(name) = axinite_instance {
+        ctx = ctx.with_env("AXINITE_INSTANCE_NAME", name);
+    }
+    if let Some(name) = openclaw_instance {
+        ctx = ctx.with_env("OPENCLAW_INSTANCE_NAME", name);
+    }
+    assert_eq!(build_platform_state_from(nonce, &ctx), expected);
 }
 
 #[test]

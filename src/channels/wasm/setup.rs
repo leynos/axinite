@@ -44,25 +44,9 @@ pub struct WasmChannelSetupRequest<'a> {
 }
 
 /// Load WASM channels and register their webhook routes.
-pub async fn setup_wasm_channels(
-    config: &Config,
-    secrets_store: &Option<Arc<dyn SecretsStore + Send + Sync>>,
-    extension_manager: Option<&Arc<ExtensionManager>>,
-    database: Option<&Arc<dyn Database>>,
-) -> Option<WasmChannelSetup> {
-    let env_context = EnvContext::capture_ambient();
-    setup_wasm_channels_from_context(WasmChannelSetupRequest {
-        config,
-        secrets_store,
-        extension_manager,
-        database,
-        env_context: &env_context,
-    })
-    .await
-}
-
-/// Load WASM channels using the supplied environment snapshot for credential
-/// fallback.
+///
+/// The supplied [`WasmChannelSetupRequest`] carries the environment snapshot
+/// used for credential fallback.
 pub async fn setup_wasm_channels_from_context(
     request: WasmChannelSetupRequest<'_>,
 ) -> Option<WasmChannelSetup> {

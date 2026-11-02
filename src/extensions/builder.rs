@@ -187,7 +187,7 @@ pub async fn build_extension_manager(
     manager
 }
 
-fn load_catalog_entries() -> Vec<RegistryEntry> {
+fn load_catalog_entries(relay_url: Option<String>) -> Vec<RegistryEntry> {
     let mut entries = match crate::registry::RegistryCatalog::load_or_embedded() {
         Ok(catalogue) => {
             let entries: Vec<_> = catalogue
@@ -206,7 +206,7 @@ fn load_catalog_entries() -> Vec<RegistryEntry> {
             Vec::new()
         }
     };
-    for entry in crate::extensions::registry::builtin_entries() {
+    for entry in crate::extensions::registry::builtin_entries_with_relay(relay_url) {
         if !entries.iter().any(|existing| existing.name == entry.name) {
             entries.push(entry);
         }
@@ -304,7 +304,8 @@ pub async fn build_extensions(
         }),
     );
 
-    let catalog_entries = load_catalog_entries();
+    let catalog_entries =
+        load_catalog_entries(relay_config.as_ref().map(|relay| relay.url.clone()));
     let ext_secrets = build_ext_secrets(secrets_store.clone())?;
 
     let extension_manager = Some(

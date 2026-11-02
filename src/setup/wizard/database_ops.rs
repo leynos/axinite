@@ -27,8 +27,11 @@ impl SetupWizard {
             ..Default::default()
         });
 
-        let pool = crate::db::tls::create_pool(&cfg, crate::config::SslMode::from_env())
-            .map_err(|e| SetupError::Database(format!("Failed to create pool: {}", e)))?;
+        let pool = crate::db::tls::create_pool(
+            &cfg,
+            crate::config::SslMode::from_context(&self.env_context),
+        )
+        .map_err(|e| SetupError::Database(format!("Failed to create pool: {}", e)))?;
 
         let client = pool
             .get()
@@ -219,7 +222,7 @@ impl SetupWizard {
                 .or_else(|| self.settings.libsql_path.clone());
 
             let db_path = existing_path.unwrap_or_else(|| {
-                crate::config::default_libsql_path()
+                crate::config::default_libsql_path_in(&self.env_context.axinite_base_dir())
                     .to_string_lossy()
                     .to_string()
             });
