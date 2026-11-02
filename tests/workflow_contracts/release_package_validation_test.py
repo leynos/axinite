@@ -9,8 +9,11 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
+import tarfile
+from pathlib import Path
 
 import pytest
 
@@ -40,6 +43,42 @@ APPLE_RUNNER_MAPPINGS = {
 # means a future migration has to delete an entry rather than silently reuse
 # the label.
 RETIRED_RUNNER_LABELS = frozenset({"macos-14"})
+EVIDENCE_STEP = "Record macOS toolchain and binary evidence"
+TARGET_EXPRESSION = "${{ join(matrix.targets, ',') }}"
+# Representative ``otool -l`` output for each load command a macOS release
+# binary can carry. The arm64 linker records LC_BUILD_VERSION; the Intel
+# linker still emits LC_VERSION_MIN_MACOSX.
+ARM64_LOAD_COMMAND = (
+    "Load command 10\n"
+    "      cmd LC_BUILD_VERSION\n"
+    "  cmdsize 32\n"
+    " platform 1\n"
+    "    minos 11.0\n"
+    "      sdk 15.5\n"
+)
+INTEL_LOAD_COMMAND = (
+    "Load command 10\n"
+    "      cmd LC_VERSION_MIN_MACOSX\n"
+    "  cmdsize 16\n"
+    "  version 10.12\n"
+    "      sdk 15.5\n"
+)
+# The evidence step shells out to the macOS toolchain. These stubs stand in
+# for it so the complete workflow body runs on any host.
+_STUB_TOOLS = {
+    "sw_vers": (
+        "printf 'ProductName:\\t\\tmacOS\\n'\n"
+        "printf 'ProductVersion:\\t\\t15.8.2\\n'\n"
+        "printf 'BuildVersion:\\t\\t24H232\\n'\n"
+    ),
+    "uname": 'printf \'%s\\n\' "${STUB_UNAME:?}"\n',
+    "rustc": 'printf \'host: %s\\n\' "${STUB_RUSTC_HOST:?}"\n',
+    "xcodebuild": "printf 'Xcode 16.4\\nBuild version 16F6\\n'\n",
+    "xcode-select": "printf '/Applications/Xcode.app/Contents/Developer\\n'\n",
+    "xcrun": 'printf \'%s\\n\' "${STUB_SDK:?}"\n',
+    "lipo": 'printf \'%s\\n\' "${STUB_LIPO_ARCHS:?}"\n',
+    "otool": 'cat "${STUB_OTOOL_OUTPUT:?}"\n',
+}
 
 
 def _mapping(value: object, label: str) -> dict[str, object]:
@@ -118,6 +157,80 @@ def _expected_architecture(
         capture_output=True,
         text=True,
     )
+
+
+def _evidence_script(workflow: dict[str, object]) -> str:
+    """Return the shell body of the macOS evidence step."""
+    local = _job(workflow, "build-local-artefacts")
+    return _step(local, EVIDENCE_STEP).run
+
+
+def _write_stub_tools(stub_dir: Path) -> None:
+    """Install stand-ins for the macOS tools the evidence step invokes."""
+    stub_dir.mkdir()
+    for name, body in _STUB_TOOLS.items():
+        tool = stub_dir / name
+        tool.write_text(f"#!/usr/bin/env bash\nset -euo pipefail\n{body}")
+        tool.chmod(0o755)
+
+
+def _write_archive(workspace: Path, target: str) -> Path:
+    """Create the packaged archive the evidence step inspects."""
+    archive = workspace / "target" / "distrib" / f"axinite-{target}.tar.gz"
+    archive.parent.mkdir(parents=True)
+    payload = workspace / "payload" / f"axinite-{target}" / "axinite"
+    payload.parent.mkdir(parents=True)
+    payload.write_text("#!/bin/sh\n")
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(payload, arcname=f"axinite-{target}/axinite")
+    return archive
+
+
+def _evidence_environment(
+    tmp_path: Path, archs: str, otool_output: str
+) -> dict[str, str]:
+    """Build an environment whose tools report the requested macOS facts."""
+    _write_stub_tools(tmp_path / "bin")
+    otool_file = tmp_path / "otool.txt"
+    otool_file.write_text(otool_output)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{environment['PATH']}"
+    environment["STUB_UNAME"] = archs
+    environment["STUB_RUSTC_HOST"] = f"{archs}-apple-darwin"
+    environment["STUB_SDK"] = "15.5"
+    environment["STUB_LIPO_ARCHS"] = archs
+    environment["STUB_OTOOL_OUTPUT"] = str(otool_file)
+    return environment
+
+
+def _run_evidence_step(
+    tmp_path: Path,
+    script: str,
+    target: str,
+    *,
+    archs: str,
+    otool_output: str,
+    with_archive: bool = True,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Execute the workflow's evidence step against stubbed macOS tools."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    if with_archive:
+        _write_archive(workspace, target)
+    program = script.replace(TARGET_EXPRESSION, target)
+    assert program != script or TARGET_EXPRESSION not in script, (
+        "the workflow must keep deriving its target from the matrix"
+    )
+    finished = subprocess.run(  # noqa: S603 S607 - fixed bash, workflow-owned text
+        ["bash", "-c", program],
+        cwd=workspace,
+        env=_evidence_environment(tmp_path, archs, otool_output),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return finished, workspace
 
 
 @pytest.fixture(scope="module")
@@ -327,6 +440,107 @@ def test_macos_evidence_step_rejects_an_unplanned_apple_target(
     finished = _expected_architecture(case_block, "aarch64-apple-ios")
     assert finished.returncode == 1
     assert "unexpected macOS release target" in finished.stderr
+
+
+@pytest.mark.parametrize(
+    ("target", "arch", "load_command", "expected_loads"),
+    [
+        (
+            "aarch64-apple-darwin",
+            "arm64",
+            ARM64_LOAD_COMMAND,
+            ["LC_BUILD_VERSION minos: 11.0", "LC_BUILD_VERSION sdk: 15.5"],
+        ),
+        (
+            "x86_64-apple-darwin",
+            "x86_64",
+            INTEL_LOAD_COMMAND,
+            [
+                "LC_VERSION_MIN_MACOSX minos: 10.12",
+                "LC_VERSION_MIN_MACOSX sdk: 15.5",
+            ],
+        ),
+    ],
+)
+def test_macos_evidence_step_records_a_complete_context(
+    workflow: dict[str, object],
+    tmp_path: Path,
+    target: str,
+    arch: str,
+    load_command: str,
+    expected_loads: list[str],
+) -> None:
+    """The whole step runs and records every field for both Apple targets."""
+    finished, workspace = _run_evidence_step(
+        tmp_path,
+        _evidence_script(workflow),
+        target,
+        archs=arch,
+        otool_output=f"Load command 10\n{load_command}",
+    )
+    assert finished.returncode == 0, finished.stderr
+    context = (workspace / "validation-context.txt").read_text()
+    for field in (
+        "ProductName:\t\tmacOS",
+        f"uname -m: {arch}",
+        f"rustc host: {arch}-apple-darwin",
+        "Xcode 16.4",
+        "xcode-select -p: /Applications/Xcode.app/Contents/Developer",
+        "xcrun --show-sdk-version: 15.5",
+        "xcrun --show-sdk-path: 15.5",
+        f"archive: target/distrib/axinite-{target}.tar.gz",
+        f"executable: axinite-{target}/axinite",
+        f"lipo -archs: {arch}",
+    ):
+        assert field in context, f"the evidence must record {field!r}"
+    for recorded in expected_loads:
+        assert recorded in context, f"the evidence must record {recorded!r}"
+
+
+def test_macos_evidence_step_rejects_a_mismatched_architecture(
+    workflow: dict[str, object], tmp_path: Path
+) -> None:
+    """A binary built for the other architecture cannot claim the evidence."""
+    finished, _ = _run_evidence_step(
+        tmp_path,
+        _evidence_script(workflow),
+        "aarch64-apple-darwin",
+        archs="x86_64",
+        otool_output=f"Load command 10\n{ARM64_LOAD_COMMAND}",
+    )
+    assert finished.returncode == 1
+    assert "expected arm64, found x86_64" in finished.stderr
+
+
+def test_macos_evidence_step_rejects_a_binary_without_a_deployment_target(
+    workflow: dict[str, object], tmp_path: Path
+) -> None:
+    """A binary carrying neither load command fails the evidence step."""
+    finished, _ = _run_evidence_step(
+        tmp_path,
+        _evidence_script(workflow),
+        "aarch64-apple-darwin",
+        archs="arm64",
+        otool_output="Load command 10\n      cmd LC_UUID\n  cmdsize 24\n",
+    )
+    assert finished.returncode == 1
+    assert "no deployment target" in finished.stderr
+
+
+def test_macos_evidence_step_requires_the_packaged_archive(
+    workflow: dict[str, object], tmp_path: Path
+) -> None:
+    """Missing packaging is reported rather than silently skipped."""
+    finished, _ = _run_evidence_step(
+        tmp_path,
+        _evidence_script(workflow),
+        "x86_64-apple-darwin",
+        archs="x86_64",
+        otool_output=f"Load command 10\n{INTEL_LOAD_COMMAND}",
+        with_archive=False,
+    )
+    assert finished.returncode == 1
+    assert "missing macOS package archive" in finished.stderr
 
 
 @pytest.mark.parametrize(
