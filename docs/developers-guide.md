@@ -1039,10 +1039,11 @@ deep copy made by `isolated`, so the cached parse itself never leaves
 reading and alters a copy to show the next reading is unchanged.
 
 `read_workflows` is the unfiltered reading and `read_estate` drops the
-dist-generated release workflow on top of it. The suite contracts may not judge
-a file that is regenerated wholesale; the placement and cache contracts do read
-it, in order to exempt it by name, which is a statement they make rather than
-one the reader makes for them.
+dist-generated release workflow on top of it. The generic suite contracts
+exclude that file because cargo-dist generates it and the repository then
+maintains it by hand; the placement and cache contracts do read it, in order to
+exempt it by name, which is a statement they make rather than one the reader
+makes for them.
 
 The suite needs Python 3.11 or newer. `nextest_config.py` parses
 `.config/nextest.toml` with the standard library's `tomllib`, which arrived in
@@ -1346,15 +1347,18 @@ The Apple legs come from the same mapping. `aarch64-apple-darwin` uses
 both are standard GitHub-hosted images rather than larger runners. The
 `macos-14` and `macos-14-arm64` images began deprecation on 6 July 2026 and
 retire on 2 November 2026, with brownouts from 5 October
-([actions/runner-images#13518][]). `macos-15-intel` is the last x86_64 Actions
-image and is available until August 2027 ([actions/runner-images#13045][]). The
-build-host label names the image that compiles and packages the release; it
-does not set the deployment target encoded in the binary, which comes from the
-toolchain and the SDK target. Hosted validation proves that the native binaries
-build and package, that their encoded architectures and deployment targets
-match their target triples, and that the published checksums verify. It does
-not prove that the binaries execute on older macOS versions, are signed, or are
-notarized; those checks are outside the package-validation acceptance criteria.
+([actions/runner-images#13518][]). `macos-15-intel` is available until August
+2027 ([actions/runner-images#13045][]); it is not the last x86_64 Actions
+image, because `macos-26-intel` has been generally available since
+26 February 2026 ([macos-26 changelog][]). The build-host label names the image
+that compiles and packages the release; it does not set the deployment target
+encoded in the binary, which comes from the toolchain and the SDK target.
+Hosted validation proves that the native binaries build and package, that each
+binary's encoded architecture matches its target triple, that its minimum
+deployment version and SDK are recorded, and that the published checksums
+verify. It does not prove that the binaries execute on older macOS versions,
+are signed, or are notarized; those checks are outside the package-validation
+acceptance criteria.
 
 Two exclusions still stand:
 
@@ -4647,3 +4651,4 @@ owned children cleanly. See the stub runtime section of
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
 [actions/runner-images#13518]: https://github.com/actions/runner-images/issues/13518
 [actions/runner-images#13045]: https://github.com/actions/runner-images/issues/13045
+[macos-26 changelog]: https://github.blog/changelog/2026-02-26-macos-26-is-now-generally-available-for-github-hosted-runners/

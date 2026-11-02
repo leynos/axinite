@@ -76,7 +76,13 @@ _STUB_TOOLS = {
     "rustc": 'printf \'host: %s\\n\' "${STUB_RUSTC_HOST:?}"\n',
     "xcodebuild": "printf 'Xcode 16.4\\nBuild version 16F6\\n'\n",
     "xcode-select": "printf '/Applications/Xcode.app/Contents/Developer\\n'\n",
-    "xcrun": 'printf \'%s\\n\' "${STUB_SDK:?}"\n',
+    "xcrun": (
+        'case "$1" in\n'
+        '  --show-sdk-version) printf \'%s\\n\' "${STUB_SDK:?}" ;;\n'
+        '  --show-sdk-path) printf \'%s\\n\' "${STUB_SDK_PATH:?}" ;;\n'
+        '  *) echo "unexpected xcrun arguments: $*" >&2; exit 1 ;;\n'
+        "esac\n"
+    ),
     "lipo": 'printf \'%s\\n\' "${STUB_LIPO_ARCHS:?}"\n',
     "otool": 'cat "${STUB_OTOOL_OUTPUT:?}"\n',
 }
@@ -166,16 +172,24 @@ def _evidence_script(workflow: dict[str, object]) -> str:
     return _step(local, EVIDENCE_STEP).run
 
 
-def _write_stub_tools(stub_dir: Path) -> None:
+def _write_stub_tools(stub_dir: Path, failing_tool: str | None = None) -> None:
     """Install stand-ins for the macOS tools the evidence step invokes."""
     stub_dir.mkdir()
     for name, body in _STUB_TOOLS.items():
         tool = stub_dir / name
         tool.write_text(f"#!/usr/bin/env bash\nset -euo pipefail\n{body}")
         tool.chmod(0o755)
+    if failing_tool is not None:
+        failing = stub_dir / failing_tool
+        failing.write_text(
+            "#!/usr/bin/env bash\n"
+            f"echo 'stub {failing_tool} failed' >&2\n"
+            "exit 1\n"
+        )
+        failing.chmod(0o755)
 
 
-def _write_archive(workspace: Path, target: str) -> Path:
+def _write_archive(workspace: Path, target: str, with_executable: bool = True) -> Path:
     """Create the packaged archive the evidence step inspects."""
     archive = workspace / "target" / "distrib" / f"axinite-{target}.tar.gz"
     archive.parent.mkdir(parents=True)
@@ -183,7 +197,10 @@ def _write_archive(workspace: Path, target: str) -> Path:
     payload.parent.mkdir(parents=True)
     payload.write_text("#!/bin/sh\n")
     with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(payload, arcname=f"axinite-{target}/axinite")
+        if with_executable:
+            bundle.add(payload, arcname=f"axinite-{target}/axinite")
+        else:
+            bundle.add(payload, arcname=f"axinite-{target}/README")
     return archive
 
 
@@ -194,6 +211,8 @@ class _MacOSFacts:
     archs: str
     otool_output: str
     with_archive: bool = True
+    with_executable: bool = True
+    failing_tool: str | None = None
 
 
 @dataclass(frozen=True)
@@ -230,7 +249,7 @@ APPLE_EVIDENCE_CASES = (
 
 def _evidence_environment(tmp_path: Path, facts: _MacOSFacts) -> dict[str, str]:
     """Build an environment whose tools report the requested macOS facts."""
-    _write_stub_tools(tmp_path / "bin")
+    _write_stub_tools(tmp_path / "bin", facts.failing_tool)
     otool_file = tmp_path / "otool.txt"
     otool_file.write_text(facts.otool_output)
     environment = os.environ.copy()
@@ -238,6 +257,10 @@ def _evidence_environment(tmp_path: Path, facts: _MacOSFacts) -> dict[str, str]:
     environment["STUB_UNAME"] = facts.archs
     environment["STUB_RUSTC_HOST"] = f"{facts.archs}-apple-darwin"
     environment["STUB_SDK"] = "15.5"
+    environment["STUB_SDK_PATH"] = (
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform"
+        "/Developer/SDKs/MacOSX15.5.sdk"
+    )
     environment["STUB_LIPO_ARCHS"] = facts.archs
     environment["STUB_OTOOL_OUTPUT"] = str(otool_file)
     return environment
@@ -250,7 +273,7 @@ def _run_evidence_step(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     if facts.with_archive:
-        _write_archive(workspace, target)
+        _write_archive(workspace, target, facts.with_executable)
     program = script.replace(TARGET_EXPRESSION, target)
     assert program != script or TARGET_EXPRESSION not in script, (
         "the workflow must keep deriving its target from the matrix"
@@ -499,7 +522,8 @@ def test_macos_evidence_step_records_a_complete_context(
         "Xcode 16.4",
         "xcode-select -p: /Applications/Xcode.app/Contents/Developer",
         "xcrun --show-sdk-version: 15.5",
-        "xcrun --show-sdk-path: 15.5",
+        "xcrun --show-sdk-path: /Applications/Xcode.app/Contents/Developer"
+        "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk",
         f"archive: target/distrib/axinite-{case.target}.tar.gz",
         f"executable: axinite-{case.target}/axinite",
         f"lipo -archs: {case.arch}",
@@ -558,6 +582,42 @@ def test_macos_evidence_step_requires_the_packaged_archive(
     )
     assert finished.returncode == 1
     assert "missing macOS package archive" in finished.stderr
+
+
+def test_macos_evidence_step_requires_the_packaged_executable(
+    workflow: dict[str, object], tmp_path: Path
+) -> None:
+    """An archive without the axinite binary is reported, not accepted."""
+    finished, _ = _run_evidence_step(
+        tmp_path,
+        _evidence_script(workflow),
+        "aarch64-apple-darwin",
+        _MacOSFacts(
+            archs="arm64",
+            otool_output=f"Load command 10\n{ARM64_LOAD_COMMAND}",
+            with_executable=False,
+        ),
+    )
+    assert finished.returncode == 1
+    assert "no axinite executable" in finished.stderr
+
+
+def test_macos_evidence_step_fails_when_a_toolchain_command_fails(
+    workflow: dict[str, object], tmp_path: Path
+) -> None:
+    """A failing metadata command aborts the step under ``set -euo pipefail``."""
+    finished, _ = _run_evidence_step(
+        tmp_path,
+        _evidence_script(workflow),
+        "aarch64-apple-darwin",
+        _MacOSFacts(
+            archs="arm64",
+            otool_output=f"Load command 10\n{ARM64_LOAD_COMMAND}",
+            failing_tool="otool",
+        ),
+    )
+    assert finished.returncode == 1
+    assert "stub otool failed" in finished.stderr
 
 
 @pytest.mark.parametrize(
