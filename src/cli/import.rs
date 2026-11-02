@@ -210,8 +210,12 @@ mod tests {
     use super::{load_import_secrets_crypto, resolve_openclaw_path};
     use crate::config::EnvContext;
 
-    #[test]
-    fn explicit_path_wins_over_detection() {
+    /// Create a temporary home containing a detectable OpenClaw installation.
+    ///
+    /// Returns the temporary directory (which must stay alive for the test's
+    /// duration), the installation directory, and a snapshot whose `HOME`
+    /// points at the temporary home.
+    fn openclaw_home() -> (tempfile::TempDir, std::path::PathBuf, EnvContext) {
         let home = tempfile::tempdir().expect("temporary home directory should be created");
         let openclaw_dir = home.path().join(".openclaw");
         ambient_fs::create_dir_all(&openclaw_dir).expect("OpenClaw directory should be created");
@@ -219,6 +223,12 @@ mod tests {
             .expect("OpenClaw config should be created");
         let env_context =
             EnvContext::default().with_env("HOME", home.path().to_str().expect("UTF-8 path"));
+        (home, openclaw_dir, env_context)
+    }
+
+    #[test]
+    fn explicit_path_wins_over_detection() {
+        let (home, _openclaw_dir, env_context) = openclaw_home();
         let explicit = home.path().join("explicit");
 
         let resolved = resolve_openclaw_path(Some(explicit.clone()), &env_context)
@@ -229,13 +239,7 @@ mod tests {
 
     #[test]
     fn detected_path_uses_the_supplied_snapshot() {
-        let home = tempfile::tempdir().expect("temporary home directory should be created");
-        let openclaw_dir = home.path().join(".openclaw");
-        ambient_fs::create_dir_all(&openclaw_dir).expect("OpenClaw directory should be created");
-        ambient_fs::write(openclaw_dir.join("openclaw.json"), "{}")
-            .expect("OpenClaw config should be created");
-        let env_context =
-            EnvContext::default().with_env("HOME", home.path().to_str().expect("UTF-8 path"));
+        let (_home, openclaw_dir, env_context) = openclaw_home();
 
         let resolved = resolve_openclaw_path(None, &env_context).expect("detection should resolve");
 
