@@ -99,6 +99,8 @@ pub(crate) fn docker_feature_disabled_error() -> SandboxError {
 }
 
 #[cfg(all(unix, feature = "docker"))]
+/// Collect candidate user-owned Docker socket paths from the ambient `HOME`
+/// and `XDG_RUNTIME_DIR` variables and the effective user ID.
 fn unix_socket_candidates() -> Vec<PathBuf> {
     unix_socket_candidates_from_env(
         {

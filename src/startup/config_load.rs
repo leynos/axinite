@@ -51,14 +51,24 @@ async fn load_initial_config_from(
     env: &EnvContext,
     toml_path: Option<&std::path::Path>,
 ) -> anyhow::Result<Config> {
-    let settings = load_settings_from_context(env)?;
+    let settings = match load_settings_from_context(env) {
+        Ok(settings) => settings,
+        Err(error) => {
+            super::telemetry::config_load("settings_error");
+            return Err(error.into());
+        }
+    };
     // `None` still applies the default `~/.axinite/config.toml` overlay, so
     // omitting `--config` does not silently drop settings that only exist
     // there. The reload path applies the same default overlay.
     let result = Config::from_context_with_optional_toml(env, &settings, toml_path).await;
     match result {
-        Ok(c) => Ok(c),
+        Ok(config) => {
+            super::telemetry::config_load("success");
+            Ok(config)
+        }
         Err(axinite::error::ConfigError::MissingRequired { key, hint }) => {
+            super::telemetry::config_load("config_error");
             anyhow::bail!(
                 "Configuration error: Missing required setting '{}'. {}. \
                  Run 'axinite onboard' to configure, or set the required environment variables.",
@@ -66,7 +76,10 @@ async fn load_initial_config_from(
                 hint
             );
         }
-        Err(e) => Err(e.into()),
+        Err(error) => {
+            super::telemetry::config_load("config_error");
+            Err(error.into())
+        }
     }
 }
 

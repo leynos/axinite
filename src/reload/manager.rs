@@ -104,6 +104,7 @@ impl HotReloadManager {
         // Step 2: Load new configuration from this cycle's immutable snapshot.
         let new_config = self.config_loader.load(env_context).await.map_err(|e| {
             tracing::error!("Config reload failed: {}", e);
+            super::telemetry::reload_outcome("config_error");
             ReloadError::from(e)
         })?;
 
@@ -117,15 +118,21 @@ impl HotReloadManager {
             for updater in &self.secret_updaters {
                 updater.update_secret(None).await;
             }
+            super::telemetry::reload_outcome("http_removed");
             return Ok(());
         };
 
         // Step 3: Restart listener if address changed (DNS lookup only if listener exists)
-        self.maybe_restart_listener(&new_http).await?;
+        self.maybe_restart_listener(&new_http)
+            .await
+            .inspect_err(|_| {
+                super::telemetry::reload_outcome("listener_error");
+            })?;
 
         // Step 4: Update channel secrets
         self.update_channel_secrets(&new_http).await;
 
+        super::telemetry::reload_outcome("success");
         Ok(())
     }
 

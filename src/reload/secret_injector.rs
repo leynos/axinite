@@ -92,6 +92,7 @@ impl DbSecretInjector {
                 tracing::debug!(
                     "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared snapshot entry"
                 );
+                super::telemetry::secret_injection("missing");
                 return;
             }
             Err(e) => {
@@ -103,6 +104,9 @@ impl DbSecretInjector {
                         "Retained last successfully injected {HTTP_WEBHOOK_SECRET_KEY} \
                          after retrieval error"
                     );
+                    super::telemetry::secret_injection("retained_after_error");
+                } else {
+                    super::telemetry::secret_injection("error");
                 }
                 return;
             }
@@ -112,6 +116,7 @@ impl DbSecretInjector {
         *self.last_successful.lock().await = Some(value.clone());
         ctx.inject_secret(HTTP_WEBHOOK_SECRET_KEY, value);
         tracing::debug!("Injected {HTTP_WEBHOOK_SECRET_KEY} from secrets store");
+        super::telemetry::secret_injection("injected");
     }
 }
 

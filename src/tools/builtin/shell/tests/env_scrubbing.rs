@@ -79,6 +79,8 @@ async fn test_env_scrubbing_hides_secrets() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// Verify an explicitly empty safe variable is forwarded to the child as
+/// empty rather than dropped.
 async fn test_env_scrubbing_forwards_explicitly_empty_safe_var() -> anyhow::Result<()> {
     let (_home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env.with_env("TMPDIR", ""));
@@ -174,6 +176,9 @@ async fn test_env_scrubbing_hides_inherited_process_secret() -> anyhow::Result<(
     Ok(())
 }
 
+/// Child-process half of the inherited-secret test: run the environment dump
+/// and assert the secret present only in the real process environment is
+/// absent from the child.
 async fn run_inherited_secret_child() -> anyhow::Result<()> {
     // The snapshot deliberately omits the secret while the real process
     // environment contains it, so only `env_clear()` keeps it out of the
@@ -205,6 +210,8 @@ async fn run_inherited_secret_child() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// Verify a safe variable such as HOME from the environment snapshot reaches
+/// the child process with its value.
 async fn test_env_scrubbing_forwards_safe_vars() -> anyhow::Result<()> {
     let (home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env);
@@ -225,6 +232,8 @@ async fn test_env_scrubbing_forwards_safe_vars() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// Verify variables supplied through the job context's extra_env are
+/// forwarded to the child process.
 async fn test_env_scrubbing_forwards_explicit_extra_env() -> anyhow::Result<()> {
     let (_home_dir, env) = shell_context()?;
     let tool = ShellTool::from_context(env);
@@ -252,6 +261,8 @@ async fn test_env_scrubbing_forwards_explicit_extra_env() -> anyhow::Result<()> 
 }
 
 #[tokio::test]
+/// Verify values for common secret-looking variables are scrubbed from the
+/// child environment.
 async fn test_env_scrubbing_common_secret_patterns() -> anyhow::Result<()> {
     // Simulate common secret env vars that agents/tools might set
     let secrets = [
@@ -285,6 +296,8 @@ async fn test_env_scrubbing_common_secret_patterns() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// Verify arbitrary non-safe variables and their values are hidden from the
+/// child environment.
 async fn test_env_scrubbing_custom_var_hidden() -> anyhow::Result<()> {
     // Verify that arbitrary values in the input snapshot are not forwarded.
     let (_home_dir, env) = shell_context()?;
@@ -309,6 +322,8 @@ async fn test_env_scrubbing_custom_var_hidden() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// Verify PATH remains available to the child so commands can resolve
+/// executables.
 async fn test_env_scrubbing_path_preserved() -> anyhow::Result<()> {
     // PATH must be preserved for commands to resolve
     let (_home_dir, env) = shell_context()?;

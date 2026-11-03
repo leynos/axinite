@@ -101,6 +101,8 @@ pub(super) async fn auth_tool(
     complete_auth_setup(secrets_store.as_ref(), &tools_dir, &context).await
 }
 
+/// Complete tool authentication, preferring a token from the configured
+/// environment variable, then an OAuth flow, and finally manual entry.
 async fn complete_auth_setup(
     store: &(dyn SecretsStore + Send + Sync),
     tools_dir: &Path,
@@ -126,6 +128,11 @@ async fn complete_auth_setup(
     auth_tool_manual(store, context.user_id, context.auth).await
 }
 
+/// Try to authenticate from the tool's configured environment variable.
+///
+/// Returns false when the variable is unset or empty. A token that fails
+/// validation falls back to manual entry, which this function then reports as
+/// handled.
 async fn try_auth_from_env(
     store: &(dyn SecretsStore + Send + Sync),
     context: &AuthToolContext<'_>,

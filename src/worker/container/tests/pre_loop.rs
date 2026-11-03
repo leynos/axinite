@@ -297,6 +297,8 @@ fn worker_runtime_from_context_reads_worker_token() {
 }
 
 #[test]
+/// Verify from_context reports MissingToken when `AXINITE_WORKER_TOKEN` is
+/// absent from the environment snapshot.
 fn worker_runtime_from_context_returns_missing_token_without_worker_env() {
     let result = WorkerRuntime::from_context(
         WorkerConfig {

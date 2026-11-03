@@ -93,6 +93,9 @@ fn test_pid_lock_creates_parent_dirs() {
 }
 
 #[test]
+/// Child-process helper for the cross-process lock test: when invoked with
+/// `AXINITE_PID_LOCK_CHILD=1`, acquire the configured pid lock and hold it for
+/// the requested duration; otherwise return immediately.
 fn test_pid_lock_child_helper_holds_lock() {
     if {
         #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]

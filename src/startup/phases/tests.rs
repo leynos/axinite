@@ -36,6 +36,9 @@ fn phase_context(libsql_path: &std::path::Path) -> axinite::config::EnvContext {
         .with_env("LIBSQL_PATH", libsql_path.display().to_string())
 }
 
+/// Return a test config context built once from a temporary libSQL-backed
+/// configuration and cached for later calls, cloning its resolved handles on
+/// each call.
 async fn loaded_context() -> anyhow::Result<LoadedConfigContext> {
     let snapshot = LOADED_CONTEXT
         .get_or_try_init(|| async {

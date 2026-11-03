@@ -35,6 +35,8 @@ impl SetupWizard {
     }
 
     #[cfg(feature = "postgres")]
+    /// Reconnect to PostgreSQL using `DATABASE_URL`, then load persisted
+    /// settings if available and reapply the postgres backend details.
     async fn reconnect_postgres(&mut self) -> Result<(), SetupError> {
         let url = self.env_context.get_owned("DATABASE_URL").ok_or_else(|| {
             SetupError::Database(
@@ -60,6 +62,8 @@ impl SetupWizard {
     }
 
     #[cfg(feature = "libsql")]
+    /// Reconnect to libSQL at the configured path or Turso URL, verifying the
+    /// connection before loading persisted settings.
     async fn reconnect_libsql(&mut self) -> Result<(), SetupError> {
         let path = self
             .env_context
@@ -86,6 +90,8 @@ impl SetupWizard {
     }
 
     #[cfg(feature = "libsql")]
+    /// Record the libSQL backend, path, and optional Turso URL in the
+    /// wizard's in-memory settings.
     fn apply_libsql_settings(&mut self, path: &str, turso_url: Option<&str>) {
         self.settings.database_backend = Some("libsql".to_string());
         self.settings.libsql_path = Some(path.to_string());

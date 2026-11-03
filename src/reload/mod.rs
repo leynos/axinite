@@ -15,6 +15,7 @@ mod error;
 pub(crate) mod listener_controller;
 mod manager;
 pub(crate) mod secret_injector;
+mod telemetry;
 
 #[cfg(test)]
 mod test_stubs;

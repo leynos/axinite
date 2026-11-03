@@ -169,6 +169,8 @@ async fn test_models_no_auth() {
 }
 
 #[tokio::test]
+/// Verify a gateway state without an LLM provider responds 503 to a chat
+/// completions request.
 async fn test_no_llm_provider_returns_503() {
     // Create state WITHOUT llm_provider
     let state = Arc::new(GatewayState {

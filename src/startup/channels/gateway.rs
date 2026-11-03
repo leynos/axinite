@@ -57,6 +57,8 @@ pub(crate) struct GatewaySetup {
     pub(crate) routine_engine_slot: Option<axinite::channels::web::server::RoutineEngineSlot>,
 }
 
+/// Attach the optional runtime services from the app components and gateway
+/// context to a gateway channel, returning the configured builder.
 fn configure_gateway_builder(
     mut gw: GatewayChannel,
     components: &AppComponents,

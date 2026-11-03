@@ -225,6 +225,11 @@ impl Config {
     }
 }
 
+/// Capture the process environment and any injected variables as the two
+/// maps used to build an environment snapshot.
+///
+/// This is the sole sanctioned ambient environment boundary; all other code
+/// reads through the resulting snapshot.
 fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
     #[expect(
         clippy::disallowed_methods,
@@ -287,6 +292,7 @@ mod tests {
         assert_eq!(ctx.get("OPENAI_API_KEY"), Some("env"));
     }
 
+    /// An empty environment value is treated as unset, so the secret wins.
     #[test]
     fn empty_env_value_falls_back_to_secret() {
         let ctx = EnvContext::for_testing(
