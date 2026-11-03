@@ -13,8 +13,58 @@ use crate::bootstrap::migrate_bootstrap_json_to_env;
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
 /// Replaceable, immutable snapshots of parsed `.env` layers.
-pub(super) static DOTENV_LAYERS: LazyLock<RwLock<Arc<DotenvLayers>>> =
-    LazyLock::new(|| RwLock::new(Arc::new(DotenvLayers::empty())));
+pub(super) static DOTENV_LAYERS: LazyLock<DotenvLayerStore> =
+    LazyLock::new(DotenvLayerStore::empty);
+
+/// Inputs needed to reload dotenv files at an explicit composition boundary.
+pub(crate) struct DotenvRefreshInputs<'a> {
+    pub(crate) start_dir: &'a Path,
+    pub(crate) process: &'a HashMap<String, String>,
+    pub(crate) cached_base_dir: Option<&'a Path>,
+    pub(crate) home_dir_fallback: Option<&'a Path>,
+}
+
+/// Publishes immutable dotenv snapshots while readers retain stable versions.
+pub(crate) struct DotenvLayerStore {
+    layers: RwLock<Arc<DotenvLayers>>,
+}
+
+impl DotenvLayerStore {
+    /// Start with an empty snapshot.
+    pub(crate) fn empty() -> Self {
+        Self {
+            layers: RwLock::new(Arc::new(DotenvLayers::empty())),
+        }
+    }
+
+    /// Load files from explicit inputs and publish a fresh immutable snapshot.
+    pub(crate) fn refresh(&self, inputs: DotenvRefreshInputs<'_>) -> Arc<DotenvLayers> {
+        let layers = match inputs.cached_base_dir {
+            Some(base_dir) => DotenvLayers::load_with_base_dir(
+                inputs.start_dir,
+                inputs.process,
+                Some(base_dir),
+                inputs.home_dir_fallback,
+            ),
+            None => DotenvLayers::load(inputs.start_dir, inputs.process, inputs.home_dir_fallback),
+        };
+        let layers = Arc::new(layers);
+        let mut published = self
+            .layers
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *published = Arc::clone(&layers);
+        layers
+    }
+
+    /// Get the current immutable snapshot.
+    pub(crate) fn snapshot(&self) -> Arc<DotenvLayers> {
+        self.layers
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
 
 /// Parsed current-directory and bootstrap environment files.
 #[derive(Clone, Debug, Default)]
