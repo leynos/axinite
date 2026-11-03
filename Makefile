@@ -75,6 +75,23 @@ CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --python 3.13 \
 TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
 	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_REVISION)" \
 	typos-config-builder
+# Provers are developer tools, isolated from the application's Cargo graph.
+PROVER_TOOLS_SOURCE ?= git+https://github.com/leynos/rust-prover-tools@592558f7183b554fc749696246984c5d7300d029
+PROVER_TOOLS ?= $(UV) tool run --python 3.14 --from $(PROVER_TOOLS_SOURCE) prover-tools
+KANI_VERSION_FILE ?= tools/kani/VERSION
+KANI_HOME ?= $(CURDIR)/.cache/kani/home
+KANI_BIN_DIR ?= $(CURDIR)/.cache/kani/bin
+KANI_CACHE_DIR ?= $(CURDIR)/.cache/kani/downloads
+KANI_INSTALLATION ?= $(KANI_HOME)/kani-0.67.0
+KANI_PROOF_DIR ?= $(CURDIR)/tests/verification/kani-smoke
+VERUS_VERSION_FILE ?= tools/verus/VERSION
+VERUS_CHECKSUM_FILE ?= tools/verus/SHA256SUMS
+VERUS_PROOF_FILE ?= verus/tooling_smoke/main.rs
+VERUS_FLAGS ?=
+Z3_INSTALL_DIR ?= $(CURDIR)/.cache/z3/4.16.0
+export PROVER_TOOLS KANI_VERSION_FILE KANI_HOME KANI_BIN_DIR KANI_CACHE_DIR KANI_INSTALLATION KANI_PROOF_DIR
+export VERUS_VERSION_FILE VERUS_CHECKSUM_FILE VERUS_PROOF_FILE VERUS_FLAGS Z3_INSTALL_DIR
+
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 LIBSQL_TRANSPORT_TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
@@ -137,6 +154,18 @@ MDTABLEFIX_SELECT = --git --include-untracked
 MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 
 all: check-fmt lint test spelling
+
+.PHONY: install-kani kani-check kani kani-full install-verus install-z3 verus formal-pr
+
+install-kani kani-check install-verus install-z3 verus:
+	@python3 scripts/prover_cli.py $@
+
+kani kani-full: kani-check
+	@python3 scripts/prover_cli.py $@
+
+formal-pr:
+	@$(MAKE) kani
+	@$(MAKE) verus
 
 # Build the workspace as the standard development build: every target, with the
 # test features, so a build that passes here is one `make test` can start from.
