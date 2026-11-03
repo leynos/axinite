@@ -1,0 +1,115 @@
+"""Forward Make's prover settings as literal arguments to rust-prover-tools."""
+
+from __future__ import annotations
+
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _setting(name: str) -> str:
+    value = os.environ.get(name, "")
+    if not value:
+        raise ValueError(f"{name} must be configured")
+    return value
+
+
+def _split(value: str, name: str) -> list[str]:
+    try:
+        return shlex.split(value)
+    except ValueError as error:
+        raise ValueError(f"invalid {name}: unmatched quoting") from error
+
+
+def _proof_arguments() -> list[str]:
+    flags = _split(os.environ.get("VERUS_FLAGS", ""), "VERUS_FLAGS")
+    has_proof_file = any(
+        flag == "--proof-file" or flag.startswith("--proof-file=") for flag in flags
+    )
+    return (
+        flags
+        if has_proof_file
+        else ["--proof-file", _setting("VERUS_PROOF_FILE"), *flags]
+    )
+
+
+def _arguments(action: str) -> list[str]:
+    version_file = os.environ.get("KANI_VERSION_FILE", "tools/kani/VERSION")
+    if action == "install-kani":
+        return [
+            "kani",
+            "install",
+            "--no-compile",
+            "--version-file",
+            version_file,
+            "--install-dir",
+            _setting("KANI_BIN_DIR"),
+            "--cache-dir",
+            _setting("KANI_CACHE_DIR"),
+        ]
+    if action == "kani-check":
+        return [
+            "kani",
+            "check-version",
+            "--version-file",
+            version_file,
+            "--kani-command",
+            shlex.join([str(Path(_setting("KANI_BIN_DIR")) / "cargo-kani")]),
+        ]
+    if action in {"kani", "kani-full"}:
+        selection = (
+            "--extra-arg=--harness=verify_exact_projection_four_entries"
+            if action == "kani"
+            else "--extra-arg=--output-format=regular"
+        )
+        return [
+            "kani",
+            "exec",
+            "--installation",
+            _setting("KANI_INSTALLATION"),
+            "--cwd",
+            _setting("KANI_PROOF_DIR"),
+            selection,
+        ]
+    if action == "install-verus":
+        return [
+            "verus",
+            "install",
+            "--version-file",
+            _setting("VERUS_VERSION_FILE"),
+            "--checksum-file",
+            _setting("VERUS_CHECKSUM_FILE"),
+        ]
+    if action == "install-z3":
+        return ["z3", "install", "--install-dir", _setting("Z3_INSTALL_DIR")]
+    if action == "verus":
+        return ["verus", "run", *_proof_arguments()]
+    raise ValueError("unknown prover action")
+
+
+def main() -> int:
+    """Run the requested package command without evaluating shell fragments."""
+    try:
+        if len(sys.argv) != 2:
+            raise ValueError("expected one prover action")
+        action = sys.argv[1]
+        command = _split(_setting("PROVER_TOOLS"), "PROVER_TOOLS")
+        if not command:
+            raise ValueError("PROVER_TOOLS must contain a command")
+        arguments = _arguments(action)
+        environment = os.environ.copy()
+        if action == "verus":
+            environment["VERUS_Z3_PATH"] = str(
+                Path(_setting("Z3_INSTALL_DIR")).resolve() / "z3"
+            )
+        result = subprocess.run([*command, *arguments], env=environment, check=False)
+        return result.returncode if result.returncode >= 0 else 128 - result.returncode
+    except (OSError, ValueError) as error:
+        print(f"prover-tools: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

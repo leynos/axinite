@@ -244,7 +244,10 @@ adoption programme complete.
 - [x] (2026-11-01) The user explicitly approved implementation of this plan.
 - [x] (2026-11-01 04:05Z) M1: Establish pinned compatibility and provenance.
       Actual installation and positive/negative proof results are recorded below.
-- [ ] M2: Add tested local command boundaries.
+- [x] (2026-11-03) M2: Add tested local command boundaries. Fresh gates passed:
+      `make all`, `make typecheck`, `make test-workflow-contracts` (1,938 passed,
+      11 skipped), `make markdownlint`, `make nixie`, `git diff --check`, and
+      Ruff format/check. Fresh logs are under `/tmp/*-axinite-import-prover-tools-2.out`.
 - [ ] M3: Demonstrate both tools and reject deliberate faults.
 - [ ] M4: Integrate CI, documentation, and final validation.
 
@@ -288,6 +291,18 @@ and V1, V2, and V5 below account for that change.
 
 - (2026-11-01) Accept the user’s explicit approval and begin the planned
   implementation within the recorded constraints and tolerances.
+
+- (2026-11-03) Recheck Rust Prover Tools `main` after the plan was drafted.
+  It advanced from the selected `592558f7183b554fc749696246984c5d7300d029`
+  pin to `42a33199241a47f4836665dd44094884d8fb5be6`. The intervening commits
+  update CI actions and the dependency lockfile; the comparison contains no
+  CLI implementation changes. Keep the existing CLI pin and retain the
+  comparison link below as review evidence.
+
+- (2026-11-03) The user clarified that incremental compilation must not be
+  used. Keep Cargo's development profile and managed sccache policy with
+  incremental compilation disabled; do not add a command, fixture, or guide
+  that re-enables it.
 
 - (2026-11-01) The M1 probe demonstrated Kani 0.67.0 and the pinned Verus/Z3
   pair under managed compiler admission. Keep the local Cargo configuration
@@ -475,6 +490,21 @@ checked-in M3 fixtures. Conformance: R1 and R2 are advanced, the pinned CLI and
 trust boundaries are unchanged, and no runtime API, dependency, persistent
 format, or architecture deviation was introduced. M2–M4 remain open.
 
+The pinned CLI's `verus run --help` confirms that `--proof-file` is repeatable
+and ordered; `/tmp/axinite-prover-m1-verus-help.out` records the output. The
+local M1 review at `d90fd7eb` completed with two duplicate suggestions to test
+the multi-file sequence here. The approved M3 explicitly owns that real
+passing/failing/later-file check and missing-path check, so those suggestions
+remain M3 acceptance work; this M1 record does not claim that behaviour was
+already tested. The final M1 review is recorded in
+`/tmp/coderabbit-m1-followup2.p0RRPZ/review.log`.
+
+The 2026-11-03 upstream comparison is
+<https://github.com/leynos/rust-prover-tools/compare/592558f7183b554fc749696246984c5d7300d029...42a33199241a47f4836665dd44094884d8fb5be6>.
+The reviewed changes are confined to `.github/workflows/*.yml` and `uv.lock`;
+none changes the consumed CLI contract. Revisit the pin if later upstream
+changes touch the CLI or its documented arguments.
+
 ### M2 — Add local installation and execution contracts
 
 R1 and R2 apply. Add the three pin/checksum files, adapt the shared package
@@ -529,6 +559,61 @@ Acceptance is passing command-contract tests with non-zero failures preserved,
 plus successful pinned installation from M1. Check R1/R2 conformance before
 committing. Recover by reverting only M2's uncommitted changes; application
 builds remain unchanged. Actual checked-in proof evidence remains for M3.
+
+#### M2 isolation and routing evidence
+
+The first isolation contract run exposed that `install-kani` did not select a
+worktree-local frontend. The adapter now passes local frontend and download
+paths and sets a worktree-local `KANI_HOME`, while retaining the shared Cargo
+home. The version check selects that frontend explicitly. The focused suite
+passes 17 cases, including paths containing spaces and empty and populated
+`CARGO_ENCODED_RUSTFLAGS`; the installed M1 frontend also passed the actual
+version check. A separate invocation of the pinned package's
+`prepare_kani_command` against the M1 release checked that empty encoded flags
+retain Cargo precedence, supported flags survive, development flags are removed
+only from the child, wrappers remain unchanged, and an unsupported manifest
+route fails before execution. Its output is
+`/tmp/axinite-prover-m2-routing.out`. The earlier `make all` passed before
+these isolation edits and must be rerun on the final M2 candidate.
+
+#### M2 gate reconciliation
+
+The local M2 candidate passed `make all` and all 17 focused prover contracts.
+The first full workflow-contract run had 1,938 passes, 11 skips, and one
+failure because `build_footprint_test.py` expected `CARGO_INCREMENTAL=1` to
+re-enable incremental compilation. The project policy and managed sccache
+require incremental compilation to remain disabled. Following the user's
+clarification that incremental compilation should not be used, the contract
+that exercised this unsupported override and the developer-guide instruction
+recommending it have been removed. The test still checks every development
+profile and verifies that default Cargo builds do not enable incremental state.
+The historical failure log is
+`/tmp/axinite-prover-m2-gates3-workflow-contracts.out`; rerun the workflow
+contracts and complete candidate gates after this change.
+
+#### M2 red-stage evidence
+
+The first `make test-workflow-contracts` attempt was interrupted when an
+existing Cargo fixture selected `/tmp` as its build location, contrary to the
+host policy. A retry with `TMPDIR` under the worktree avoided that violation
+but placed standalone Cargo packages below the root workspace. Its terminal
+result was 12 failed, 1,921 passed, and 11 skipped: nine new prover contracts
+failed because their Make targets did not yet exist, while three pre-existing
+build-footprint contracts failed because Cargo considered their temporary
+packages unlisted workspace members. The full red log is
+`/tmp/axinite-prover-m2-red-target-tmp.out`. Subsequent tests use a unique
+`TMPDIR` under the user's cache directory, outside both the repository and
+`/tmp`; this is a temporary fixture directory, not an isolated Cargo cache.
+
+After correcting Ruff's import-order and obsolete `noqa` findings, the fresh
+sequential M2 gate run passed. `make all` completed with 4,442 workspace tests
+passed and 12 skipped; `make typecheck` passed; `make test-workflow-contracts`
+completed with 1,938 passed and 11 skipped. Markdown lint, Mermaid validation,
+`git diff --check`, and Ruff format/check also passed. The user-requested
+incremental-compilation override contract was removed rather than exercised;
+the build-footprint suite continues to assert that default Cargo builds do not
+enable incremental state. No `CARGO_INCREMENTAL` override was present in the
+gate processes.
 
 ### M3 — Add non-vacuous verification examples
 
@@ -740,3 +825,5 @@ work, and no installer or runtime implementation has started.
 - (2026-11-01) Add non-mutating checks for the M1 wrapper prerequisites.
 - (2026-11-01) Make the M1 reproduction self-contained and validate expected
   exits.
+- (2026-11-01) Close M1 review and start M2 contract tests.
+- (2026-11-01) Record M2 red tests and the temporary-directory constraint.

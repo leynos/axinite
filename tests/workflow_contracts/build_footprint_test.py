@@ -18,11 +18,11 @@ import os
 import re
 import shutil
 import subprocess
-import tomllib
 import typing as typ
 from pathlib import Path
 
 import pytest
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFESTS = sorted(
@@ -166,7 +166,7 @@ def _compile_fixture(tmp_path: Path, extra_env: dict[str, str] | None = None) ->
     env.update(extra_env or {})
     cargo = shutil.which("cargo")
     assert cargo is not None, "the contract suite requires Cargo"
-    result = subprocess.run(  # noqa: S603 - a fixed command
+    result = subprocess.run(
         [cargo, f"+{channel}", "build", "--color", "never", "--offline", "-v"],
         cwd=crate,
         env=env,
@@ -199,14 +199,4 @@ def test_the_documented_debug_override_turns_debug_info_back_on(
     command = _compile_fixture(tmp_path, {"CARGO_PROFILE_DEV_DEBUG": "true"})
     assert "-C debuginfo=2" in command, (
         f"the override must restore debug info: {command}"
-    )
-
-
-def test_the_documented_incremental_override_turns_incremental_back_on(
-    tmp_path: Path,
-) -> None:
-    """``CARGO_INCREMENTAL=1`` restores incremental compilation."""
-    command = _compile_fixture(tmp_path, {"CARGO_INCREMENTAL": "1"})
-    assert "-C incremental=" in command, (
-        f"the override must restore incremental: {command}"
     )
