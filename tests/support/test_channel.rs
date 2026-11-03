@@ -3,7 +3,10 @@
 //! Injects messages into the agent loop via an mpsc sender and captures
 //! responses and status events for assertion in tests.
 
-#![allow(dead_code)] // Public API consumed by later test modules (Task 3+).
+#![expect(
+    dead_code,
+    reason = "test scaffolding exposes helpers consumed by selected integration test modules"
+)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
