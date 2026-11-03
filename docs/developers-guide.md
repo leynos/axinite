@@ -3474,16 +3474,20 @@ tests belong in `workspace/tests.rs`.
 
 ### AppBuilder integration
 
-`phase_build_components` feeds `AppBuilderFlags` derived from `&Cli` to
-`AppBuilder` and returns a `BuiltComponentsContext` containing both the
-completed `AppComponents` and deferred `RuntimeSideEffects`. Downstream startup
-phases pass that context forward intact: they consume `AppComponents` while
-assembling the long-running runtime, and the default run path crosses the
+`phase_build_components` takes the `LoadedConfigContext` from configuration
+loading, feeds `AppBuilderFlags` derived from `&Cli` plus the context's
+`config`, `toml_path`, and `session` to `AppBuilder`, and returns a
+`BuiltComponentsContext` containing the completed `AppComponents`, the deferred
+`RuntimeSideEffects`, and the `env_context` returned by
+`AppBuilder::build_components_with_context()`. Downstream startup phases pass
+that context forward intact: they consume `AppComponents` while assembling the
+long-running runtime, and the default run path crosses the
 `side_effects.start()` boundary only immediately before the agent loop begins.
 Extend `AppBuilderFlags` (in the `axinite` library crate) when a new component
 must be conditionally included at startup, then thread the resulting
-`AppComponents` and `RuntimeSideEffects` through the appropriate startup
-context.
+`AppComponents`, `RuntimeSideEffects`, and `EnvContext` through the appropriate
+startup context. A phase must not recapture the environment; forward the
+snapshot it receives.
 
 ### Parameter-object structs in store helpers
 
@@ -3558,6 +3562,8 @@ Caption: Responsibilities of startup submodules.
 | -------------- | ----------------------------- | ------------------------------------------------------------------------ |
 | `context`      | `src/startup/context.rs`      | Defines the startup hand-off structs and shared core runtime context     |
 | `phases`       | `src/startup/phases.rs`       | Orchestrates each startup phase function                                 |
+| `config_load`  | `src/startup/config_load.rs`  | Loads `settings.json` and configuration from the startup `EnvContext`    |
+| `telemetry`    | `src/startup/telemetry.rs`    | Records fixed-label startup config-load outcomes                         |
 | `channels`     | `src/startup/channels.rs`     | Wires REPL/signal/HTTP/WASM channels; configures the gateway channel     |
 | `wasm`         | `src/startup/wasm.rs`         | Bootstraps WASM channel runtime; hot-wires it into the extension manager |
 | `boot`         | `src/startup/boot.rs`         | Builds and prints the startup boot screen                                |
@@ -3584,13 +3590,18 @@ phase.
 
 Caption: Shared startup context structs.
 
-| Struct                   | Produced by                     | Key fields                                                                                         |
-| ------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `LoadedConfigContext`    | `phase_load_config_and_tracing` | `config`, `session`, `log_broadcaster`                                                             |
-| `BuiltComponentsContext` | `phase_build_components`        | `components`, `side_effects`                                                                       |
-| `CoreAgentContext`       | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue`                   |
-| `AgentRunContext`        | `phase_tunnel_and_orchestrator` | `core`                                                                                             |
-| `GatewayPhaseContext`    | `phase_init_channels_and_hooks` | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
+| Struct                   | Produced by                          | Key fields                                                                                         |
+| ------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `LoadedConfigContext`    | `phase_load_config_and_tracing_from` | `config`, `env_context`, `toml_path`, `session`, `log_broadcaster`, `workspace_import_dir`         |
+| `BuiltComponentsContext` | `phase_build_components`             | `components`, `env_context`, `side_effects`, `log_broadcaster`                                     |
+| `CoreAgentContext`       | `phase_tunnel_and_orchestrator`      | `components`, `config`, `env_context`, `active_tunnel`, `container_job_manager`, `prompt_queue`    |
+| `AgentRunContext`        | `phase_tunnel_and_orchestrator`      | `core`                                                                                             |
+| `GatewayPhaseContext`    | `phase_init_channels_and_hooks`      | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
+
+Every struct that carries `env_context` forwards the same startup snapshot; do
+not recapture it in a later phase. Downstream consumers such as the hot-reload
+manager and channel setup resolve environment-backed settings from that single
+snapshot.
 
 ### CLI dispatch
 
@@ -3612,24 +3623,32 @@ async_main()
 
 ### Phase sequence
 
-`async_main()` calls the following phase functions in order. Each phase
-consumes the context struct produced by the previous one.
+`main()` captures the startup `EnvContext` once, before the Tokio runtime
+exists, and passes it to `async_main()`. `async_main()` then calls the
+following phase functions in order. Each phase consumes the context struct
+produced by the previous one.
 
 Caption: Startup phase sequence.
 
-| #   | Function                        | Input                          | Output                   |
-| --- | ------------------------------- | ------------------------------ | ------------------------ |
-| 1   | `phase_pid_and_onboard`         | `&Cli`                         | `Option<PidLock>`        |
-| 2   | `phase_load_config_and_tracing` | `&Cli`                         | `LoadedConfigContext`    |
-| 3   | `phase_build_components`        | `&Cli`, `LoadedConfigContext`  | `BuiltComponentsContext` |
-| 4   | `phase_tunnel_and_orchestrator` | `BuiltComponentsContext`       | `AgentRunContext`        |
-| 5   | `phase_init_channels_and_hooks` | `&Cli`, `AgentRunContext`      | `GatewayPhaseContext`    |
-| 6   | `phase_setup_gateway`           | `&mut GatewayPhaseContext`     | *(mutates in place)*     |
-| 7   | `phase_print_boot_screen`       | `&Cli`, `&GatewayPhaseContext` | *(side effect)*          |
-| 8   | `phase_run_agent`               | `GatewayPhaseContext`          | `anyhow::Result<()>`     |
+| #   | Function                             | Input                          | Output                          |
+| --- | ------------------------------------ | ------------------------------ | ------------------------------- |
+| 1   | `phase_pid_and_onboard`              | `&Cli`, `&EnvContext`          | `(Option<PidLock>, EnvContext)` |
+| 2   | `phase_load_config_and_tracing_from` | `&Cli`, `&EnvContext`          | `LoadedConfigContext`           |
+| 3   | `phase_build_components`             | `&Cli`, `LoadedConfigContext`  | `BuiltComponentsContext`        |
+| —   | `install_legacy_env_overlay`         | `&BuiltComponentsContext`      | *(mutates the snapshot)*        |
+| 4   | `phase_tunnel_and_orchestrator`      | `BuiltComponentsContext`       | `AgentRunContext`               |
+| 5   | `phase_init_channels_and_hooks`      | `&Cli`, `AgentRunContext`      | `GatewayPhaseContext`           |
+| 6   | `phase_setup_gateway`                | `&mut GatewayPhaseContext`     | *(mutates in place)*            |
+| 7   | `phase_print_boot_screen`            | `&Cli`, `&GatewayPhaseContext` | *(side effect)*                 |
+| 8   | `phase_run_agent`                    | `GatewayPhaseContext`          | `anyhow::Result<()>`            |
 
 Phases 1–4 are infallible or propagate configuration errors early so subsequent
-phases can assume a fully valid environment.
+phases can assume a fully valid environment. Phase 2 loads `settings.json` from
+the snapshot's base directory; a missing file yields defaults, while an
+unreadable or malformed one fails startup. `install_legacy_env_overlay` runs
+after component construction and before the orchestrator phase; it copies the
+snapshot's injected secrets into the legacy secret overlay for code that still
+reads that overlay. The snapshot itself is not replaced.
 
 #### `src/skills/bundle/`
 

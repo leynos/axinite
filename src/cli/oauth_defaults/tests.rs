@@ -229,6 +229,8 @@ fn test_use_gateway_callback(#[case] callback_url: Option<&str>, #[case] expecte
 #[case(Some(""), Some("quiet-lion"), "xyz789", "quiet-lion:xyz789")]
 #[case(Some("kind:deer"), Some("quiet-lion"), "xyz789", "quiet-lion:xyz789")]
 #[case(None, Some("quiet:lion"), "xyz789", "xyz789")]
+/// Verify that the platform state prefixes the nonce with the Axinite or
+/// OpenClaw instance name, ignoring names that contain a colon.
 fn test_build_platform_state(
     #[case] axinite_instance: Option<&str>,
     #[case] openclaw_instance: Option<&str>,

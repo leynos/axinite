@@ -82,6 +82,12 @@ impl NativeTool for RestartTool {
         })
     }
 
+    /// Execute the restart tool: require a Docker environment, clamp
+    /// `delay_secs` to 1-30, and spawn a background exit after the delay.
+    ///
+    /// The process exits cleanly with code 0 unless `AXINITE_DISABLE_RESTART`
+    /// is set, in which case the exit is skipped. Returns a message describing
+    /// the pending restart.
     async fn execute(
         &self,
         params: serde_json::Value,

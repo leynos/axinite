@@ -142,6 +142,8 @@ fn test_migrate_bootstrap_json_missing() {
 }
 
 #[test]
+/// Verify that auto-detection leaves the backend unset when the database file
+/// is absent and selects `libsql` once the file exists.
 fn libsql_autodetection_injects_backend_when_db_exists() {
     let dir = tempdir().expect_valid("create temp dir for libsql autodetect");
     let db_path = dir.path().join("axinite.db");
@@ -164,6 +166,8 @@ fn libsql_autodetection_injects_backend_when_db_exists() {
 }
 
 #[test]
+/// Verify that an explicitly configured backend is preserved even when a
+/// libSQL database file is present.
 fn test_libsql_autodetect_does_not_override_explicit_backend() {
     let dir = tempdir().expect_valid("create temp dir for explicit backend autodetect test");
     let db_path = dir.path().join("axinite.db");
@@ -180,6 +184,8 @@ fn test_libsql_autodetect_does_not_override_explicit_backend() {
 }
 
 #[test]
+/// Verify that an explicitly present but empty `DATABASE_BACKEND` blocks
+/// auto-detection rather than being treated as unset.
 fn test_libsql_autodetect_respects_an_empty_backend_environment_value() {
     let dir = tempdir().expect_valid("create temp dir for empty backend autodetect test");
     let db_path = dir.path().join("axinite.db");

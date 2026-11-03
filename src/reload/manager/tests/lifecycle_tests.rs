@@ -56,6 +56,9 @@ impl LifecycleFixture {
 }
 
 #[tokio::test]
+/// Verify a reload passes a snapshot of the startup environment, including
+/// its secrets, to the config loader and merges secrets injected during the
+/// reload.
 async fn reload_uses_startup_context_and_injected_secrets() -> Result<(), Box<dyn std::error::Error>>
 {
     let (_temp_dir, config) = test_config_with_http(None).await?;

@@ -168,6 +168,9 @@ pub(crate) fn database_backend_name(ctx: &EnvContext) -> String {
         .unwrap_or_else(|| "postgres".to_string())
 }
 
+/// Return the context with `DATABASE_BACKEND` set to `libsql` when the
+/// variable is absent and the database file exists; otherwise return it
+/// unchanged.
 pub(crate) fn with_libsql_backend_autodetection(ctx: EnvContext, db_path: &Path) -> EnvContext {
     if !ctx.contains_env_var("DATABASE_BACKEND") && db_path.exists() {
         ctx.with_env("DATABASE_BACKEND", "libsql")

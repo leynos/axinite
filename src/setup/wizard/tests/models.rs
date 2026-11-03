@@ -18,12 +18,16 @@ async fn test_fetch_anthropic_models_static_fallback() {
 }
 
 #[test]
+/// Verify a cached credential with the `sk-ant-oat` OAuth prefix resolves to
+/// the OAuth variant.
 fn test_resolve_anthropic_auth_treats_cached_oauth_as_oauth() {
     let auth = resolve_anthropic_auth(&EnvContext::default(), Some("sk-ant-oat01-test-token"));
     assert!(matches!(auth, Some(AnthropicAuth::OAuth(_))));
 }
 
 #[test]
+/// Verify resolve_anthropic_auth falls back to `ANTHROPIC_API_KEY` from the
+/// environment snapshot when no cached credential is supplied.
 fn test_resolve_anthropic_auth_reads_api_key_from_context() {
     let env_context = EnvContext::default().with_env("ANTHROPIC_API_KEY", "sk-ant-api-test");
     let auth = resolve_anthropic_auth(&env_context, None);

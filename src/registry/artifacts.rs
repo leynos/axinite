@@ -29,6 +29,8 @@ pub(crate) const WASM_TRIPLES: &[&str] = &[
 
 const SHARED_WASM_TARGET_DIR: &str = "target/wasm-extensions";
 
+/// Resolve `CARGO_TARGET_DIR` from the snapshot, resolving a relative path
+/// against the current working directory.
 fn resolve_env_target_dir(ctx: &EnvContext) -> Option<PathBuf> {
     let p = PathBuf::from(ctx.get("CARGO_TARGET_DIR")?);
     if p.is_relative()
@@ -39,6 +41,8 @@ fn resolve_env_target_dir(ctx: &EnvContext) -> Option<PathBuf> {
     Some(p)
 }
 
+/// Return the repository-wide shared WASM target directory when `crate_dir`
+/// sits under a `channels-src` or `tools-src` tree and that directory exists.
 fn repo_shared_target_dir(crate_dir: &Path) -> Option<PathBuf> {
     let source_root = crate_dir.parent()?;
     let source_root_name = source_root.file_name()?.to_str()?;
@@ -118,6 +122,9 @@ pub fn find_wasm_artifact_from(
         })
 }
 
+/// Search one target directory for a compiled WASM artifact, trying each
+/// target triple in priority order and accepting either the original or the
+/// underscore-normalised crate name.
 fn find_named_wasm_in_target(
     target_base: &Path,
     crate_name: &str,
@@ -159,6 +166,8 @@ fn find_any_wasm_in_target(target_base: &Path, profile: &str) -> Option<PathBuf>
         .find_map(|triple| first_wasm_in_dir(&target_base.join(triple).join(profile)))
 }
 
+/// Return the first `.wasm` file in a directory, or `None` when the directory
+/// is missing, unreadable, or contains no WASM files.
 fn first_wasm_in_dir(dir: &Path) -> Option<PathBuf> {
     if !dir.is_dir() {
         return None;

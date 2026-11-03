@@ -25,6 +25,8 @@ fn main() -> anyhow::Result<()> {
         .block_on(async_main(env_context))
 }
 
+/// Dispatch a CLI subcommand if one was given, otherwise run the agent startup
+/// phases through to the agent loop.
 async fn async_main(env_context: axinite::config::EnvContext) -> anyhow::Result<()> {
     let cli = Cli::parse();
 

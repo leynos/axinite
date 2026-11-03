@@ -107,6 +107,8 @@ fn unknown_backend_uses_openai_compatible_settings_base_url() {
 }
 
 #[test]
+/// Verify that the nearai backend aliases all resolve to the nearai backend
+/// without a registry provider.
 fn nearai_aliases_all_resolve_to_nearai() {
     for alias in &["nearai", "near_ai", "near"] {
         let ctx = EnvContext::default().with_env("LLM_BACKEND", *alias);

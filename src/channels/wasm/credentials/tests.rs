@@ -1,9 +1,7 @@
 //! Unit tests for context-based channel credential injection.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use proptest::prelude::*;
 use secrecy::SecretString;
 use uuid::Uuid;
 
@@ -19,6 +17,8 @@ use crate::secrets::{
     NativeSecretsStore, Secret, SecretError, SecretRef, SecretsCrypto,
 };
 use crate::tools::wasm::{Capabilities, HttpCapability};
+
+mod properties;
 
 /// Build a channel whose HTTP capability declares one credential mapping.
 fn test_channel(name: &str, secret_name: &str) -> Arc<WasmChannel> {
@@ -82,6 +82,8 @@ impl NativeSecretsStore for StubSecretsStore {
         Err(SecretError::AccessDenied)
     }
 
+    /// Return the decryption result fixed by the test, re-wrapping any
+    /// failure as `DecryptionFailed`.
     async fn get_decrypted<'a>(
         &'a self,
         _user_id: &'a str,
@@ -134,6 +136,7 @@ impl NativeSecretsStore for StubSecretsStore {
 }
 
 #[tokio::test]
+/// Verify that a whitespace-only channel name injects no credentials.
 async fn blank_channel_name_injects_nothing() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let env = EnvContext::default().with_env("TELEGRAM_BOT_TOKEN", "from-env");
@@ -146,6 +149,8 @@ async fn blank_channel_name_injects_nothing() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// Verify that an environment variable matching a channel-prefixed
+/// placeholder is injected when no persistent secret exists.
 async fn environment_fallback_injects_prefixed_credential() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let env = EnvContext::default().with_env("TELEGRAM_BOT_TOKEN", "from-env");
@@ -161,6 +166,7 @@ async fn environment_fallback_injects_prefixed_credential() -> anyhow::Result<()
 }
 
 #[tokio::test]
+/// Verify that a missing environment value leaves the credential uninjected.
 async fn environment_fallback_skips_missing_credential() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let env = EnvContext::default();
@@ -173,6 +179,8 @@ async fn environment_fallback_skips_missing_credential() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+/// Verify that an environment variable whose name does not carry the channel
+/// prefix is not injected.
 async fn environment_fallback_ignores_non_prefixed_placeholder() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "slack_bot_token");
     let env = EnvContext::default().with_env("SLACK_BOT_TOKEN", "from-env");
@@ -185,6 +193,8 @@ async fn environment_fallback_ignores_non_prefixed_placeholder() -> anyhow::Resu
 }
 
 #[tokio::test]
+/// Verify that a stored secret wins over a matching environment value and is
+/// injected only once.
 async fn persistent_secret_takes_precedence_over_environment() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let store = in_memory_store();
@@ -233,6 +243,8 @@ async fn secret_list_error_is_reported() {
 }
 
 #[tokio::test]
+/// Verify that a secret which fails to decrypt is skipped and the environment
+/// value is injected instead.
 async fn decryption_failure_skips_secret_and_falls_back_to_environment() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let store = StubSecretsStore {
@@ -257,111 +269,8 @@ async fn decryption_failure_skips_secret_and_falls_back_to_environment() -> anyh
     Ok(())
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
-
-    /// Only channel-prefixed placeholders are injected, persistent secrets
-    /// take precedence over environment values, and the reported count
-    /// matches the injected placeholder set.
-    #[test]
-    fn prop_credential_injection_respects_prefix_and_precedence(
-        channel_suffix in 0u8..3,
-        secret_specs in prop::collection::vec((0u8..4, any::<bool>(), any::<bool>()), 0..6),
-        mapping_specs in prop::collection::vec((0u8..4, any::<bool>()), 0..6),
-    ) {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("test runtime");
-        runtime.block_on(async move {
-            let channel_name = format!("chan{channel_suffix}");
-            let prefix = format!("{}_", channel_name.to_ascii_uppercase());
-
-            let secret_name = |id: u8, prefixed: bool| {
-                if prefixed {
-                    format!("{channel_name}_secret{id}")
-                } else {
-                    format!("other_secret{id}")
-                }
-            };
-
-            let mut mapping_names: Vec<String> = mapping_specs
-                .iter()
-                .map(|(id, prefixed)| secret_name(*id, *prefixed))
-                .collect();
-            mapping_names.sort();
-            mapping_names.dedup();
-
-            let channel = test_channel_with_mappings(&channel_name, &mapping_names);
-            let store = in_memory_store();
-            let mut expected_store = HashMap::new();
-            for (index, (id, prefixed, persistent)) in secret_specs.iter().enumerate() {
-                if !*persistent {
-                    continue;
-                }
-                let name = secret_name(*id, *prefixed);
-                let value = format!("store-{index}");
-                NativeSecretsStore::create(
-                    store.as_ref(),
-                    "default",
-                    CreateSecretParams::new(&name, &value),
-                )
-                .await
-                .expect("test secret should be created");
-                if *prefixed {
-                    expected_store.insert(name.to_uppercase(), value);
-                }
-            }
-
-            let mut env = EnvContext::default();
-            let mut expected_env = HashMap::new();
-            for (index, (id, prefixed)) in mapping_specs.iter().enumerate() {
-                let placeholder = secret_name(*id, *prefixed).to_uppercase();
-                if !placeholder.starts_with(&prefix)
-                    || expected_store.contains_key(&placeholder)
-                {
-                    continue;
-                }
-                let value = format!("env-{index}");
-                env = env.with_env(placeholder.as_str(), value.as_str());
-                expected_env.insert(placeholder, value);
-            }
-
-            let count = inject_channel_credentials_from_context(
-                &channel,
-                Some(store.as_ref() as &dyn SecretsStore),
-                &channel_name,
-                &env,
-            )
-            .await
-            .expect("injection should succeed");
-
-            let credentials = channel.get_credentials().await;
-            assert_eq!(count, credentials.len());
-            for (placeholder, value) in &credentials {
-                assert!(
-                    placeholder.starts_with(&prefix),
-                    "unprefixed placeholder {placeholder} was injected"
-                );
-                if let Some(expected) = expected_store.get(placeholder) {
-                    assert_eq!(value, expected, "persistent secret must win");
-                } else if let Some(expected) = expected_env.get(placeholder) {
-                    assert_eq!(value, expected);
-                } else {
-                    panic!("unexpected placeholder {placeholder}");
-                }
-            }
-            for placeholder in expected_store.keys().chain(expected_env.keys()) {
-                assert!(
-                    credentials.contains_key(placeholder),
-                    "missing placeholder {placeholder}"
-                );
-            }
-        });
-    }
-}
-
 #[tokio::test]
+/// Verify that a channel without an HTTP capability injects no credentials.
 async fn channel_without_http_capability_injects_nothing() -> anyhow::Result<()> {
     let runtime = Arc::new(
         WasmChannelRuntime::new(WasmChannelRuntimeConfig::for_testing()).expect("test runtime"),

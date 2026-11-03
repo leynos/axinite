@@ -37,6 +37,9 @@ use crate::reload::test_stubs::{
     description: "localhost hostname",
 })]
 #[tokio::test]
+/// Verify a successful reload resolves the configured address, restarts the
+/// listener once, invokes the secret injector, and passes the new webhook
+/// secret to channel secret updaters.
 async fn successful_reload_invokes_all_dependencies(
     #[case] test_case: AddrTestCase,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -116,6 +119,9 @@ async fn successful_reload_invokes_all_dependencies(
 #[case::ipv4("127.0.0.1:8080")]
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
+/// Verify a reload leaves the listener running when the configured address
+/// matches the current bind address, while still updating the channel
+/// webhook secret.
 async fn address_unchanged_skips_listener_restart(
     #[case] addr_str: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -161,6 +167,8 @@ async fn address_unchanged_skips_listener_restart(
 #[case::ipv4("127.0.0.1:8080")]
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
+/// Verify a listener restart failure aborts the reload and leaves channel
+/// secret updaters uncalled.
 async fn listener_restart_failure_prevents_secret_update(
     #[case] addr_str: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -199,6 +207,9 @@ async fn listener_restart_failure_prevents_secret_update(
 }
 
 #[tokio::test]
+/// Verify that after a reload removes the HTTP listener, re-adding the
+/// original address restarts the stopped listener even though the address is
+/// unchanged.
 async fn readding_same_listener_address_restarts_after_shutdown()
 -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
@@ -252,6 +263,8 @@ async fn readding_same_listener_address_restarts_after_shutdown()
 }
 
 #[tokio::test]
+/// Verify a listener whose current address matches any resolved address, not
+/// only the first, is left running.
 async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_first_resolved_addr()
 -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
@@ -289,6 +302,8 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
 }
 
 #[tokio::test]
+/// Verify a config requesting port 0 on the listener's current host does not
+/// trigger a restart of the ephemeral bind.
 async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
 -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:43123".parse().expect("valid socket address");

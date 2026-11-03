@@ -43,6 +43,8 @@ fn cli_only() -> Cli {
 }
 
 #[tokio::test]
+/// Verify CLI-only mode leaves WASM channels, their runtime state, and the
+/// webhook server disabled even when WASM channels are enabled in config.
 async fn setup_channels_skips_wasm_and_webhooks_in_cli_only_mode() -> anyhow::Result<()> {
     let tempdir = tempfile::tempdir()?;
     let mut config = Config::for_testing(
