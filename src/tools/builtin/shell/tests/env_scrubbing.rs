@@ -148,7 +148,7 @@ async fn test_env_scrubbing_hides_inherited_process_secret() -> anyhow::Result<(
     }
 
     let exe = std::env::current_exe()?;
-    let status = std::process::Command::new(exe)
+    let output = std::process::Command::new(exe)
         .args([
             "--exact",
             "tools::builtin::shell::tests::env_scrubbing::test_env_scrubbing_hides_inherited_process_secret",
@@ -157,11 +157,19 @@ async fn test_env_scrubbing_hides_inherited_process_secret() -> anyhow::Result<(
         ])
         .env(INHERITED_SECRET_CHILD_MARKER, "1")
         .env(INHERITED_SECRET_VAR, INHERITED_SECRET_VALUE)
-        .status()?;
+        .output()?;
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        status.success(),
-        "child process must confirm the inherited secret is scrubbed: {status}"
+        output.status.success(),
+        "child process must confirm the inherited secret is scrubbed: {}\n{stdout}",
+        output.status
+    );
+    // A renamed or moved test would make `--exact` match nothing, and libtest
+    // exits successfully in that case. Require the child to have run it.
+    assert!(
+        stdout.contains("1 passed"),
+        "child process did not run the target test (check the --exact path): {stdout}"
     );
     Ok(())
 }

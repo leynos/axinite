@@ -57,8 +57,9 @@ ______________________________________________________________________
 The snapshot is also captured before onboarding runs. The wizard records any
 API key it collects in its own `EnvContext`, and startup merges `.env` into
 that snapshot, so a key entered during first-run onboarding is available when
-configuration is resolved afterwards. Process environment variables and `.env`
-files are still not re-read after the initial capture.
+configuration is resolved afterwards. Configuration resolution and SIGHUP
+reload do not re-read process environment variables or `.env` files after the
+initial capture; tracing initialization still reads ambient `RUST_LOG`.
 
 **Environment access:** startup captures the ambient environment once and
 threads the resulting `EnvContext` through composition. Constructors such as

@@ -44,9 +44,9 @@ pub(crate) async fn phase_load_config_and_tracing_from(
 /// Build the initial configuration from `env` and the optional TOML overlay.
 ///
 /// The caller supplies the startup environment snapshot; this function never
-/// re-reads process variables. A missing or malformed `settings.json` is
-/// surfaced through [`axinite::error::ConfigError`] rather than silently
-/// falling back to defaults.
+/// re-reads process variables. A missing `settings.json` yields defaults. An
+/// unreadable or malformed one is surfaced through
+/// [`axinite::error::ConfigError`] rather than silently replaced by defaults.
 async fn load_initial_config_from(
     env: &EnvContext,
     toml_path: Option<&std::path::Path>,

@@ -120,7 +120,10 @@ before channels and background services start.
 1. `main()` loads `.env` files and the per-user `~/.axinite/.env` bootstrap
    file before starting Tokio. This avoids mutating process environment after
    worker threads exist. It then captures one `EnvContext` snapshot at the
-   process boundary; nothing later re-reads process variables or `.env` files.
+   process boundary; configuration resolution and SIGHUP reload read only that
+   snapshot and never re-read process variables or `.env` files. Tracing
+   initialization is the one exception: `init_tracing` still reads ambient
+   `RUST_LOG`.
 2. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
    through to the agent runtime for `axinite run` or no subcommand.
 3. The host acquires a PID lock to prevent accidental double-starts of the main

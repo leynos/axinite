@@ -2,7 +2,8 @@
 
 use super::CheckResult;
 use super::core_checks::{
-    check_database_with_context, check_llm_config_with_context, check_workspace_search_with_context,
+    check_database_with_context, check_llm_config_with_context, check_settings_file,
+    check_workspace_search_with_context,
 };
 use super::external_checks::check_binary;
 use super::subsystem_checks::{
@@ -32,6 +33,35 @@ async fn database_and_search_checks_use_auto_detected_libsql_backend() {
         }
         other => panic!(
             "expected libSQL search result, got: {}",
+            format_result(&other)
+        ),
+    }
+}
+
+/// Verify that valid JSON with an invalid `Settings` field type fails the check.
+///
+/// Startup rejects such a file, so doctor must not report it as valid merely
+/// because it parses as generic JSON.
+#[test]
+fn check_settings_file_rejects_invalid_field_types() {
+    let dir = tempfile::tempdir().expect("create temp dir for settings check");
+    ambient_fs::write(
+        dir.path().join("settings.json"),
+        r#"{"onboard_completed": "yes"}"#,
+    )
+    .expect("write settings.json with an invalid field type");
+    let context = EnvContext::default().with_env(
+        "AXINITE_BASE_DIR",
+        dir.path().to_str().expect("UTF-8 temp path"),
+    );
+
+    match check_settings_file(&context) {
+        CheckResult::Fail(message) => assert!(
+            message.contains("settings.json is invalid"),
+            "expected an invalid-settings message, got: {message}"
+        ),
+        other => panic!(
+            "expected Fail for invalid settings, got: {}",
             format_result(&other)
         ),
     }

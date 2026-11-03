@@ -261,7 +261,12 @@ pub(super) fn rename_legacy_bootstrap(axinite_dir: &Path) {
 /// as [`MigrationError::Io`] because a silent default would discard the user's
 /// settings during the one-way migration into the database.
 fn read_legacy_state(path: &Path) -> Result<Option<serde_json::Value>, MigrationError> {
-    if !path.exists() {
+    // `try_exists` distinguishes "absent" from "metadata unreadable"; a plain
+    // `exists()` would report both as absent and silently skip the migration.
+    if !path
+        .try_exists()
+        .map_err(|error| MigrationError::Io(error.to_string()))?
+    {
         return Ok(None);
     }
 

@@ -22,6 +22,35 @@ async fn migrate_disk_to_db_from_dir_missing_legacy_file_is_noop() {
     assert!(!dir.path().join("settings.json.migrated").exists());
 }
 
+/// A legacy path whose metadata cannot be read must surface an error rather
+/// than being treated as "no legacy state".
+///
+/// On Unix, a path below a regular file fails with `ENOTDIR`, which
+/// `Path::exists` reports as `false` but `try_exists` propagates.
+#[cfg(unix)]
+#[tokio::test]
+async fn migrate_disk_to_db_from_dir_reports_unreadable_legacy_path() {
+    let dir = tempdir().expect("create temp dir for unreadable settings migration");
+    let not_a_directory = dir.path().join("not-a-directory");
+    ambient_fs::write(&not_a_directory, "not a directory")
+        .expect("write a regular file where a directory is expected");
+    let store = MigrationStore::new(Ok(false));
+
+    let error = super::super::migration::migrate_disk_to_db_from_dir(
+        &store,
+        "test-user",
+        &not_a_directory,
+    )
+    .await
+    .expect_err("an unreadable legacy path must abort the migration");
+
+    assert!(
+        matches!(error, MigrationError::Io(_)),
+        "expected an IO error, got: {error:?}"
+    );
+    assert_store_state(&store, 0, 0);
+}
+
 #[tokio::test]
 async fn migrate_disk_to_db_from_dir_renames_when_db_already_has_settings() {
     let dir = tempdir().expect("create temp dir for stale settings migration");
