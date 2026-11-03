@@ -19,6 +19,8 @@ fn missing_settings_file_loads_defaults() {
 }
 
 #[test]
+/// Verify malformed settings JSON surfaces a parse error naming the file
+/// rather than silently falling back to defaults.
 fn malformed_settings_file_reports_parse_error() {
     let dir = tempfile::tempdir().expect("create temporary directory");
     let path = dir.path().join("settings.json");
@@ -37,6 +39,8 @@ fn malformed_settings_file_reports_parse_error() {
 }
 
 #[test]
+/// Verify a settings path that exists but cannot be read as a file surfaces
+/// a read error.
 fn unreadable_settings_file_reports_read_error() {
     let dir = tempfile::tempdir().expect("create temporary directory");
     let path = dir.path().join("settings.json");
@@ -53,6 +57,8 @@ fn unreadable_settings_file_reports_read_error() {
 }
 
 #[tokio::test]
+/// Verify config loading propagates a malformed settings file as a
+/// configuration parse error instead of swallowing it.
 async fn config_loading_propagates_settings_errors() {
     let dir = tempfile::tempdir().expect("create temporary directory");
     ambient_fs::write(dir.path().join("settings.json"), "{ not json")

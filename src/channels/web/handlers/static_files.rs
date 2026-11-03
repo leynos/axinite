@@ -161,6 +161,8 @@ pub async fn logs_level_set_handler(
     tracing::info!("Log level changed to '{}'", handle.current_level());
     Ok(Json(serde_json::json!({ "level": handle.current_level() })))
 }
+/// Serve gateway health data: version, connection counts, uptime, cost and
+/// model usage when a cost guard is present, and whether restart is enabled.
 pub async fn gateway_status_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Json<GatewayStatusResponse> {

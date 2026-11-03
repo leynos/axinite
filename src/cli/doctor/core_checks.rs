@@ -37,6 +37,8 @@ pub(super) fn check_settings_file(ctx: &EnvContext) -> CheckResult {
 
 // ── NEAR AI session ─────────────────────────────────────────
 
+/// Check the NEAR AI session file in the configured base directory, passing
+/// when an API key is set but no session file exists.
 pub(super) async fn check_nearai_session(ctx: &EnvContext) -> CheckResult {
     let session_path = ctx.axinite_base_dir().join("session.json");
     if !session_path.exists() {
@@ -90,6 +92,8 @@ pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Setting
 }
 
 // ── Database ────────────────────────────────────────────────
+/// Report database health for the backend selected by the environment
+/// snapshot, delegating to the libSQL or PostgreSQL check as appropriate.
 pub(super) async fn check_database_with_context(ctx: &EnvContext) -> CheckResult {
     let backend = crate::bootstrap::database_backend_name(ctx);
 
@@ -150,6 +154,8 @@ async fn pg_client_from_env(ctx: &EnvContext) -> Result<deadpool_postgres::Clien
 }
 
 #[cfg(feature = "postgres")]
+/// Connect to PostgreSQL and run a trivial query to confirm the connection
+/// works.
 async fn try_pg_connect(ctx: &EnvContext) -> Result<(), String> {
     let client = pg_client_from_env(ctx).await?;
 
@@ -201,6 +207,8 @@ pub(super) async fn check_workspace_search_with_context(ctx: &EnvContext) -> Che
 }
 
 #[cfg(feature = "postgres")]
+/// Verify that the pgvector extension is installed by querying PostgreSQL's
+/// extension catalogue.
 async fn try_pgvector_check(ctx: &EnvContext) -> Result<(), String> {
     let client = pg_client_from_env(ctx).await?;
 

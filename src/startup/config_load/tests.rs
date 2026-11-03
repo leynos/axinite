@@ -4,6 +4,9 @@ use super::*;
 
 #[cfg(feature = "libsql")]
 #[tokio::test]
+/// Verify config loading merges bootstrap values written during onboarding,
+/// so the libSQL backend and database path from `.env` are reflected in the
+/// loaded config.
 async fn config_load_includes_bootstrap_values_written_during_onboarding() -> anyhow::Result<()> {
     let base_dir = tempfile::tempdir()?;
     let database_path = base_dir.path().join("onboarded.db");

@@ -53,6 +53,8 @@ struct ReloadManagerInputs {
     shutdown_tx: tokio::sync::broadcast::Sender<()>,
 }
 
+/// Convert reload wiring inputs into reload manager arguments, promoting an
+/// HTTP channel state into a channel secret updater when present.
 fn build_reload_manager_args_from_inputs(inputs: ReloadManagerInputs) -> ReloadManagerArgs {
     let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
     if let Some(state) = inputs.http_channel_state {
@@ -262,6 +264,9 @@ mod tests {
     #[case(true, true, true, true, 1)]
     #[case(true, false, true, true, 1)]
     #[case(true, true, false, true, 1)]
+    /// Verify each combination of optional settings, webhook, secrets, and
+    /// HTTP channel state is passed through, with only HTTP channel state
+    /// adding a secret updater.
     fn build_reload_manager_args_handles_option_permutations(
         #[case] has_settings_store: bool,
         #[case] has_webhook_server: bool,

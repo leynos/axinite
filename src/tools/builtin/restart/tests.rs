@@ -16,6 +16,8 @@ fn isolated_tool() -> RestartTool {
 }
 
 #[test]
+/// Verify the restart tool requires no execution-level approval, since the
+/// confirmation is handled at the /restart command level.
 fn test_restart_tool_approval_handled_at_command_level() {
     // Approval is handled at the /restart command level (web modal confirmation),
     // not at tool execution. Tool execution approval is for user-interactive approvals
@@ -192,6 +194,8 @@ async fn test_restart_tool_invalid_parameter_types() {
 }
 
 #[tokio::test]
+/// Verify a successful restart returns a string result with no cost or raw
+/// output and a negligible duration.
 async fn test_restart_tool_output_structure() {
     let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
@@ -280,6 +284,8 @@ async fn test_restart_tool_empty_object() {
 }
 
 #[test]
+/// Verify the restart tool's approval requirement stays Never regardless of
+/// the parameters supplied.
 fn test_restart_tool_approval_consistent_regardless_of_params() {
     let tool = isolated_tool();
 
@@ -295,6 +301,8 @@ fn test_restart_tool_approval_consistent_regardless_of_params() {
 }
 
 #[tokio::test]
+/// Verify execute rejects a restart with an execution error when
+/// `AXINITE_IN_DOCKER` is not set.
 async fn test_restart_tool_requires_docker_environment() {
     let tool = RestartTool::from_context(EnvContext::default());
     let ctx = crate::context::JobContext::new("test", "test restart");

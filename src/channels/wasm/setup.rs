@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 pub use super::credentials::{inject_channel_credentials, inject_channel_credentials_from_context};
 use crate::channels::wasm::{
-    LoadedChannel, RegisteredEndpoint, SharedWasmChannel, WasmChannelLoader, WasmChannelRouter,
-    WasmChannelRuntime, WasmChannelRuntimeConfig, create_wasm_channel_router,
+    LoadedChannel, RegisteredEndpoint, SharedWasmChannel, WasmChannel, WasmChannelLoader,
+    WasmChannelRouter, WasmChannelRuntime, WasmChannelRuntimeConfig, create_wasm_channel_router,
 };
 use crate::config::{Config, EnvContext};
 use crate::db::Database;
@@ -82,7 +82,7 @@ pub async fn setup_wasm_channels_from_context(
     for loaded in results.loaded {
         let (name, channel) = register_channel(loaded, &request, &wasm_router).await;
         channel_names.push(name.clone());
-        channels.push((name, channel));
+        channels.push((name, Box::new(SharedWasmChannel::new(channel))));
     }
 
     for (path, err) in &results.errors {
@@ -110,11 +110,14 @@ pub async fn setup_wasm_channels_from_context(
 
 /// Process a single loaded WASM channel: retrieve secrets, inject config,
 /// register with the router, and set up signing keys and credentials.
+///
+/// Returns the channel name and the prepared channel so callers can wrap it
+/// and tests can inspect the injected credentials.
 async fn register_channel(
     loaded: LoadedChannel,
     request: &WasmChannelSetupRequest<'_>,
     wasm_router: &Arc<WasmChannelRouter>,
-) -> (String, Box<dyn crate::channels::Channel>) {
+) -> (String, Arc<WasmChannel>) {
     let channel_name = loaded.name().to_string();
     tracing::info!("Loaded WASM channel: {}", channel_name);
 
@@ -231,7 +234,7 @@ async fn register_channel(
         }
     }
 
-    (channel_name, Box::new(SharedWasmChannel::new(channel_arc)))
+    (channel_name, channel_arc)
 }
 
 fn runtime_config_updates(

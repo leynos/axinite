@@ -97,6 +97,8 @@ fn print_search_status(db_backend: &str) {
     }
 }
 
+/// Print whether the NEAR AI session file exists in the configured base
+/// directory.
 fn print_session_status(ctx: &EnvContext) {
     print!("  Session:     ");
     let session_path = ctx.axinite_base_dir().join("session.json");
@@ -122,6 +124,9 @@ fn print_secrets_status(ctx: &EnvContext) {
         println!("env not set (keychain may be configured)");
     }
 }
+/// Print whether embeddings are enabled, treating an OpenAI API key or an
+/// explicit `EMBEDDING_ENABLED` flag as enabling them, and show the provider
+/// and model.
 fn print_embeddings_status(ctx: &EnvContext, settings: &Settings) {
     print!("  Embeddings:  ");
     let emb_enabled = settings.embeddings.enabled
@@ -137,6 +142,8 @@ fn print_embeddings_status(ctx: &EnvContext, settings: &Settings) {
     }
 }
 
+/// Print how many `.wasm` tools are installed in `tools_dir`, or report that
+/// the directory is missing.
 fn print_wasm_tools_status(tools_dir: &std::path::Path) {
     print!("  WASM Tools:  ");
     if tools_dir.exists() {
@@ -170,6 +177,8 @@ fn print_channels_status(ctx: &EnvContext, settings: &Settings) {
     }
     println!("{}", channel_info.join(", "));
 }
+/// Print whether the heartbeat is enabled, honouring the `HEARTBEAT_ENABLED`
+/// environment override, and show its interval when enabled.
 fn print_heartbeat_status(ctx: &EnvContext, settings: &Settings) {
     print!("  Heartbeat:   ");
     let hb_enabled = settings.heartbeat.enabled || ctx.get("HEARTBEAT_ENABLED") == Some("true");
@@ -180,6 +189,8 @@ fn print_heartbeat_status(ctx: &EnvContext, settings: &Settings) {
     }
 }
 
+/// Print how many configured MCP servers are enabled, or report that none are
+/// configured.
 async fn print_mcp_status() {
     print!("  MCP Servers: ");
     match crate::tools::mcp::config::load_mcp_servers().await {

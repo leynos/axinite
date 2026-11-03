@@ -22,6 +22,8 @@ pub(crate) mod phases;
 pub(crate) mod run;
 /// Shared start/run sequencing helpers for the agent loop.
 pub(crate) mod run_flow;
+/// Fixed-label startup metrics.
+pub(crate) mod telemetry;
 /// Unix-only runtime management (SIGHUP hot-reload).
 #[cfg(unix)]
 pub(crate) mod unix_runtime;

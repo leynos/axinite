@@ -155,6 +155,9 @@ async fn detect_docker_status(sandbox_enabled: bool) -> crate::sandbox::DockerSt
     }
 }
 
+/// Start the orchestrator API on port 50051 when the sandbox is enabled and
+/// Docker is available, returning a runtime carrying the job event channel and
+/// job manager; otherwise return an empty runtime.
 fn start_orchestrator_if_enabled(
     context: &OrchestratorSetupContext<'_>,
     docker_status: crate::sandbox::DockerStatus,

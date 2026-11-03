@@ -36,13 +36,10 @@ async fn migrate_disk_to_db_from_dir_reports_unreadable_legacy_path() {
         .expect("write a regular file where a directory is expected");
     let store = MigrationStore::new(Ok(false));
 
-    let error = super::super::migration::migrate_disk_to_db_from_dir(
-        &store,
-        "test-user",
-        &not_a_directory,
-    )
-    .await
-    .expect_err("an unreadable legacy path must abort the migration");
+    let error =
+        super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", &not_a_directory)
+            .await
+            .expect_err("an unreadable legacy path must abort the migration");
 
     assert!(
         matches!(error, MigrationError::Io(_)),
@@ -52,6 +49,8 @@ async fn migrate_disk_to_db_from_dir_reports_unreadable_legacy_path() {
 }
 
 #[tokio::test]
+/// Verify that when the database already holds settings, the legacy file is
+/// renamed without writing the settings again.
 async fn migrate_disk_to_db_from_dir_renames_when_db_already_has_settings() {
     let dir = tempdir().expect("create temp dir for stale settings migration");
     let _settings_path = write_legacy_settings(&dir);

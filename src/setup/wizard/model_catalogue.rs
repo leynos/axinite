@@ -23,6 +23,11 @@ pub(super) enum AnthropicAuth {
     OAuth(String),
 }
 
+/// Resolve Anthropic credentials from a cached credential first, then
+/// `ANTHROPIC_API_KEY`, then `ANTHROPIC_OAUTH_TOKEN`.
+///
+/// Cached credentials prefixed with `sk-ant-oat` are classified as OAuth
+/// tokens rather than API keys.
 pub(super) fn resolve_anthropic_auth(
     env_context: &EnvContext,
     cached_credential: Option<&str>,
@@ -104,6 +109,9 @@ fn anthropic_static_defaults() -> Vec<(String, String)> {
     ]
 }
 
+/// Fetch Anthropic model ids and display labels, falling back to static
+/// defaults when no credentials are available or the request or response
+/// fails.
 pub(super) async fn fetch_anthropic_models(
     env_context: &EnvContext,
     cached_key: Option<&str>,

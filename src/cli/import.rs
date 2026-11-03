@@ -42,7 +42,20 @@ pub async fn run_import_command(
     cmd: &ImportCommand,
     config: &crate::config::Config,
 ) -> anyhow::Result<()> {
-    let env_context = EnvContext::capture_ambient();
+    run_import_command_from_context(cmd, config, &EnvContext::capture_ambient()).await
+}
+
+/// Run an import command against an explicit environment snapshot.
+///
+/// This is the testable seam for [`run_import_command`]: path detection,
+/// `HOME` fallback, and master-key lookup all read the supplied snapshot
+/// rather than the ambient process environment.
+#[cfg(feature = "import")]
+pub async fn run_import_command_from_context(
+    cmd: &ImportCommand,
+    config: &crate::config::Config,
+    env_context: &EnvContext,
+) -> anyhow::Result<()> {
     match cmd {
         ImportCommand::Openclaw {
             path,
@@ -57,7 +70,7 @@ pub async fn run_import_command(
                     dry_run: *dry_run,
                     re_embed: *re_embed,
                     user_id: user_id.clone(),
-                    env_context: &env_context,
+                    env_context,
                 },
             )
             .await
@@ -174,6 +187,8 @@ fn resolve_openclaw_path(
 }
 
 #[cfg(feature = "import")]
+/// Load the secrets master key from the environment snapshot or the OS
+/// keychain and return the initialised crypto helper.
 async fn load_import_secrets_crypto(
     env_context: &EnvContext,
 ) -> anyhow::Result<Arc<crate::secrets::SecretsCrypto>> {
@@ -204,100 +219,4 @@ pub async fn run_import_command(
 }
 
 #[cfg(all(test, feature = "import"))]
-mod tests {
-    //! Tests for the context-driven OpenClaw import command boundary.
-
-    use super::{load_import_secrets_crypto, resolve_openclaw_path};
-    use crate::config::EnvContext;
-
-    /// Create a temporary home containing a detectable OpenClaw installation.
-    ///
-    /// Returns the temporary directory (which must stay alive for the test's
-    /// duration), the installation directory, and a snapshot whose `HOME`
-    /// points at the temporary home.
-    fn openclaw_home() -> (tempfile::TempDir, std::path::PathBuf, EnvContext) {
-        let home = tempfile::tempdir().expect("temporary home directory should be created");
-        let openclaw_dir = home.path().join(".openclaw");
-        ambient_fs::create_dir_all(&openclaw_dir).expect("OpenClaw directory should be created");
-        ambient_fs::write(openclaw_dir.join("openclaw.json"), "{}")
-            .expect("OpenClaw config should be created");
-        let env_context =
-            EnvContext::default().with_env("HOME", home.path().to_str().expect("UTF-8 path"));
-        (home, openclaw_dir, env_context)
-    }
-
-    #[test]
-    fn explicit_path_wins_over_detection() {
-        let (home, _openclaw_dir, env_context) = openclaw_home();
-        let explicit = home.path().join("explicit");
-
-        let resolved = resolve_openclaw_path(Some(explicit.clone()), &env_context)
-            .expect("an explicit path should resolve");
-
-        assert_eq!(resolved, explicit);
-    }
-
-    #[test]
-    fn detected_path_uses_the_supplied_snapshot() {
-        let (_home, openclaw_dir, env_context) = openclaw_home();
-
-        let resolved = resolve_openclaw_path(None, &env_context).expect("detection should resolve");
-
-        assert_eq!(resolved, openclaw_dir);
-    }
-
-    #[test]
-    fn missing_installation_falls_back_to_home() {
-        let home = tempfile::tempdir().expect("temporary home directory should be created");
-        let env_context =
-            EnvContext::default().with_env("HOME", home.path().to_str().expect("UTF-8 path"));
-
-        let resolved = resolve_openclaw_path(None, &env_context).expect("fallback should resolve");
-
-        assert_eq!(resolved, home.path().join(".openclaw"));
-    }
-
-    #[test]
-    fn detection_errors_are_reported() {
-        let home = tempfile::tempdir().expect("temporary home directory should be created");
-        let not_a_directory = home.path().join("home-file");
-        ambient_fs::write(&not_a_directory, "not a directory")
-            .expect("home file should be created");
-        let env_context =
-            EnvContext::default().with_env("HOME", not_a_directory.to_str().expect("UTF-8 path"));
-
-        let error = resolve_openclaw_path(None, &env_context)
-            .expect_err("an unreadable candidate path must surface as an error");
-
-        assert!(
-            error.to_string().contains("Failed to detect OpenClaw"),
-            "{error}"
-        );
-    }
-
-    #[tokio::test]
-    async fn master_key_from_snapshot_is_used() {
-        let env_context = EnvContext::default()
-            .with_env("SECRETS_MASTER_KEY", "0123456789abcdef0123456789abcdef");
-
-        let crypto = load_import_secrets_crypto(&env_context)
-            .await
-            .expect("a valid snapshot key should be accepted");
-
-        assert!(crypto.encrypt(b"value").is_ok());
-    }
-
-    #[tokio::test]
-    async fn invalid_master_key_from_snapshot_is_rejected() {
-        let env_context = EnvContext::default().with_env("SECRETS_MASTER_KEY", "too-short");
-
-        let error = load_import_secrets_crypto(&env_context)
-            .await
-            .expect_err("a short master key must be rejected");
-
-        assert!(
-            error.to_string().contains("Failed to initialize secrets"),
-            "{error}"
-        );
-    }
-}
+mod tests;

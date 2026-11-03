@@ -116,6 +116,8 @@ fn comprehensive_db_map_round_trip() {
 }
 
 #[test]
+/// Verify that settings saved and reloaded through TOML, JSON, and the DB
+/// map all agree on the same key values.
 fn toml_json_db_all_agree() {
     // A config that goes through all three formats should produce the same values
     let dir = tempfile::tempdir().unwrap();

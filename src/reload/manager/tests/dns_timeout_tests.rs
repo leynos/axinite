@@ -64,6 +64,8 @@ async fn resolve_http_addrs_times_out_slow_dns_lookup() {
 }
 
 #[tokio::test(start_paused = true)]
+/// Verify a reload reports the DNS resolution timeout as a socket-address
+/// config error when the HTTP host lookup stalls past the deadline.
 async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls()
 -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
@@ -106,6 +108,9 @@ async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls()
 }
 
 #[tokio::test(start_paused = true)]
+/// Verify that after a reload times out during DNS resolution, a second
+/// reload can still acquire the reload lock and fail cleanly, proving the
+/// lock was released.
 async fn reload_lock_is_released_after_dns_timeout() -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");

@@ -200,6 +200,33 @@ follow the reload path and take effect without a restart. If a reload fails,
 Axinite keeps serving the previous configuration; check the daemon log for the
 reported error before restarting.
 
+## Settings file
+
+Axinite reads persisted preferences from `settings.json` in its base directory.
+The base directory is `~/.axinite` unless `AXINITE_BASE_DIR` overrides it in
+the startup environment. The file is optional, so a first run needs no manual
+setup:
+
+- **Missing file** — Axinite applies the built-in defaults and continues
+  starting.
+- **Unreadable file** — for example when the file exists but the daemon's user
+  lacks read permission. Startup fails and reports
+  `failed to read settings file <path>: <reason>`.
+- **Unparseable file** — when the file is not valid JSON. Startup fails and
+  reports `failed to parse settings file <path>: <reason>`.
+
+A reported settings error is fatal rather than silently replaced by defaults,
+so a corrupted file cannot quietly discard a configured database or provider.
+To recover, restore the file from backup, correct the reported syntax or
+permission problem, or remove the file to return to defaults and run
+`axinite onboard` again. The same rules apply to the reload path: a settings
+file that becomes unreadable or malformed fails that reload cycle, Axinite
+keeps serving the previous configuration, and the daemon log names the
+offending path.
+
+The `settings.json` schema is tolerant of unknown keys and of keys omitted by
+older releases; missing fields take their defaults.
+
 ## HTML-to-Markdown conversion for HTTP responses
 
 When the built-in `http` tool fetches an HTML response, Axinite converts it to

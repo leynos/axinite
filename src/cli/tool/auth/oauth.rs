@@ -58,6 +58,9 @@ async fn matching_oauth_scopes(path: &Path, secret_name: &str) -> Option<Vec<Str
     }
     Some(auth.oauth?.scopes)
 }
+/// Run the interactive OAuth flow for a tool: bind the callback listener,
+/// open the authorization URL, wait for the callback, then exchange the code
+/// and store the returned tokens.
 pub(super) async fn auth_tool_oauth(
     store: &(dyn SecretsStore + Send + Sync),
     context: &AuthToolContext<'_>,
