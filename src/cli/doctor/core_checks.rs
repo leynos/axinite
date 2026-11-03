@@ -11,23 +11,27 @@ use super::CheckResult;
 
 // ── Settings file ───────────────────────────────────────────
 
-/// Report whether the settings file is absent, valid, or malformed.
+/// Report whether the settings file is absent, valid, or invalid.
+///
+/// Validation deserializes [`Settings`] rather than a generic JSON value, so a
+/// file that startup would reject (for example, a field with the wrong type)
+/// is reported as a failure here too.
 pub(super) fn check_settings_file(ctx: &EnvContext) -> CheckResult {
     let path = ctx.axinite_base_dir().join("settings.json");
-    if !path.exists() {
-        return CheckResult::Pass("no settings file (defaults will be used)".into());
+    match path.try_exists() {
+        Ok(false) => return CheckResult::Pass("no settings file (defaults will be used)".into()),
+        Ok(true) => {}
+        Err(error) => {
+            return CheckResult::Fail(format!("cannot inspect {}: {error}", path.display()));
+        }
     }
 
-    match ambient_fs::read_to_string(&path) {
-        Ok(data) => match serde_json::from_str::<serde_json::Value>(&data) {
-            Ok(_) => CheckResult::Pass(format!("valid ({})", path.display())),
-            Err(e) => CheckResult::Fail(format!(
-                "settings.json is malformed: {}. Fix or delete {}",
-                e,
-                path.display()
-            )),
-        },
-        Err(e) => CheckResult::Fail(format!("cannot read {}: {}", path.display(), e)),
+    match Settings::load_from(&path) {
+        Ok(_) => CheckResult::Pass(format!("valid ({})", path.display())),
+        Err(error) => CheckResult::Fail(format!(
+            "settings.json is invalid: {error}. Fix or delete {}",
+            path.display()
+        )),
     }
 }
 
