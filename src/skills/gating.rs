@@ -59,30 +59,38 @@ fn check_requirements_from_context(
     requirements: &GatingRequirements,
     env_context: &EnvContext,
 ) -> GatingResult {
-    let mut failures = Vec::new();
-
-    for bin in &requirements.bins {
-        if !binary_exists(bin) {
-            failures.push(format!("required binary not found: {}", bin));
-        }
-    }
-
-    for var in &requirements.env {
-        if !env_context.contains_key(var) {
-            failures.push(format!("required env var not set: {}", var));
-        }
-    }
-
-    for path in &requirements.config {
-        if !std::path::Path::new(path).exists() {
-            failures.push(format!("required config not found: {}", path));
-        }
-    }
+    let failures = missing_binary_failures(&requirements.bins)
+        .chain(missing_env_failures(&requirements.env, env_context))
+        .chain(missing_config_failures(&requirements.config))
+        .collect::<Vec<_>>();
 
     GatingResult {
         passed: failures.is_empty(),
         failures,
     }
+}
+
+fn missing_binary_failures(bins: &[String]) -> impl Iterator<Item = String> + '_ {
+    bins.iter()
+        .filter(|bin| !binary_exists(bin))
+        .map(|bin| format!("required binary not found: {bin}"))
+}
+
+fn missing_env_failures<'a>(
+    variables: &'a [String],
+    env_context: &'a EnvContext,
+) -> impl Iterator<Item = String> + 'a {
+    variables
+        .iter()
+        .filter(|variable| !env_context.contains_key(variable))
+        .map(|variable| format!("required env var not set: {variable}"))
+}
+
+fn missing_config_failures(paths: &[String]) -> impl Iterator<Item = String> + '_ {
+    paths
+        .iter()
+        .filter(|path| !std::path::Path::new(path).exists())
+        .map(|path| format!("required config not found: {path}"))
 }
 
 /// Check if a binary exists on PATH using `std::process::Command`.
@@ -114,81 +122,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_requirements_pass() {
+    fn empty_requirements_pass() {
         let req = GatingRequirements::default();
-        let result = check_requirements_sync(&req);
+        let result = check_requirements_from_context(&req, &EnvContext::default());
         assert!(result.passed);
         assert!(result.failures.is_empty());
     }
 
-    #[test]
-    fn test_missing_binary_fails() {
-        let req = GatingRequirements {
-            bins: vec!["__axinite_nonexistent_binary_xyz__".to_string()],
-            ..Default::default()
-        };
-        let result = check_requirements_sync(&req);
-        assert!(!result.passed);
-        assert_eq!(result.failures.len(), 1);
-        assert!(result.failures[0].contains("binary not found"));
-    }
-
-    #[test]
-    fn test_missing_env_var_fails() {
-        let req = GatingRequirements {
-            env: vec!["__AXINITE_TEST_NONEXISTENT_VAR__".to_string()],
-            ..Default::default()
-        };
-        let result = check_requirements_sync(&req);
-        assert!(!result.passed);
-        assert!(result.failures[0].contains("env var not set"));
-    }
-
-    #[test]
-    fn test_present_env_var_passes() {
+    #[rstest::rstest]
+    #[case(None, false)]
+    #[case(Some(""), true)]
+    #[case(Some("value"), true)]
+    fn env_requirement_uses_presence(#[case] value: Option<&str>, #[case] expected_to_pass: bool) {
+        let context = value.map_or_else(EnvContext::default, |value| {
+            EnvContext::default().with_env("AXINITE_TEST_GATE_KEY", value)
+        });
         let req = GatingRequirements {
             env: vec!["AXINITE_TEST_GATE_KEY".to_string()],
             ..Default::default()
         };
-        let context = EnvContext::default().with_env("AXINITE_TEST_GATE_KEY", "value");
-        let result = check_requirements_from_context(&req, &context);
-        assert!(result.passed);
-    }
-
-    #[test]
-    fn present_empty_env_var_passes_gating() {
-        let req = GatingRequirements {
-            env: vec!["AXINITE_TEST_GATE_EMPTY".to_string()],
-            ..Default::default()
-        };
-        let context = EnvContext::default().with_env("AXINITE_TEST_GATE_EMPTY", "");
-
         let result = check_requirements_from_context(&req, &context);
 
-        assert!(result.passed);
-        assert!(result.failures.is_empty());
+        assert_eq!(result.passed, expected_to_pass);
+        assert_eq!(result.failures.is_empty(), expected_to_pass);
     }
 
     #[test]
-    fn test_missing_config_fails() {
-        let req = GatingRequirements {
-            config: vec!["/nonexistent/path/axinite_test.conf".to_string()],
-            ..Default::default()
-        };
-        let result = check_requirements_sync(&req);
-        assert!(!result.passed);
-        assert!(result.failures[0].contains("config not found"));
-    }
-
-    #[test]
-    fn test_multiple_mixed_requirements() {
+    fn missing_requirements_report_each_kind() {
         let req = GatingRequirements {
             bins: vec!["__no_such_bin__".to_string()],
-            env: vec!["__NO_SUCH_VAR__".to_string()],
+            env: vec!["AXINITE_TEST_MISSING_GATE_KEY".to_string()],
             config: vec!["/no/such/file".to_string()],
         };
-        let result = check_requirements_sync(&req);
+        let result = check_requirements_from_context(&req, &EnvContext::default());
+
         assert!(!result.passed);
         assert_eq!(result.failures.len(), 3);
+        assert!(
+            result
+                .failures
+                .iter()
+                .any(|failure| failure.contains("binary not found"))
+        );
+        assert!(
+            result
+                .failures
+                .iter()
+                .any(|failure| failure.contains("env var not set"))
+        );
+        assert!(
+            result
+                .failures
+                .iter()
+                .any(|failure| failure.contains("config not found"))
+        );
     }
 }

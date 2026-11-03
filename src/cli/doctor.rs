@@ -23,143 +23,73 @@ use subsystem_checks::{
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
-async fn run_core_checks(
-    settings: &Settings,
-    env_context: &EnvContext,
-    passed: &mut u32,
-    failed: &mut u32,
-    skipped: &mut u32,
-) {
-    check(
-        "Settings file",
-        check_settings_file(),
-        passed,
-        failed,
-        skipped,
-    );
+async fn run_core_checks(inputs: &DoctorCheckInputs<'_>, results: &mut CheckCounts) {
+    check("Settings file", check_settings_file(), results);
     check(
         "NEAR AI session",
-        check_nearai_session(env_context).await,
-        passed,
-        failed,
-        skipped,
+        check_nearai_session(inputs.env_context).await,
+        results,
     );
     check(
         "LLM configuration",
-        core_checks::check_llm_config_with_context(env_context, settings),
-        passed,
-        failed,
-        skipped,
+        core_checks::check_llm_config_with_context(inputs.env_context, inputs.settings),
+        results,
     );
     check(
         "Database backend",
-        check_database(env_context).await,
-        passed,
-        failed,
-        skipped,
+        check_database(inputs.env_context).await,
+        results,
     );
     check(
         "Workspace search",
-        check_workspace_search(env_context).await,
-        passed,
-        failed,
-        skipped,
+        check_workspace_search(inputs.env_context).await,
+        results,
     );
     check(
         "Workspace directory",
-        check_workspace_dir(env_context),
-        passed,
-        failed,
-        skipped,
+        check_workspace_dir(inputs.env_context),
+        results,
     );
 }
 
-async fn run_subsystem_checks(
-    settings: &Settings,
-    env_context: &EnvContext,
-    passed: &mut u32,
-    failed: &mut u32,
-    skipped: &mut u32,
-) {
+async fn run_subsystem_checks(inputs: &DoctorCheckInputs<'_>, results: &mut CheckCounts) {
     check(
         "Embeddings",
-        check_embeddings_with_context(env_context, settings),
-        passed,
-        failed,
-        skipped,
+        check_embeddings_with_context(inputs.env_context, inputs.settings),
+        results,
     );
     check(
         "Routines config",
-        check_routines_config_with_context(env_context),
-        passed,
-        failed,
-        skipped,
+        check_routines_config_with_context(inputs.env_context),
+        results,
     );
     check(
         "Gateway config",
-        check_gateway_config_with_context(env_context, settings),
-        passed,
-        failed,
-        skipped,
+        check_gateway_config_with_context(inputs.env_context, inputs.settings),
+        results,
     );
-    check(
-        "MCP servers",
-        check_mcp_config().await,
-        passed,
-        failed,
-        skipped,
-    );
-    check(
-        "Skills",
-        check_skills(env_context).await,
-        passed,
-        failed,
-        skipped,
-    );
+    check("MCP servers", check_mcp_config().await, results);
+    check("Skills", check_skills(inputs.env_context).await, results);
     check(
         "Secrets",
-        check_secrets(settings, env_context),
-        passed,
-        failed,
-        skipped,
+        check_secrets(inputs.settings, inputs.env_context),
+        results,
     );
-    check(
-        "Service",
-        check_service_installed(),
-        passed,
-        failed,
-        skipped,
-    );
+    check("Service", check_service_installed(), results);
 }
 
-async fn run_external_binary_checks(passed: &mut u32, failed: &mut u32, skipped: &mut u32) {
-    check(
-        "Docker daemon",
-        check_docker_daemon().await,
-        passed,
-        failed,
-        skipped,
-    );
+async fn run_external_binary_checks(results: &mut CheckCounts) {
+    check("Docker daemon", check_docker_daemon().await, results);
     check(
         "cloudflared",
         check_binary("cloudflared", &["--version"]),
-        passed,
-        failed,
-        skipped,
+        results,
     );
-    check(
-        "ngrok",
-        check_binary("ngrok", &["version"]),
-        passed,
-        failed,
-        skipped,
-    );
+    check("ngrok", check_binary("ngrok", &["version"]), results);
     check(
         "tailscale",
         check_binary("tailscale", &["version"]),
-        passed,
-        failed,
-        skipped,
+        results,
     );
 }
 
@@ -168,39 +98,30 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     println!("Axinite Doctor");
     println!("===============\n");
 
-    let mut passed = 0u32;
-    let mut failed = 0u32;
-    let mut skipped = 0u32;
+    let mut results = CheckCounts::default();
 
     // Load settings once for checks that need them.
     EnvContext::refresh_dotenv_layers();
     let env_context = EnvContext::capture_ambient();
     let settings = Settings::load();
+    let inputs = DoctorCheckInputs {
+        settings: &settings,
+        env_context: &env_context,
+    };
 
-    run_core_checks(
-        &settings,
-        &env_context,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    )
-    .await;
-    run_subsystem_checks(
-        &settings,
-        &env_context,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    )
-    .await;
-    run_external_binary_checks(&mut passed, &mut failed, &mut skipped).await;
+    run_core_checks(&inputs, &mut results).await;
+    run_subsystem_checks(&inputs, &mut results).await;
+    run_external_binary_checks(&mut results).await;
 
     // ── Summary ───────────────────────────────────────────────
 
     println!();
-    println!("  {passed} passed, {failed} failed, {skipped} skipped");
+    println!(
+        "  {} passed, {} failed, {} skipped",
+        results.passed, results.failed, results.skipped
+    );
 
-    if failed > 0 {
+    if results.failed > 0 {
         println!("\n  Some checks failed. This is normal if you don't use those features.");
     }
 
@@ -209,18 +130,30 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
 
 // ── Check runner ────────────────────────────────────────────
 
-fn check(name: &str, result: CheckResult, passed: &mut u32, failed: &mut u32, skipped: &mut u32) {
+struct DoctorCheckInputs<'a> {
+    settings: &'a Settings,
+    env_context: &'a EnvContext,
+}
+
+#[derive(Default)]
+struct CheckCounts {
+    passed: u32,
+    failed: u32,
+    skipped: u32,
+}
+
+fn check(name: &str, result: CheckResult, counts: &mut CheckCounts) {
     match result {
         CheckResult::Pass(detail) => {
-            *passed += 1;
+            counts.passed += 1;
             println!("  [pass] {name}: {detail}");
         }
         CheckResult::Fail(detail) => {
-            *failed += 1;
+            counts.failed += 1;
             println!("  [FAIL] {name}: {detail}");
         }
         CheckResult::Skip(reason) => {
-            *skipped += 1;
+            counts.skipped += 1;
             println!("  [skip] {name}: {reason}");
         }
     }

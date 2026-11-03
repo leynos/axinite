@@ -47,31 +47,35 @@ fn db_backend_name(ctx: &EnvContext) -> String {
 async fn print_database_status(db_backend: &str, ctx: &EnvContext) {
     print!("  Database:    ");
     match db_backend {
-        "libsql" | "turso" | "sqlite" => {
-            let path = ctx
-                .get("LIBSQL_PATH")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| crate::config::default_libsql_path_in(&ctx.axinite_base_dir()));
-            if path.exists() {
-                let turso = if ctx.contains_key("LIBSQL_URL") {
-                    " + Turso sync"
-                } else {
-                    ""
-                };
-                println!("libSQL ({}{})", path.display(), turso);
-            } else {
-                println!("libSQL (file missing: {})", path.display());
-            }
-        }
-        _ => {
-            if ctx.contains_key("DATABASE_URL") {
-                match check_database(ctx).await {
-                    Ok(()) => println!("connected (PostgreSQL)"),
-                    Err(e) => println!("error ({})", e),
-                }
-            } else {
-                println!("not configured");
-            }
+        "libsql" | "turso" | "sqlite" => print_libsql_database_status(ctx),
+        _ => print_postgres_database_status(ctx).await,
+    }
+}
+
+fn print_libsql_database_status(ctx: &EnvContext) {
+    let path = ctx
+        .get("LIBSQL_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| crate::config::default_libsql_path_in(&ctx.axinite_base_dir()));
+    if !path.exists() {
+        println!("libSQL (file missing: {})", path.display());
+    } else {
+        let turso = if ctx.contains_key("LIBSQL_URL") {
+            " + Turso sync"
+        } else {
+            ""
+        };
+        println!("libSQL ({}{})", path.display(), turso);
+    }
+}
+
+async fn print_postgres_database_status(ctx: &EnvContext) {
+    if !ctx.contains_key("DATABASE_URL") {
+        println!("not configured");
+    } else {
+        match check_database(ctx).await {
+            Ok(()) => println!("connected (PostgreSQL)"),
+            Err(error) => println!("error ({error})"),
         }
     }
 }

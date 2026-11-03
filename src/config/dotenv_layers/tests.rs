@@ -1,11 +1,13 @@
 //! Focused tests for dotenv parsing, relocation, refresh, and layer precedence.
 
 use std::collections::HashMap;
+use std::process::Command;
+use std::sync::Arc;
 
 use tempfile::tempdir;
 use tracing_test::traced_test;
 
-use super::DotenvLayers;
+use super::{DotenvLayerStore, DotenvLayers, DotenvRefreshInputs};
 use crate::bootstrap::upsert_bootstrap_vars_to;
 use crate::config::EnvContext;
 use crate::test_support::ExpectValid;
@@ -137,8 +139,14 @@ fn loading_again_after_bootstrap_write_refreshes_the_file_layer() {
         base_dir.to_string_lossy().into_owned(),
     )]);
     let start_dir = dir.path();
-    let before_write = DotenvLayers::load(start_dir, &process, None);
-    let before = EnvContext::from_dotenv_layers(process.clone(), HashMap::new(), &before_write);
+    let store = DotenvLayerStore::empty();
+    let before_layers = store.refresh(DotenvRefreshInputs {
+        start_dir,
+        process: &process,
+        cached_base_dir: Some(&base_dir),
+        home_dir_fallback: None,
+    });
+    let before = EnvContext::from_dotenv_layers(process.clone(), HashMap::new(), &before_layers);
     assert_eq!(before.get("AXINITE_TEST_ONBOARDING_REFRESH"), None);
 
     upsert_bootstrap_vars_to(
@@ -146,9 +154,16 @@ fn loading_again_after_bootstrap_write_refreshes_the_file_layer() {
         &[("AXINITE_TEST_ONBOARDING_REFRESH", "written")],
     )
     .expect_valid("write onboarding value to bootstrap dotenv file");
-    let after_write = DotenvLayers::load(start_dir, &process, None);
-    let after = EnvContext::from_dotenv_layers(process, HashMap::new(), &after_write);
+    let after_layers = store.refresh(DotenvRefreshInputs {
+        start_dir,
+        process: &process,
+        cached_base_dir: Some(&base_dir),
+        home_dir_fallback: None,
+    });
+    let after = EnvContext::from_dotenv_layers(process, HashMap::new(), &after_layers);
 
+    assert!(!Arc::ptr_eq(&before_layers, &after_layers));
+    assert_eq!(before.get("AXINITE_TEST_ONBOARDING_REFRESH"), None);
     assert_eq!(
         after.get("AXINITE_TEST_ONBOARDING_REFRESH"),
         Some("written")
@@ -156,7 +171,28 @@ fn loading_again_after_bootstrap_write_refreshes_the_file_layer() {
 }
 
 #[test]
-fn cross_file_substitution_no_longer_reads_the_current_directory_layer() {
+fn substitution_semantics_run_with_an_empty_process_environment() {
+    let child = Command::new(std::env::current_exe().expect("test executable path"))
+        .env_clear()
+        .args([
+            "--ignored",
+            "--exact",
+            "config::dotenv_layers::tests::substitution_semantics_in_clean_process",
+            "--nocapture",
+        ])
+        .output()
+        .expect("run dotenv substitution test in an isolated process");
+
+    assert!(
+        child.status.success(),
+        "isolated substitution test failed:\n{}",
+        String::from_utf8_lossy(&child.stdout)
+    );
+}
+
+#[test]
+#[ignore = "run by substitution_semantics_run_with_an_empty_process_environment"]
+fn substitution_semantics_in_clean_process() {
     let dir = tempdir().expect_valid("create cross-file substitution directory");
     let layers = DotenvLayers::from_contents(
         Some(b"AXINITE_TEST_CROSS_FILE_INPUT=from-cwd\n"),
@@ -178,28 +214,21 @@ fn cross_file_substitution_no_longer_reads_the_current_directory_layer() {
             .map(String::as_str),
         Some("")
     );
-}
-
-#[test]
-fn repeated_keys_keep_the_first_value_but_later_substitution_uses_last_value() {
-    let dir = tempdir().expect_valid("create duplicate substitution directory");
-    let layers = DotenvLayers::from_contents(
+    let repeated = DotenvLayers::from_contents(
         None,
-        Some(
-            b"AXINITE_TEST_DUPLICATE_KEY=first\nAXINITE_TEST_DUPLICATE_KEY=last\nAXINITE_TEST_DUPLICATE_OUTPUT=${AXINITE_TEST_DUPLICATE_KEY}\n",
-        ),
+        Some(b"AXINITE_TEST_DUPLICATE_KEY=first\nAXINITE_TEST_DUPLICATE_KEY=last\nAXINITE_TEST_DUPLICATE_OUTPUT=${AXINITE_TEST_DUPLICATE_KEY}\n"),
         dir.path(),
     );
 
     assert_eq!(
-        layers
+        repeated
             .bootstrap_values()
             .get("AXINITE_TEST_DUPLICATE_KEY")
             .map(String::as_str),
         Some("first")
     );
     assert_eq!(
-        layers
+        repeated
             .bootstrap_values()
             .get("AXINITE_TEST_DUPLICATE_OUTPUT")
             .map(String::as_str),

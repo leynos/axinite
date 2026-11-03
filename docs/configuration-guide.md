@@ -36,6 +36,10 @@ defaults. TOML overrides database settings but loses to environment inputs.
 
 Dotenv values are parsed into immutable `EnvContext` snapshots. They are not
 written to the process environment and are not inherited by child processes.
+In-process libraries that read OS variables directly cannot see dotenv-only
+values. The Bedrock AWS SDK reads file and endpoint settings from the process
+environment, so set `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE` and
+`AWS_ENDPOINT_URL` there when needed.
 Ambient config constructors reread the files; hot reload replaces the parsed
 layer snapshot so files written during onboarding are visible on the next
 config load. The base directory itself is cached after its first access.

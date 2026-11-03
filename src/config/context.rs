@@ -14,7 +14,7 @@ use std::sync::{Arc, OnceLock};
 use self::base_dir::resolve_base_dir_snapshot;
 use crate::config::INJECTED_VARS;
 use crate::config::database::autodetect_libsql_backend;
-use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers};
+use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers, DotenvRefreshInputs};
 
 mod base_dir;
 mod restart;
@@ -59,13 +59,7 @@ impl EnvContext {
     pub fn capture_ambient() -> Self {
         let (process, secrets) = capture_ambient_inputs(true);
         let layers = dotenv_layers_snapshot();
-        Self::from_dotenv_layers_with_non_unicode(
-            process.env_vars.clone(),
-            process.non_unicode_values.clone(),
-            secrets,
-            &layers,
-            process.home_dir_fallback.as_deref(),
-        )
+        Self::from_dotenv_layers_with_non_unicode(process, secrets, &layers)
     }
 
     /// Capture real process variables without dotenv layers or injected secrets.
@@ -101,27 +95,16 @@ impl EnvContext {
             PathBuf::from(".")
         });
         let cached_base_dir = crate::bootstrap::cached_axinite_base_dir();
-        let layers = match cached_base_dir.as_deref() {
-            Some(base_dir) => DotenvLayers::load_with_base_dir(
-                &start_dir,
-                &process.env_vars,
-                Some(base_dir),
-                process.home_dir_fallback.as_deref(),
-            ),
-            None => DotenvLayers::load(
-                &start_dir,
-                &process.env_vars,
-                process.home_dir_fallback.as_deref(),
-            ),
-        };
+        let layers = DOTENV_LAYERS.refresh(DotenvRefreshInputs {
+            start_dir: &start_dir,
+            process: &process.env_vars,
+            cached_base_dir: cached_base_dir.as_deref(),
+            home_dir_fallback: process.home_dir_fallback.as_deref(),
+        });
         tracing::debug!(
             bootstrap_path = ?layers.bootstrap_path(),
             "Refreshed parsed dotenv layers"
         );
-        let mut snapshot = DOTENV_LAYERS
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *snapshot = Arc::new(layers);
     }
 
     /// Refresh ambient dotenv inputs for a reload while preserving explicit
@@ -135,13 +118,7 @@ impl EnvContext {
         let (process, mut secrets) = capture_ambient_inputs(true);
         secrets.extend(self.secrets.clone());
         let layers = dotenv_layers_snapshot();
-        let mut refreshed = Self::from_dotenv_layers_with_non_unicode(
-            process.env_vars.clone(),
-            process.non_unicode_values.clone(),
-            secrets,
-            &layers,
-            process.home_dir_fallback.as_deref(),
-        );
+        let mut refreshed = Self::from_dotenv_layers_with_non_unicode(process, secrets, &layers);
         for (key, value) in &self.explicit_env_overrides {
             refreshed.env_vars.insert(key.clone(), value.clone());
             refreshed.non_unicode_values.remove(key);
@@ -164,31 +141,33 @@ impl EnvContext {
         secrets: HashMap<String, String>,
         layers: &DotenvLayers,
     ) -> Self {
-        Self::from_dotenv_layers_with_non_unicode(process, HashSet::new(), secrets, layers, None)
+        let process = ProcessEnvSnapshot {
+            env_vars: process,
+            non_unicode_values: HashSet::new(),
+            home_dir_fallback: None,
+        };
+        Self::from_dotenv_layers_with_non_unicode(&process, secrets, layers)
     }
 
     fn from_dotenv_layers_with_non_unicode(
-        process: HashMap<String, String>,
-        non_unicode_values: HashSet<String>,
+        process: &ProcessEnvSnapshot,
         secrets: HashMap<String, String>,
         layers: &DotenvLayers,
-        home_dir_fallback: Option<&std::path::Path>,
     ) -> Self {
         let mut env_vars = layers.bootstrap_values().clone();
         env_vars.extend(layers.cwd_values().clone());
-        env_vars.extend(process);
+        env_vars.extend(process.env_vars.clone());
 
-        let base_dir = layers
-            .base_dir()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| resolve_base_dir_snapshot(&env_vars, home_dir_fallback));
+        let base_dir = layers.base_dir().map(PathBuf::from).unwrap_or_else(|| {
+            resolve_base_dir_snapshot(&env_vars, process.home_dir_fallback.as_deref())
+        });
         autodetect_libsql_backend(&mut env_vars, &base_dir);
 
         Self {
             env_vars,
-            non_unicode_values,
+            non_unicode_values: process.non_unicode_values.clone(),
             secrets,
-            home_dir_fallback: home_dir_fallback.map(PathBuf::from),
+            home_dir_fallback: process.home_dir_fallback.clone(),
             base_dir,
             ambient_source: true,
             explicit_env_overrides: HashMap::new(),
@@ -266,13 +245,13 @@ impl EnvContext {
     }
 
     /// Return the raw environment value, including an empty value.
-    #[cfg(feature = "postgres")]
+    #[cfg(all(feature = "postgres", any(test, feature = "test-helpers")))]
     pub(crate) fn raw_env_value(&self, key: &str) -> Option<&str> {
         self.env_vars.get(key).map(String::as_str)
     }
 
     /// Whether a process environment value was present but not valid UTF-8.
-    #[cfg(feature = "postgres")]
+    #[cfg(all(feature = "postgres", any(test, feature = "test-helpers")))]
     pub(crate) fn has_non_unicode_value(&self, key: &str) -> bool {
         self.non_unicode_values.contains(key)
     }
@@ -365,10 +344,7 @@ fn ambient_value_from_layers(
 }
 
 fn dotenv_layers_snapshot() -> Arc<DotenvLayers> {
-    DOTENV_LAYERS
-        .read()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
+    DOTENV_LAYERS.snapshot()
 }
 
 fn collect_utf8_env_vars(

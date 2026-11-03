@@ -89,6 +89,7 @@ fn main() {
         as fn(
             &axinite::app::AppComponents,
             &axinite::config::Config,
+            &axinite::config::EnvContext,
             &Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
         ) -> tokio::sync::broadcast::Sender<()>;
 
@@ -97,6 +98,7 @@ fn main() {
         as fn(
             &axinite::app::AppComponents,
             &axinite::config::Config,
+            &axinite::config::EnvContext,
             &Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
             &Option<std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
             &Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
