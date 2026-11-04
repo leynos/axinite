@@ -22,4 +22,3 @@ mod webhook;
 mod tests;
 
 struct TelegramChannel;
-

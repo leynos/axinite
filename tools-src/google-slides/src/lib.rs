@@ -407,4 +407,3 @@ fn execute_inner(params: &str) -> Result<String, String> {
 
     Ok(result)
 }
-

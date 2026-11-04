@@ -108,6 +108,11 @@ EXEMPT: dict[str, str] = {
         "`#![deny(unsafe_code)]` upstream and is built inside that boundary "
         "crate's closure"
     ),
+    "crates/pg-embed-setup-unpriv": (
+        "path-patched standalone crate with platform FFI and process-control "
+        "unsafe code maintained in its own upstream project; outside this "
+        "component-ABI contract"
+    ),
 }
 
 

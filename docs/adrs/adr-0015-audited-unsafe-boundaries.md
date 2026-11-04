@@ -194,36 +194,39 @@ lint. Therefore:
 
 ### The allow-list
 
-| Crate path                  | Workspace  | Role     | Unsafe permitted in     |
-| --------------------------- | ---------- | -------- | ----------------------- |
-| `.` (`axinite`)             | root       | safe     | nowhere                 |
-| `crates/ambient-fs`         | root       | safe     | nowhere                 |
-| `crates/hyper-rustls`       | root       | safe     | nowhere (vendored fork) |
-| `fuzz`                      | standalone | safe     | nowhere                 |
-| `channels-src/discord`      | standalone | boundary | `src/bindings.rs`       |
-| `channels-src/slack`        | standalone | boundary | `src/bindings.rs`       |
-| `channels-src/telegram`     | standalone | boundary | `src/bindings.rs`       |
-| `channels-src/whatsapp`     | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/github`          | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/gmail`           | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-calendar` | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-docs`     | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-drive`    | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-sheets`   | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-slides`   | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/slack`           | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/telegram`        | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/web-search`      | standalone | boundary | `src/bindings.rs`       |
+| Crate path                      | Workspace  | Role     | Unsafe permitted in     |
+| ------------------------------- | ---------- | -------- | ----------------------- |
+| `.` (`axinite`)                 | root       | safe     | nowhere                 |
+| `crates/ambient-fs`             | root       | safe     | nowhere                 |
+| `crates/hyper-rustls`           | root       | safe     | nowhere (vendored fork) |
+| `fuzz`                          | standalone | safe     | nowhere                 |
+| `channels-src/discord`          | standalone | boundary | `src/bindings.rs`       |
+| `channels-src/slack`            | standalone | boundary | `src/bindings.rs`       |
+| `channels-src/telegram`         | standalone | boundary | `src/bindings.rs`       |
+| `channels-src/whatsapp`         | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/github`              | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/gmail`               | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-calendar`     | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-docs`         | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-drive`        | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-sheets`       | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-slides`       | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/slack`               | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/telegram`            | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/web-search`          | standalone | boundary | `src/bindings.rs`       |
 
 _Table 3: The unsafe boundary allow-list, enforced by
 `scripts/check_unsafe_boundaries.py`._
 
-Two manifests are exempt, with their reasons in the script:
+Three manifests are exempt, with their reasons in the script:
 `tests/workflow_contracts/fixtures/nextest_boundary` (a byte-exact fixture only
 the workflow contracts compile) and
 `tools-src/telegram/patches/grammers-crypto` (a vendored dependency patch that
 already declares `#![deny(unsafe_code)]` and is built inside a boundary crate's
-closure).
+closure), and `crates/pg-embed-setup-unpriv` (a path-patched standalone crate
+with platform FFI and process-control unsafe code maintained in its own
+[upstream project](https://github.com/leynos/pg-embed-setup-unpriv); that code
+is outside this component-ABI contract).
 
 ### The component boundary module
 
