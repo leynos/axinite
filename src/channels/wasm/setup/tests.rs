@@ -101,16 +101,39 @@ async fn register_channel_injects_credentials_from_the_supplied_snapshot() -> an
 /// Setup must not fall back to the ambient process environment.
 ///
 /// The snapshot is empty, so a credential injected here could only have come
-/// from the real process environment. Reading ambient state is permitted;
-/// mutating it is not. If the host happens to define the probe variable, the
-/// test cannot distinguish the two sources, so it skips rather than assert
-/// something it cannot prove.
+/// from the real process environment. To make the two sources distinguishable,
+/// the assertion runs in a child process whose ambient environment defines the
+/// probe variable: an ambient fallback injects the credential and fails, while
+/// the snapshot-driven path ignores it. The variable is set on the child
+/// process only, so the parent never mutates its own environment.
 #[tokio::test]
 async fn register_channel_does_not_read_the_ambient_environment() -> anyhow::Result<()> {
+    const CHILD_MARKER: &str = "AXINITE_WASM_SETUP_AMBIENT_CHILD";
+
     if EnvContext::capture_ambient()
-        .get_owned(SNAPSHOT_PROBE_TOKEN)
-        .is_some()
+        .get_owned(CHILD_MARKER)
+        .is_none()
     {
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "channels::wasm::setup::tests::register_channel_does_not_read_the_ambient_environment",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(CHILD_MARKER, "1")
+            .env(SNAPSHOT_PROBE_TOKEN, "ambient-token")
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "child failed: {}\n{stdout}",
+            output.status
+        );
+        assert!(
+            stdout.contains("1 passed"),
+            "child did not run the test: {stdout}"
+        );
         return Ok(());
     }
 
