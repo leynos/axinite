@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::channels::wasm::WasmChannel;
 use crate::channels::wasm::telemetry;
 use crate::config::EnvContext;
-use crate::secrets::SecretsStore;
+use crate::secrets::{DecryptedSecret, SecretsStore};
 
 /// Inject credentials for a channel based on naming convention.
 ///
@@ -48,49 +48,9 @@ pub async fn inject_channel_credentials_from_context(
 
     // 1. Try injecting from persistent secrets store if available
     if let Some(secrets) = secrets {
-        let all_secrets = match secrets.list("default").await {
-            Ok(all_secrets) => all_secrets,
-            Err(e) => {
-                telemetry::channel_credentials("list_error");
-                return Err(anyhow::anyhow!("Failed to list secrets: {}", e));
-            }
-        };
-
-        let prefix = format!("{}_", channel_name.to_ascii_lowercase());
-
-        for secret_meta in all_secrets {
-            if !secret_meta.name.to_ascii_lowercase().starts_with(&prefix) {
-                continue;
-            }
-
-            let decrypted = match secrets.get_decrypted("default", &secret_meta.name).await {
-                Ok(d) => d,
-                Err(e) => {
-                    telemetry::channel_credentials("decryption_error");
-                    tracing::warn!(
-                        secret = %secret_meta.name,
-                        error = %e,
-                        "Failed to decrypt secret for channel credential injection"
-                    );
-                    continue;
-                }
-            };
-
-            let placeholder = secret_meta.name.to_uppercase();
-
-            tracing::debug!(
-                channel = %channel_name,
-                secret = %secret_meta.name,
-                placeholder = %placeholder,
-                "Injecting credential"
-            );
-
-            channel
-                .set_credential(&placeholder, decrypted.expose().to_string())
-                .await;
-            injected_placeholders.insert(placeholder);
-            count += 1;
-        }
+        count +=
+            inject_store_credentials(channel, secrets, channel_name, &mut injected_placeholders)
+                .await?;
     }
 
     // 2. Fall back to the supplied environment for credentials missing from the
@@ -101,6 +61,64 @@ pub async fn inject_channel_credentials_from_context(
 
     record_outcome(channel_name, declared, count);
     Ok(count)
+}
+
+/// Inject every stored secret whose name carries the channel prefix.
+async fn inject_store_credentials(
+    channel: &Arc<WasmChannel>,
+    secrets: &dyn SecretsStore,
+    channel_name: &str,
+    injected_placeholders: &mut HashSet<String>,
+) -> anyhow::Result<usize> {
+    let all_secrets = match secrets.list("default").await {
+        Ok(all_secrets) => all_secrets,
+        Err(e) => {
+            telemetry::channel_credentials("list_error");
+            return Err(anyhow::anyhow!("Failed to list secrets: {}", e));
+        }
+    };
+
+    let prefix = format!("{}_", channel_name.to_ascii_lowercase());
+    let mut count = 0;
+    for secret_meta in all_secrets {
+        if !secret_meta.name.to_ascii_lowercase().starts_with(&prefix) {
+            continue;
+        }
+        let Some(decrypted) = decrypt_secret(secrets, &secret_meta.name).await else {
+            continue;
+        };
+
+        let placeholder = secret_meta.name.to_uppercase();
+        tracing::debug!(
+            channel = %channel_name,
+            secret = %secret_meta.name,
+            placeholder = %placeholder,
+            "Injecting credential"
+        );
+
+        channel
+            .set_credential(&placeholder, decrypted.expose().to_string())
+            .await;
+        injected_placeholders.insert(placeholder);
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Decrypt one stored secret, recording and skipping a decryption failure.
+async fn decrypt_secret(secrets: &dyn SecretsStore, name: &str) -> Option<DecryptedSecret> {
+    match secrets.get_decrypted("default", name).await {
+        Ok(decrypted) => Some(decrypted),
+        Err(e) => {
+            telemetry::channel_credentials("decryption_error");
+            tracing::warn!(
+                secret = %name,
+                error = %e,
+                "Failed to decrypt secret for channel credential injection"
+            );
+            None
+        }
+    }
 }
 
 /// Count the credentials the channel's HTTP capability declares.
