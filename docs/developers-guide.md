@@ -2104,6 +2104,23 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps tests
 independent of host machine secrets, keychains, and shell state.
 
+### Settings file loading contract
+
+`Settings::load()` and `Settings::load_from(path)` return
+`Result<Settings, SettingsError>`:
+
+- A missing file yields `Settings::default()`, so a first run needs no
+  configuration.
+- An existing file that cannot be read yields `SettingsError::Read`.
+- An existing file whose contents are not valid JSON yields
+  `SettingsError::Parse`.
+
+Callers that treat an unreadable or malformed `settings.json` as fatal must
+propagate the error. Do not fall back to defaults silently: `Settings::load`
+only substitutes defaults for a genuinely absent file. The operator-facing
+behaviour is described in the
+[user's guide](users-guide.md#settings-file).
+
 ### Monotonic clock seam for duration measurement
 
 When a component must measure elapsed time (rather than compare against a
