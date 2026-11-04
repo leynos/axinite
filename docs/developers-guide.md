@@ -3635,7 +3635,7 @@ Caption: Startup phase sequence.
 | 1   | `phase_pid_and_onboard`              | `&Cli`, `&EnvContext`          | `(Option<PidLock>, EnvContext)` |
 | 2   | `phase_load_config_and_tracing_from` | `&Cli`, `&EnvContext`          | `LoadedConfigContext`           |
 | 3   | `phase_build_components`             | `&Cli`, `LoadedConfigContext`  | `BuiltComponentsContext`        |
-| —   | `install_legacy_env_overlay`         | `&BuiltComponentsContext`      | *(mutates the snapshot)*        |
+| —   | `install_legacy_env_overlay`         | `&BuiltComponentsContext`      | *(fills the legacy overlay)*    |
 | 4   | `phase_tunnel_and_orchestrator`      | `BuiltComponentsContext`       | `AgentRunContext`               |
 | 5   | `phase_init_channels_and_hooks`      | `&Cli`, `AgentRunContext`      | `GatewayPhaseContext`           |
 | 6   | `phase_setup_gateway`                | `&mut GatewayPhaseContext`     | *(mutates in place)*            |
