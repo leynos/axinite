@@ -180,12 +180,13 @@ management.
 - Prefer immutable data and avoid unnecessary `mut`.
 - Use explicit version ranges in `Cargo.toml` and keep dependencies current.
 - Do not write `unsafe` in the root workspace or the `fuzz` crate: they forbid
-  `unsafe_code` in every target. The only unsafe code in the repository is the
-  generated WebAssembly component glue in each component crate's
-  `src/bindings.rs`. If a new operation needs unsafe code, add an audited
-  boundary crate as `docs/adrs/adr-0015-audited-unsafe-boundaries.md` describes
-  rather than lowering a lint, and document each unsafe block with a `SAFETY`
-  comment.
+  `unsafe_code` in every target. Within the audited scope, the only permitted
+  unsafe code is generated WebAssembly component glue in each component crate's
+  `src/bindings.rs`. The path-patched `crates/pg-embed-setup-unpriv` is
+  explicitly exempt and contains platform FFI and process-control unsafe code.
+  If a new operation needs unsafe code, add an audited boundary crate as
+  `docs/adrs/adr-0015-audited-unsafe-boundaries.md` describes rather than
+  lowering a lint, and document each unsafe block with a `SAFETY` comment.
 - Adding a Cargo crate, or changing a crate's unsafe role, requires an entry in
   `scripts/unsafe_boundaries/inventory.py`; `make boundary-contract` and the
   workflow contracts reject an unlisted crate.

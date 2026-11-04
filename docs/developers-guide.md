@@ -4763,9 +4763,13 @@ Prefer adding a query plus wrapper pair over duplicating assertion bodies.
 
 ## 41. Unsafe code and audited boundaries
 
-Axinite forbids unsafe Rust everywhere except the generated WebAssembly
-component glue. [ADR 0015](adrs/adr-0015-audited-unsafe-boundaries.md) records
-the decision, and
+The unsafe-boundary contract forbids handwritten unsafe Rust in the root
+workspace, the `fuzz` crate and designated safe crates. It confines generated
+WebAssembly component ABI glue to reviewed `bindings` modules in fourteen
+boundary crates. The path-patched `crates/pg-embed-setup-unpriv` is explicitly
+outside this contract and contains platform FFI and process-control unsafe code.
+[ADR 0015](adrs/adr-0015-audited-unsafe-boundaries.md) records the decision,
+and
 [Rust boundary verification and unsafe inventory](rust-boundary-verification.md)
 records the inventory and what Miri covers.
 

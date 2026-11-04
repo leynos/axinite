@@ -147,9 +147,11 @@ the guest logic and declares `mod bindings;` behind one reasoned
 `#[expect(unsafe_code, ...)]`. Its `src/bindings.rs` holds only the
 `wit_bindgen::generate!` and `export!` invocations, which expand to the
 canonical-ABI glue the host calls by symbol name. The crate denies, rather than
-forbids, `unsafe_code` in its own `[lints.rust]` table. Every other crate in
-the repository forbids unsafe code; `scripts/check_unsafe_boundaries.py`
-enforces the allow-list.
+forbids, `unsafe_code` in its own `[lints.rust]` table. The root workspace and
+inventoried safe crates forbid unsafe code. The path-patched
+`crates/pg-embed-setup-unpriv` is explicitly exempt and contains platform FFI
+and process-control unsafe code. `scripts/check_unsafe_boundaries.py` enforces
+the audited allow-list.
 
 ## Generated and unusual paths
 
