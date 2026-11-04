@@ -31,12 +31,21 @@ Table 1. Unsafe sites by class, before and after this change.
 _Table 1: Unsafe sites by class (counts of lint reports under
 `unsafe_code = "forbid"`, as in the original measurement)._
 
-The 30 remaining sites are all macro-generated. They are the three kinds the
-original measurement found: 14 `unsafe fn` canonical-ABI declarations, 14
-`unsafe(export_name)` attributes, and 2 `unsafe` blocks (in `tools-src/github`
-and `tools-src/web-search`). The static contract proves that no handwritten
-`unsafe` token exists in any boundary crate outside `src/bindings.rs`, and the
-compiler proves that the safe crates have none at all.
+The 30 remaining in-scope sites are all macro-generated. They are the three
+kinds the original measurement found: 14 `unsafe fn` canonical-ABI
+declarations, 14 `unsafe(export_name)` attributes, and 2 `unsafe` blocks (in
+`tools-src/github` and `tools-src/web-search`). Static checks prove that no
+handwritten `unsafe` token exists in any boundary crate outside
+`src/bindings.rs`, and that each inventoried safe crate forbids it in its lint
+table and crate roots. Compiler probes append four unsafe forms to selected
+safe and boundary crates and require the compiler to reject them.
+
+The historical site totals above do not include the later path-patched crate
+`crates/pg-embed-setup-unpriv`. It contains platform FFI and process-control
+unsafe code, is maintained as a separate upstream project, and is explicitly
+exempt from this component-ABI contract. The separate
+`tests/probes/cranelift-unwind` crate is inventoried as safe and standalone; it
+is not part of the historical production-site totals.
 
 The word `unsafe` also appears in `src/tools/builder/templates/sources.rs`,
 inside string literals that are templates for generated tool source. That is

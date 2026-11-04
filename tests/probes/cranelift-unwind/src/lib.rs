@@ -1,5 +1,7 @@
 //! Minimal panic and unwinding cases for comparing Rust codegen backends.
 
+#![forbid(unsafe_code)]
+
 #[cfg(test)]
 mod panic_backend {
     //! Four panic and unwinding tests for comparing LLVM and Cranelift behaviour.

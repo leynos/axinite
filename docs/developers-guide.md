@@ -569,7 +569,8 @@ build and every rebuild recompiles whole crates. To debug workspace crates, run
 with `CARGO_PROFILE_DEV_DEBUG=true`. To debug dependencies, add
 `--config 'profile.dev.package."*".debug=true'`, because the environment
 variable does not override the `"*"` package table. To rebuild incrementally,
-set `CARGO_INCREMENTAL=1`. `.cargo/config.toml` also sets
+set `CARGO_INCREMENTAL=1` when the build is not routed through sccache, which
+refuses incremental compilation. `.cargo/config.toml` also sets
 `[unstable] embed-metadata = false`, the native Cargo key for nightlies from
 2026-07-31, so Cargo coordinates metadata output itself; no raw rustc metadata
 flags are used, and the pin is not moved to suit the key. The workspace
