@@ -28,6 +28,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from unsafe_boundaries.files import BoundaryInputError
 from unsafe_boundaries.probes import probe_repository
 from unsafe_boundaries.static_checks import check_repository
 
@@ -41,14 +42,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--static", action="store_true", help="skip compiler probes")
     arguments = parser.parse_args(argv)
     root = arguments.root.resolve()
-    problems = check_repository(root)
-    if not problems and not arguments.static:
-        problems = probe_repository(
-            root,
-            scratch=root / "target/unsafe-boundary-scratch",
-            logs=root / "target/unsafe-boundary-verification",
-            target_dir=root / "target/unsafe-boundary-contract",
-        )
+    try:
+        problems = check_repository(root)
+        if not problems and not arguments.static:
+            problems = probe_repository(
+                root,
+                scratch=root / "target/unsafe-boundary-scratch",
+                logs=root / "target/unsafe-boundary-verification",
+                target_dir=root / "target/unsafe-boundary-contract",
+            )
+    except BoundaryInputError as error:
+        print(f"unsafe boundary contract: {error}", file=sys.stderr)
+        return 1
     for problem in problems:
         print(f"unsafe boundary contract: {problem}", file=sys.stderr)
     if not problems:

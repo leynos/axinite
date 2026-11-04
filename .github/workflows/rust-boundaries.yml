@@ -15,6 +15,10 @@ name: Rust Boundaries
       - "docs/adrs/adr-0015-audited-unsafe-boundaries.md"
       - "docs/rust-boundary-verification.md"
       - "Makefile"
+      - "rust-toolchain.toml"
+      - ".cargo/**"
+      - "tools/mold/**"
+      - "scripts/install-build-tools.sh"
       - ".github/workflows/rust-boundaries.yml"
   schedule:
     - cron: "37 5 * * 1"  # Weekly Monday 5:37 AM UTC

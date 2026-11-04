@@ -427,13 +427,13 @@ MIRI_ABI_ROOTS := channels-src/discord tools-src/web-search
 MIRI_CARGO = MIRIFLAGS="$(MIRIFLAGS)$(1)" $(CARGO_COMMAND) +$(MIRI_TOOLCHAIN) miri test
 
 .PHONY: boundary-contract miri print-miri-toolchain
-boundary-contract:
+boundary-contract: check-build-tools
 	python3 scripts/check_unsafe_boundaries.py
 
 print-miri-toolchain:
 	@printf '%s\n' '$(MIRI_TOOLCHAIN)'
 
-miri:
+miri: check-build-tools
 	$(call MIRI_CARGO,) --package ambient-fs
 	@for root in $(MIRI_COMPONENT_ROOTS); do \
 		echo "== miri: $$root (guest logic)"; \

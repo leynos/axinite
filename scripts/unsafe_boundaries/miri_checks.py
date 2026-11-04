@@ -50,6 +50,9 @@ def check_miri_roots(
     """
     listed = miri_component_roots(makefile_text)
     boundaries = {c.path for c in inventory if c.role is Role.BOUNDARY}
+    existing = {
+        path for path in boundaries if (root / path / "Cargo.toml").is_file()
+    }
     problems = [
         f"Makefile MIRI_COMPONENT_ROOTS lists {path!r}, which is not a boundary crate"
         for path in listed
@@ -57,21 +60,26 @@ def check_miri_roots(
     ]
     problems += [
         f"{path}: has host tests but is missing from Makefile MIRI_COMPONENT_ROOTS"
-        for path in sorted(boundaries - set(listed))
+        for path in sorted(existing - set(listed))
         if _has_host_tests(root / path)
     ]
     problems += [
         f"{path}: listed in MIRI_COMPONENT_ROOTS but has no host tests"
         for path in listed
-        if path in boundaries and not _has_host_tests(root / path)
+        if path in existing and not _has_host_tests(root / path)
     ]
-    return problems + _check_abi_roots(root, makefile_text, boundaries)
+    return problems + _check_abi_roots(root, makefile_text, boundaries, existing)
 
 
-def _check_abi_roots(root: Path, makefile_text: str, boundaries: set[str]) -> list[str]:
+def _check_abi_roots(
+    root: Path,
+    makefile_text: str,
+    boundaries: set[str],
+    existing: set[str],
+) -> list[str]:
     """Require `MIRI_ABI_ROOTS` to name exactly the crates with ABI test modules."""
     listed = set(makefile_list(makefile_text, "MIRI_ABI_ROOTS"))
-    declared = {path for path in boundaries if declared_abi_test_modules(root / path)}
+    declared = {path for path in existing if declared_abi_test_modules(root / path)}
     problems = [
         f"{path}: declares an ABI round-trip module but is missing from "
         "Makefile MIRI_ABI_ROOTS"
@@ -80,5 +88,6 @@ def _check_abi_roots(root: Path, makefile_text: str, boundaries: set[str]) -> li
     problems += [
         f"Makefile MIRI_ABI_ROOTS lists {path!r}, which declares no ABI round trips"
         for path in sorted(listed - declared)
+        if path not in boundaries or path in existing
     ]
     return problems

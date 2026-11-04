@@ -3,11 +3,14 @@
 ## Status
 
 Accepted. Every library, test, helper and binary target in the root workspace
-forbids unsafe Rust. The only unsafe code in the repository is the generated
-WebAssembly component binding glue, confined to one `bindings` module in each
-of fourteen standalone component crates that deny, rather than forbid, unsafe
-code. A repository contract enforces the allow-list, and an isolated Miri
-workflow interprets the host-runnable paths around those boundaries.
+forbids unsafe Rust. Within this contract's audited scope, the only permitted
+unsafe code is generated WebAssembly component binding glue, confined to one
+`bindings` module in each of fourteen standalone component crates that deny,
+rather than forbid, unsafe code. The path-patched
+`crates/pg-embed-setup-unpriv` is explicitly exempt; it contains platform FFI
+and process-control unsafe code maintained in its upstream project. A
+repository contract enforces the allow-list, and an isolated Miri workflow
+interprets the host-runnable paths around the component boundaries.
 
 ## Date
 
