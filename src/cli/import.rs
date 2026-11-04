@@ -188,7 +188,7 @@ fn resolve_openclaw_path(
 
 #[cfg(feature = "import")]
 /// Load the secrets master key from the environment snapshot or the OS
-/// keychain and return the initialised crypto helper.
+/// keychain and return the initialized crypto helper.
 async fn load_import_secrets_crypto(
     env_context: &EnvContext,
 ) -> anyhow::Result<Arc<crate::secrets::SecretsCrypto>> {
