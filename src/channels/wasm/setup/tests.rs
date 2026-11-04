@@ -147,6 +147,81 @@ async fn register_channel_does_not_read_the_ambient_environment() -> anyhow::Res
     Ok(())
 }
 
+/// Setup must thread the request snapshot through its registration loop.
+///
+/// The channel is loaded from a real (if empty) component so that
+/// [`setup_wasm_channels_from_context`] — not the private registration helper
+/// — performs loading, registration, and credential injection. A regression
+/// that dropped or replaced the request context before calling
+/// `register_channel` would leave the credential uninjected.
+#[tokio::test]
+async fn setup_injects_credentials_from_the_request_snapshot() -> anyhow::Result<()> {
+    const SNAPSHOT_VALUE: &str = "setup-snapshot-token";
+
+    let channels_dir = tempfile::tempdir()?;
+    ambient_fs::write(
+        channels_dir.path().join("snapshotprobe.wasm"),
+        wat::parse_str("(component)")?,
+    )?;
+    ambient_fs::write(
+        channels_dir.path().join("snapshotprobe.capabilities.json"),
+        r#"{
+  "type": "channel",
+  "name": "snapshotprobe",
+  "capabilities": {
+    "http": {
+      "credentials": {
+        "token": {
+          "secret_name": "snapshotprobe_token",
+          "location": { "type": "bearer" },
+          "host_patterns": ["api.example.com"]
+        }
+      }
+    }
+  }
+}"#,
+    )?;
+
+    let env_context = EnvContext::default()
+        .with_env("DATABASE_BACKEND", "libsql")
+        .with_env(SNAPSHOT_PROBE_TOKEN, SNAPSHOT_VALUE);
+    let mut config = crate::testing::test_utils::test_config_from_context(&env_context).await?;
+    config.channels.wasm_channels_dir = channels_dir.path().to_path_buf();
+
+    let secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>> = None;
+    let setup = setup_wasm_channels_from_context(WasmChannelSetupRequest {
+        config: &config,
+        secrets_store: &secrets_store,
+        extension_manager: None,
+        database: None,
+        env_context: &env_context,
+    })
+    .await
+    .expect("setup should load the probe channel");
+
+    assert_eq!(
+        setup.channel_names,
+        vec!["snapshotprobe".to_string()],
+        "setup must report the channel it loaded"
+    );
+
+    let channel = setup
+        .wasm_channel_router
+        .get_channel_for_path("/webhook/snapshotprobe")
+        .await
+        .expect("the loaded channel must be registered with the router");
+    assert_eq!(
+        channel
+            .get_credentials()
+            .await
+            .get(SNAPSHOT_PROBE_TOKEN)
+            .map(String::as_str),
+        Some(SNAPSHOT_VALUE),
+        "setup must inject the credential from the request snapshot"
+    );
+    Ok(())
+}
+
 /// Setup with no channel modules still produces webhook routes so that
 /// channels hot-added later can receive webhooks without a restart.
 #[tokio::test]
