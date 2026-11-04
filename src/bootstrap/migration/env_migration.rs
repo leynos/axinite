@@ -1,6 +1,6 @@
 //! Migration of legacy `bootstrap.json` values into the `.env` file.
 
-use std::{borrow::Cow, io, path::Path};
+use std::{borrow::Cow, collections::HashSet, io, path::Path};
 
 use super::rename_to_migrated;
 
@@ -113,34 +113,53 @@ fn quote_env_value(raw: &str) -> String {
 }
 
 fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
-    if let Some(parent) = env_path.parent()
-        && let Err(error) = ambient_fs::create_dir_all(parent)
-    {
-        eprintln!("Warning: failed to create {}: {}", parent.display(), error);
-        return Err(error);
-    }
+    ensure_parent_directory(env_path)?;
+    let keys_being_written = keys_being_written(pairs);
+    let existing = read_existing_env(env_path)?;
+    let merged = merge_env_contents(&existing, &keys_being_written, pairs);
+    write_env_file(env_path, &merged)
+}
 
-    let keys_being_written: std::collections::HashSet<&str> =
-        pairs.iter().map(|pair| pair.key.as_str()).collect();
-    let existing = match ambient_fs::read_to_string(env_path) {
-        Ok(contents) => contents,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+/// Create the directory that will hold `env_path`, if it has one.
+fn ensure_parent_directory(env_path: &Path) -> io::Result<()> {
+    let Some(parent) = env_path.parent() else {
+        return Ok(());
+    };
+    ambient_fs::create_dir_all(parent).inspect_err(|error| {
+        eprintln!("Warning: failed to create {}: {}", parent.display(), error);
+    })
+}
+
+/// Collect the keys the migration is about to write.
+fn keys_being_written(pairs: &[EnvPair<'_>]) -> HashSet<&'static str> {
+    pairs.iter().map(|pair| pair.key.as_str()).collect()
+}
+
+/// Read the current `.env` contents, treating a missing file as empty.
+fn read_existing_env(env_path: &Path) -> io::Result<String> {
+    match ambient_fs::read_to_string(env_path) {
+        Ok(contents) => Ok(contents),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
         Err(error) => {
             eprintln!(
                 "Warning: failed to migrate bootstrap.json to .env: {}",
                 error
             );
-            return Err(error);
+            Err(error)
         }
-    };
+    }
+}
 
+/// Return `existing` with the migrated keys removed, then append the new pairs
+/// in their quoted form.
+fn merge_env_contents(
+    existing: &str,
+    keys_being_written: &HashSet<&'static str>,
+    pairs: &[EnvPair<'_>],
+) -> String {
     let mut result = String::new();
     for line in existing.lines() {
-        let is_overwritten = line
-            .split_once('=')
-            .map(|(key, _)| keys_being_written.contains(key.trim()))
-            .unwrap_or(false);
-        if !is_overwritten {
+        if !is_overwritten_key(line, keys_being_written) {
             result.push_str(line);
             result.push('\n');
         }
@@ -153,13 +172,21 @@ fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
             quote_env_value(pair.value.as_ref())
         ));
     }
+    result
+}
 
-    if let Err(error) = ambient_fs::write(env_path, result) {
+/// Report whether `line` assigns one of the keys the migration rewrites.
+fn is_overwritten_key(line: &str, keys_being_written: &HashSet<&'static str>) -> bool {
+    line.split_once('=')
+        .is_some_and(|(key, _)| keys_being_written.contains(key.trim()))
+}
+
+/// Write the merged `.env` contents, reporting a write failure.
+fn write_env_file(env_path: &Path, contents: &str) -> io::Result<()> {
+    ambient_fs::write(env_path, contents).inspect_err(|error| {
         eprintln!(
             "Warning: failed to migrate bootstrap.json to .env: {}",
             error
         );
-        return Err(error);
-    }
-    Ok(())
+    })
 }
