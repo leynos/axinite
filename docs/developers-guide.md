@@ -2107,8 +2107,7 @@ independent of host machine secrets, keychains, and shell state.
 Callers that treat an unreadable or malformed `settings.json` as fatal must
 propagate the error. Do not fall back to defaults silently: `Settings::load`
 only substitutes defaults for a genuinely absent file. The operator-facing
-behaviour is described in the
-[user's guide](users-guide.md#settings-file).
+behaviour is described in the [user's guide](users-guide.md#settings-file).
 
 ### Monotonic clock seam for duration measurement
 
