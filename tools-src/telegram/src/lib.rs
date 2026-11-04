@@ -307,4 +307,3 @@ const SCHEMA: &str = r#"{
         }
     }
 }"#;
-

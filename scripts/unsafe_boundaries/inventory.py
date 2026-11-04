@@ -94,6 +94,7 @@ INVENTORY: tuple[Crate, ...] = (
     Crate("crates/ambient-fs", Role.SAFE),
     Crate("crates/hyper-rustls", Role.SAFE, vendored=True),
     Crate("fuzz", Role.SAFE, standalone=True),
+    Crate("tests/probes/cranelift-unwind", Role.SAFE, standalone=True),
     *(Crate(path, Role.BOUNDARY, standalone=True) for path in WASM_BOUNDARIES),
 )
 
@@ -107,6 +108,11 @@ EXEMPT: dict[str, str] = {
         "vendored dependency patch of tools-src/telegram; it declares "
         "`#![deny(unsafe_code)]` upstream and is built inside that boundary "
         "crate's closure"
+    ),
+    "crates/pg-embed-setup-unpriv": (
+        "path-patched standalone crate with platform FFI and process-control "
+        "unsafe code maintained in its own upstream project; outside this "
+        "component-ABI contract"
     ),
 }
 
