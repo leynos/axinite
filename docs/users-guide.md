@@ -212,7 +212,7 @@ setup:
 - **Unreadable file** — for example when the file exists but the daemon's user
   lacks read permission. Startup fails and reports
   `failed to read settings file <path>: <reason>`.
-- **Unparseable file** — when the file is not valid JSON. Startup fails and
+- **Malformed file** — when the file is not valid JSON. Startup fails and
   reports `failed to parse settings file <path>: <reason>`.
 
 A reported settings error is fatal rather than silently replaced by defaults,
