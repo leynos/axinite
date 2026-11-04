@@ -27,6 +27,12 @@ PROOF_JOBS = ("contract", "miri")
 
 #: The command each proof job must run, and the Make target it names.
 PROOF_COMMANDS = {"contract": "make boundary-contract", "miri": "make miri"}
+BUILD_STANDARD_PATHS = {
+    "rust-toolchain.toml",
+    ".cargo/**",
+    "tools/mold/**",
+    "scripts/install-build-tools.sh",
+}
 
 Workflow = dict[str, typ.Any]
 
@@ -126,12 +132,23 @@ def trigger_violations(document: Workflow) -> list[str]:
     return problems
 
 
+def build_standard_path_violations(document: Workflow) -> list[str]:
+    """Report toolchain and linker inputs that do not trigger proof reruns."""
+    triggers = document.get(True, document.get("on", {}))
+    paths = set(triggers.get("pull_request", {}).get("paths", []))
+    return [
+        f"pull_request path filter must include {path}"
+        for path in sorted(BUILD_STANDARD_PATHS - paths)
+    ]
+
+
 JUDGES = {
     "hosted": hosted_violations,
     "credentials": credential_violations,
     "component": component_violations,
     "commands": command_violations,
     "triggers": trigger_violations,
+    "build-standard-paths": build_standard_path_violations,
 }
 
 
@@ -177,6 +194,11 @@ def _widen_permissions(document: Workflow) -> None:
     document["permissions"] = {"contents": "write"}
 
 
+def _drop_build_standard_path(document: Workflow) -> None:
+    triggers = document.get(True, document.get("on", {}))
+    triggers["pull_request"]["paths"].remove("rust-toolchain.toml")
+
+
 MUTATIONS: tuple[tuple[str, str, typ.Callable[[Workflow], None]], ...] = (
     ("hosted", "miri-loses-its-timeout", _drop_timeout),
     ("hosted", "contract-moves-to-a-paid-runner", _move_to_paid_runner),
@@ -186,6 +208,11 @@ MUTATIONS: tuple[tuple[str, str, typ.Callable[[Workflow], None]], ...] = (
     ("commands", "contract-job-skips-the-target", _skip_the_contract),
     ("triggers", "cancellation-becomes-unconditional", _unconditional_cancellation),
     ("triggers", "permissions-widen", _widen_permissions),
+    (
+        "build-standard-paths",
+        "toolchain-pin-no-longer-triggers-proof-jobs",
+        _drop_build_standard_path,
+    ),
 )
 
 
@@ -205,3 +232,15 @@ def test_each_rule_catches_its_violation(
 def test_the_workflow_is_a_regular_file() -> None:
     """Guard against the path silently matching nothing."""
     assert isinstance(WORKFLOW, Path) and WORKFLOW.is_file()
+
+
+def test_proof_targets_check_build_tools_before_running() -> None:
+    """Developer runs receive the same pinned linker/toolchain guard as CI."""
+    makefile = WORKFLOW_DIR.parent.parent / "Makefile"
+    text = makefile.read_text(encoding="utf-8")
+    for target in ("boundary-contract", "miri"):
+        match = re.search(rf"^{re.escape(target)}:([^\n]*)$", text, re.MULTILINE)
+        assert match is not None, f"Makefile is missing {target}"
+        assert "check-build-tools" in match.group(1), (
+            f"Makefile target {target} must check the pinned build tools"
+        )

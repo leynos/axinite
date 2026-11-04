@@ -125,17 +125,22 @@ PROBED_CRATES: tuple[str, ...] = (
 )
 
 
-#: Deliberate unsafe constructs, each mapped to the phrase rustc uses when the
-#: `unsafe_code` lint rejects it. All are appended to a target together, so one
-#: compile checks every form, and each phrase must appear in the output.
-PROBE_DIAGNOSTICS: dict[str, str] = {
-    "pub fn unsafe_probe() { unsafe {} }": "usage of an `unsafe` block",
-    "pub unsafe fn unsafe_probe() {}": "declaration of an `unsafe` function",
-    "unsafe trait Probe {} unsafe impl Probe for () {}": (
-        "implementation of an `unsafe` trait"
+#: Deliberate unsafe constructs, each mapped to accepted diagnostic wording
+#: from supported rustc versions. All are appended to a target together, so
+#: one compile checks every form and one diagnostic alternative must appear.
+PROBE_DIAGNOSTICS: dict[str, tuple[str, ...]] = {
+    "pub fn unsafe_block_probe() { unsafe {} }": (
+        "usage of an `unsafe` block",
     ),
-    '#[unsafe(no_mangle)] pub extern "C" fn unsafe_probe() {}': (
-        "usage of the unsafe `no_mangle` attribute"
+    "pub unsafe fn unsafe_function_probe() {}": (
+        "declaration of an `unsafe` function",
+    ),
+    "unsafe trait Probe {} unsafe impl Probe for () {}": (
+        "implementation of an `unsafe` trait",
+    ),
+    '#[unsafe(no_mangle)] pub extern "C" fn unsafe_attribute_probe() {}': (
+        "usage of the unsafe `no_mangle` attribute",
+        "declaration of a `no_mangle` function",
     ),
 }
 PROBES: tuple[str, ...] = tuple(PROBE_DIAGNOSTICS)

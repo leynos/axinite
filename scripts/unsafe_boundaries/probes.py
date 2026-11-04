@@ -196,8 +196,8 @@ def _probe_every_target(
     """Require rejection of every unsafe form in every target.
 
     All forms go into a target together, so one compile per target suffices:
-    rustc reports each rejected construct separately, and the phrase for each
-    must appear.
+    rustc reports each rejected construct separately, and one accepted
+    diagnostic variant for each must appear.
     """
     problems = []
     for target in site.targets:
@@ -218,9 +218,9 @@ def _rejection_problems(
     if not _rejected(code, output):
         return [f"{where} failed without an unsafe-lint diagnostic"]
     return [
-        f"{where} did not report {phrase!r}"
-        for phrase in PROBE_DIAGNOSTICS.values()
-        if phrase not in output
+        f"{where} did not report any of {phrases!r}"
+        for phrases in PROBE_DIAGNOSTICS.values()
+        if not any(phrase in output for phrase in phrases)
     ]
 
 

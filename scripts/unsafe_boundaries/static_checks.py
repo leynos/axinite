@@ -14,7 +14,7 @@ from .bindings_checks import (
     check_bindings_file,
     declared_abi_test_modules,
 )
-from .files import read_manifest, read_text, rust_sources
+from .files import read_manifest, read_optional_text, read_text, rust_sources
 from .inventory import (
     BINDINGS_DIRECTORY,
     BINDINGS_FILE,
@@ -66,9 +66,10 @@ def _missing_root_attributes(crate_dir: Path) -> list[str]:
     """Return a message per crate root lacking `#![forbid(unsafe_code)]`."""
     problems = []
     for relative in ("src/lib.rs", "src/main.rs", "build.rs"):
-        source = strip_rust(read_text(crate_dir / relative))
-        if not source:
+        source = read_optional_text(crate_dir / relative)
+        if source is None:
             continue
+        source = strip_rust(source)
         if not re.search(r"#!\[\s*forbid\(\s*unsafe_code\s*\)\s*\]", source):
             problems.append(f"{relative} lacks #![forbid(unsafe_code)]")
     return problems

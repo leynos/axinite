@@ -54,7 +54,7 @@ class RecordedCompiler:
         self.calls.append((len(present), policy))
         if present and policy:
             diagnostics = "\n".join(
-                f"error: {inventory.PROBE_DIAGNOSTICS[p]}" for p in present
+                f"error: {inventory.PROBE_DIAGNOSTICS[p][0]}" for p in present
             )
             return 1, f"{diagnostics}\n{REJECTION}"
         return 0, "finished checking"
@@ -168,7 +168,7 @@ def test_a_rejection_that_omits_a_form_is_reported(tmp_path: Path) -> None:
     """Every form must be named by the compiler, not just one of them."""
     site = _site(tmp_path, SAFE)
     recorded = RecordedCompiler()
-    omitted = inventory.PROBE_DIAGNOSTICS[inventory.PROBES[1]]
+    omitted = inventory.PROBE_DIAGNOSTICS[inventory.PROBES[1]][0]
 
     def partial(compile_site: probes.ProbeSite) -> probes.CompileResult:
         code, output = recorded(compile_site)
@@ -176,6 +176,21 @@ def test_a_rejection_that_omits_a_form_is_reported(tmp_path: Path) -> None:
 
     problems = probes.run_probes(site, partial, tmp_path / "logs")
     assert any("did not report" in p and omitted in p for p in problems)
+
+
+def test_no_mangle_probe_accepts_supported_diagnostic_wording(
+    tmp_path: Path,
+) -> None:
+    """Stable and nightly rustc versions use different lint descriptions."""
+    site = _site(tmp_path, SAFE)
+    recorded = RecordedCompiler()
+    nightly, stable = inventory.PROBE_DIAGNOSTICS[inventory.PROBES[-1]]
+
+    def stable_wording(compile_site: probes.ProbeSite) -> probes.CompileResult:
+        code, output = recorded(compile_site)
+        return code, output.replace(f"error: {nightly}", f"error: {stable}")
+
+    assert probes.run_probes(site, stable_wording, tmp_path / "logs") == []
 
 
 def test_a_probe_that_fails_for_another_reason_is_reported(tmp_path: Path) -> None:
