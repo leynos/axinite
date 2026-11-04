@@ -20,6 +20,16 @@ use crate::tools::wasm::{Capabilities, HttpCapability};
 
 mod properties;
 
+/// Verify that a channel is reported as missing only when it declares
+/// credentials that none of its sources supplied.
+#[test]
+fn credential_outcome_reports_missing_only_for_declared_credentials() {
+    assert_eq!(credential_outcome(0, 0), None);
+    assert_eq!(credential_outcome(2, 0), Some("missing"));
+    assert_eq!(credential_outcome(0, 1), Some("injected"));
+    assert_eq!(credential_outcome(2, 1), Some("injected"));
+}
+
 /// Build a channel whose HTTP capability declares one credential mapping.
 fn test_channel(name: &str, secret_name: &str) -> Arc<WasmChannel> {
     test_channel_with_mappings(name, &[secret_name.to_string()])

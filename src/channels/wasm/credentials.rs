@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::channels::wasm::WasmChannel;
+use crate::channels::wasm::telemetry;
 use crate::config::EnvContext;
 use crate::secrets::SecretsStore;
 
@@ -41,15 +42,19 @@ pub async fn inject_channel_credentials_from_context(
         return Ok(0);
     }
 
+    let declared = declared_credential_count(channel);
     let mut count = 0;
     let mut injected_placeholders = HashSet::new();
 
     // 1. Try injecting from persistent secrets store if available
     if let Some(secrets) = secrets {
-        let all_secrets = secrets
-            .list("default")
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to list secrets: {}", e))?;
+        let all_secrets = match secrets.list("default").await {
+            Ok(all_secrets) => all_secrets,
+            Err(e) => {
+                telemetry::channel_credentials("list_error");
+                return Err(anyhow::anyhow!("Failed to list secrets: {}", e));
+            }
+        };
 
         let prefix = format!("{}_", channel_name.to_ascii_lowercase());
 
@@ -61,6 +66,7 @@ pub async fn inject_channel_credentials_from_context(
             let decrypted = match secrets.get_decrypted("default", &secret_meta.name).await {
                 Ok(d) => d,
                 Err(e) => {
+                    telemetry::channel_credentials("decryption_error");
                     tracing::warn!(
                         secret = %secret_meta.name,
                         error = %e,
@@ -93,7 +99,48 @@ pub async fn inject_channel_credentials_from_context(
         inject_environment_credentials(channel, channel_name, &injected_placeholders, env_context)
             .await;
 
+    record_outcome(channel_name, declared, count);
     Ok(count)
+}
+
+/// Count the credentials the channel's HTTP capability declares.
+fn declared_credential_count(channel: &Arc<WasmChannel>) -> usize {
+    channel
+        .capabilities()
+        .tool_capabilities
+        .http
+        .as_ref()
+        .map_or(0, |http| http.credentials.len())
+}
+
+/// Select the fixed metric outcome for a completed injection attempt.
+///
+/// A channel that resolves none of its declared credentials is reported as
+/// `missing`; a channel that declares none has nothing to report.
+fn credential_outcome(declared: usize, injected: usize) -> Option<&'static str> {
+    if injected > 0 {
+        Some("injected")
+    } else if declared > 0 {
+        Some("missing")
+    } else {
+        None
+    }
+}
+
+/// Record the outcome of one injection attempt and warn when a channel
+/// declares credentials that none of its sources supplied.
+fn record_outcome(channel_name: &str, declared: usize, injected: usize) {
+    let Some(outcome) = credential_outcome(declared, injected) else {
+        return;
+    };
+    telemetry::channel_credentials(outcome);
+    if injected == 0 {
+        tracing::warn!(
+            channel = %channel_name,
+            declared,
+            "Channel declares credentials but none resolved"
+        );
+    }
 }
 
 /// Inject matching environment-backed credentials, skipping secrets already
