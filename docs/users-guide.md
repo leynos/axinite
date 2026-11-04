@@ -227,6 +227,22 @@ offending path.
 The `settings.json` schema is tolerant of unknown keys and of keys omitted by
 older releases; missing fields take their defaults.
 
+### Settings loading for library consumers
+
+Code that embeds Axinite, including its tests, can load settings through the
+same API the daemon uses. `Settings::load()` reads `settings.json` from the
+base directory, and `Settings::load_from(path)` reads a specific file. Both
+return `Result<Settings, SettingsError>`:
+
+- A missing file yields `Settings::default()`, matching first-run behaviour.
+- A file that exists but cannot be read yields `SettingsError::Read`.
+- A file that exists but is not valid JSON yields `SettingsError::Parse`.
+
+Callers must propagate `SettingsError::Read` and `SettingsError::Parse` instead
+of substituting defaults. Only a genuinely absent file yields defaults;
+treating an unreadable or malformed file as absent would silently discard the
+operator's configuration.
+
 ## HTML-to-Markdown conversion for HTTP responses
 
 When the built-in `http` tool fetches an HTML response, Axinite converts it to

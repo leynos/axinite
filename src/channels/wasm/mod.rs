@@ -91,6 +91,7 @@ pub mod setup;
 pub(crate) mod signature;
 #[allow(dead_code)]
 pub(crate) mod storage;
+mod telemetry;
 mod wrapper;
 
 // Core types
