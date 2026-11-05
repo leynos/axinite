@@ -61,8 +61,8 @@ separate proof model and sampled tests alone do not meet that contract.
 
 ## Context and source inventory
 
-Axinite currently has no Kani or Verus targets in `Makefile` and no prover pins
-under `tools/`. `tools/mold/` already holds build-tool pins.
+When this plan was written, Axinite had no Kani or Verus targets in `Makefile`
+and no prover pins under `tools/`. `tools/mold/` already held build-tool pins.
 `tests/workflow_contracts/` contains Python tests of repository-owned build and
 CI contracts; `make test-workflow-contracts` runs them. The root
 `rust-toolchain.toml` pins `nightly-2026-10-16`, while `.cargo/config.toml`
@@ -248,8 +248,41 @@ adoption programme complete.
       `make all`, `make typecheck`, `make test-workflow-contracts` (1,938 passed,
       11 skipped), `make markdownlint`, `make nixie`, `git diff --check`, and
       Ruff format/check. Fresh logs are under `/tmp/*-axinite-import-prover-tools-2.out`.
-- [ ] M3: Demonstrate both tools and reject deliberate faults.
-- [ ] M4: Integrate CI, documentation, and final validation.
+- [x] (2026-11-03) M3: Demonstrate both tools and reject deliberate faults.
+      `make formal-pr` passed: Kani reported 0/37 failed checks and Verus
+      reported 4 verified, 0 errors. `make test-prover-tools` passed with
+      2 Kani and 6 Verus tests, including rejected mutations and preserved
+      failure status. Workflow contracts passed (1,938 passed, 11 skipped).
+      The full repository gates passed on the preceding M3 implementation;
+      final current-candidate gates remain part of M4 acceptance.
+- [ ] M4: Integrate CI, documentation, and final validation. The CI workflow,
+      contributor documentation, and local checks are implemented. Rebase-bound
+      local gates, hosted proof jobs, and the manual repeat remain outstanding.
+
+M4 validation note: the first full workflow-contract run found that the new
+workflow lacked the repository-required per-pull-request concurrency group and
+event-conditioned cancellation. The workflow now keys groups by pull request or
+ref and cancels only superseded pull-request runs. The first corrected full
+sequence then found Ruff import-order, typing-import, unused-import, and
+implicit-concatenation issues in changed Python contracts; these were fixed and
+formatted. The complete pre-rebase candidate sequence passed with
+`CARGO_INCREMENTAL=0`: `make all` (4,442 passed, 12 skipped; 3,504 seconds),
+`make typecheck` (13 seconds), `make test-workflow-contracts` (1,968 passed, 11
+skipped; 899 seconds), `make formal-pr` (the selected Kani harness verified
+with CBMC 6.8.0; Verus reported four verified, zero errors; 1,842 seconds), and
+`make test-prover-tools` (2 Kani and 6 Verus tests passed; 597 seconds). The
+remaining local checks also passed: Markdown lint (zero issues), Nixie (all
+diagrams), `git diff --check`, and Ruff format/check (11 Python files). Logs
+are under `/tmp/*-axinite-import-prover-tools-m4-3.out`. These results precede
+the required rebase, so rerun the candidate gates after rebasing and retain the
+new evidence before using this milestone for hosted assessment.
+
+The required dependency audit initially descended into the installed Kani
+toolchain under the generated `.cache/` directory and failed while parsing an
+upstream manifest that inherits workspace lints. The audit traversal now skips
+generated `.cache/` content, and its contract fixture includes a fake cached
+tool manifest to ensure it stays out of the repository audit. The corrected
+audit and complete post-rebase gates remain outstanding.
 
 ## Surprises & discoveries
 
@@ -293,16 +326,23 @@ and V1, V2, and V5 below account for that change.
   implementation within the recorded constraints and tolerances.
 
 - (2026-11-03) Recheck Rust Prover Tools `main` after the plan was drafted.
-  It advanced from the selected `592558f7183b554fc749696246984c5d7300d029`
-  pin to `42a33199241a47f4836665dd44094884d8fb5be6`. The intervening commits
-  update CI actions and the dependency lockfile; the comparison contains no
-  CLI implementation changes. Keep the existing CLI pin and retain the
-  comparison link below as review evidence.
+  It advanced from the selected `592558f7183b554fc749696246984c5d7300d029` pin
+  to `42a33199241a47f4836665dd44094884d8fb5be6`. The intervening commits update
+  CI actions and the dependency lockfile; the comparison contains no CLI
+  implementation changes. Keep the existing CLI pin and retain the comparison
+  link below as review evidence.
 
 - (2026-11-03) The user clarified that incremental compilation must not be
   used. Keep Cargo's development profile and managed sccache policy with
-  incremental compilation disabled; do not add a command, fixture, or guide
-  that re-enables it.
+  incremental compilation disabled; do not run Cargo with incremental
+  compilation enabled. The wrapper contract tests use a fake prover command to
+  check that an incoming `CARGO_INCREMENTAL=1` is changed to `0` before the
+  child sees it; the fake command does not compile Rust.
+
+- (2026-11-03) Force `CARGO_INCREMENTAL=0` in the prover wrapper before every
+  child process, and set it explicitly in each formal CI job. Prover-tool test
+  helpers also set it before invoking Make and direct CLI processes. A workflow
+  contract guards the job environment.
 
 - (2026-11-01) The M1 probe demonstrated Kani 0.67.0 and the pinned Verus/Z3
   pair under managed compiler admission. Keep the local Cargo configuration
@@ -610,10 +650,13 @@ sequential M2 gate run passed. `make all` completed with 4,442 workspace tests
 passed and 12 skipped; `make typecheck` passed; `make test-workflow-contracts`
 completed with 1,938 passed and 11 skipped. Markdown lint, Mermaid validation,
 `git diff --check`, and Ruff format/check also passed. The user-requested
-incremental-compilation override contract was removed rather than exercised;
-the build-footprint suite continues to assert that default Cargo builds do not
-enable incremental state. No `CARGO_INCREMENTAL` override was present in the
-gate processes.
+incremental-compilation build-footprint override contract was removed rather
+than exercised; the build-footprint suite continues to assert that default
+Cargo builds do not enable incremental state. The current command-contract
+tests pass a synthetic `CARGO_INCREMENTAL=1` only to the wrapper while its
+prover executable is a recorder; they verify that the recorder receives `0`,
+and do not start a Cargo build. Candidate gate processes used
+`CARGO_INCREMENTAL=0`.
 
 ### M3 — Add non-vacuous verification examples
 
@@ -640,19 +683,19 @@ body may establish the result.
 
 First capture red evidence with a faulty union implementation in the Kani
 fixture and a false Verus equality. Correct each and capture green evidence.
-Keep reproducible negative controls in
-`tests/workflow_contracts/prover_negative_controls_test.py`, using temporary
-copies so the passing sources are never mutated in place. The negative tests
-must distinguish the intended assertion failure from syntax errors, missing
-binaries, and timeouts. Expose these real-tool tests as
-`make test-prover-tools`; ordinary contract tests must not download provers.
-Include a Verus sequence with a passing file, a failing file, and a later file:
-the failure must name the second file, report the first as proved, and never
-run the third. A missing later path must prevent all proof execution. Test a
-closed output reader with passing and failing subprocesses and capture the
-prover process's status, not the final pipeline stage. These tests exercise
-Axinite's command/argument plumbing and failure classification against the
-pinned CLI; upstream owns the streaming implementation.
+Keep reproducible negative controls in `tests/verification/kani_tools_test.py`
+and `tests/verification/verus_tools_test.py`, using temporary copies so the
+passing sources are never mutated in place. The negative tests must distinguish
+the intended assertion failure from syntax errors, missing binaries, and
+timeouts. Expose these real-tool tests as `make test-prover-tools`; ordinary
+contract tests must not download provers. Include a Verus sequence with a
+passing file, a failing file, and a later file: the failure must name the
+second file, report the first as proved, and never run the third. A missing
+later path must prevent all proof execution. Test a closed output reader with
+passing and failing subprocesses and capture the prover process's status, not
+the final pipeline stage. These tests exercise Axinite's command/argument
+plumbing and failure classification against the pinned CLI; upstream owns the
+streaming implementation.
 
 The plateau is `make formal-pr` executing both genuine checks and
 `make test-prover-tools` showing both deliberate faults rejected. Review each
@@ -692,11 +735,17 @@ Explain how the Monty feature supplies its own file and what bridge evidence it
 still owes. Do not complete roadmap task 2.2.1.
 
 The final plateau is successful local gates and successful hosted proof jobs at
-the candidate commit, including a manual repeat run. Record elapsed times,
-source revision, versions, named assertions, and negative-control outcomes.
+the candidate commit, including a manual repeat run. Use `gh run rerun` on a
+successful pull-request workflow run for that repeat. GitHub requires a
+`workflow_dispatch` workflow file to exist on the default branch, so dispatch
+cannot provide this pre-merge repeat from a new branch workflow. Record elapsed
+times, source revision, versions, named assertions, and negative-control
+outcomes. See [GitHub's manual workflow documentation][workflow_dispatch_docs].
 Check all R1–R4 links and any upstream documentation deviations before marking
 this plan COMPLETE. Recover failed CI by preserving the run/log links and
 fixing the smallest demonstrated defect, without weakening assertions.
+
+[workflow_dispatch_docs]: https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow
 
 ## Verification plan
 
@@ -786,10 +835,11 @@ exit non-zero. Record actual transcripts rather than predicted counts. Each
 milestone commit needs the applicable repository gates; full code changes need
 `make all`. Re-run gates after fixes, never overlap them for this candidate.
 
-For this plan-only review, run `make check-fmt`, `make markdownlint`,
-`make nixie`, and `git diff --check`. Runtime proof or Rust test execution is
-not evidence required for prose that describes future work. Do not report those
-future commands as already passed.
+For the implementation candidate, run the repository gates in order:
+`make check-fmt`, `make lint`, `make typecheck`, `make test`,
+`make test-workflow-contracts`, `make markdownlint`, `make nixie`, and
+`git diff --check`, then `make formal-pr` and `make test-prover-tools` for the
+proof evidence. Record actual transcripts rather than predicted results.
 
 Installations and proof runs must be safely repeatable. Retry a failed download
 through the pinned installer; never accept a checksum mismatch or remove the
@@ -801,12 +851,13 @@ Decision log and status to BLOCKED and await approval of the proposed change.
 
 The plan defines a bounded import with pinned provenance, executable positive
 and negative verification evidence, CI integration, and explicit limits on what
-the examples prove. Implementation has not started. Future milestones must
-replace expectations with actual commands and results. CodeGraph indexing timed
-out during planning; the source inventory was checked with direct reads at the
-pinned revisions. The 2026-11-01 revision updates the planned integration to
-the newer upstream package; compatibility and proof execution remain M1–M4
-work, and no installer or runtime implementation has started.
+the examples prove. M1–M3 are complete: the pinned tools install and run, the
+smoke proofs pass, and the negative controls reject deliberate faults. M4 is in
+progress: the CI workflow, contributor documentation, and local checks are
+implemented, while the final rebase-bound gate run and hosted proof jobs remain
+outstanding. CodeGraph indexing timed out during planning; the source inventory
+was checked with direct reads at the pinned revisions. The 2026-11-01 revision
+updated the planned integration to the newer upstream package.
 
 ## Revision notes
 

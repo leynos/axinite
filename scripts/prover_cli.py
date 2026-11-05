@@ -100,6 +100,8 @@ def main() -> int:
             raise ValueError("PROVER_TOOLS must contain a command")
         arguments = _arguments(action)
         environment = os.environ.copy()
+        # Standalone proof packages do not inherit the root workspace profile.
+        environment["CARGO_INCREMENTAL"] = "0"
         if action == "verus":
             environment["VERUS_Z3_PATH"] = str(
                 Path(_setting("Z3_INSTALL_DIR")).resolve() / "z3"

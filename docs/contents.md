@@ -31,9 +31,8 @@
 - [axinite architecture overview](axinite-architecture-overview.md) explains the
   top-level runtime shape, major subsystems, and how the pieces fit together.
 - [Formal verification methods in Axinite](formal-verification-methods-in-axinite.md)
-  recommends where proof-oriented checks, model checking, and generated
-  property tests should land first, and why those targets have the highest
-  return.
+  describes the available Kani and Verus tooling, its demonstrated smoke
+  proofs, and candidate areas for later production proofs.
 - [Webhook server design](webhook-server-design.md) describes the unified
   webhook listener, route composition model, and rollback-focused restart
   behaviour.

@@ -8,7 +8,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from _build_tools_sandbox import make_sandbox
 from _makefile_test_support import _MakeTestContext, shell_quote
 
@@ -107,8 +106,10 @@ def test_test_target_uses_expected_nextest_command(
         (
             "build-github-tool-wasm",
             (
-                "build --manifest-path tools-src/github/Cargo.toml --release "
-                "--target wasm32-wasip2",
+                (
+                    "build --manifest-path tools-src/github/Cargo.toml --release "
+                    "--target wasm32-wasip2"
+                ),
             ),
         ),
         (
@@ -117,6 +118,7 @@ def test_test_target_uses_expected_nextest_command(
                 "fmt --all",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all",
                 "fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all",
+                "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all",
             ),
         ),
         (
@@ -125,17 +127,24 @@ def test_test_target_uses_expected_nextest_command(
                 "fmt --all -- --check",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
                 "fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all -- --check",
+                "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all -- --check",
             ),
         ),
         (
             "typecheck",
             (
-                "check --all --benches --tests --examples "
-                "--features test-helpers,embedded-postgres",
-                "check --all --benches --tests --examples --no-default-features "
-                "--features libsql-test-helpers",
-                "check --all --benches --tests --examples --all-features "
-                "--features test-helpers,embedded-postgres",
+                (
+                    "check --all --benches --tests --examples "
+                    "--features test-helpers,embedded-postgres"
+                ),
+                (
+                    "check --all --benches --tests --examples --no-default-features "
+                    "--features libsql-test-helpers"
+                ),
+                (
+                    "check --all --benches --tests --examples --all-features "
+                    "--features test-helpers,embedded-postgres"
+                ),
                 "check --manifest-path tools-src/github/Cargo.toml --tests",
                 "check --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all-targets",
             ),
@@ -143,41 +152,63 @@ def test_test_target_uses_expected_nextest_command(
         (
             "lint-clippy",
             (
-                "clippy --all --benches --tests --examples "
-                "--features test-helpers,embedded-postgres -- -D warnings",
-                "clippy --all --benches --tests --examples --no-default-features "
-                "--features libsql-test-helpers -- -D warnings",
-                "clippy --all --benches --tests --examples --all-features "
-                "--features test-helpers,embedded-postgres -- -D warnings",
-                "clippy --manifest-path tools-src/github/Cargo.toml --tests "
-                "-- -D warnings",
-                "clippy --manifest-path tests/probes/cranelift-unwind/Cargo.toml "
-                "--all-targets -- -D warnings",
+                (
+                    "clippy --all --benches --tests --examples "
+                    "--features test-helpers,embedded-postgres -- -D warnings"
+                ),
+                (
+                    "clippy --all --benches --tests --examples --no-default-features "
+                    "--features libsql-test-helpers -- -D warnings"
+                ),
+                (
+                    "clippy --all --benches --tests --examples --all-features "
+                    "--features test-helpers,embedded-postgres -- -D warnings"
+                ),
+                (
+                    "clippy --manifest-path tools-src/github/Cargo.toml --tests "
+                    "-- -D warnings"
+                ),
+                (
+                    "clippy --manifest-path tests/probes/cranelift-unwind/Cargo.toml "
+                    "--all-targets -- -D warnings"
+                ),
             ),
         ),
         (
             "lint-libsql-transport",
             (
-                "clippy --target-dir 'target' --locked --package "
-                "hyper-rustls@0.25.0 --all-targets --all-features -- -D warnings",
+                (
+                    "clippy --target-dir 'target' --locked --package "
+                    "hyper-rustls@0.25.0 --all-targets --all-features -- -D warnings"
+                ),
             ),
         ),
         (
             "test",
             (
-                "build --manifest-path tools-src/github/Cargo.toml --release "
-                "--target wasm32-wasip2",
+                (
+                    "build --manifest-path tools-src/github/Cargo.toml --release "
+                    "--target wasm32-wasip2"
+                ),
                 "test --manifest-path tools-src/github/Cargo.toml",
-                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
-                "--all-features "
-                "--lib --examples",
-                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
-                "--all-features --doc",
-                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
-                "--doc",
-                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
-                "--no-default-features "
-                "--features rustls-native-certs,tokio-runtime,http1 --doc",
+                (
+                    "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                    "--all-features "
+                    "--lib --examples"
+                ),
+                (
+                    "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                    "--all-features --doc"
+                ),
+                (
+                    "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                    "--doc"
+                ),
+                (
+                    "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                    "--no-default-features "
+                    "--features rustls-native-certs,tokio-runtime,http1 --doc"
+                ),
                 "test --manifest-path tests/probes/cranelift-unwind/Cargo.toml",
             ),
         ),
@@ -188,8 +219,10 @@ def test_test_target_uses_expected_nextest_command(
         (
             "test-cargo",
             (
-                "build --manifest-path tools-src/github/Cargo.toml --release "
-                "--target wasm32-wasip2",
+                (
+                    "build --manifest-path tools-src/github/Cargo.toml --release "
+                    "--target wasm32-wasip2"
+                ),
                 "test --features test-helpers,embedded-postgres",
                 "test --manifest-path tools-src/github/Cargo.toml",
             ),
@@ -197,20 +230,26 @@ def test_test_target_uses_expected_nextest_command(
         (
             "test-matrix",
             (
-                "build --manifest-path tools-src/github/Cargo.toml --release "
-                "--target wasm32-wasip2",
+                (
+                    "build --manifest-path tools-src/github/Cargo.toml --release "
+                    "--target wasm32-wasip2"
+                ),
                 "test --manifest-path tools-src/github/Cargo.toml -- --nocapture",
             ),
         ),
         (
             "test-matrix-cargo",
             (
-                "build --manifest-path tools-src/github/Cargo.toml --release "
-                "--target wasm32-wasip2",
+                (
+                    "build --manifest-path tools-src/github/Cargo.toml --release "
+                    "--target wasm32-wasip2"
+                ),
                 "test --features test-helpers,embedded-postgres -- --nocapture",
                 "test --no-default-features --features libsql-test-helpers -- --nocapture",
-                "test --features postgres,libsql-test-helpers,html-to-markdown,"
-                "embedded-postgres -- --nocapture",
+                (
+                    "test --features postgres,libsql-test-helpers,html-to-markdown,"
+                    "embedded-postgres -- --nocapture"
+                ),
                 "test --manifest-path tools-src/github/Cargo.toml -- --nocapture",
             ),
         ),

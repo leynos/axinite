@@ -18,6 +18,7 @@ from _makefile_test_support import _MakeTestContext, shell_quote
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HARNESS = "verify_exact_projection_four_entries"
 RECORDED_ENVIRONMENT = (
+    "CARGO_INCREMENTAL",
     "CARGO_ENCODED_RUSTFLAGS",
     "KANI_HOME",
     "KANI_VERSION_FILE",
@@ -139,11 +140,19 @@ def test_kani_installation_and_check_honour_custom_version_file(
     executable, log = _fake_prover(make_context)
     inputs = _kani_inputs(make_context.tmp_path)
 
-    result = _run_make(make_context, executable, log, target, **inputs)
+    result = _run_make(
+        make_context,
+        executable,
+        log,
+        target,
+        CARGO_INCREMENTAL="1",
+        **inputs,
+    )
 
     assert result.returncode == 0, result.stderr
     calls = _calls(log)
     arguments = calls[0]["argv"]
+    assert calls[0]["env"]["CARGO_INCREMENTAL"] == "0"
     assert arguments[:2] == ["kani", subcommand]
     if target == "install-kani":
         assert "--no-compile" in arguments
@@ -172,7 +181,15 @@ def test_kani_targets_check_the_pin_before_exec_with_literal_paths(
         "KANI_RUSTFLAGS": "--cfg=prover_contract",
     }
 
-    result = _run_make(make_context, executable, log, target, **inputs, **wrappers)
+    result = _run_make(
+        make_context,
+        executable,
+        log,
+        target,
+        CARGO_INCREMENTAL="1",
+        **inputs,
+        **wrappers,
+    )
 
     assert result.returncode == 0, result.stderr
     calls = _calls(log)
@@ -210,6 +227,7 @@ def test_kani_targets_check_the_pin_before_exec_with_literal_paths(
         assert extra_arguments == ["--extra-arg=--output-format=regular"]
         assert not any("--harness" in arg for arg in extra_arguments)
     child_environment = calls[1]["env"]
+    assert child_environment["CARGO_INCREMENTAL"] == "0"
     for name, expected in {**inputs, **wrappers}.items():
         assert child_environment[name] == expected
 
@@ -241,11 +259,19 @@ def test_verus_uses_one_configured_proof_file_and_absolute_z3_path(
     executable, log = _fake_prover(make_context)
     inputs, proof_file, z3_install_dir = _verus_inputs(make_context.tmp_path)
 
-    result = _run_make(make_context, executable, log, "verus", **inputs)
+    result = _run_make(
+        make_context,
+        executable,
+        log,
+        "verus",
+        CARGO_INCREMENTAL="1",
+        **inputs,
+    )
 
     assert result.returncode == 0, result.stderr
     calls = _calls(log)
     assert len(calls) == 1
+    assert calls[0]["env"]["CARGO_INCREMENTAL"] == "0"
     arguments = calls[0]["argv"]
     proof_options = [
         index for index, argument in enumerate(arguments) if argument == "--proof-file"

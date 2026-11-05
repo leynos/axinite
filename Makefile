@@ -96,6 +96,7 @@ WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wa
 LIBSQL_TRANSPORT_TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 CRANELIFT_PROBE_MANIFEST := tests/probes/cranelift-unwind/Cargo.toml
+KANI_SMOKE_MANIFEST := tests/verification/kani-smoke/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralized and remove each one as soon as the triggering
 # transitive dependency is upgraded.
@@ -156,6 +157,7 @@ MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 all: check-fmt lint test spelling
 
 .PHONY: install-kani kani-check kani kani-full install-verus install-z3 verus formal-pr
+.PHONY: test-kani-tools test-verus-tools test-prover-tools
 
 install-kani kani-check install-verus install-z3 verus:
 	@python3 scripts/prover_cli.py $@
@@ -166,6 +168,18 @@ kani kani-full: kani-check
 formal-pr:
 	@$(MAKE) kani
 	@$(MAKE) verus
+
+# Real prover integration tests. These install and run the pinned tools, so
+# they stay outside `make all` and the ordinary application test gate.
+test-kani-tools:
+	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/kani_tools_test.py -q
+
+test-verus-tools:
+	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/verus_tools_test.py -q
+
+test-prover-tools:
+	@$(MAKE) test-kani-tools
+	@$(MAKE) test-verus-tools
 
 # Build the workspace as the standard development build: every target, with the
 # test features, so a build that passes here is one `make test` can start from.
@@ -237,6 +251,7 @@ fmt:
 	$(CARGO_COMMAND) fmt --all
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
 	$(CARGO_COMMAND) fmt --manifest-path $(CRANELIFT_PROBE_MANIFEST) --all
+	$(CARGO_COMMAND) fmt --manifest-path $(KANI_SMOKE_MANIFEST) --all
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 	$(MDLINT) --fix "**/*.md"
 
@@ -244,6 +259,7 @@ check-fmt:
 	$(CARGO_COMMAND) fmt --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(CRANELIFT_PROBE_MANIFEST) --all -- --check
+	$(CARGO_COMMAND) fmt --manifest-path $(KANI_SMOKE_MANIFEST) --all -- --check
 	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 typecheck: check-build-tools
@@ -338,7 +354,7 @@ audit: rust-audit
 # Workspace members, including the TLS integration patch, share the root lockfile.
 rust-audit:
 	find . \
-		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './.uv-cache/*' -o -path './.uv-tools/*' -o -path './crates/*' \) -prune -o \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.cache/*' -o -path '*/.venv/*' -o -path './.uv-cache/*' -o -path './.uv-tools/*' -o -path './crates/*' \) -prune -o \
 		-name Cargo.toml -exec sh -c 'set -e; audit_command=$$1; shift; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
