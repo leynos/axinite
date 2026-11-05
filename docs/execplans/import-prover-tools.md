@@ -255,9 +255,19 @@ adoption programme complete.
       failure status. Workflow contracts passed (1,938 passed, 11 skipped).
       The full repository gates passed on the preceding M3 implementation;
       final current-candidate gates remain part of M4 acceptance.
+- [x] (2026-11-05) Review response: addressed every CodeRabbit finding from the
+      `8a8c7712` review. The Kani default installation now derives from
+      `KANI_VERSION_FILE` and is covered by a contract test. The Z3 glibc 2.39
+      host constraint, the ExecPlan contents entry, and the Verus module
+      documentation are recorded. Private prover-CLI helpers carry docstrings,
+      and `tests/workflow_contracts/prover_cli_test.py` covers missing settings,
+      empty or malformed `PROVER_TOOLS`, unknown routing actions, signalled
+      children, and custom Verus pin/checksum arguments. Focused contracts
+      passed (23 passed) and CodeScene scored all changed Python files at 10.0.
 - [ ] M4: Integrate CI, documentation, and final validation. The CI workflow,
-      contributor documentation, and local checks are implemented. Rebase-bound
-      local gates, hosted proof jobs, and the manual repeat remain outstanding.
+      contributor documentation, and local checks are implemented. The
+      post-review local gates, hosted proof jobs, and the manual repeat remain
+      outstanding.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and

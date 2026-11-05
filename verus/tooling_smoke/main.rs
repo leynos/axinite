@@ -1,3 +1,10 @@
+//! Verus tooling smoke model: proves set-intersection properties.
+//!
+//! This file checks that the pinned Verus and Z3 toolchain verifies
+//! well-formed proofs. It does not verify Axinite runtime behaviour. The
+//! `verus` Make target and the `verus-proofs` formal-verification workflow job
+//! verify it with that pinned toolchain.
+
 use vstd::prelude::*;
 
 verus! {
