@@ -2,11 +2,13 @@
 
 ## Status
 
-Accepted. Every library, test, helper and binary target in the root workspace
-forbids unsafe Rust. Within this contract's audited scope, the only permitted
-unsafe code is generated WebAssembly component binding glue, confined to one
-`bindings` module in each of fourteen standalone component crates that deny,
-rather than forbid, unsafe code. The path-patched
+Accepted (2026-10-23). Every library, test, helper and binary target in the
+root workspace forbids unsafe Rust. Within this contract's audited scope,
+unsafe code is permitted only in generated WebAssembly component binding glue
+and in the declared 32-bit test-only ABI round-trip modules under each
+component crate's `src/bindings/` directory. These fourteen standalone
+component crates deny, rather than forbid, unsafe code; their ABI test modules
+must not use ABI export attributes or override `unsafe_code`. The path-patched
 `crates/pg-embed-setup-unpriv` is explicitly exempt; it contains platform FFI
 and process-control unsafe code maintained in its upstream project. A
 repository contract enforces the allow-list, and an isolated Miri workflow
@@ -14,7 +16,7 @@ interprets the host-runnable paths around the component boundaries.
 
 ## Date
 
-2026-10-23.
+2026-10-23
 
 ## Context and problem statement
 
@@ -71,8 +73,8 @@ shape, scaled to what Axinite actually needs.
 - No handwritten unsafe code in the root workspace.
 - Adding a crate, or changing a crate's unsafe role, is an explicit decision
   that a test enforces.
-- Unsafe code outside the approved bindings modules fails the build and fails
-  the contract.
+- Unsafe code outside the generated bindings and declared ABI test modules
+  fails the build and the contract.
 
 ### Technical requirements
 
@@ -126,8 +128,9 @@ forbidding unsafe code in every target.
 Move `generate!` and `export!` into `src/bindings.rs`. The crate sets
 `unsafe_code = "deny"` in its own lint table, and `lib.rs` declares the module
 behind one
-`#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]`. All
-handwritten logic lives in other modules and is unsafe-free.
+`#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]`. Guest
+logic remains unsafe-free; only explicitly declared 32-bit test-only ABI
+round-trip modules beneath `src/bindings/` may also contain unsafe code.
 
 #### Option B: a safe guest-logic crate plus a thin bindings crate per component
 
@@ -222,6 +225,11 @@ lint. Therefore:
 _Table 3: The unsafe boundary allow-list, enforced by
 `scripts/check_unsafe_boundaries.py`._
 
+For every boundary row, the permitted paths are its generated `src/bindings.rs`
+and any 32-bit test-only ABI round-trip module declared there. The contract
+permits unsafe code in those test modules, but rejects ABI export attributes and
+`unsafe_code` lint overrides in them.
+
 Three manifests are exempt, with their reasons in the script:
 `tests/workflow_contracts/fixtures/nextest_boundary` (a byte-exact fixture only
 the workflow contracts compile) and
@@ -260,9 +268,11 @@ unsafe code, so the approval cannot outlive its need. `export!` stays in the
 bindings module because the macro that `generate!` defines is scoped there.
 
 The contract requires the bindings file to contain only the `use super::Type;`,
-`generate!` and `export!` statements and for `export!` to name the imported
-type. It rejects `unsafe`, `no_mangle`, `export_name`, `link_section` and any
-`unsafe_code` lint attribute in every other source of the crate.
+`generate!`, `export!` and declared ABI test-module statements, and for
+`export!` to name the imported type. It permits unsafe code in those declared
+test modules, but rejects ABI export attributes and `unsafe_code` lint
+overrides there. It rejects `unsafe`, ABI attributes and lint overrides in
+every other source of the crate.
 
 ### The contract
 
@@ -272,9 +282,13 @@ type. It rejects `unsafe`, `no_mangle`, `export_name`, `link_section` and any
 - Static: every `Cargo.toml` in the repository is inventoried or exempt; the
   root workspace's `members` and `exclude` match the inventory; each safe crate
   forbids unsafe code in its resolved lint table, and each boundary crate
-  denies it in a table of its own; no `unsafe`, ABI attribute or lint override
-  appears outside the bindings module; the bindings module holds only generated
-  bindings.
+  denies it in a table of its own; each boundary crate declares its `bindings`
+  module behind the single reasoned `expect`, and the bindings file contains
+  only the generated-binding statements and declared 32-bit test-only ABI
+  round-trip module declarations. Unsafe code is permitted in those declared
+  test modules, but ABI export attributes and `unsafe_code` lint overrides are
+  rejected there; unsafe code, ABI attributes and lint overrides are rejected
+  elsewhere in the crate.
 - Compiler: `crates/ambient-fs`, `tools-src/web-search` and
   `channels-src/discord` are copied to a scratch workspace with a synthesized
   `tests/future_target.rs`. Four unsafe forms (an unsafe block, an unsafe
@@ -333,16 +347,14 @@ Kani and Verus are possible follow-ups; this ADR does not add them.
 - `rustix` is a new direct dependency. It is already in the lock and widely
   used, and the Linux backend issues syscalls directly, but it is trusted code
   that the compiler cannot check for us.
-- `dotenvy` writes the values it loads into the process environment with
-  `std::env::set_var`, which is sound only while no other thread reads or
-  writes the environment. That call lives in a dependency, not in this
-  repository. `main` loads `.env` files before the Tokio runtime starts, but
-  `Config::from_env` and `Config::from_db` call `dotenvy` again from async
-  code, so the hazard is not confined to startup. The removed `set_var` block
-  carried a `SAFETY` comment that made the same claim and was equally untrue on
-  that path. Replacing `dotenvy::dotenv` and `from_path` with the non-mutating
-  `from_path_iter`, feeding the `EnvContext` snapshot, would remove the hazard;
-  that is deferred.
+- `dotenvy::dotenv` and `dotenvy::from_path` write loaded values into the
+  process environment with `std::env::set_var`; that call lives in the
+  dependency, not in this repository. Production invokes them from the
+  synchronous `main` entry point before the Tokio runtime starts. The calls
+  therefore remain sensitive to any environment access concurrent with startup,
+  and reusing them after runtime startup would be unsafe. Replacing these
+  mutating loaders with `from_path_iter` and feeding the `EnvContext` snapshot
+  would remove the process-environment mutation; that is deferred.
 - `EnvContext::capture_ambient` now applies the libSQL autodetection, so a
   developer whose `~/.axinite/axinite.db` exists and who sets no
   `DATABASE_BACKEND` sees `libsql` in every ambient snapshot, which is what the

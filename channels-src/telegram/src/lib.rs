@@ -4,10 +4,6 @@
 //! operations. Its ordinary modules contain safe channel behaviour; the
 //! `bindings` module contains generated component ABI glue and is the crate's
 //! only unsafe boundary.
-//!
-//! Generated WIT bindings and Telegram API DTOs intentionally include fields
-//! that are deserialized for compatibility but not read by every module.
-#![allow(dead_code)]
 
 #[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
 mod bindings;

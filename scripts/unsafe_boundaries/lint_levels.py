@@ -7,12 +7,13 @@ import typing as typ
 
 def _level_of(value: object) -> str | None:
     """Return the level string of a lint entry (`"forbid"` or `{level = ..}`)."""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        level = value.get("level")
-        return level if isinstance(level, str) else None
-    return None
+    match value:
+        case str() as level:
+            return level
+        case {"level": str() as level}:
+            return level
+        case _:
+            return None
 
 
 def effective_unsafe_level(

@@ -31,14 +31,17 @@ Table 1. Unsafe sites by class, before and after this change.
 _Table 1: Unsafe sites by class (counts of lint reports under
 `unsafe_code = "forbid"`, as in the original measurement)._
 
-The 30 remaining in-scope sites are all macro-generated. They are the three
-kinds the original measurement found: 14 `unsafe fn` canonical-ABI
-declarations, 14 `unsafe(export_name)` attributes, and 2 `unsafe` blocks (in
-`tools-src/github` and `tools-src/web-search`). Static checks prove that no
-handwritten `unsafe` token exists in any boundary crate outside
-`src/bindings.rs`, and that each inventoried safe crate forbids it in its lint
-table and crate roots. Compiler probes append four unsafe forms to selected
-safe and boundary crates and require the compiler to reject them.
+The 30 class A sites in the historical inventory are all macro-generated. They
+are the three kinds the original measurement found: 14 `unsafe fn`
+canonical-ABI declarations, 14 `unsafe(export_name)` attributes, and 2 `unsafe`
+blocks (in `tools-src/github` and `tools-src/web-search`). The historical
+counts do not include the unsafe code in the later-added test-only ABI
+round-trip harnesses. Static checks prove that no handwritten `unsafe` token
+exists in a boundary crate outside `src/bindings.rs` and its explicitly
+declared 32-bit test modules under `src/bindings/`, and that each inventoried
+safe crate forbids it in its lint table and crate roots. Compiler probes append
+four unsafe forms to selected safe and boundary crates and require the compiler
+to reject them.
 
 The historical site totals above do not include the later path-patched crate
 `crates/pg-embed-setup-unpriv`. It contains platform FFI and process-control
@@ -58,12 +61,12 @@ trusted, not verified, here.
 
 Table 2. Trusted dependencies that replaced in-tree unsafe code.
 
-| Dependency     | Replaces                                   | What is trusted                                                                                                                                              |
-| -------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rustix` 1.1.4 | `libc::syscall(SYS_openat2)` and `geteuid` | Correct `open_how` layout, syscall number, and `OwnedFd` construction on the `linux_raw` backend.                                                            |
-| `zeroize` 1.8  | The manual volatile-free zeroing in `Drop` | Volatile overwrite of the `String` buffer that the optimizer may not elide, and `ZeroizeOnDrop` coverage.                                                    |
-| `dotenvy`      | (unchanged) `set_var` while loading `.env` | Sound only while no other thread uses the environment. `main` loads before the Tokio runtime, but `Config::from_env*` reloads from async code; see ADR 0015. |
-| `wit-bindgen`  | (unchanged) canonical-ABI shims            | Pinned at 0.36 and 0.41 in the component manifests; the host's tests load the built components.                                                              |
+| Dependency     | Replaces                                   | What is trusted                                                                                                                                         |
+| -------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rustix` 1.1.4 | `libc::syscall(SYS_openat2)` and `geteuid` | Correct `open_how` layout, syscall number, and `OwnedFd` construction on the `linux_raw` backend.                                                       |
+| `zeroize` 1.8  | The manual volatile-free zeroing in `Drop` | Volatile overwrite of the `String` buffer that the optimizer may not elide, and `ZeroizeOnDrop` coverage.                                               |
+| `dotenvy`      | (unchanged) `set_var` while loading `.env` | Production calls load `.env` files from synchronous `main` before the Tokio runtime starts; concurrent environment access remains unsafe. See ADR 0015. |
+| `wit-bindgen`  | (unchanged) canonical-ABI shims            | Pinned at 0.36 and 0.41 in the component manifests; the host's tests load the built components.                                                         |
 
 ## What the boundary contract checks
 
@@ -80,11 +83,13 @@ Static half (no compiler):
   own, never by `workspace = true`.
 - Each boundary crate declares `mod bindings;` behind exactly one
   `#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]`.
-- No `unsafe` token, `no_mangle`, `export_name`, `link_section` or
-  `unsafe_code` lint attribute appears in any other source of a boundary crate,
-  test targets included. Comments and string literals are ignored.
-- `src/bindings.rs` contains only `use super::Type;`, `wit_bindgen::generate!`
-  and `export!(Type);`, and the two types agree.
+- `src/bindings.rs` contains only `use super::Type;`,
+  `wit_bindgen::generate!`, `export!(Type);`, and declarations for 32-bit
+  test-only ABI round-trip modules; the imported and exported types agree.
+- Unsafe code is permitted in those declared ABI test modules. The contract
+  rejects ABI export attributes and `unsafe_code` lint overrides in them, and
+  rejects `unsafe`, ABI attributes and lint overrides in every other source of
+  a boundary crate. Comments and string literals are ignored.
 
 Compiler half (`make boundary-contract`):
 

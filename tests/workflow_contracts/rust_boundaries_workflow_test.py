@@ -58,7 +58,19 @@ def _run_text(document: Workflow, name: str) -> str:
 
 
 def hosted_violations(document: Workflow) -> list[str]:
-    """Report proof jobs that leave the GitHub-hosted pool or run unbounded."""
+    """Report proof jobs that leave the GitHub-hosted pool or run unbounded.
+
+    Parameters
+    ----------
+    document : Workflow
+        Parsed GitHub Actions workflow document.
+
+    Returns
+    -------
+    list[str]
+        Policy violations, or an empty list when both proof jobs meet the
+        runner and timeout requirements.
+    """
     problems = []
     for name in PROOF_JOBS:
         job = _job(document, name)
@@ -71,7 +83,19 @@ def hosted_violations(document: Workflow) -> list[str]:
 
 
 def credential_violations(document: Workflow) -> list[str]:
-    """Report checkouts that persist the token where built code can read it."""
+    """Report checkouts that persist the token where built code can read it.
+
+    Parameters
+    ----------
+    document : Workflow
+        Parsed GitHub Actions workflow document.
+
+    Returns
+    -------
+    list[str]
+        Policy violations, or an empty list when each proof checkout disables
+        credential persistence.
+    """
     problems = []
     for name in PROOF_JOBS:
         checkouts = [
@@ -96,7 +120,19 @@ def _installs_miri(text: str) -> bool:
 
 
 def component_violations(document: Workflow) -> list[str]:
-    """Report the `miri` component outside the one job that needs it."""
+    """Report incorrect installation of the `miri` component.
+
+    Parameters
+    ----------
+    document : Workflow
+        Parsed GitHub Actions workflow document.
+
+    Returns
+    -------
+    list[str]
+        Policy violations, or an empty list when only the Miri job installs
+        the component and that job installs it.
+    """
     problems = []
     for name in PROOF_JOBS:
         installs_miri = _installs_miri(_run_text(document, name))
@@ -108,7 +144,19 @@ def component_violations(document: Workflow) -> list[str]:
 
 
 def command_violations(document: Workflow) -> list[str]:
-    """Report proof jobs that no longer run their Make target."""
+    """Report proof jobs that no longer run their Make target.
+
+    Parameters
+    ----------
+    document : Workflow
+        Parsed GitHub Actions workflow document.
+
+    Returns
+    -------
+    list[str]
+        Missing Make-target requirements, or an empty list when every proof
+        job runs its required target.
+    """
     return [
         f"{name}: must run `{command}`"
         for name, command in PROOF_COMMANDS.items()
@@ -117,7 +165,19 @@ def command_violations(document: Workflow) -> list[str]:
 
 
 def trigger_violations(document: Workflow) -> list[str]:
-    """Report a workflow that cannot run on a schedule or by hand, or leaks writes."""
+    """Report missing triggers, excess permissions, or unsafe cancellation.
+
+    Parameters
+    ----------
+    document : Workflow
+        Parsed GitHub Actions workflow document.
+
+    Returns
+    -------
+    list[str]
+        Trigger, permission, or concurrency policy violations, or an empty
+        list when the workflow meets all three requirements.
+    """
     triggers = document.get(True, document.get("on", {}))
     problems = [
         f"missing trigger: {trigger}"
@@ -133,7 +193,19 @@ def trigger_violations(document: Workflow) -> list[str]:
 
 
 def build_standard_path_violations(document: Workflow) -> list[str]:
-    """Report toolchain and linker inputs that do not trigger proof reruns."""
+    """Report build-standard inputs missing from the pull-request path filter.
+
+    Parameters
+    ----------
+    document : Workflow
+        Parsed GitHub Actions workflow document.
+
+    Returns
+    -------
+    list[str]
+        Missing pull-request path entries, or an empty list when all build
+        standard inputs trigger the proof workflow.
+    """
     triggers = document.get(True, document.get("on", {}))
     paths = set(triggers.get("pull_request", {}).get("paths", []))
     return [
@@ -157,7 +229,8 @@ def test_the_workflow_follows_each_rule(
     judge: typ.Callable[[Workflow], list[str]],
 ) -> None:
     """The real workflow satisfies every rule."""
-    assert judge(_workflow()) == []
+    problems = judge(_workflow())
+    assert problems == [], f"{judge.__name__}: workflow violates its rule: {problems}"
 
 
 def _drop_timeout(document: Workflow) -> None:
@@ -231,7 +304,9 @@ def test_each_rule_catches_its_violation(
 
 def test_the_workflow_is_a_regular_file() -> None:
     """Guard against the path silently matching nothing."""
-    assert isinstance(WORKFLOW, Path) and WORKFLOW.is_file()
+    assert isinstance(WORKFLOW, Path) and WORKFLOW.is_file(), (
+        f"Rust boundary workflow is missing or not a regular file: {WORKFLOW}"
+    )
 
 
 def test_proof_targets_check_build_tools_before_running() -> None:
