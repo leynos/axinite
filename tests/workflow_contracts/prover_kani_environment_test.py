@@ -6,7 +6,7 @@ import shlex
 
 import pytest
 from _makefile_test_support import _MakeTestContext
-from prover_tools_test import _calls, _fake_prover, _kani_inputs, _run_make
+from prover_tools_test import _calls, _kani_inputs, _prover_harness
 
 
 @pytest.mark.parametrize("encoded", ["", "--cfg\x1fprover_contract"])
@@ -14,18 +14,16 @@ def test_encoded_flags_reach_kani_cli_unchanged(
     make_context: _MakeTestContext, encoded: str
 ) -> None:
     """Preserve an explicitly empty value as well as separated arguments."""
-    executable, log = _fake_prover(make_context)
-    result = _run_make(
-        make_context,
-        executable,
-        log,
+    harness = _prover_harness(make_context)
+    result = harness.run(
         "kani",
         **_kani_inputs(make_context.tmp_path),
         CARGO_ENCODED_RUSTFLAGS=encoded,
     )
     assert result.returncode == 0, result.stderr
     assert all(
-        call["env"]["CARGO_ENCODED_RUSTFLAGS"] == encoded for call in _calls(log)
+        call["env"]["CARGO_ENCODED_RUSTFLAGS"] == encoded
+        for call in _calls(harness.log)
     )
 
 
@@ -33,15 +31,15 @@ def test_kani_install_and_check_select_worktree_local_frontend(
     make_context: _MakeTestContext,
 ) -> None:
     """Install and check the same explicitly selected frontend, even with spaces."""
-    executable, log = _fake_prover(make_context)
+    harness = _prover_harness(make_context)
     inputs = _kani_inputs(make_context.tmp_path)
     frontend = make_context.tmp_path / "frontend with spaces"
     home = make_context.tmp_path / "kani home with spaces"
     inputs.update(KANI_BIN_DIR=str(frontend), KANI_HOME=str(home))
     for target in ("install-kani", "kani-check"):
-        result = _run_make(make_context, executable, log, target, **inputs)
+        result = harness.run(target, **inputs)
         assert result.returncode == 0, result.stderr
-    install, check = _calls(log)
+    install, check = _calls(harness.log)
     args = install["argv"]
     assert args[args.index("--install-dir") + 1] == str(frontend)
     assert install["env"]["KANI_HOME"] == str(home)
