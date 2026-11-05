@@ -141,9 +141,7 @@ fn user_display_name(first_name: &str, last_name: Option<&str>) -> String {
 fn owner_allows_sender(user_id: TelegramUserId) -> Option<bool> {
     let owner_id_str = channel_host::workspace_read(OWNER_ID_PATH).filter(|s| !s.is_empty());
 
-    let Some(id_str) = owner_id_str else {
-        return None;
-    };
+    let id_str = owner_id_str?;
 
     let Ok(owner_id) = id_str.parse::<i64>() else {
         return Some(true);
