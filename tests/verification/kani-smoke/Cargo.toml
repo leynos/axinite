@@ -1,0 +1,9 @@
+[package]
+name = "axinite-kani-smoke"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }

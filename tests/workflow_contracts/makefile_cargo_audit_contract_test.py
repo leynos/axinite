@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from _cargo_audit_support import CargoAuditCase, selected_cargo_manifests
 from _makefile_test_support import shell_quote
 
@@ -204,6 +203,7 @@ def _write_audit_fixture(audit_root: Path) -> None:
     (sdk_dir / "Cargo.toml").write_text(manifest)
     (workspace_dir / "Cargo.toml").write_text(manifest)
     cached_dirs = [
+        audit_root / ".cache/kani",
         audit_root / ".uv-cache/git-v1/checkouts/example",
         audit_root / ".uv-tools/example",
     ]
@@ -227,6 +227,7 @@ def _assert_audit_manifest_scope(
     sdk_dir = audit_root / "crates/hyper-rustls"
     workspace_dir = audit_root / "crates/workspace-member"
     cached_dirs = [
+        audit_root / ".cache/kani",
         audit_root / ".uv-cache/git-v1/checkouts/example",
         audit_root / ".uv-tools/example",
     ]
@@ -243,7 +244,7 @@ def _assert_audit_manifest_scope(
         Path(manifest_dir).resolve() for manifest_dir, _ in commands
     }
     assert all(path.resolve() not in observed_manifest_dirs for path in cached_dirs), (
-        "uv cache and tool environments are not repository audit targets"
+        "generated caches and tool environments are not repository audit targets"
     )
     assert {locked_manifest_dir.resolve(), unlocked_manifest_dir.resolve()} <= (
         observed_manifest_dirs

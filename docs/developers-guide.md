@@ -70,11 +70,33 @@ Install these tools before running the standard repository commands:
 9. Git.
 10. Node.js for `make test-workflow-contracts`; `mdtablefix` requires Node.js
     when the suite runs with its restricted `PATH`.
+11. `uv` for the workflow-contract suite and the optional formal-verification
+    targets.
 
 The root crate declares `rust-version = "1.95"` in `Cargo.toml`, and every
 workspace member declares the same. The repository also includes standalone
 WebAssembly (WASM) tool and channel crates, so WASM tooling is required for
 more than release-only workflows.
+
+### Optional Kani and Verus proof tools
+
+The proof tools are pinned for Linux x86-64 and remain outside ordinary Rust
+builds. Install and run them explicitly with `make install-kani`, `make kani`,
+`make install-verus`, `make install-z3`, and `make verus`. `make formal-pr`
+runs the selected Kani and Verus proofs. `make test-prover-tools` exercises the
+command boundaries and deliberate proof failures. These targets need network
+access for first-time installation. The prover CLI runs under `uv` with Python
+3.14; the integration test targets accept Python 3.12 or newer.
+
+The initial Kani fixture and Verus model validate the toolchain and runner
+contracts only. They do not establish properties of Axinite's runtime or the
+Monty helper. See
+[formal verification methods](formal-verification-methods-in-axinite.md) for
+the demonstrated proof scope and future production-proof requirements.
+
+The prover wrapper sets `CARGO_INCREMENTAL=0` for every child command. The
+dedicated formal-verification workflow also sets it at job scope; ordinary
+builds do not install or invoke Kani or Verus.
 
 ## 4. Extra tools for the compile-time reduction effort
 
