@@ -10,6 +10,23 @@ from pathlib import Path
 
 
 def _setting(name: str) -> str:
+    """Return the non-empty setting ``name``.
+
+    Parameters
+    ----------
+    name : str
+        Environment variable that the Make target must configure.
+
+    Returns
+    -------
+    str
+        The configured value.
+
+    Raises
+    ------
+    ValueError
+        If the setting is unset or empty.
+    """
     value = os.environ.get(name, "")
     if not value:
         raise ValueError(f"{name} must be configured")
@@ -17,6 +34,25 @@ def _setting(name: str) -> str:
 
 
 def _split(value: str, name: str) -> list[str]:
+    """Split a quoted command or flag list into literal arguments.
+
+    Parameters
+    ----------
+    value : str
+        Quoted command line to split.
+    name : str
+        Setting name used in the error message.
+
+    Returns
+    -------
+    list[str]
+        The parsed arguments.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` contains unmatched quoting.
+    """
     try:
         return shlex.split(value)
     except ValueError as error:
@@ -24,6 +60,14 @@ def _split(value: str, name: str) -> list[str]:
 
 
 def _proof_arguments() -> list[str]:
+    """Return Verus proof arguments, inserting the default proof file if needed.
+
+    Returns
+    -------
+    list[str]
+        ``VERUS_FLAGS`` as literal arguments, preceded by the configured proof
+        file when the flags do not already select one.
+    """
     flags = _split(os.environ.get("VERUS_FLAGS", ""), "VERUS_FLAGS")
     has_proof_file = any(
         flag == "--proof-file" or flag.startswith("--proof-file=") for flag in flags
@@ -36,6 +80,23 @@ def _proof_arguments() -> list[str]:
 
 
 def _arguments(action: str) -> list[str]:
+    """Return the package arguments for one supported prover action.
+
+    Parameters
+    ----------
+    action : str
+        Make target name requesting the prover command.
+
+    Returns
+    -------
+    list[str]
+        Arguments to pass to the configured prover-tools command.
+
+    Raises
+    ------
+    ValueError
+        If ``action`` is not a recognized prover action.
+    """
     version_file = os.environ.get("KANI_VERSION_FILE", "tools/kani/VERSION")
     if action == "install-kani":
         return [

@@ -53,7 +53,13 @@ class _ProverHarness:
     executable: Path
     log: Path
 
-    def run(self, target: str, **overrides: str) -> subprocess.CompletedProcess[str]:
+    def run(
+        self,
+        target: str,
+        *,
+        unset: tuple[str, ...] = (),
+        **overrides: str,
+    ) -> subprocess.CompletedProcess[str]:
         """Run one real Make target with the recording executable."""
         environment = os.environ.copy()
         environment.update(
@@ -67,6 +73,8 @@ class _ProverHarness:
             }
         )
         environment.update(overrides)
+        for name in unset:
+            environment.pop(name, None)
         return subprocess.run(
             [self.make_context.make_executable, "--no-print-directory", target],
             cwd=REPOSITORY_ROOT,
@@ -188,6 +196,29 @@ def test_kani_installation_and_check_honour_custom_version_file(
     if target == "install-kani":
         assert "--no-compile" in arguments
     assert _option_value(arguments, "--version-file") == inputs["KANI_VERSION_FILE"]
+
+
+def test_default_kani_installation_follows_the_version_pin(
+    make_context: _MakeTestContext,
+) -> None:
+    """Derive the default installation directory from the configured pin."""
+    harness = _prover_harness(make_context)
+    root = make_context.tmp_path / "derived-installation"
+    version_file = root / "VERSION"
+    version_file.parent.mkdir(parents=True)
+    version_file.write_text("9.9.9\n", encoding="utf-8")
+    home = root / "kani home with spaces"
+
+    result = harness.run(
+        "kani",
+        KANI_VERSION_FILE=str(version_file),
+        KANI_HOME=str(home),
+        unset=("KANI_INSTALLATION", "KANI_VERSION"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    exec_arguments = _calls(harness.log)[1]["argv"]
+    assert _option_value(exec_arguments, "--installation") == f"{home}/kani-9.9.9"
 
 
 @pytest.mark.parametrize("target", ("kani", "kani-full"))

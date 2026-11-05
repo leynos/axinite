@@ -88,6 +88,10 @@ command boundaries and deliberate proof failures. These targets need network
 access for first-time installation. The prover CLI runs under `uv` with Python
 3.14; the integration test targets accept Python 3.12 or newer.
 
+The pinned Z3 archive targets glibc 2.39 and is verified on glibc 2.39 hosts.
+An older host may complete `make install-z3` but then fail when `make verus`
+starts the solver, so use a glibc 2.39 host or newer for proof runs.
+
 The initial Kani fixture and Verus model validate the toolchain and runner
 contracts only. They do not establish properties of Axinite's runtime or the
 Monty helper. See
