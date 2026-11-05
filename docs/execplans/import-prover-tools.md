@@ -264,10 +264,16 @@ adoption programme complete.
       empty or malformed `PROVER_TOOLS`, unknown routing actions, signalled
       children, and custom Verus pin/checksum arguments. Focused contracts
       passed (23 passed) and CodeScene scored all changed Python files at 10.0.
-- [ ] M4: Integrate CI, documentation, and final validation. The CI workflow,
-      contributor documentation, and local checks are implemented. The
-      post-review local gates, hosted proof jobs, and the manual repeat remain
-      outstanding.
+- [x] (2026-11-05) M4: Integrate CI, documentation, and final validation. The
+      CI workflow, contributor documentation, and local checks are implemented,
+      and the post-review local gates passed on `f1e245c8`. Hosted
+      `Formal Verification` run
+      [42096926913](https://github.com/leynos/axinite/actions/runs/42096926913)
+      passed on that commit: `Kani Smoke Proof` (51 s) and `Verus Proofs`
+      (52 s) both succeeded, and the required `gh run rerun` repeat (attempt 2,
+      20:23:47–20:24:34 UTC) passed both jobs again. The remaining hosted checks
+      on `f1e245c8` are green; Package jobs for the two macOS targets were still
+      queueing when this note was written.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -861,13 +867,13 @@ Decision log and status to BLOCKED and await approval of the proposed change.
 
 The plan defines a bounded import with pinned provenance, executable positive
 and negative verification evidence, CI integration, and explicit limits on what
-the examples prove. M1–M3 are complete: the pinned tools install and run, the
-smoke proofs pass, and the negative controls reject deliberate faults. M4 is in
-progress: the CI workflow, contributor documentation, and local checks are
-implemented, while the final rebase-bound gate run and hosted proof jobs remain
-outstanding. CodeGraph indexing timed out during planning; the source inventory
-was checked with direct reads at the pinned revisions. The 2026-11-01 revision
-updated the planned integration to the newer upstream package.
+the examples prove. M1–M4 are complete: the pinned tools install and run, the
+smoke proofs pass, the negative controls reject deliberate faults, the
+post-review local gates passed, and the hosted proof jobs passed on `f1e245c8`
+including the required manual repeat. CodeGraph indexing timed out during
+planning; the source inventory was checked with direct reads at the pinned
+revisions. The 2026-11-01 revision updated the planned integration to the newer
+upstream package.
 
 ## Revision notes
 
