@@ -1,0 +1,7 @@
+# Rust surfaces governed by the concordat build and dependency rules. The
+# grammers-crypto patch crate is standalone, so it needs its own declaration.
+language:
+  rust:
+    surfaces:
+      - path: Cargo.toml
+      - path: tools-src/telegram/patches/grammers-crypto/Cargo.toml
