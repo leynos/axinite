@@ -2,9 +2,15 @@
 //!
 //! Only compiled when the `metrics` feature is enabled. The recorder is
 //! installed once as the process-global recorder, but it only records while a
-//! [`record`] guard is alive. That keeps tests that assert on counters
-//! isolated from unrelated tests in the same process that also reach a
-//! telemetry call site.
+//! [`record`] guard is alive on the current thread. That keeps tests that
+//! assert on counters isolated from unrelated tests in the same process that
+//! also reach a telemetry call site: an increment from another thread is
+//! ignored even while a guard is held elsewhere.
+//!
+//! The repository's `#[tokio::test]` tests use the current-thread runtime, so
+//! the production path they drive runs on the thread that holds the guard.
+//! A test that moves the production path onto a multi-thread runtime must
+//! acquire the guard on the thread that performs the work.
 //!
 //! ```ignore
 //! let _guard = metrics::record();
@@ -12,19 +18,21 @@
 //! assert_eq!(metrics::counter("axinite.startup.config_load", "success"), 1);
 //! ```
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
 
 use metrics::{
     Counter, CounterFn, Gauge, Histogram, Key, KeyName, Metadata, Recorder, SharedString, Unit,
 };
 
+thread_local! {
+    /// Whether the current thread is inside a recording guard.
+    static RECORDING: Cell<bool> = const { Cell::new(false) };
+}
+
 /// Serializes recording guards so counter snapshots are not interleaved.
 static RECORD_LOCK: Mutex<()> = Mutex::new(());
-
-/// Whether the recorder should accept increments.
-static RECORDING: AtomicBool = AtomicBool::new(false);
 
 /// Installs the test recorder exactly once.
 static INSTALL: Once = Once::new();
@@ -42,7 +50,12 @@ fn counters_lock() -> MutexGuard<'static, Counters> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Install the recorder and begin capturing counters.
+/// Whether the current thread is inside a recording guard.
+fn recording() -> bool {
+    RECORDING.with(Cell::get)
+}
+
+/// Install the recorder and begin capturing counters on this thread.
 ///
 /// Only one guard can be live at a time; a second call blocks until the first
 /// guard is dropped. Counters are cleared when the guard is acquired.
@@ -56,7 +69,7 @@ pub fn record() -> RecordingGuard {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     counters_lock().clear();
-    RECORDING.store(true, Ordering::SeqCst);
+    RECORDING.with(|flag| flag.set(true));
     RecordingGuard { _lock: lock }
 }
 
@@ -78,7 +91,7 @@ pub struct RecordingGuard {
 
 impl Drop for RecordingGuard {
     fn drop(&mut self) {
-        RECORDING.store(false, Ordering::SeqCst);
+        RECORDING.with(|flag| flag.set(false));
     }
 }
 
@@ -112,14 +125,14 @@ struct TestCounter {
 
 impl CounterFn for TestCounter {
     fn increment(&self, value: u64) {
-        if !RECORDING.load(Ordering::SeqCst) {
+        if !recording() {
             return;
         }
         *counters_lock().entry(self.key.clone()).or_default() += value;
     }
 
     fn absolute(&self, value: u64) {
-        if !RECORDING.load(Ordering::SeqCst) {
+        if !recording() {
             return;
         }
         counters_lock().insert(self.key.clone(), value);
@@ -135,4 +148,37 @@ fn render_key(key: &Key) -> String {
         .collect();
     labels.sort();
     format!("{}{{{}}}", key.name(), labels.join(","))
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for the in-process metrics recorder.
+
+    use super::*;
+
+    #[test]
+    fn increments_on_the_recording_thread_are_captured() {
+        let _guard = record();
+
+        ::metrics::counter!("axinite.test.recorder", "outcome" => "self").increment(1);
+
+        assert_eq!(counter("axinite.test.recorder", "self"), 1);
+    }
+
+    #[test]
+    fn increments_from_other_threads_are_ignored() {
+        let _guard = record();
+
+        std::thread::spawn(|| {
+            ::metrics::counter!("axinite.test.recorder", "outcome" => "other").increment(1);
+        })
+        .join()
+        .expect("emitter thread should finish");
+
+        assert_eq!(
+            counter("axinite.test.recorder", "other"),
+            0,
+            "an increment from a thread without the guard must not be captured"
+        );
+    }
 }
