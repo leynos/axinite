@@ -21,13 +21,15 @@ use crate::tools::wasm::{Capabilities, HttpCapability};
 mod properties;
 
 /// Verify that a channel is reported as missing only when it declares
-/// credentials that none of its sources supplied.
+/// credentials that none of its sources supplied, and as partial when only
+/// some of them resolved.
 #[test]
 fn credential_outcome_reports_missing_only_for_declared_credentials() {
     assert_eq!(credential_outcome(0, 0), None);
     assert_eq!(credential_outcome(2, 0), Some("missing"));
     assert_eq!(credential_outcome(0, 1), Some("injected"));
-    assert_eq!(credential_outcome(2, 1), Some("injected"));
+    assert_eq!(credential_outcome(2, 1), Some("partial"));
+    assert_eq!(credential_outcome(2, 2), Some("injected"));
 }
 
 /// Build a channel whose HTTP capability declares one credential mapping.
@@ -330,8 +332,12 @@ async fn unrelated_store_secret_does_not_mask_missing_declared_credential() -> a
 
     assert_eq!(count, 1, "the unrelated secret is still injected");
     assert!(
-        logs_contain("Channel declares credentials but none resolved"),
+        logs_contain("Channel declares credentials that did not all resolve"),
         "a missing declared credential must still be reported"
+    );
+    assert!(
+        logs_contain("declared=1 resolved=0"),
+        "the warning must report that none of the declared credentials resolved"
     );
     Ok(())
 }

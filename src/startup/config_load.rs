@@ -8,6 +8,7 @@ use axinite::{
     config::{Config, EnvContext},
     llm::create_session_manager,
 };
+use tracing::Instrument;
 
 use crate::startup::context::LoadedConfigContext;
 
@@ -17,12 +18,21 @@ pub(crate) async fn phase_load_config_and_tracing_from(
     env: &EnvContext,
 ) -> anyhow::Result<LoadedConfigContext> {
     let toml_path = cli.config.clone();
-    let config = load_initial_config_from(env, toml_path.as_deref()).await?;
 
-    let session = create_session_manager(config.llm.session.clone()).await;
+    // Install the subscriber before the first configuration read: a load
+    // failure happens before any later tracing initialization, so otherwise
+    // its diagnostic events would be dropped. `init_tracing` uses
+    // `try_init`, so it stays idempotent for callers that already installed a
+    // subscriber (including tests).
     let log_broadcaster = Arc::new(LogBroadcaster::new());
     let log_level_handle =
         axinite::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
+
+    let config = load_initial_config_from(env, toml_path.as_deref())
+        .instrument(tracing::info_span!("startup.config_load"))
+        .await?;
+
+    let session = create_session_manager(config.llm.session.clone()).await;
 
     tracing::debug!("Starting Axinite...");
     tracing::debug!("Loaded configuration for agent: {}", config.agent.name);

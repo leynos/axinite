@@ -161,29 +161,32 @@ fn resolved_declared_count(channel: &Arc<WasmChannel>, resolved: &HashSet<String
 /// Select the fixed metric outcome for a completed injection attempt.
 ///
 /// A channel that resolves none of its declared credentials is reported as
-/// `missing`; a channel that declares none has nothing to report.
+/// `missing`, one that resolves only some of them as `partial`, and one that
+/// resolves all of them as `injected`. A channel that declares none has
+/// nothing to report.
 fn credential_outcome(declared: usize, resolved: usize) -> Option<&'static str> {
-    if resolved > 0 {
-        Some("injected")
-    } else if declared > 0 {
-        Some("missing")
+    if resolved == 0 {
+        (declared > 0).then_some("missing")
+    } else if resolved < declared {
+        Some("partial")
     } else {
-        None
+        Some("injected")
     }
 }
 
 /// Record the outcome of one injection attempt and warn when a channel
-/// declares credentials that none of its sources supplied.
+/// declares credentials that not all of its sources supplied.
 fn record_outcome(channel_name: &str, declared: usize, resolved: usize) {
     let Some(outcome) = credential_outcome(declared, resolved) else {
         return;
     };
     telemetry::channel_credentials(outcome);
-    if resolved == 0 {
+    if resolved < declared {
         tracing::warn!(
             channel = %channel_name,
             declared,
-            "Channel declares credentials but none resolved"
+            resolved,
+            "Channel declares credentials that did not all resolve"
         );
     }
 }

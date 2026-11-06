@@ -85,3 +85,31 @@ async fn build_components_smoke() {
         .expect("build ok");
     let _ = built.components.tools;
 }
+
+/// Onboarding must hand startup a snapshot that already carries values entered
+/// during the wizard, so startup does not fall back to the pre-onboarding one.
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+#[tokio::test]
+async fn onboarding_snapshot_preserves_the_wizard_snapshot() {
+    use axinite::config::EnvContext;
+    use axinite::setup::{SetupConfig, SetupWizard};
+
+    const KEY_VAR: &str = "AXINITE_TEST_HANDOFF_SECRET";
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let wizard = SetupWizard::with_config_and_env_context(
+        SetupConfig::default(),
+        EnvContext::default()
+            .with_env("AXINITE_BASE_DIR", dir.path().display().to_string())
+            .with_secret(KEY_VAR, "wizard-entered-value"),
+    );
+
+    let handoff = onboarding_snapshot(&wizard).expect("handoff should merge");
+
+    assert_eq!(
+        handoff.get(KEY_VAR),
+        Some("wizard-entered-value"),
+        "startup receives the wizard's snapshot, not the one captured before \
+         onboarding"
+    );
+}

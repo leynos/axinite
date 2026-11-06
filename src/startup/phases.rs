@@ -319,16 +319,23 @@ async fn run_first_run_onboarding_if_needed(
             env_context.clone(),
         );
         wizard.run().await?;
-        // The wizard's own snapshot carries credentials entered during
-        // onboarding (for example an API key stored while the database is
-        // unavailable), so merge `.env` on top of that rather than on the
-        // snapshot captured before onboarding.
-        Ok(axinite::bootstrap::merge_axinite_env_into_context(
-            wizard.env_context(),
-        )?)
+        onboarding_snapshot(&wizard)
     } else {
         Ok(env_context.clone())
     }
+}
+
+/// Merge bootstrap values persisted by onboarding into the wizard's snapshot.
+///
+/// The wizard's own snapshot carries credentials entered during onboarding
+/// (for example an API key stored while the database is unavailable), so
+/// `.env` is merged on top of that rather than on the snapshot captured before
+/// onboarding. Startup resolves configuration from the returned snapshot.
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+fn onboarding_snapshot(wizard: &SetupWizard) -> anyhow::Result<EnvContext> {
+    Ok(axinite::bootstrap::merge_axinite_env_into_context(
+        wizard.env_context(),
+    )?)
 }
 
 /// No-op onboarding stub used when neither database feature is compiled in.

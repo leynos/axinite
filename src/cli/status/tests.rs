@@ -1,6 +1,6 @@
 //! Unit tests for status command settings loading.
 
-use super::{db_backend_name, load_settings_from};
+use super::{db_backend_name, load_settings_from, settings_for_context};
 use crate::config::EnvContext;
 
 #[test]
@@ -12,6 +12,27 @@ fn db_backend_name_uses_the_resolved_libsql_backend() {
         crate::bootstrap::with_libsql_backend_autodetection(EnvContext::default(), &db_path);
 
     assert_eq!(db_backend_name(&context), "libsql");
+}
+
+/// Status must load settings from the snapshot's base directory, so a caller
+/// supplying a divergent `AXINITE_BASE_DIR` observes that deployment.
+#[test]
+fn settings_for_context_reads_snapshot_selected_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    ambient_fs::write(
+        dir.path().join("settings.json"),
+        r#"{"heartbeat":{"enabled":true,"interval_secs":654}}"#,
+    )
+    .expect("write snapshot settings.json");
+    let context = EnvContext::default().with_env(
+        "AXINITE_BASE_DIR",
+        dir.path().to_str().expect("UTF-8 temp path"),
+    );
+
+    let settings = settings_for_context(&context);
+
+    assert!(settings.heartbeat.enabled);
+    assert_eq!(settings.heartbeat.interval_secs, 654);
 }
 
 /// Regression test for #354: load_settings_from must read config.toml.
