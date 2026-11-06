@@ -26,8 +26,13 @@ pub struct PidLock {
 /// Errors from PID lock acquisition.
 #[derive(Debug, thiserror::Error)]
 pub enum PidLockError {
+    /// Another live process holds the exclusive lock on the PID file.
     #[error("Another Axinite instance is already running (PID {pid})")]
-    AlreadyRunning { pid: u32 },
+    AlreadyRunning {
+        /// PID of the holding instance, or `0` if the lock file could not be read.
+        pid: u32,
+    },
+    /// Opening, locking or writing the PID file failed.
     #[error("Failed to acquire PID lock: {0}")]
     Io(#[from] std::io::Error),
 }

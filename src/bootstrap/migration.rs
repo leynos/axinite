@@ -178,8 +178,12 @@ fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
 /// Errors that can occur during disk-to-DB migration.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
+    /// A settings read or write failed. The message names the operation and
+    /// carries the underlying database error.
     #[error("Database error: {0}")]
     Database(String),
+    /// Writing the migrated `.env` file failed. The message carries the
+    /// underlying I/O error.
     #[error("IO error: {0}")]
     Io(String),
 }

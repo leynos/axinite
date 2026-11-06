@@ -18,10 +18,12 @@ pub struct ListDirTool {
 }
 
 impl ListDirTool {
+    /// Creates a tool with no base directory, so listed paths are not confined to a sandbox.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Confines listed paths to `dir`. Paths that resolve outside it are rejected.
     pub fn with_base_dir(mut self, dir: PathBuf) -> Self {
         self.base_dir = Some(dir);
         self

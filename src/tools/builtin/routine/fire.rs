@@ -2,12 +2,15 @@
 
 use super::*;
 
+/// The `routine_fire` tool: runs a routine immediately, skipping its schedule, trigger
+/// type and cooldown. Always requires approval.
 pub struct RoutineFireTool {
     store: Arc<dyn Database>,
     engine: Arc<RoutineEngine>,
 }
 
 impl RoutineFireTool {
+    /// Creates the tool with the database handle and the engine that runs the routine.
     pub fn new(store: Arc<dyn Database>, engine: Arc<RoutineEngine>) -> Self {
         Self { store, engine }
     }

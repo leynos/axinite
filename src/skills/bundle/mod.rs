@@ -62,56 +62,125 @@ impl ValidatedSkillBundle {
     }
 }
 
+/// Reasons a skill bundle archive fails validation.
+///
+/// Every message starts with `invalid_skill_bundle:`, so callers can match on the prefix.
 #[derive(Debug, thiserror::Error)]
 pub enum SkillBundleError {
+    /// The bytes do not parse as a ZIP archive.
     #[error("invalid_skill_bundle: archive is not a valid ZIP file: {reason}")]
-    InvalidArchive { reason: String },
+    InvalidArchive {
+        /// The parser's description of the failure.
+        reason: String,
+    },
 
+    /// The archive does not hold exactly one top-level directory, or its entries disagree on
+    /// which directory that is.
     #[error(
         "invalid_skill_bundle: expected one top-level path prefix with SKILL.md at <root>/SKILL.md"
     )]
     InvalidTopLevelPrefix,
 
+    /// The top-level directory name is outside 1-64 ASCII letters, digits, `.`, `_` or `-`.
     #[error(
         "invalid_skill_bundle: bundle root '{name}' is invalid; use 1-64 ASCII letters, digits, '.', '_' or '-'"
     )]
-    InvalidRootName { name: String },
+    InvalidRootName {
+        /// The rejected root directory name.
+        name: String,
+    },
 
+    /// The bundle root has no `SKILL.md` entrypoint.
     #[error("invalid_skill_bundle: missing <root>/SKILL.md")]
     MissingEntrypoint,
 
+    /// An entry sits outside the permitted layout, such as a bare file at the archive top level.
     #[error("invalid_skill_bundle: unexpected path '{path}'")]
-    UnexpectedPath { path: String },
+    UnexpectedPath {
+        /// The offending entry path within the archive.
+        path: String,
+    },
 
+    /// A `SKILL.md` appears below the bundle root rather than at it.
     #[error("invalid_skill_bundle: nested SKILL.md is not allowed at '{path}'")]
-    NestedEntrypoint { path: String },
+    NestedEntrypoint {
+        /// The path of the nested `SKILL.md`.
+        path: String,
+    },
 
+    /// The entry lies in a directory that phase 1 does not allow, such as `scripts/` or `bin/`.
     #[error("invalid_skill_bundle: entry '{path}' is not allowed in phase 1")]
-    DisallowedDirectory { path: String },
+    DisallowedDirectory {
+        /// The path of the rejected entry.
+        path: String,
+    },
 
+    /// The entry has an executable extension or executable Unix mode bits.
     #[error("invalid_skill_bundle: executable payloads are not allowed: '{path}'")]
-    ExecutablePayload { path: String },
+    ExecutablePayload {
+        /// The path of the rejected entry.
+        path: String,
+    },
 
+    /// The Unix mode marks the entry as neither a regular file nor a directory, such as a
+    /// symbolic link.
     #[error("invalid_skill_bundle: archive entry '{path}' uses an unsupported file type")]
-    UnsupportedFileType { path: String },
+    UnsupportedFileType {
+        /// The path of the rejected entry.
+        path: String,
+    },
 
+    /// Two file entries normalize to the same lowercase relative path.
     #[error("invalid_skill_bundle: duplicate path after normalization: '{path}'")]
-    DuplicatePath { path: String },
+    DuplicatePath {
+        /// The relative path that was seen twice.
+        path: String,
+    },
 
+    /// A file's declared size exceeds its per-file limit. `SKILL.md` has its own limit.
     #[error("invalid_skill_bundle: file '{path}' is {size} bytes (max {max} bytes)")]
-    EntryTooLarge { path: String, size: u64, max: u64 },
+    EntryTooLarge {
+        /// The relative path of the oversized file.
+        path: String,
+        /// The file's declared size in bytes.
+        size: u64,
+        /// The limit that applies to this file, in bytes.
+        max: u64,
+    },
 
+    /// The running total of declared file sizes would exceed the bundle limit.
     #[error("invalid_skill_bundle: archive totals {size} bytes (max {max} bytes)")]
-    ArchiveTooLarge { size: u64, max: u64 },
+    ArchiveTooLarge {
+        /// The running total in bytes, including the entry that breached the limit.
+        size: u64,
+        /// The total size limit in bytes.
+        max: u64,
+    },
 
+    /// The archive holds more regular files than the bundle limit allows.
     #[error("invalid_skill_bundle: archive contains {count} files (max {max} files)")]
-    TooManyFiles { count: usize, max: usize },
+    TooManyFiles {
+        /// The file count reached when the limit was exceeded.
+        count: usize,
+        /// The maximum number of files allowed.
+        max: usize,
+    },
 
+    /// A `SKILL.md` or reference text file does not hold valid UTF-8.
     #[error("invalid_skill_bundle: text file '{path}' is not valid UTF-8")]
-    InvalidUtf8Text { path: String },
+    InvalidUtf8Text {
+        /// The entry name as it appears in the archive.
+        path: String,
+    },
 
+    /// Reading an entry's contents from the archive failed.
     #[error("invalid_skill_bundle: failed to read '{path}' from archive: {reason}")]
-    ReadFailure { path: String, reason: String },
+    ReadFailure {
+        /// The entry name as it appears in the archive.
+        path: String,
+        /// The I/O error message.
+        reason: String,
+    },
 }
 
 pub(crate) fn looks_like_skill_archive(bytes: &[u8]) -> bool {

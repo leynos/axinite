@@ -29,6 +29,7 @@ pub struct JobEventsTool {
 }
 
 impl JobEventsTool {
+    /// Create the tool over the event store, with the context manager used for ownership checks.
     pub fn new(store: Arc<dyn Database>, context_manager: Arc<ContextManager>) -> Self {
         Self {
             store,
@@ -161,6 +162,7 @@ pub type PromptQueue = Arc<
 >;
 
 impl JobPromptTool {
+    /// Create the tool over the shared prompt queue; the context manager checks job ownership.
     pub fn new(prompt_queue: PromptQueue, context_manager: Arc<ContextManager>) -> Self {
         Self {
             prompt_queue,

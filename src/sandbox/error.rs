@@ -7,19 +7,31 @@ use std::time::Duration;
 pub enum SandboxError {
     /// Docker daemon is not available or not running.
     #[error("Docker not available: {reason}")]
-    DockerNotAvailable { reason: String },
+    DockerNotAvailable {
+        /// Why the daemon could not be reached, as reported by the client.
+        reason: String,
+    },
 
     /// Failed to create container.
     #[error("Container creation failed: {reason}")]
-    ContainerCreationFailed { reason: String },
+    ContainerCreationFailed {
+        /// Message from the daemon or the local configuration for the failed create.
+        reason: String,
+    },
 
     /// Failed to start container.
     #[error("Container start failed: {reason}")]
-    ContainerStartFailed { reason: String },
+    ContainerStartFailed {
+        /// Message from the daemon for the failed start.
+        reason: String,
+    },
 
     /// Command execution failed inside container.
     #[error("Execution failed: {reason}")]
-    ExecutionFailed { reason: String },
+    ExecutionFailed {
+        /// What went wrong while running the command.
+        reason: String,
+    },
 
     /// Command timed out.
     #[error("Command timed out after {0:?}")]
@@ -27,19 +39,35 @@ pub enum SandboxError {
 
     /// Container resource limit exceeded.
     #[error("Resource limit exceeded: {resource} limit of {limit}")]
-    ResourceLimitExceeded { resource: String, limit: String },
+    ResourceLimitExceeded {
+        /// Name of the resource whose limit was hit.
+        resource: String,
+        /// The configured limit that was exceeded, as display text.
+        limit: String,
+    },
 
     /// Network proxy error.
     #[error("Proxy error: {reason}")]
-    ProxyError { reason: String },
+    ProxyError {
+        /// Failure in the proxy, such as failing to bind its listener.
+        reason: String,
+    },
 
     /// Network request blocked by policy.
     #[error("Network request blocked: {reason}")]
-    NetworkBlocked { reason: String },
+    NetworkBlocked {
+        /// Why the network policy refused the request.
+        reason: String,
+    },
 
     /// Credential injection failed.
     #[error("Credential injection failed for {domain}: {reason}")]
-    CredentialInjectionFailed { domain: String, reason: String },
+    CredentialInjectionFailed {
+        /// Domain the credential was to be injected for.
+        domain: String,
+        /// Why the injection failed.
+        reason: String,
+    },
 
     /// Docker API error.
     #[cfg(feature = "docker")]
@@ -52,7 +80,10 @@ pub enum SandboxError {
 
     /// Configuration error.
     #[error("Configuration error: {reason}")]
-    Config { reason: String },
+    Config {
+        /// Why the sandbox configuration was rejected.
+        reason: String,
+    },
 }
 
 /// Result type for sandbox operations.

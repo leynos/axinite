@@ -24,6 +24,7 @@ pub struct ProxyLlmProvider {
 }
 
 impl ProxyLlmProvider {
+    /// Create a provider that sends completions through `client` and reports `model_name`.
     pub fn new(client: Arc<WorkerHttpClient>, model_name: String) -> Self {
         Self { client, model_name }
     }

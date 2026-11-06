@@ -5,11 +5,14 @@
 
 use super::*;
 
+/// Read-only tool returning the caller's routines with status, trigger type, and next fire
+/// time.
 pub struct RoutineListTool {
     store: Arc<dyn Database>,
 }
 
 impl RoutineListTool {
+    /// Creates the tool over the shared database handle.
     pub fn new(store: Arc<dyn Database>) -> Self {
         Self { store }
     }

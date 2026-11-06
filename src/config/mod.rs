@@ -76,23 +76,41 @@ static INJECTED_VARS: LazyLock<Mutex<HashMap<String, String>>> =
 /// Main configuration for the agent.
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// Database backend selection and connection settings.
     pub database: DatabaseConfig,
+    /// LLM provider selection and credentials.
     pub llm: LlmConfig,
+    /// Embedding provider settings for semantic search.
     pub embeddings: EmbeddingsConfig,
+    /// Public tunnel settings used to expose the web gateway.
     pub tunnel: TunnelConfig,
+    /// Input channel settings: CLI, HTTP, web gateway and Signal.
     pub channels: ChannelsConfig,
+    /// Agent loop behaviour, including job concurrency and cost limits.
     pub agent: AgentConfig,
+    /// Prompt-injection checks and output size limits.
     pub safety: SafetyConfig,
+    /// WASM tool sandbox limits and runtime options.
     pub wasm: WasmConfig,
+    /// Secrets management, including the master key source.
     pub secrets: SecretsConfig,
+    /// Software builder tool settings, which generate and build new tools.
     pub builder: BuilderModeConfig,
+    /// Heartbeat runner settings, including quiet hours and notification targets.
     pub heartbeat: HeartbeatConfig,
+    /// Automatic cleanup of stale workspace documents.
     pub hygiene: HygieneConfig,
+    /// Scheduled and triggered routine settings.
     pub routines: RoutineConfig,
+    /// Docker sandbox for running container jobs.
     pub sandbox: SandboxModeConfig,
+    /// Claude Code runner settings used inside sandbox containers.
     pub claude_code: ClaudeCodeConfig,
+    /// Skills system settings, including the local skills directory.
     pub skills: SkillsConfig,
+    /// Audio transcription settings: enablement, provider and model.
     pub transcription: TranscriptionConfig,
+    /// Observability backend settings.
     pub observability: crate::observability::ObservabilityConfig,
     /// Channel-relay integration (Slack via external relay service).
     /// Present only when both `CHANNEL_RELAY_URL` and `CHANNEL_RELAY_API_KEY` are set.

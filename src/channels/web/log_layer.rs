@@ -34,9 +34,13 @@ const HISTORY_CAP: usize = 500;
 /// A single log entry broadcast to connected clients.
 #[derive(Debug, Clone, Serialize)]
 pub struct LogEntry {
+    /// Upper-case level name: `ERROR`, `WARN`, `INFO` or `DEBUG`. TRACE events are not forwarded.
     pub level: String,
+    /// Tracing target of the event, normally the emitting module path.
     pub target: String,
+    /// Rendered event message, after secret scrubbing.
     pub message: String,
+    /// UTC time of the event as RFC 3339 with millisecond precision and a `Z` suffix.
     pub timestamp: String,
 }
 
@@ -55,6 +59,8 @@ pub struct LogBroadcaster {
 }
 
 impl LogBroadcaster {
+    /// Creates a broadcaster with an empty history. A live subscriber that falls more
+    /// than 512 entries behind receives a lagged error from its receiver.
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(512);
         Self {
@@ -64,6 +70,8 @@ impl LogBroadcaster {
         }
     }
 
+    /// Scrubs the message, appends the entry to the history ring (capped at
+    /// `HISTORY_CAP`), then broadcasts it to live subscribers.
     pub fn send(&self, mut entry: LogEntry) {
         // Scrub secrets from the message before it reaches any subscriber.
         // This is defence-in-depth: even if code elsewhere accidentally logs
@@ -118,6 +126,9 @@ pub struct LogLevelHandle {
 }
 
 impl LogLevelHandle {
+    /// Wraps the reload handle for the active filter. `initial_level` is the current
+    /// `axinite=` level; `base_filter` holds every other directive and is reapplied on
+    /// each level change.
     pub fn new(
         handle: reload::Handle<EnvFilter, tracing_subscriber::Registry>,
         initial_level: String,
@@ -281,6 +292,7 @@ pub struct WebLogLayer {
 }
 
 impl WebLogLayer {
+    /// Creates a layer that forwards DEBUG and higher events to `broadcaster`.
     pub fn new(broadcaster: Arc<LogBroadcaster>) -> Self {
         Self { broadcaster }
     }

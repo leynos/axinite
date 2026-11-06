@@ -95,6 +95,10 @@ impl std::fmt::Debug for WorkspaceCapability {
 
 /// Trait for reading from workspace (allows mocking in tests).
 pub trait WorkspaceReader: Send + Sync {
+    /// Return the text of the workspace file at `path`, or `None` if it cannot be read: the
+    /// file does not exist, or the store could not take its read lock.
+    ///
+    /// Callers have already validated the path and its allowed prefixes.
     fn read(&self, path: &str) -> Option<String>;
 }
 

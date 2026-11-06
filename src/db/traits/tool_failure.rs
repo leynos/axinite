@@ -23,23 +23,30 @@ use crate::error::DatabaseError;
 /// Thread-safety: All implementations must be `Send + Sync` to support
 /// concurrent access.
 pub trait ToolFailureStore: Send + Sync {
+    /// Record one failure for `tool_name`, inserting it or raising its failure count.
+    ///
+    /// Recording a failure also clears any earlier repaired marker for the tool.
     fn record_tool_failure<'a>(
         &'a self,
         tool_name: &'a str,
         error_message: &'a str,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
+    /// List unrepaired tools whose failure count is at least `threshold`, most failures first.
     fn get_broken_tools<'a>(
         &'a self,
         threshold: i32,
     ) -> DbFuture<'a, Result<Vec<BrokenTool>, DatabaseError>>;
+    /// Fetch one unrepaired broken tool by name, or `None` if it is absent or repaired.
     fn get_broken_tool_by_name<'a>(
         &'a self,
         tool_name: &'a str,
     ) -> DbFuture<'a, Result<Option<BrokenTool>, DatabaseError>>;
+    /// Mark `tool_name` as repaired and reset its failure count to zero.
     fn mark_tool_repaired<'a>(
         &'a self,
         tool_name: &'a str,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
+    /// Count one more repair attempt against `tool_name`.
     fn increment_repair_attempts<'a>(
         &'a self,
         tool_name: &'a str,
@@ -48,23 +55,30 @@ pub trait ToolFailureStore: Send + Sync {
 
 /// Native async sibling trait for concrete tool-failure-store implementations.
 pub trait NativeToolFailureStore: Send + Sync {
+    /// Record one failure for `tool_name`, inserting it or raising its failure count.
+    ///
+    /// Recording a failure also clears any earlier repaired marker for the tool.
     fn record_tool_failure<'a>(
         &'a self,
         tool_name: &'a str,
         error_message: &'a str,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+    /// List unrepaired tools whose failure count is at least `threshold`, most failures first.
     fn get_broken_tools<'a>(
         &'a self,
         threshold: i32,
     ) -> impl Future<Output = Result<Vec<BrokenTool>, DatabaseError>> + Send + 'a;
+    /// Fetch one unrepaired broken tool by name, or `None` if it is absent or repaired.
     fn get_broken_tool_by_name<'a>(
         &'a self,
         tool_name: &'a str,
     ) -> impl Future<Output = Result<Option<BrokenTool>, DatabaseError>> + Send + 'a;
+    /// Mark `tool_name` as repaired and reset its failure count to zero.
     fn mark_tool_repaired<'a>(
         &'a self,
         tool_name: &'a str,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+    /// Count one more repair attempt against `tool_name`.
     fn increment_repair_attempts<'a>(
         &'a self,
         tool_name: &'a str,

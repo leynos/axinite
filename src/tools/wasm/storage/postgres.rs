@@ -20,6 +20,7 @@ pub struct PostgresWasmToolStore {
 }
 
 impl PostgresWasmToolStore {
+    /// Wraps an existing connection pool. This does not query the database.
     pub fn new(pool: Pool) -> Self {
         Self { pool }
     }

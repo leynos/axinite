@@ -67,27 +67,40 @@ impl ImportStats {
 /// Errors that can occur during import.
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
+    /// The OpenClaw directory or its `openclaw.json` does not exist.
     #[error("OpenClaw not found at {path}: {reason}")]
-    NotFound { path: PathBuf, reason: String },
+    NotFound {
+        /// The directory or file that was looked up.
+        path: PathBuf,
+        /// Why the lookup failed, such as `Directory does not exist`.
+        reason: String,
+    },
 
+    /// `openclaw.json` could not be parsed, or the import feature is not compiled in.
     #[error("JSON5 parse error: {0}")]
     ConfigParse(String),
 
+    /// Opening, querying or decoding an OpenClaw SQLite database failed.
     #[error("SQLite error: {0}")]
     Sqlite(String),
 
+    /// Writing to Axinite's database failed, or a chunk index was invalid.
     #[error("Database error: {0}")]
     Database(String),
 
+    /// A workspace document error during import.
     #[error("Workspace error: {0}")]
     Workspace(String),
 
+    /// A secrets store error while importing credentials.
     #[error("Secret error: {0}")]
     Secret(String),
 
+    /// A filesystem error while reading OpenClaw files, converted from `std::io::Error`.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Data that was not valid UTF-8.
     #[error("Invalid UTF-8: {0}")]
     InvalidUtf8(String),
 }

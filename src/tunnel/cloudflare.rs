@@ -17,6 +17,8 @@ pub struct CloudflareTunnel {
 }
 
 impl CloudflareTunnel {
+    /// Create a tunnel that authenticates `cloudflared` with `token`. No process is
+    /// spawned until [`NativeTunnel::start`] is called.
     pub fn new(token: String) -> Self {
         Self {
             token,

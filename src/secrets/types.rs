@@ -15,8 +15,11 @@ use uuid::Uuid;
 /// The plaintext is never stored; only the encrypted form exists in the database.
 #[derive(Clone)]
 pub struct Secret {
+    /// Unique identifier of the stored secret.
     pub id: Uuid,
+    /// Identifier of the user who owns the secret.
     pub user_id: String,
+    /// Lookup name. Matching is case-insensitive because names are lowercased on creation.
     pub name: String,
     /// AES-256-GCM encrypted value (nonce || ciphertext || tag).
     pub encrypted_value: Vec<u8>,
@@ -30,7 +33,9 @@ pub struct Secret {
     pub last_used_at: Option<DateTime<Utc>>,
     /// Total number of times this secret has been used.
     pub usage_count: i64,
+    /// When the secret was first stored.
     pub created_at: DateTime<Utc>,
+    /// When the secret was last modified.
     pub updated_at: DateTime<Utc>,
 }
 
@@ -56,11 +61,14 @@ impl fmt::Debug for Secret {
 /// but they cannot read the actual values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretRef {
+    /// Name of the referenced secret.
     pub name: String,
+    /// Provider hint recorded for the referenced secret, if any.
     pub provider: Option<String>,
 }
 
 impl SecretRef {
+    /// Create a reference to the secret `name`, with no provider hint.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -68,6 +76,7 @@ impl SecretRef {
         }
     }
 
+    /// Attach a provider hint, such as `openai`, to the reference.
     pub fn with_provider(mut self, provider: impl Into<String>) -> Self {
         self.provider = Some(provider.into());
         self
@@ -133,30 +142,39 @@ impl Clone for DecryptedSecret {
 /// Errors that can occur during secret operations.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum SecretError {
+    /// No secret matches the requested name. The string is that name.
     #[error("Secret not found: {0}")]
     NotFound(String),
 
+    /// The secret exists but its expiry time has passed.
     #[error("Secret has expired")]
     Expired,
 
+    /// The stored ciphertext could not be decrypted. The string gives the cause.
     #[error("Decryption failed: {0}")]
     DecryptionFailed(String),
 
+    /// The plaintext could not be encrypted for storage. The string gives the cause.
     #[error("Encryption failed: {0}")]
     EncryptionFailed(String),
 
+    /// The master key is shorter than the required key size.
     #[error("Invalid master key")]
     InvalidMasterKey,
 
+    /// The decrypted bytes are not UTF-8, so they cannot become a `DecryptedSecret`.
     #[error("Secret value is not valid UTF-8")]
     InvalidUtf8,
 
+    /// The backing database failed. The string gives the message.
     #[error("Database error: {0}")]
     Database(String),
 
+    /// The calling tool is not permitted to use this secret.
     #[error("Secret access denied for tool")]
     AccessDenied,
 
+    /// The OS keychain failed to store, read or delete the master key. The string gives the cause.
     #[error("Keychain error: {0}")]
     KeychainError(String),
 }
@@ -164,9 +182,13 @@ pub enum SecretError {
 /// Parameters for creating a new secret.
 #[derive(Debug)]
 pub struct CreateSecretParams {
+    /// Secret name, lowercased by `new` for case-insensitive matching.
     pub name: String,
+    /// Plaintext value, held in a `SecretString` so it is zeroed on drop and redacted in Debug.
     pub value: SecretString,
+    /// Optional provider hint stored with the secret.
     pub provider: Option<String>,
+    /// Time after which the secret counts as expired. `None` means it never expires.
     pub expires_at: Option<DateTime<Utc>>,
 }
 
@@ -183,11 +205,13 @@ impl CreateSecretParams {
         }
     }
 
+    /// Set the provider hint stored with the secret.
     pub fn with_provider(mut self, provider: impl Into<String>) -> Self {
         self.provider = Some(provider.into());
         self
     }
 
+    /// Set the time after which the secret expires.
     pub fn with_expiry(mut self, expires_at: DateTime<Utc>) -> Self {
         self.expires_at = Some(expires_at);
         self
@@ -201,16 +225,27 @@ pub enum CredentialLocation {
     #[default]
     AuthorizationBearer,
     /// Inject as Authorization header with Basic auth
-    AuthorizationBasic { username: String },
+    AuthorizationBasic {
+        /// Username paired with the secret as `username:secret`, then Base64-encoded.
+        username: String,
+    },
     /// Inject as a custom header
     Header {
+        /// Header name, such as `X-Api-Key`.
         name: String,
+        /// Text placed before the secret in the header value. `None` sends the bare secret.
         prefix: Option<String>,
     },
     /// Inject as a query parameter
-    QueryParam { name: String },
+    QueryParam {
+        /// Query parameter that carries the secret.
+        name: String,
+    },
     /// Inject by replacing a placeholder in URL or body templates
-    UrlPath { placeholder: String },
+    UrlPath {
+        /// Placeholder token that the secret replaces in URL or body templates.
+        placeholder: String,
+    },
 }
 
 /// Mapping from a secret name to where it should be injected.
@@ -225,6 +260,7 @@ pub struct CredentialMapping {
 }
 
 impl CredentialMapping {
+    /// Map `secret_name` to a Bearer token for hosts matching `host_pattern`.
     pub fn bearer(secret_name: impl Into<String>, host_pattern: impl Into<String>) -> Self {
         Self {
             secret_name: secret_name.into(),
@@ -233,6 +269,8 @@ impl CredentialMapping {
         }
     }
 
+    /// Map `secret_name` to a header called `header_name` with no prefix, for hosts matching
+    /// `host_pattern`.
     pub fn header(
         secret_name: impl Into<String>,
         header_name: impl Into<String>,

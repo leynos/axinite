@@ -165,6 +165,7 @@ pub async fn installed_bundle_fixture(
     })
 }
 
+/// Builder for a [`LoadedSkill`] with defaults suited to unit tests.
 pub struct TestSkillBuilder {
     name: String,
     version: String,
@@ -183,6 +184,8 @@ pub struct TestSkillBuilder {
 }
 
 impl TestSkillBuilder {
+    /// Start a builder for a skill named `name`. Defaults to version `1.0.0`, trusted,
+    /// prompt `Test prompt`, and no activation criteria.
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
@@ -203,21 +206,25 @@ impl TestSkillBuilder {
         }
     }
 
+    /// Set the manifest version string.
     pub fn version(mut self, version: impl Into<String>) -> Self {
         self.version = version.into();
         self
     }
 
+    /// Set the manifest description.
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
         self
     }
 
+    /// Set the trust level the skill is loaded with.
     pub fn trust(mut self, trust: SkillTrust) -> Self {
         self.trust = trust;
         self
     }
 
+    /// Set the source the skill is recorded as coming from.
     pub fn source(mut self, source: SkillSource) -> Self {
         self.source = source;
         self
@@ -230,41 +237,50 @@ impl TestSkillBuilder {
         self
     }
 
+    /// Set an explicit location, overriding the one otherwise derived from [`Self::root`].
     pub fn location(mut self, location: LoadedSkillLocation) -> Self {
         self.location = Some(location);
         self
     }
 
+    /// Set the activation keywords. They are lowercased when the skill is built.
     pub fn keywords(mut self, keywords: &[&str]) -> Self {
         self.keywords = keywords.iter().map(|s| s.to_string()).collect();
         self
     }
 
+    /// Set the veto keywords: a match against any of them scores the skill zero.
+    /// They are lowercased when the skill is built.
     pub fn exclude_keywords(mut self, exclude_keywords: &[&str]) -> Self {
         self.exclude_keywords = exclude_keywords.iter().map(|s| s.to_string()).collect();
         self
     }
 
+    /// Set the activation tags. They are lowercased when the skill is built.
     pub fn tags(mut self, tags: &[&str]) -> Self {
         self.tags = tags.iter().map(|s| s.to_string()).collect();
         self
     }
 
+    /// Set the activation regex patterns, compiled when the skill is built.
     pub fn patterns(mut self, patterns: &[&str]) -> Self {
         self.patterns = patterns.iter().map(|s| s.to_string()).collect();
         self
     }
 
+    /// Set the token budget the skill's prompt may occupy in context.
     pub fn max_context_tokens(mut self, max_context_tokens: usize) -> Self {
         self.max_context_tokens = max_context_tokens;
         self
     }
 
+    /// Set the prompt body injected into context when the skill is active.
     pub fn prompt_content(mut self, prompt_content: impl Into<String>) -> Self {
         self.prompt_content = prompt_content.into();
         self
     }
 
+    /// Set the content hash recorded for the skill. Defaults to a placeholder value.
     pub fn content_hash(mut self, content_hash: impl Into<String>) -> Self {
         self.content_hash = content_hash.into();
         self

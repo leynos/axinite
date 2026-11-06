@@ -37,24 +37,40 @@ pub use trigger::{Trigger, json_value_as_filter_string, next_cron_fire};
 /// A routine is a named, persistent, user-owned task with a trigger and an action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Routine {
+    /// Unique identifier of the routine.
     pub id: Uuid,
+    /// Name, unique per owning user.
     pub name: String,
+    /// Free-text summary of what the routine is for.
     pub description: String,
+    /// Owning user. Event triggers only match messages from this user.
     pub user_id: String,
+    /// When `false`, triggers skip the routine and manual fires are refused.
     pub enabled: bool,
+    /// When the routine fires: a cron schedule, an event, a system event or manual.
     pub trigger: Trigger,
+    /// What each run does: a lightweight LLM call or a full job.
     pub action: RoutineAction,
+    /// Limits on how often the routine runs and how many runs may overlap.
     pub guardrails: RoutineGuardrails,
+    /// Where and when run results are announced.
     pub notify: NotifyConfig,
 
     // Runtime state (DB-managed)
+    /// When the last run's runtime state was recorded. Cooldown is measured from this time.
     pub last_run_at: Option<DateTime<Utc>>,
+    /// Next scheduled cron fire. `None` for non-cron triggers or when no further fire is due.
     pub next_fire_at: Option<DateTime<Utc>>,
+    /// Total number of runs recorded for this routine.
     pub run_count: u64,
+    /// Consecutive runs that ended `Failed`. Any other status resets it to zero.
     pub consecutive_failures: u32,
+    /// Opaque JSON persisted with the routine. The engine stores it unchanged and does not read it.
     pub state: serde_json::Value,
 
+    /// When the routine was created.
     pub created_at: DateTime<Utc>,
+    /// When the routine row was last written, including runtime-state updates.
     pub updated_at: DateTime<Utc>,
 }
 
@@ -129,9 +145,13 @@ impl Default for NotifyConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunStatus {
+    /// The run has started and has not finished.
     Running,
+    /// The run finished with nothing to report (the agent replied `ROUTINE_OK`).
     Ok,
+    /// The run finished with output the user should see.
     Attention,
+    /// The run ended in an error.
     Failed,
 }
 
@@ -164,16 +184,29 @@ impl FromStr for RunStatus {
 /// A single execution of a routine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutineRun {
+    /// Unique identifier of this run.
     pub id: Uuid,
+    /// The routine this run belongs to.
     pub routine_id: Uuid,
+    /// What fired the run: `manual`, `cron`, `event` or `system_event`.
     pub trigger_type: String,
+    /// Trigger context. The cron schedule for `cron`, the message text for `event` (cut to
+    /// 200 bytes and suffixed with `...`), `source:event_type` for `system_event`, `None`
+    /// for `manual`.
     pub trigger_detail: Option<String>,
+    /// When the run started.
     pub started_at: DateTime<Utc>,
+    /// When the run finished. `None` while it is still running.
     pub completed_at: Option<DateTime<Utc>>,
+    /// Outcome of the run.
     pub status: RunStatus,
+    /// Agent reply for an `Attention` run, or the error text for a `Failed` run. `None` otherwise.
     pub result_summary: Option<String>,
+    /// Input plus output tokens the run consumed. `None` when not recorded.
     pub tokens_used: Option<i32>,
+    /// Job created for a `FullJob` run. `None` for lightweight runs.
     pub job_id: Option<Uuid>,
+    /// When the run record was created.
     pub created_at: DateTime<Utc>,
 }
 

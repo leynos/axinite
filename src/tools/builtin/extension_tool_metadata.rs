@@ -2,19 +2,29 @@
 
 use crate::tools::tool::ApprovalRequirement;
 
+/// Extension-management tools exposed to the agent, one variant per tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExtensionToolKind {
+    /// `tool_search`: find extensions in the registry, optionally online.
     Search,
+    /// `tool_install`: install an extension from the registry or a URL.
     Install,
+    /// `tool_auth`: begin authentication for an extension.
     Auth,
+    /// `tool_activate`: start an installed extension's channels, tools or MCP connections.
     Activate,
+    /// `tool_list`: list installed extensions and, optionally, registry entries.
     List,
+    /// `tool_remove`: permanently delete an installed extension.
     Remove,
+    /// `tool_upgrade`: move installed WASM extensions to the host WIT version.
     Upgrade,
+    /// `extension_info`: show details of an installed extension.
     Info,
 }
 
 impl ExtensionToolKind {
+    /// Every kind, in declaration order.
     pub const ALL: [Self; 8] = [
         Self::Search,
         Self::Install,
@@ -26,6 +36,8 @@ impl ExtensionToolKind {
         Self::Info,
     ];
 
+    /// Kinds that the hosted worker proxy may call. All other kinds are not allowed
+    /// through that path.
     pub const HOSTED_WORKER_PROXY_SAFE: [Self; 4] =
         [Self::Search, Self::Activate, Self::List, Self::Info];
 
@@ -35,6 +47,7 @@ impl ExtensionToolKind {
         Self::HOSTED_WORKER_PROXY_SAFE.contains(&self)
     }
 
+    /// Tool name this kind is registered under and called by.
     pub fn name(self) -> &'static str {
         match self {
             Self::Search => "tool_search",
@@ -48,6 +61,7 @@ impl ExtensionToolKind {
         }
     }
 
+    /// Model-facing description sent with the tool definition.
     pub fn description(self) -> &'static str {
         match self {
             Self::Search => {
@@ -87,6 +101,7 @@ impl ExtensionToolKind {
         }
     }
 
+    /// JSON Schema object describing the arguments this tool accepts.
     pub fn parameters_schema(self) -> serde_json::Value {
         match self {
             Self::Search => serde_json::json!({
@@ -166,6 +181,8 @@ impl ExtensionToolKind {
         }
     }
 
+    /// Approval policy for this kind. Search, list and info never need approval, removal
+    /// always does, and the rest need approval unless auto-approved.
     pub fn approval_requirement(self) -> ApprovalRequirement {
         match self {
             Self::Search | Self::List | Self::Info => ApprovalRequirement::Never,

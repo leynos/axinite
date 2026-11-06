@@ -13,16 +13,24 @@ use crate::import::ImportError;
 /// OpenClaw configuration structure (parsed from openclaw.json).
 #[derive(Debug, Clone)]
 pub struct OpenClawConfig {
+    /// LLM settings, or `None` if `llm` is missing or not an object.
     pub llm: Option<OpenClawLlmConfig>,
+    /// Embeddings settings, or `None` if `embeddings` is missing or not an object.
     pub embeddings: Option<OpenClawEmbeddingsConfig>,
+    /// Every other top-level key, imported unchanged under its original name.
     pub other_settings: std::collections::HashMap<String, serde_json::Value>,
 }
 
+/// LLM settings from `llm` in `openclaw.json`. Unset or non-string fields are `None`.
 #[derive(Clone)]
 pub struct OpenClawLlmConfig {
+    /// Provider name, imported as `llm.backend`.
     pub provider: Option<String>,
+    /// Model name, imported as `llm.selected_model`.
     pub model: Option<String>,
+    /// API key, stored as a secret and imported as `llm_api_key`.
     pub api_key: Option<SecretString>,
+    /// Provider base URL, imported as `llm.base_url`.
     pub base_url: Option<String>,
 }
 
@@ -37,10 +45,14 @@ impl fmt::Debug for OpenClawLlmConfig {
     }
 }
 
+/// Embeddings settings from `embeddings` in `openclaw.json`; unset fields are `None`.
 #[derive(Clone)]
 pub struct OpenClawEmbeddingsConfig {
+    /// Model name, imported as `embeddings.model`.
     pub model: Option<String>,
+    /// API key, stored as a secret and imported as `embeddings_api_key`.
     pub api_key: Option<SecretString>,
+    /// Provider name, imported as `embeddings.provider`.
     pub provider: Option<String>,
 }
 
@@ -57,26 +69,39 @@ impl fmt::Debug for OpenClawEmbeddingsConfig {
 /// A memory chunk from OpenClaw's database.
 #[derive(Debug, Clone)]
 pub struct OpenClawMemoryChunk {
+    /// Document path, used to find or create the document that owns this chunk.
     pub path: String,
+    /// Chunk text, inserted without modification.
     pub content: String,
+    /// Little-endian `f32` values from the blob, or `None` if the column is NULL.
+    /// A trailing partial group of fewer than four bytes decodes to `0.0`.
     pub embedding: Option<Vec<f32>>,
+    /// Position within the document. Negative values are rejected on import.
     pub chunk_index: i32,
 }
 
 /// A conversation from OpenClaw's database.
 #[derive(Debug, Clone)]
 pub struct OpenClawConversation {
+    /// OpenClaw's conversation ID, kept in metadata as `openclaw_conversation_id`.
+    /// Reimporting does not yet deduplicate on this value.
     pub id: String,
+    /// Channel the conversation came from, recorded as the imported channel.
     pub channel: String,
+    /// Creation time (RFC 3339, in UTC); `None` if absent or invalid. Not used on import.
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Messages in ascending `created_at` order.
     pub messages: Vec<OpenClawMessage>,
 }
 
 /// A message within an OpenClaw conversation.
 #[derive(Debug, Clone)]
 pub struct OpenClawMessage {
+    /// Speaker role as stored. `user`/`human` and `assistant`/`ai` are normalized on import.
     pub role: String,
+    /// Message text, inserted without modification.
     pub content: String,
+    /// Creation time (RFC 3339, in UTC); `None` if absent or invalid. Not used on import.
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 

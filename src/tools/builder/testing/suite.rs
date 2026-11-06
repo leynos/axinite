@@ -121,6 +121,7 @@ impl Default for TestSuite {
 }
 
 impl TestSuite {
+    /// Create an empty suite with the given name and the default 5000 ms test timeout.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),

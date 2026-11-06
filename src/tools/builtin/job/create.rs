@@ -43,6 +43,8 @@ pub struct CreateJobTool {
 }
 
 impl CreateJobTool {
+    /// Creates a tool that records jobs in `context_manager` only. Sandbox,
+    /// monitor and scheduler dependencies are added by the `with_*` builders.
     pub fn new(context_manager: Arc<ContextManager>) -> Self {
         Self {
             context_manager,
@@ -90,6 +92,7 @@ impl CreateJobTool {
         self
     }
 
+    /// Whether `with_sandbox` has been called, so new jobs run in containers.
     pub fn sandbox_enabled(&self) -> bool {
         self.job_manager.is_some()
     }

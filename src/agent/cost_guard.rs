@@ -27,9 +27,19 @@ pub struct CostGuardConfig {
 #[derive(Debug, Clone)]
 pub enum CostLimitExceeded {
     /// Daily spending cap reached.
-    DailyBudget { spent_cents: u64, limit_cents: u64 },
+    DailyBudget {
+        /// Spend so far today, in whole cents (truncated from USD).
+        spent_cents: u64,
+        /// Configured daily cap, in whole cents.
+        limit_cents: u64,
+    },
     /// Hourly action rate limit reached.
-    HourlyRate { actions: u64, limit: u64 },
+    HourlyRate {
+        /// Actions recorded in the trailing hour.
+        actions: u64,
+        /// Maximum actions allowed per hour.
+        limit: u64,
+    },
 }
 
 impl std::fmt::Display for CostLimitExceeded {
@@ -56,8 +66,11 @@ impl std::fmt::Display for CostLimitExceeded {
 /// Per-model token usage counters.
 #[derive(Debug, Clone, Default)]
 pub struct ModelTokens {
+    /// Input tokens accumulated for the model, including cached input.
     pub input_tokens: u64,
+    /// Output tokens accumulated for the model.
     pub output_tokens: u64,
+    /// Accumulated cost in USD, as computed by `record_llm_call`.
     pub cost: Decimal,
 }
 
@@ -87,6 +100,8 @@ struct DailyCost {
 }
 
 impl CostGuard {
+    /// Create a guard enforcing `config`, with the daily counter starting at zero
+    /// for the current UTC date and an empty hourly window.
     pub fn new(config: CostGuardConfig) -> Self {
         Self {
             config,

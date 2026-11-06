@@ -11,18 +11,23 @@ use crate::secrets::{CreateSecretParams, SecretsStore};
 /// Typed errors for channel setup flows.
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelSetupError {
+    /// Local I/O failure during setup; converted from `std::io::Error`.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// A network request made during setup failed. Carries the message to show.
     #[error("{0}")]
     Network(String),
 
+    /// A secrets-store read, write or delete failed. Carries the message to show.
     #[error("{0}")]
     Secrets(String),
 
+    /// User-supplied or configured input was rejected. Carries the message to show.
     #[error("{0}")]
     Validation(String),
 
+    /// The user aborted the setup flow.
     #[error("Setup cancelled by user")]
     Cancelled,
 }

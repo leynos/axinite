@@ -5,18 +5,33 @@ use std::sync::Arc;
 /// Configuration-related errors.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ConfigError {
+    /// A required environment variable is unset; the string is its name.
     #[error("Missing required environment variable: {0}")]
     MissingEnvVar(String),
 
+    /// A required setting has no value in any source.
     #[error("Missing required configuration: {key}. {hint}")]
-    MissingRequired { key: String, hint: String },
+    MissingRequired {
+        /// The configuration key that is missing.
+        key: String,
+        /// Advice on how to supply the missing value.
+        hint: String,
+    },
 
+    /// A setting is present but its value is not acceptable.
     #[error("Invalid configuration value for {key}: {message}")]
-    InvalidValue { key: String, message: String },
+    InvalidValue {
+        /// The configuration key with the bad value.
+        key: String,
+        /// Why the value was rejected.
+        message: String,
+    },
 
+    /// A configuration value could not be parsed into its expected type.
     #[error("Failed to parse configuration: {0}")]
     ParseError(String),
 
+    /// Reading configuration from disk failed; shared so the error stays `Clone`.
     #[error("IO error: {0}")]
     Io(#[from] Arc<std::io::Error>),
 }

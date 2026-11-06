@@ -85,8 +85,10 @@ pub async fn connect_from_config(
 /// a backend-specific handle rather than the generic `Arc<dyn Database>`.
 #[derive(Default)]
 pub struct DatabaseHandles {
+    /// PostgreSQL connection pool; `None` unless the postgres backend is active.
     #[cfg(feature = "postgres")]
     pub pg_pool: Option<deadpool_postgres::Pool>,
+    /// Shared libSQL database; `None` unless the libsql backend is active.
     #[cfg(feature = "libsql")]
     pub libsql_db: Option<Arc<crate::db::libsql::LibSqlDatabase>>,
 }

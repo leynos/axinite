@@ -4,11 +4,14 @@ use super::*;
 
 // ── tool_list ────────────────────────────────────────────────────────────
 
+/// The `tool_list` tool: lists extensions, optionally filtered by kind and including
+/// registry entries that are not yet installed.
 pub struct ToolListTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ToolListTool {
+    /// Creates the tool over the extension manager it queries.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }
@@ -70,11 +73,13 @@ impl NativeTool for ToolListTool {
 
 // ── tool_remove ──────────────────────────────────────────────────────────
 
+/// The `tool_remove` tool: removes an installed extension by name.
 pub struct ToolRemoveTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ToolRemoveTool {
+    /// Creates the tool over the extension manager that performs removals.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }
@@ -109,11 +114,14 @@ impl NativeTool for ToolRemoveTool {
 
 // ── tool_upgrade ─────────────────────────────────────────────────────
 
+/// The `tool_upgrade` tool: upgrades one named extension, or every outdated one when
+/// no name is given.
 pub struct ToolUpgradeTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ToolUpgradeTool {
+    /// Creates the tool over the extension manager that performs upgrades.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }
@@ -155,11 +163,14 @@ impl NativeTool for ToolUpgradeTool {
 
 // ── extension_info ────────────────────────────────────────────────────
 
+/// The `extension_info` tool: reports details of an installed extension, such as its
+/// version and host compatibility.
 pub struct ExtensionInfoTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ExtensionInfoTool {
+    /// Creates the tool over the extension manager it queries.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }

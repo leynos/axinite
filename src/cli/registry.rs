@@ -6,6 +6,8 @@ use crate::registry::catalog::RegistryCatalog;
 use crate::registry::installer::RegistryInstaller;
 use crate::registry::manifest::ManifestKind;
 
+/// Subcommands of `axinite registry`: list, inspect and install extensions and
+/// bundles. Dispatched by [`run_registry_command`].
 #[derive(Subcommand, Debug, Clone)]
 pub enum RegistryCommand {
     /// List available extensions in the registry

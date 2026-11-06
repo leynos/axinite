@@ -1,12 +1,12 @@
-#![cfg(not(unix))]
-#![allow(dead_code)]
-
 //! Non-Unix startup compile contract wired into `cargo check --tests`.
 //!
 //! `crate::startup` is declared here at the integration-test crate root so that
 //! the `use crate::startup::*` imports in `src/startup/run.rs` and
 //! `src/startup/run_tests.rs` resolve correctly when those files are compiled
 //! as part of this test.
+
+#![cfg(not(unix))]
+#![allow(dead_code)]
 
 mod startup {
     #[path = "../trybuild/startup/run_flow.rs"]

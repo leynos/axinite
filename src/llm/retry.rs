@@ -94,6 +94,7 @@ pub struct RetryProvider {
 }
 
 impl RetryProvider {
+    /// Wrap `inner` so that transient failures are retried according to `config`.
     pub fn new(inner: Arc<dyn LlmProvider>, config: RetryConfig) -> Self {
         Self { inner, config }
     }

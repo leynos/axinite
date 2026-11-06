@@ -21,8 +21,13 @@ use crate::llm::error::LlmError;
 /// Session data persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
+    /// NEAR AI session token issued by the browser sign-in flow. Wrapped in a
+    /// `SecretString` once loaded into memory.
     pub session_token: String,
+    /// When this session was saved (UTC).
     pub created_at: DateTime<Utc>,
+    /// Identity provider the user signed in with, such as `github` or `google`.
+    /// `None` for session files written before this field existed.
     #[serde(default)]
     pub auth_provider: Option<String>,
 }

@@ -18,12 +18,19 @@ use crate::secrets::SecretsStore;
 
 /// Result of WASM channel setup.
 pub struct WasmChannelSetup {
+    /// Each loaded channel paired with the name it was registered under.
     pub channels: Vec<(String, Box<dyn crate::channels::Channel>)>,
+    /// Names of the channels in `channels`, in load order.
     pub channel_names: Vec<String>,
+    /// Axum router serving channel webhooks. Always `Some` at present, so the
+    /// routes exist even with no channels loaded and hot-added channels can
+    /// receive webhooks without a restart.
     pub webhook_routes: Option<axum::Router>,
     /// Runtime objects needed for hot-activation via ExtensionManager.
     pub wasm_channel_runtime: Arc<WasmChannelRuntime>,
+    /// Pairing store created for this setup and shared with the channel loader.
     pub pairing_store: Arc<PairingStore>,
+    /// Router that maps webhook requests to the registered WASM channels.
     pub wasm_channel_router: Arc<WasmChannelRouter>,
 }
 

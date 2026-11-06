@@ -48,10 +48,13 @@ pub struct WriteFileTool {
 }
 
 impl WriteFileTool {
+    /// Create the tool without a sandbox directory.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Reject writes to paths that resolve outside `dir`. A dangling symlink inside `dir`
+    /// that points outside it is not detected, so this is not a full sandbox.
     pub fn with_base_dir(mut self, dir: PathBuf) -> Self {
         self.base_dir = Some(dir);
         self

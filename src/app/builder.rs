@@ -15,6 +15,8 @@ use super::side_effects::RuntimeSideEffects;
 /// Options that control optional init phases.
 #[derive(Default)]
 pub struct AppBuilderFlags {
+    /// Skip the database connection (set by the `--no-db` CLI flag). When true,
+    /// `init_database()` logs a warning and continues without a database.
     pub no_db: bool,
     /// Workspace import directory (overrides WORKSPACE_IMPORT_DIR env var if set).
     pub workspace_import_dir: Option<std::path::PathBuf>,
@@ -26,10 +28,19 @@ pub struct AppBuilderFlags {
 /// because tracing must be initialized before any init phase runs, and the
 /// log broadcaster is part of the tracing layer.
 pub struct AppBuilderParams {
+    /// Configuration loaded before the builder runs. `init_database()` replaces it
+    /// with settings reloaded from the database, if that succeeds.
     pub config: Config,
+    /// Flags that decide which optional init phases run.
     pub flags: AppBuilderFlags,
+    /// Optional TOML config file. It is overlaid on database settings when
+    /// configuration is reloaded and when the LLM settings are re-resolved.
     pub toml_path: Option<std::path::PathBuf>,
+    /// Session manager, created ahead of the builder with the tracing setup.
+    /// `init_database()` attaches the database to it.
     pub session: Arc<SessionManager>,
+    /// Log broadcaster shared with the tracing layer, which feeds log lines to
+    /// the web gateway.
     pub log_broadcaster: Arc<LogBroadcaster>,
 }
 

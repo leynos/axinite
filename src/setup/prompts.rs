@@ -112,10 +112,12 @@ pub fn confirm(prompt: &str, default: bool) -> io::Result<bool> {
     })
 }
 
+/// Print `text` inside a box-drawn section header.
 pub fn print_header(text: &str) {
     print!("{}", render::format_header(text));
 }
 
+/// Print a `Step current/total: name` line with an underline.
 pub fn print_step(current: usize, total: usize, name: &str) {
     print!("{}", render::format_step(current, total, name));
 }

@@ -3,12 +3,6 @@
 
 use super::SILENT_REPLY_TOKEN;
 
-/// Detect when an LLM response expresses intent to call a tool without
-/// actually issuing tool calls. Returns `true` if the text contains phrases
-/// like "Let me search …" or "I'll fetch …" outside of fenced/indented code blocks.
-///
-/// Exclusion phrases (e.g. "let me explain") are checked first to avoid
-/// false positives on conversational language.
 /// Conversational phrases that must never count as tool intent.
 const EXCLUSIONS: &[&str] = &[
     "let me explain",
@@ -55,6 +49,13 @@ const ACTION_VERBS: &[&str] = &[
     "look into",
 ];
 
+/// Text heuristic: returns `true` if an LLM reply reads as announcing a tool action, such as
+/// "Let me search …" or "I'll fetch …", outside backtick-fenced or indented code blocks
+/// (a tilde-fenced block is not skipped).
+///
+/// Exclusion phrases such as "let me explain" are checked first and make the result `false`
+/// even when a later phrase signals intent. The match is on wording alone, so it can accept
+/// a conversational reply such as "I'll check whether that sounds right".
 pub fn llm_signals_tool_intent(response: &str) -> bool {
     // Extract only non-code lines with quoted strings removed
     let text = strip_code_blocks(response);

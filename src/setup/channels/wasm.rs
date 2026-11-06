@@ -11,7 +11,9 @@ use super::secrets::{ChannelSetupError, SecretsContext, generate_secret_with_len
 /// Result of WASM channel setup.
 #[derive(Debug, Clone)]
 pub struct WasmChannelSetupResult {
+    /// Whether the channel should be enabled. Successful setup always sets this to `true`.
     pub enabled: bool,
+    /// Name of the channel that was configured.
     pub channel_name: String,
 }
 

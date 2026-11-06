@@ -68,6 +68,7 @@ pub enum DomainValidationResult {
 }
 
 impl DomainValidationResult {
+    /// Returns `true` only for [`DomainValidationResult::Allowed`].
     pub fn is_allowed(&self) -> bool {
         matches!(self, DomainValidationResult::Allowed)
     }

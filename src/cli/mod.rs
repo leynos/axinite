@@ -53,7 +53,9 @@ use clap::{ColorChoice, Parser, Subcommand};
 )]
 #[command(version)]
 #[command(color = ColorChoice::Auto)] // Enable auto-colour for help (if the terminal supports it)
+/// Top-level command line. The global flags below apply to every subcommand.
 pub struct Cli {
+    /// The subcommand to run. `None` starts the agent, as `Command::Run` does.
     #[command(subcommand)]
     pub command: Option<Command>,
 
@@ -78,6 +80,7 @@ pub struct Cli {
     pub no_onboard: bool,
 }
 
+/// Top-level subcommands. Each variant is one area of the CLI, such as `Config` or `Tool`.
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Run the agent (default if no subcommand given)

@@ -39,9 +39,12 @@ use futures::StreamExt;
 use crate::sandbox::config::{ResourceLimits, SandboxPolicy};
 use crate::sandbox::error::{Result, SandboxError};
 
+/// Docker client handle used by the sandbox. This is `bollard::Docker` when the
+/// `docker` feature is enabled; otherwise a placeholder unit struct stands in.
 #[cfg(feature = "docker")]
 pub type DockerConnection = bollard::Docker;
 
+/// Placeholder connection type when the `docker` feature is off; it holds no state.
 #[cfg(not(feature = "docker"))]
 #[derive(Debug, Clone, Default)]
 pub struct DockerConnection;

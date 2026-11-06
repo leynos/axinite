@@ -93,7 +93,9 @@ pub struct DatabaseConfig {
     pub backend: DatabaseBackend,
 
     // -- PostgreSQL fields --
+    /// PostgreSQL connection URL, held as a secret so it is not printed.
     pub url: SecretString,
+    /// Maximum pooled PostgreSQL connections (`DATABASE_POOL_SIZE`, default 10).
     pub pool_size: usize,
     /// TLS mode for PostgreSQL connections (default: Prefer).
     pub ssl_mode: SslMode,

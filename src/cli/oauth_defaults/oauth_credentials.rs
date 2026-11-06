@@ -3,7 +3,10 @@
 
 /// Built-in OAuth credentials bundled with the CLI for desktop-style flows.
 pub struct OAuthCredentials {
+    /// OAuth client ID of the bundled provider app (Google "Desktop App" for
+    /// `google_oauth_token`).
     pub client_id: &'static str,
+    /// Client secret paired with `client_id`, sent during the token exchange.
     pub client_secret: &'static str,
 }
 

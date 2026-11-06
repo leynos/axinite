@@ -19,9 +19,13 @@ use crate::bootstrap::axinite_base_dir;
 /// Channel configurations.
 #[derive(Debug, Clone)]
 pub struct ChannelsConfig {
+    /// Terminal channel settings. Enabled by default (`CLI_ENABLED`).
     pub cli: CliConfig,
+    /// HTTP webhook channel, or `None` when it is not enabled and no host or port is set.
     pub http: Option<HttpConfig>,
+    /// Web gateway, or `None` when `GATEWAY_ENABLED` is false.
     pub gateway: Option<GatewayConfig>,
+    /// Signal channel, or `None` when no Signal daemon URL is configured.
     pub signal: Option<SignalConfig>,
     /// Directory containing WASM channel modules (default: ~/.axinite/channels/).
     pub wasm_channels_dir: std::path::PathBuf,
@@ -32,26 +36,37 @@ pub struct ChannelsConfig {
     pub wasm_channel_owner_ids: HashMap<String, i64>,
 }
 
+/// Terminal (CLI) channel configuration.
 #[derive(Debug, Clone)]
 pub struct CliConfig {
+    /// Whether the terminal channel is started.
     pub enabled: bool,
 }
 
+/// HTTP webhook channel configuration.
 #[derive(Debug, Clone)]
 pub struct HttpConfig {
+    /// Address the HTTP listener binds to (default `0.0.0.0`).
     pub host: String,
+    /// TCP port the HTTP listener binds to (default 8080).
     pub port: u16,
+    /// Shared secret that inbound webhooks must present (`HTTP_WEBHOOK_SECRET`).
+    /// The channel refuses to start without it.
     pub webhook_secret: Option<SecretString>,
+    /// User ID that inbound webhook messages are attributed to (default `http`).
     pub user_id: String,
 }
 
 /// Web gateway configuration.
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
+    /// Address the gateway binds to (default `127.0.0.1`).
     pub host: String,
+    /// TCP port the gateway binds to (default 3000).
     pub port: u16,
     /// Bearer token for authentication. Random hex generated at startup if unset.
     pub auth_token: Option<String>,
+    /// User ID that gateway sessions are attributed to (default `default`).
     pub user_id: String,
 }
 

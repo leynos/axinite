@@ -6,77 +6,12 @@
 //! not pass unchecked strings through path joins or command planning.
 
 use super::*;
-use std::fmt;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 
-use serde::de::Error as _;
-
-/// Validated identifier used for builder project directories and artefact names.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
-#[serde(transparent)]
-pub struct ProjectName(String);
-
-impl ProjectName {
-    /// Validate and construct a project name.
-    pub fn new(value: impl Into<String>) -> Result<Self, String> {
-        let value = value.into();
-        if value.is_empty() {
-            return Err("project name must not be empty".to_string());
-        }
-        if !value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
-        {
-            return Err(
-                "project name must contain only ASCII letters, digits, '-' or '_'".to_string(),
-            );
-        }
-        Ok(Self(value))
-    }
-
-    /// Access the validated name as a string slice.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl AsRef<str> for ProjectName {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl fmt::Display for ProjectName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl TryFrom<String> for ProjectName {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<ProjectName> for String {
-    fn from(value: ProjectName) -> Self {
-        value.0
-    }
-}
-
-impl<'de> Deserialize<'de> for ProjectName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        Self::new(value).map_err(D::Error::custom)
-    }
-}
+mod project_name;
+pub use project_name::ProjectName;
 
 /// Explicit command plan for a build or test step.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,11 +65,17 @@ pub enum SoftwareType {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Language {
+    /// Built with `cargo build --release` and tested with `cargo test`.
     Rust,
+    /// Interpreted, so no build step. Tested with `python -m pytest`.
     Python,
+    /// Built and tested through the npm `build` and `test` scripts.
     TypeScript,
+    /// Interpreted, so no build step. Tested through the npm `test` script.
     JavaScript,
+    /// Built with `go build ./...` and tested with `go test ./...`.
     Go,
+    /// Interpreted, so no build step. Tested by running `shellcheck` on `*.sh`.
     Bash,
 }
 
@@ -243,9 +184,13 @@ pub struct BuildResult {
 /// A log entry from the build process.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildLog {
+    /// When the entry was recorded, in UTC.
     pub timestamp: DateTime<Utc>,
+    /// Build phase that was active when the entry was recorded.
     pub phase: BuildPhase,
+    /// Human-readable summary of the event.
     pub message: String,
+    /// Supporting detail for the message. `None` when there is none.
     pub details: Option<String>,
 }
 
@@ -253,16 +198,27 @@ pub struct BuildLog {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum BuildPhase {
+    /// Turning the description into a structured requirement.
     Analyzing,
+    /// Set once analysis completes, before the first tool call.
     Scaffolding,
+    /// A `write_file` tool call is in progress.
     Implementing,
+    /// A shell tool call whose command mentions `build`.
     Building,
+    /// A shell tool call whose command mentions `test`.
     Testing,
+    /// Repairing a step that failed or whose tool call returned an error.
     Fixing,
+    /// Post-build validation. Not currently set by the build loop.
     Validating,
+    /// Registering the built tool. Not currently set by the build loop.
     Registering,
+    /// Packaging the output artefact. Not currently set by the build loop.
     Packaging,
+    /// The build finished successfully.
     Complete,
+    /// The build ended in failure.
     Failed,
 }
 

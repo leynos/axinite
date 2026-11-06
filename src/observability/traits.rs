@@ -27,31 +27,50 @@ pub trait Observer: Send + Sync {
 #[derive(Debug, Clone)]
 pub enum ObserverEvent {
     /// Agent started processing.
-    AgentStart { provider: String, model: String },
+    AgentStart {
+        /// Name of the LLM provider serving the agent (for example `nearai`).
+        provider: String,
+        /// Model identifier the agent will call.
+        model: String,
+    },
 
     /// An LLM request was sent.
     LlmRequest {
+        /// Name of the LLM provider the request is sent to.
         provider: String,
+        /// Model identifier the request targets.
         model: String,
+        /// Number of messages in the request context.
         message_count: usize,
     },
 
     /// An LLM response was received.
     LlmResponse {
+        /// Name of the LLM provider that answered.
         provider: String,
+        /// Model identifier that produced the response.
         model: String,
+        /// Wall-clock time from sending the request to receiving the response.
         duration: Duration,
+        /// Whether the call returned a usable response.
         success: bool,
+        /// Error text when `success` is false. `None` otherwise.
         error_message: Option<String>,
     },
 
     /// A tool call is about to start.
-    ToolCallStart { tool: String },
+    ToolCallStart {
+        /// Name of the tool about to run.
+        tool: String,
+    },
 
     /// A tool call finished.
     ToolCallEnd {
+        /// Name of the tool that ran.
         tool: String,
+        /// Wall-clock time the tool call took.
         duration: Duration,
+        /// Whether the tool call succeeded.
         success: bool,
     },
 
@@ -59,19 +78,31 @@ pub enum ObserverEvent {
     TurnComplete,
 
     /// A message was sent or received on a channel.
-    ChannelMessage { channel: String, direction: String },
+    ChannelMessage {
+        /// Channel the message passed through (for example `tui` or `gateway`).
+        channel: String,
+        /// Direction of the message, such as `inbound`.
+        direction: String,
+    },
 
     /// The heartbeat system ran a tick.
     HeartbeatTick,
 
     /// Agent finished processing.
     AgentEnd {
+        /// Wall-clock time the agent spent on the request.
         duration: Duration,
+        /// Tokens consumed, when the provider reported them.
         tokens_used: Option<u64>,
     },
 
     /// An error occurred in a component.
-    Error { component: String, message: String },
+    Error {
+        /// Component that raised the error (for example `llm`).
+        component: String,
+        /// Error message text.
+        message: String,
+    },
 }
 
 /// Numeric metric samples.

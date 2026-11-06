@@ -15,14 +15,20 @@ pub enum McpTransportConfig {
     Http,
     /// Stdio transport — spawns a child process.
     Stdio {
+        /// Executable to spawn for the server process.
         command: String,
+        /// Arguments passed to `command`. Defaults to none.
         #[serde(default)]
         args: Vec<String>,
+        /// Extra environment variables for the child process. Defaults to none.
         #[serde(default)]
         env: HashMap<String, String>,
     },
     /// Unix domain socket transport.
-    Unix { socket_path: String },
+    Unix {
+        /// Filesystem path of the Unix domain socket to connect to.
+        socket_path: String,
+    },
 }
 
 /// Configuration for connecting to a remote MCP server.
@@ -299,13 +305,20 @@ pub(super) fn is_localhost_url(url: &str) -> bool {
 /// Resolved transport type (borrows from config).
 #[derive(Debug)]
 pub enum EffectiveTransport<'a> {
+    /// HTTP(S) transport, used when no transport is configured or `http` is selected.
     Http,
+    /// Stdio transport that spawns `command` with `args` and `env`.
     Stdio {
+        /// Executable to spawn.
         command: &'a str,
+        /// Arguments passed to `command`.
         args: &'a [String],
+        /// Extra environment variables for the child process.
         env: &'a HashMap<String, String>,
     },
+    /// Unix domain socket transport connecting to `socket_path`.
     Unix {
+        /// Path of the Unix domain socket.
         socket_path: &'a str,
     },
 }

@@ -57,9 +57,13 @@ impl SmartRoutingStats {
 /// Snapshot of routing statistics for external consumption.
 #[derive(Debug, Clone)]
 pub struct SmartRoutingSnapshot {
+    /// Requests routed since the provider was created.
     pub total_requests: u64,
+    /// Requests sent to the cheap model, including the first attempt of a cascade.
     pub cheap_requests: u64,
+    /// Requests sent directly to the primary model.
     pub primary_requests: u64,
+    /// Cheap-model responses judged uncertain and re-run on the primary model.
     pub cascade_escalations: u64,
 }
 

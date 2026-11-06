@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 pub mod event_types {
     //! Known relay event types: string constants naming each event.
 
+    /// A message posted in a channel the bot can see.
     pub const MESSAGE: &str = "message";
+    /// A direct message sent to the bot.
     pub const DIRECT_MESSAGE: &str = "direct_message";
+    /// A message that mentions the bot.
     pub const MENTION: &str = "mention";
 }
 
@@ -80,8 +83,12 @@ impl ChannelEvent {
 /// Connection info returned by list_connections.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
+    /// Provider identifier, such as `slack`.
     pub provider: String,
+    /// Workspace identifier the connection is bound to, matching `ChannelEvent::provider_scope`.
     pub team_id: String,
+    /// Workspace display name, or `None` when the relay does not supply one.
     pub team_name: Option<String>,
+    /// Whether the connection is currently active.
     pub connected: bool,
 }

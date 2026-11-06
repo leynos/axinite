@@ -24,17 +24,27 @@ pub use store::{
 /// Error type for MCP configuration operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
+    /// Reading or writing the MCP configuration file failed.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The MCP configuration file could not be parsed or serialized as JSON.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// The configuration parsed but is semantically invalid.
     #[error("Invalid configuration: {reason}")]
-    InvalidConfig { reason: String },
+    InvalidConfig {
+        /// Human-readable explanation of what is wrong.
+        reason: String,
+    },
 
+    /// No server with the requested name exists in the configuration.
     #[error("Server not found: {name}")]
-    ServerNotFound { name: String },
+    ServerNotFound {
+        /// The server name that was looked up.
+        name: String,
+    },
 }
 
 impl From<ConfigError> for ToolError {

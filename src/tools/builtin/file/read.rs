@@ -20,10 +20,14 @@ pub struct ReadFileTool {
 }
 
 impl ReadFileTool {
+    /// Create a tool with no base directory. Relative paths resolve against the process
+    /// working directory and are not confined to any root.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Confine reads to `dir`: relative paths resolve against it, and any resolved path
+    /// outside it is rejected.
     pub fn with_base_dir(mut self, dir: PathBuf) -> Self {
         self.base_dir = Some(dir);
         self

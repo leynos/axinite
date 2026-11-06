@@ -32,6 +32,7 @@ pub struct OnlineDiscovery {
 }
 
 impl OnlineDiscovery {
+    /// Create a client with a 10-second request timeout and the `Axinite/1.0` user agent.
     pub fn new() -> Self {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))

@@ -23,7 +23,9 @@ pub struct SandboxModeParseError {
 /// Supported execution modes for sandbox jobs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SandboxMode {
+    /// Default worker mode, stored as `worker`. A job with no persisted mode loads as this.
     Worker,
+    /// Claude Code mode, stored as `claude_code`. Only these jobs accept follow-up prompts.
     ClaudeCode,
 }
 

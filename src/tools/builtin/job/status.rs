@@ -41,6 +41,7 @@ pub struct ListJobsTool {
 }
 
 impl ListJobsTool {
+    /// Create the tool, reading job lists and state from `context_manager`.
     pub fn new(context_manager: Arc<ContextManager>) -> Self {
         Self { context_manager }
     }
@@ -134,6 +135,7 @@ pub struct JobStatusTool {
 }
 
 impl JobStatusTool {
+    /// Create the tool, reading job state from `context_manager`.
     pub fn new(context_manager: Arc<ContextManager>) -> Self {
         Self { context_manager }
     }
@@ -196,6 +198,7 @@ pub struct CancelJobTool {
 }
 
 impl CancelJobTool {
+    /// Create the tool, looking up jobs to cancel through `context_manager`.
     pub fn new(context_manager: Arc<ContextManager>) -> Self {
         Self { context_manager }
     }

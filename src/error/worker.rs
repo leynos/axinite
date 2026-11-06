@@ -29,25 +29,39 @@ pub enum WorkerError {
     ///
     /// `reason` contains the lower-level transport or HTTP-client failure.
     #[error("Failed to connect to orchestrator at {url}: {reason}")]
-    ConnectionFailed { url: String, reason: String },
+    ConnectionFailed {
+        /// Orchestrator endpoint the worker tried to reach.
+        url: String,
+        /// Transport or HTTP-client failure text.
+        reason: String,
+    },
 
     /// The worker failed while proxying an LLM request through the orchestrator.
     ///
     /// `reason` contains the upstream request or response failure detail.
     #[error("LLM proxy request failed: {reason}")]
-    LlmProxyFailed { reason: String },
+    LlmProxyFailed {
+        /// Failure detail from the proxied upstream request or response.
+        reason: String,
+    },
 
     /// The orchestrator rejected the worker's request as malformed.
     ///
     /// `reason` describes the validation or request-shape failure.
     #[error("Bad request from orchestrator: {reason}")]
-    BadRequest { reason: String },
+    BadRequest {
+        /// Validation or request-shape failure text.
+        reason: String,
+    },
 
     /// The orchestrator rejected the worker's request for authorization reasons.
     ///
     /// `reason` contains the rejection detail returned by the orchestrator.
     #[error("Unauthorized remote tool request: {reason}")]
-    Unauthorized { reason: String },
+    Unauthorized {
+        /// Rejection detail returned by the orchestrator.
+        reason: String,
+    },
 
     /// The orchestrator or upstream service rate-limited the worker request.
     ///
@@ -55,7 +69,9 @@ pub enum WorkerError {
     /// present, is the parsed `Retry-After` delay supplied by the response.
     #[error("Remote tool request was rate limited: {reason}")]
     RateLimited {
+        /// Failure detail returned with the rate-limit response.
         reason: String,
+        /// Delay parsed from the `Retry-After` header, or `None` if absent.
         retry_after: Option<Duration>,
     },
 
@@ -63,33 +79,52 @@ pub enum WorkerError {
     ///
     /// `reason` contains the upstream error detail.
     #[error("Remote tool request failed upstream: {reason}")]
-    BadGateway { reason: String },
+    BadGateway {
+        /// Upstream error detail reported by the orchestrator.
+        reason: String,
+    },
 
     /// The remote-tool request failed for a non-specialized upstream reason.
     ///
     /// `reason` contains the orchestrator status and response body summary.
     #[error("Remote tool request failed: {reason}")]
-    RemoteToolFailed { reason: String },
+    RemoteToolFailed {
+        /// Orchestrator status and response body summary.
+        reason: String,
+    },
 
     /// Secret resolution failed for the named secret before worker execution.
     ///
     /// `secret_name` identifies the requested secret, and `reason` describes
     /// why it could not be resolved.
     #[error("Secret resolution failed for {secret_name}: {reason}")]
-    SecretResolveFailed { secret_name: String, reason: String },
+    SecretResolveFailed {
+        /// Name of the secret that could not be resolved.
+        secret_name: String,
+        /// Why the secret could not be resolved.
+        reason: String,
+    },
 
     /// The orchestrator rejected work for the specified job id.
     ///
     /// `job_id` identifies the affected worker job, and `reason` contains the
     /// orchestrator's response detail.
     #[error("Orchestrator returned error for job {job_id}: {reason}")]
-    OrchestratorRejected { job_id: Uuid, reason: String },
+    OrchestratorRejected {
+        /// Job the orchestrator rejected work for.
+        job_id: Uuid,
+        /// Response detail from the orchestrator.
+        reason: String,
+    },
 
     /// The worker failed while performing local execution steps.
     ///
     /// `reason` contains the execution failure detail.
     #[error("Worker execution failed: {reason}")]
-    ExecutionFailed { reason: String },
+    ExecutionFailed {
+        /// Failure detail from the local execution step.
+        reason: String,
+    },
 
     /// The worker token environment variable was not available at startup.
     #[error("Missing worker token (AXINITE_WORKER_TOKEN not set)")]
@@ -101,7 +136,9 @@ pub enum WorkerError {
     /// describes the mismatch.
     #[error("Worker configuration mismatch for {field}: {reason}")]
     ConfigMismatch {
+        /// Configuration field that disagreed with the HTTP client.
         field: ConfigMismatchField,
+        /// Description of the disagreement.
         reason: String,
     },
 }

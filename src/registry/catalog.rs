@@ -10,80 +10,133 @@ mod load;
 /// Error type for registry operations.
 #[derive(Debug, thiserror::Error)]
 pub enum RegistryError {
+    /// The registry directory does not exist. Carries the path that was tried.
     #[error("Registry directory not found: {0}")]
     DirectoryNotFound(PathBuf),
 
+    /// A manifest file could not be read from disk.
     #[error("Failed to read manifest {path}: {reason}")]
-    ManifestRead { path: PathBuf, reason: String },
+    ManifestRead {
+        /// Manifest file that could not be read.
+        path: PathBuf,
+        /// Underlying read error message.
+        reason: String,
+    },
 
+    /// A manifest file was read but is not valid JSON for the manifest schema.
     #[error("Failed to parse manifest {path}: {reason}")]
-    ManifestParse { path: PathBuf, reason: String },
+    ManifestParse {
+        /// Manifest file that failed to parse.
+        path: PathBuf,
+        /// Parser error message.
+        reason: String,
+    },
 
+    /// No extension matches the requested name, as given by the caller.
     #[error("Extension not found: {0}")]
     ExtensionNotFound(String),
 
+    /// The extension is already installed and `force` was not set.
     #[error("'{name}' already installed at {path}. Use --force to overwrite.")]
     AlreadyInstalled {
+        /// Extension name.
         name: String,
+        /// Location of the existing install.
         path: std::path::PathBuf,
     },
 
     // `url` is stored for programmatic access (logs, retries) but intentionally
     // omitted from the Display message to avoid leaking internal artifact URLs
     // to end users.
+    /// Fetching a pre-built artefact or its capabilities file failed.
     #[error("Artifact download failed: {reason}")]
-    DownloadFailed { url: String, reason: String },
-
-    #[error("Invalid extension manifest for '{name}' field '{field}': {reason}")]
-    InvalidManifest {
-        name: String,
-        field: &'static str,
+    DownloadFailed {
+        /// Artefact URL that was requested.
+        url: String,
+        /// Why the request failed, such as an HTTP status or a body read error.
         reason: String,
     },
 
+    /// A manifest field failed validation, such as an unparseable or disallowed URL.
+    #[error("Invalid extension manifest for '{name}' field '{field}': {reason}")]
+    InvalidManifest {
+        /// Extension name.
+        name: String,
+        /// Dotted manifest path of the rejected field, such as `artifacts.wasm32-wasip2.url`.
+        field: &'static str,
+        /// Why the value was rejected.
+        reason: String,
+    },
+
+    /// The downloaded artefact's SHA-256 digest differs from the manifest value.
     #[error("Checksum verification failed: expected {expected_sha256}, got {actual_sha256}")]
     ChecksumMismatch {
+        /// Artefact URL the bytes were downloaded from.
         url: String,
+        /// Hex digest declared in the manifest.
         expected_sha256: String,
+        /// Hex digest of the downloaded bytes.
         actual_sha256: String,
     },
 
+    /// The manifest declares an artefact without a `sha256` value.
     #[error("Missing SHA256 checksum for '{name}' artifact. Use --build to build from source.")]
-    MissingChecksum { name: String },
+    MissingChecksum {
+        /// Extension whose artefact has no checksum.
+        name: String,
+    },
 
+    /// The artefact install failed and the source fallback cannot run because the
+    /// source directory is missing.
     #[error(
         "Source fallback unavailable for '{name}' after artifact install failed. Retry artifact download or run from a repository checkout."
     )]
     SourceFallbackUnavailable {
+        /// Extension name.
         name: String,
+        /// In-repository source directory the fallback would build from.
         source_dir: PathBuf,
+        /// The error from the failed artefact install.
         artifact_error: Box<RegistryError>,
     },
 
+    /// The artefact install and the source-build fallback both failed.
     #[error("Artifact install and source fallback both failed for '{name}'.")]
     InstallFallbackFailed {
+        /// Extension name.
         name: String,
+        /// The error from the failed artefact install.
         artifact_error: Box<RegistryError>,
+        /// The error from the failed source build.
         source_error: Box<RegistryError>,
     },
 
+    /// A bare name matches both a tool and a channel; the message suggests qualified names.
     #[error(
         "Ambiguous name '{name}': exists as both {kind_a} and {kind_b}. Use '{prefix_a}/{name}' or '{prefix_b}/{name}'."
     )]
     AmbiguousName {
+        /// The ambiguous bare name.
         name: String,
+        /// Kind label of the first match, `tool`.
         kind_a: &'static str,
+        /// Qualifying key prefix of the first match, `tools`.
         prefix_a: &'static str,
+        /// Kind label of the second match, `channel`.
         kind_b: &'static str,
+        /// Qualifying key prefix of the second match, `channels`.
         prefix_b: &'static str,
     },
 
+    /// No bundle with this name is defined in `_bundles.json`.
     #[error("Bundle not found: {0}")]
     BundleNotFound(String),
 
+    /// `_bundles.json` could not be read or parsed. Carries the file path and error.
     #[error("Failed to read bundles file: {0}")]
     BundlesRead(String),
 
+    /// Filesystem error from the catalog or installer; converted from `std::io::Error`.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

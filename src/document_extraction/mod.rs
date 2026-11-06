@@ -30,6 +30,7 @@ const MAX_EXTRACTED_TEXT_LEN: usize = 100_000;
 pub struct DocumentExtractionMiddleware;
 
 impl DocumentExtractionMiddleware {
+    /// Create the middleware. It holds no state, so this is equivalent to `default()`.
     pub fn new() -> Self {
         Self
     }

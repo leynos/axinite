@@ -7,7 +7,9 @@ use crate::error::ConfigError;
 /// Safety configuration.
 #[derive(Debug, Clone)]
 pub struct SafetyConfig {
+    /// Maximum length of checked output, in bytes; longer output is truncated.
     pub max_output_length: usize,
+    /// Whether the prompt-injection check is enabled, from `SAFETY_INJECTION_CHECK_ENABLED`.
     pub injection_check_enabled: bool,
 }
 

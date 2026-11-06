@@ -17,6 +17,11 @@ use super::types::{
 };
 use crate::channels::web::server::GatewayState;
 
+/// Serves `POST /v1/chat/completions` in the OpenAI wire format.
+///
+/// Streaming requests are delegated to `handle_streaming`. Non-streaming
+/// requests return a single completion, with `tool_calls` populated when the
+/// request supplied tools. Errors use the OpenAI error envelope.
 pub async fn chat_completions_handler(
     State(state): State<Arc<GatewayState>>,
     Json(req): Json<OpenAiChatRequest>,
@@ -141,6 +146,10 @@ pub async fn chat_completions_handler(
     }
 }
 
+/// Serves `GET /v1/models` as an OpenAI-style list object.
+///
+/// Returns the provider's model names. If the provider reports none, the
+/// active model is returned as the only entry so clients always see one model.
 pub async fn models_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<OpenAiErrorResponse>)> {

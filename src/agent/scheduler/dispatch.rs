@@ -18,9 +18,15 @@ use crate::worker::job::{Worker, WorkerDeps};
 /// Descriptor for a new job to dispatch: who it belongs to, how it is
 /// presented, and any initial metadata.
 pub struct JobRequest<'a> {
+    /// Owner of the job, passed to `ContextManager::create_job_for_user`.
     pub user_id: &'a str,
+    /// Short human-readable label stored on the job context.
     pub title: &'a str,
+    /// Task text the worker is asked to carry out.
     pub description: &'a str,
+    /// Optional JSON that replaces the job's context metadata wholesale. A
+    /// `max_tokens` key sets the token budget, capped at `max_tokens_per_job`
+    /// unless that config value is 0 (unlimited).
     pub metadata: Option<serde_json::Value>,
 }
 

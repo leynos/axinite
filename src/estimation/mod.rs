@@ -36,9 +36,14 @@ pub struct JobEstimate {
 /// Estimate for a single tool usage.
 #[derive(Debug, Clone)]
 pub struct ToolEstimate {
+    /// Name of the tool, as passed to `estimate_job`.
     pub tool_name: String,
+    /// Estimated cost of one use of this tool in USD or equivalent, before learned adjustment.
     pub cost: Decimal,
+    /// Estimated time for one use of this tool, before learned adjustment. Unknown tools
+    /// default to five seconds.
     pub duration: Duration,
+    /// Confidence in this tool's estimate, from 0 to 1. `estimate_job` currently sets 0.7.
     pub confidence: f64,
 }
 

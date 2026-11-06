@@ -10,11 +10,18 @@ use crate::tools::mcp::{McpProcessManager, McpSessionManager};
 
 /// Inputs needed to load and register MCP servers.
 pub struct LoadMcpServersParams<'a> {
+    /// Database holding the MCP server configs. When `None`, configs come from the
+    /// file-based loader instead.
     pub db: Option<Arc<dyn Database>>,
+    /// Secrets store for resolving server credentials, if one is configured.
     pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// Tool registry that the tools from each started server are registered into.
     pub tools: &'a Arc<ToolRegistry>,
+    /// Session manager shared by the clients created for each server.
     pub mcp_session_manager: &'a Arc<McpSessionManager>,
+    /// Manager that spawns and tracks stdio MCP server child processes.
     pub mcp_process_manager: &'a Arc<McpProcessManager>,
+    /// Shared map from server name to its client cell, filled as servers start.
     pub mcp_clients: McpClientsMap,
 }
 

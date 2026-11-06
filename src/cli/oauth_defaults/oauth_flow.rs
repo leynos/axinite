@@ -13,8 +13,11 @@ use crate::secrets::{CreateSecretParams, SecretsStore};
 
 /// Response from the OAuth token exchange.
 pub struct OAuthTokenResponse {
+    /// Access token, taken from the provider's configured `access_token_field`.
     pub access_token: String,
+    /// Refresh token from the response, or `None` if the provider did not issue one.
     pub refresh_token: Option<String>,
+    /// Access token lifetime in seconds (`expires_in`), or `None` if not reported.
     pub expires_in: Option<u64>,
 }
 

@@ -64,10 +64,15 @@ pub async fn wire_core_runtime_tools(
 /// Dependency bundle for registering image and vision tools together.
 #[derive(Clone, Debug)]
 pub struct MediaToolsArgs {
+    /// Base URL of the API that serves image generation and vision requests.
     pub api_base_url: String,
+    /// API key sent with both image generation and vision requests.
     pub api_key: String,
+    /// Model identifier for image generation requests.
     pub gen_model: String,
+    /// Model identifier for vision (image analysis) requests.
     pub vision_model: String,
+    /// Directory that local image paths must resolve within; `None` disables that check.
     pub base_dir: Option<PathBuf>,
 }
 

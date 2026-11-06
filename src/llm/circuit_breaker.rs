@@ -88,6 +88,7 @@ pub struct CircuitBreakerProvider {
 }
 
 impl CircuitBreakerProvider {
+    /// Wraps `inner` with a breaker governed by `config`. The circuit starts closed.
     pub fn new(inner: Arc<dyn LlmProvider>, config: CircuitBreakerConfig) -> Self {
         Self {
             inner,

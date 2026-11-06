@@ -44,8 +44,15 @@ pub enum LoopOutcome {
 
 /// Configuration for the agentic loop.
 pub struct AgenticLoopConfig {
+    /// Upper bound on loop iterations. Reaching it yields `LoopOutcome::MaxIterations`.
     pub max_iterations: usize,
+    /// Whether a text-only reply that announces an intended tool call is nudged to
+    /// call the tool, rather than accepted as the final answer. Nudging only applies
+    /// when tools are available and the context does not force text.
     pub enable_tool_intent_nudge: bool,
+    /// Maximum number of nudges sent in a row. The count resets on any reply that is
+    /// not a tool-intent reply and on any tool call, so it bounds consecutive nudges,
+    /// not the total for a run.
     pub max_tool_intent_nudges: u32,
 }
 

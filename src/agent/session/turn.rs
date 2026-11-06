@@ -8,8 +8,14 @@ use thiserror::Error;
 /// Errors for indexed tool-call mutations on a turn.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ToolCallIndexError {
+    /// The requested index does not refer to a recorded tool call.
     #[error("tool call index {idx} out of bounds (len={len})")]
-    OutOfBounds { idx: usize, len: usize },
+    OutOfBounds {
+        /// The zero-based index that was requested.
+        idx: usize,
+        /// Number of tool calls recorded on the turn when the lookup failed.
+        len: usize,
+    },
 }
 
 /// State of a turn.

@@ -18,6 +18,9 @@ pub struct TailscaleTunnel {
 }
 
 impl TailscaleTunnel {
+    /// Create a tunnel that uses `funnel` (public) when `true`, else `serve` (tailnet-only).
+    /// A `hostname` of `None` makes `start()` read the machine's DNS name from
+    /// `tailscale status --json`.
     pub fn new(funnel: bool, hostname: Option<String>) -> Self {
         Self {
             funnel,

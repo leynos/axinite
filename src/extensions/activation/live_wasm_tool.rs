@@ -24,14 +24,22 @@ pub struct LiveWasmToolActivation {
 
 /// Configuration for [`LiveWasmToolActivation`].
 pub struct LiveWasmToolActivationConfig {
+    /// WASM runtime used to load tools. `None` makes activation fail with a
+    /// "runtime not available" error.
     pub wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
+    /// Directory holding `<name>.wasm` files and optional `<name>.capabilities.json` files.
     pub wasm_tools_dir: PathBuf,
+    /// Registry that receives the loaded tool; also consulted to detect an already-active tool.
     pub tool_registry: Arc<ToolRegistry>,
+    /// Secrets store handed to the loader for the tool's credentials.
     pub secrets: Arc<dyn SecretsStore + Send + Sync>,
+    /// Hook registry for plugin hooks declared in the capabilities file. `None` skips
+    /// hook registration.
     pub hooks: Option<Arc<HookRegistry>>,
 }
 
 impl LiveWasmToolActivation {
+    /// Create the adapter from `config`. Nothing is loaded until activation is requested.
     pub fn new(config: LiveWasmToolActivationConfig) -> Self {
         Self {
             wasm_tool_runtime: config.wasm_tool_runtime,

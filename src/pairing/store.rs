@@ -27,18 +27,24 @@ const PAIRING_APPROVE_RATE_WINDOW_SECS: u64 = 5 * 60;
 /// Error from pairing store operations.
 #[derive(Debug, thiserror::Error)]
 pub enum PairingStoreError {
+    /// The channel name is empty or sanitizes to nothing, or a request id or pairing file is
+    /// missing. Carries the offending value or a short reason.
     #[error("Invalid channel: {0}")]
     InvalidChannel(String),
 
+    /// The derived storage path has no parent directory. Carries the path.
     #[error("Invalid path: {0}")]
     InvalidPath(String),
 
+    /// A filesystem read, write, open or lock operation failed.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Serializing pairing state to JSON failed.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// Too many failed approve attempts within the last five minutes. The caller must wait.
     #[error("Rate limit: too many failed approve attempts; try again later")]
     ApproveRateLimited,
 }
@@ -46,17 +52,25 @@ pub enum PairingStoreError {
 /// Result of upserting a pairing request.
 #[derive(Debug)]
 pub struct UpsertResult {
+    /// Pairing code for the request. Empty when the pending limit was reached and nothing was
+    /// stored.
     pub code: String,
+    /// True only when a new pending request was stored.
     pub created: bool,
 }
 
 /// A pending pairing request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PairingRequest {
+    /// Sender ID on the channel. Added to the allow list when the request is approved.
     pub id: String,
+    /// One-time code the operator enters to approve the request. Matched case-insensitively.
     pub code: String,
+    /// Creation time as an RFC 3339 timestamp. The request expires 15 minutes after this.
     pub created_at: String,
+    /// Time the sender last re-requested pairing, as an RFC 3339 timestamp.
     pub last_seen_at: String,
+    /// Channel-specific metadata supplied with the request. Omitted from the file when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Value>,
 }

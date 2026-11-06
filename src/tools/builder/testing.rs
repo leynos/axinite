@@ -29,6 +29,7 @@ pub struct TestHarness {
 }
 
 impl TestHarness {
+    /// Create a harness with no capabilities and a 5-second default timeout.
     pub fn new(runtime: Arc<WasmToolRuntime>) -> Self {
         Self {
             runtime,

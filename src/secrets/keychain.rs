@@ -238,24 +238,28 @@ mod platform {
 mod platform {
     use super::*;
 
+    /// Refuse to store the master key: this platform has no supported keychain.
     pub async fn store_master_key(_key: &[u8]) -> Result<(), SecretError> {
         Err(SecretError::KeychainError(
             "Keychain not supported on this platform. Use SECRETS_MASTER_KEY env var.".to_string(),
         ))
     }
 
+    /// Report that the master key cannot be read: this platform has no supported keychain.
     pub async fn get_master_key() -> Result<Vec<u8>, SecretError> {
         Err(SecretError::KeychainError(
             "Keychain not supported on this platform. Use SECRETS_MASTER_KEY env var.".to_string(),
         ))
     }
 
+    /// Report that the master key cannot be deleted: this platform has no supported keychain.
     pub async fn delete_master_key() -> Result<(), SecretError> {
         Err(SecretError::KeychainError(
             "Keychain not supported on this platform".to_string(),
         ))
     }
 
+    /// Report that no master key exists: this platform has no supported keychain.
     pub async fn has_master_key() -> bool {
         false
     }

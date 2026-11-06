@@ -14,18 +14,31 @@ use super::tiers::Tier;
 /// Weights for each of the 13 scoring dimensions.
 #[derive(Debug, Clone)]
 pub struct ScorerWeights {
+    /// Multiplier for the reasoning-keyword score (0-100) in the weighted total.
     pub reasoning_words: f32,
+    /// Multiplier for the prompt-length score (0-100), derived from character count.
     pub token_estimate: f32,
+    /// Multiplier for the code-keyword score (0-100).
     pub code_indicators: f32,
+    /// Multiplier for the multi-step keyword score (0-100).
     pub multi_step: f32,
+    /// Multiplier for the domain-keyword score (0-100), using the configured domain keywords.
     pub domain_specific: f32,
+    /// Multiplier for the vague-pronoun score (0-100).
     pub ambiguity: f32,
+    /// Multiplier for the creativity-keyword score (0-100).
     pub creativity: f32,
+    /// Multiplier for the precision-keyword score (0-100).
     pub precision: f32,
+    /// Multiplier for the context-reference score (0-100).
     pub context_dependency: f32,
+    /// Multiplier for the tool-use keyword score (0-100).
     pub tool_likelihood: f32,
+    /// Multiplier for the safety-keyword score (0-100).
     pub safety_sensitivity: f32,
+    /// Multiplier for the question score (0-100), from `?` count and open-ended phrasing.
     pub question_complexity: f32,
+    /// Multiplier for the clause score (0-100), from commas, semicolons and conjunctions.
     pub sentence_complexity: f32,
 }
 

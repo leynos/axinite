@@ -12,9 +12,13 @@ use super::ToolCall;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
+    /// Instructions or context supplied by the host application.
     System,
+    /// Input from the human user.
     User,
+    /// Output produced by the model.
     Assistant,
+    /// Result of a tool call, linked to it by `tool_call_id`.
     Tool,
 }
 
@@ -24,10 +28,16 @@ pub enum Role {
 pub enum ContentPart {
     /// Text content part.
     #[serde(rename = "text")]
-    Text { text: String },
+    Text {
+        /// The text of this part.
+        text: String,
+    },
     /// Image URL content part (supports data: URLs for inline base64 images).
     #[serde(rename = "image_url")]
-    ImageUrl { image_url: ImageUrl },
+    ImageUrl {
+        /// The image reference for this part.
+        image_url: ImageUrl,
+    },
 }
 
 /// Image URL reference for multimodal content.
@@ -43,7 +53,10 @@ pub struct ImageUrl {
 /// A message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
+    /// Speaker of this message. Serialized in lowercase (`system`, `user`, ...).
     pub role: Role,
+    /// Text of the message. For tool results this is the tool output, and it may be
+    /// empty for an assistant message that only carries tool calls.
     pub content: String,
     /// Multimodal content parts (images, etc.).
     /// When non-empty, providers serialize content as an array of parts

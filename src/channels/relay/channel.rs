@@ -16,6 +16,7 @@ pub const DEFAULT_RELAY_NAME: &str = "slack-relay";
 /// The messaging provider backing a relay channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayProvider {
+    /// Slack, reached through the relay's Slack proxy API.
     Slack,
 }
 

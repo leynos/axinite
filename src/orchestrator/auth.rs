@@ -27,7 +27,9 @@ use uuid::Uuid;
 /// env var `GITHUB_TOKEN` to the container".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CredentialGrant {
+    /// Name of the secret to decrypt from the secrets store.
     pub secret_name: String,
+    /// Environment variable that receives the decrypted value inside the container.
     pub env_var: String,
 }
 
@@ -41,6 +43,7 @@ pub struct TokenStore {
 }
 
 impl TokenStore {
+    /// Creates an empty store with no tokens or credential grants.
     pub fn new() -> Self {
         Self {
             tokens: Arc::new(RwLock::new(HashMap::new())),

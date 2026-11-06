@@ -39,6 +39,8 @@ pub struct RegistryInstaller {
 }
 
 impl RegistryInstaller {
+    /// Create an installer that resolves `source.dir` against `repo_root` and writes tools and
+    /// channels into their respective directories.
     pub fn new(repo_root: PathBuf, tools_dir: PathBuf, channels_dir: PathBuf) -> Self {
         Self {
             repo_root,
