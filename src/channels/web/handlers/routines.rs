@@ -45,9 +45,10 @@ pub async fn routines_list_handler(
 }
 
 /// Summarizes all routines: totals, enabled and disabled counts, how many have failed runs
-/// in a row (disabled routines included), and how many last ran today (UTC).
+/// in a row (disabled routines included), and `runs_today`.
 ///
-/// `runs_today` counts routines whose last run was today, not individual runs. Answers `503`
+/// `runs_today` counts routines whose `last_run_at` is on or after the start of the current
+/// UTC day, not individual runs; a timestamp on a later day counts too. Answers `503`
 /// when no database is configured and `500` when the routines cannot be listed.
 pub async fn routines_summary_handler(
     State(state): State<Arc<GatewayState>>,

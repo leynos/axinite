@@ -8,11 +8,13 @@ use crate::skills::{SkillManifest, validate_skill_name};
 /// Error type for SKILL.md parsing failures.
 #[derive(Debug, thiserror::Error)]
 pub enum SkillParseError {
-    /// The file does not start with a `---` line opening the frontmatter.
+    /// The file does not start with a `---` line opening the frontmatter (after any leading
+    /// blank lines), or the frontmatter has no closing delimiter.
     #[error("Missing YAML frontmatter delimiters (expected `---` at start of file)")]
     MissingFrontmatter,
 
-    /// The frontmatter between the delimiters is not valid YAML. The string is the
+    /// The frontmatter between the delimiters is not valid YAML, or is valid YAML that cannot
+    /// be read as a skill manifest (a `name` of the wrong type, say). The string is the
     /// underlying parser message.
     #[error("Invalid YAML frontmatter: {0}")]
     InvalidYaml(String),
@@ -25,7 +27,7 @@ pub enum SkillParseError {
     /// letters, digits, dots, underscores or hyphens.
     #[error("Invalid skill name '{name}': must match [a-zA-Z0-9][a-zA-Z0-9._-]{{0,63}}")]
     InvalidName {
-        /// The rejected name, exactly as written in the file.
+        /// The rejected name as decoded from the YAML value, so quoting and escapes are resolved.
         name: String,
     },
 }
