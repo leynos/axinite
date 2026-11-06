@@ -2448,6 +2448,37 @@ manual precondition exits and duplicate-claim retries do not emit latency.
 Export pipeline wiring, such as Prometheus or OpenTelemetry integration, is out
 of scope for this feature flag.
 
+#### Reliability metrics
+
+The `metrics` feature also gates the reliability counters for startup
+configuration loading, hot reload, secret injection, and WASM channel
+credentials. It only enables the emission points: no recorder or exporter is
+bundled, so enabling the feature without installing a recorder drops the
+counters.
+
+Table: Reliability metrics.
+
+| Metric                             | Type    | Labels                                                                                 |
+| ---------------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `axinite.startup.config_load`      | counter | `outcome` = `success` \| `settings_error` \| `config_error`                            |
+| `axinite.reload.outcomes`          | counter | `outcome` = `success` \| `http_removed` \| `config_error` \| `listener_error`          |
+| `axinite.reload.secret_injection`  | counter | `outcome` = `injected` \| `missing` \| `retained_after_error` \| `error`               |
+| `axinite.wasm.channel_credentials` | counter | `outcome` = `injected` \| `partial` \| `missing` \| `list_error` \| `decryption_error` |
+
+All labels are fixed compile-time constants; no paths, identifiers, or secret
+values are attached. For `axinite.wasm.channel_credentials`, `partial` means a
+channel declared several credentials and only some of them resolved, while
+`missing` means none resolved. A diagnostic warning logs the `declared` and
+`resolved` counts without secret names or values.
+
+Every outcome is also emitted through `tracing` on channels
+`startup.config_load`, `reload.outcome`, `reload.secret_injection`, and
+`wasm.channel_credentials`. Success and `injected` outcomes log at `debug`;
+every non-success outcome logs at `info`, so a default production build
+surfaces failures without the `metrics` feature. Config-load and reload cycles
+run inside fieldless spans (`startup.config_load` and `reload.cycle`,
+respectively) that carry no sensitive fields.
+
 ### In-process repair claim tracking
 
 `RepairClaims` (in `src/agent/self_repair/repair_claim.rs`) maintains a
@@ -3062,11 +3093,14 @@ triggered by the Unix hangup signal (SIGHUP) in production environments.
 Four trait boundaries separate reload policy from I/O:
 
 - `ConfigLoader` — Loads configuration from database (`DbConfigLoader`) or
-  the supplied environment snapshot (`EnvConfigLoader`).
+  the supplied environment snapshot (`EnvConfigLoader`), with the signature
+  `load(&self, ctx: EnvContext) -> Result<Config, ConfigError>`.
 - `ListenerController` — Controls HTTP listener restarts, implemented by
   `WebhookListenerController` for the webhook server.
 - `SecretInjector` — Injects secrets into the `EnvContext` snapshot,
-  implemented by `DbSecretInjector` for database-backed secrets.
+  implemented by `DbSecretInjector` for database-backed secrets. Its signature
+  is `inject(&self, ctx: &mut EnvContext)`; the mutable reference is the
+  per-cycle snapshot that each reload starts from.
 - `ChannelSecretUpdater` — Propagates rotated or cleared channel secrets
   without restarting the channel. `HotReloadManager` uses this boundary in step
   4 of the reload flow to fan out webhook-secret changes to live channels.
@@ -3138,7 +3172,11 @@ Adding a new config source:
 
 1. Implement `NativeConfigLoader` for the type.
 2. The blanket impl automatically provides `ConfigLoader`.
-3. Pass the loader to `HotReloadManager::new()`.
+3. Pass the loader to `HotReloadManager::new_with_context(..)` taking a
+   `HotReloadManagerDependencies { .. }` when the caller owns an explicit
+   startup snapshot. Use `HotReloadManager::new()` only for early-startup paths
+   that genuinely capture the ambient environment; `new()` captures that
+   environment itself.
 
 Adding a new listener controller:
 

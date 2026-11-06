@@ -203,14 +203,24 @@ async fn print_mcp_status() {
     }
 }
 
+/// Load status settings from the supplied snapshot's base directory.
+///
+/// The snapshot selects the settings files, so a caller that supplies a
+/// divergent `AXINITE_BASE_DIR` observes that directory's settings rather than
+/// the ambient ones.
+pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
+    let base_dir = env_context.axinite_base_dir();
+    load_settings_from(
+        &base_dir.join("settings.json"),
+        &base_dir.join("config.toml"),
+    )
+}
+
 /// Run the status command, printing system health info.
 pub async fn run_status_command() -> anyhow::Result<()> {
     let env_context = crate::bootstrap::capture_config_env_context();
     let base_dir = env_context.axinite_base_dir();
-    let settings = load_settings_from(
-        &base_dir.join("settings.json"),
-        &base_dir.join("config.toml"),
-    );
+    let settings = settings_for_context(&env_context);
 
     println!("Axinite Status");
     println!("===============\n");
