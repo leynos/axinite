@@ -9,10 +9,19 @@
 #![allow(dead_code)]
 
 mod startup {
+    //! Compile-contract shims for the `crate::startup` surface that
+    //! `src/startup/run.rs` imports when this integration test compiles it.
+    //!
+    //! These items are deliberately inert: the test only proves that the real
+    //! startup module still binds against its declared dependencies.
+
     #[path = "../trybuild/startup/run_flow.rs"]
     pub(crate) mod run_flow;
 
     pub(crate) mod wasm {
+        //! WASM runtime shim supplying the minimal `WasmWiringContext`,
+        //! `WasmChannelRuntimeState`, and `wire_wasm_channel_runtime` items
+        //! that `src/startup/run.rs` expects during the compile contract.
         use std::{collections::HashMap, sync::Arc};
 
         use axinite::{
@@ -80,6 +89,10 @@ mod startup {
 
     #[cfg(unix)]
     pub(crate) mod unix_runtime {
+        //! Unix runtime-management shim that validates the
+        //! `setup_runtime_management_unix` signature against
+        //! `RuntimeManagementContext` without starting a real runtime.
+
         pub(crate) fn setup_runtime_management_unix(
             _context: &super::RuntimeManagementContext<'_>,
             _shutdown_tx: &tokio::sync::broadcast::Sender<()>,

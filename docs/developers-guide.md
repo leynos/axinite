@@ -2120,6 +2120,52 @@ propagate the error. Do not fall back to defaults silently: `Settings::load`
 only substitutes defaults for a genuinely absent file. The operator-facing
 behaviour is described in the [user's guide](users-guide.md#settings-file).
 
+### Environment policy
+
+The process environment is a global resource. Capture it once at the
+composition boundary and pass an `EnvContext` snapshot through the application.
+Production code and in-process tests must not read or mutate process state
+directly.
+
+`clippy.toml` enforces this with `clippy::disallowed_methods`:
+
+- `std::env::var`, `std::env::var_os`, `std::env::vars`, and
+  `std::env::vars_os` — inject an environment reader instead.
+- `std::env::set_var` and `std::env::remove_var` — use a stub environment in
+  tests instead.
+- `std::env::set_current_dir` — inject a base-directory seam; confine working
+  directory changes to `Command::current_dir`.
+- `dotenvy::var`, `dotenvy::vars`, `dotenvy::dotenv`,
+  `dotenvy::dotenv_override`, `dotenvy::from_path`,
+  `dotenvy::from_path_override`, `dotenvy::from_filename`,
+  `dotenvy::from_filename_override`, `dotenvy::from_read`, and
+  `dotenvy::from_read_override` — use `EnvContext` instead of mutating the
+  process environment.
+
+A scoped `#[expect(clippy::disallowed_methods, reason = "...")]` is permitted
+only for a call site that has not yet been migrated. Keep the attribute on the
+smallest enclosing item, state the migration issue in the reason, and remove
+the attribute when the call site moves to `EnvContext`. Do not add a new
+exception to silence a warning without a tracked migration.
+
+Tests build their inputs with `EnvContext::for_testing(...)` or
+`EnvContext::default().with_env(...)`, then pass the snapshot to the
+context-aware entrypoint. Never call `std::env::set_var` in a test: it races
+with every other test in the process and leaks state between them. The
+dependency-injection patterns are described in
+[reliable testing in Rust](reliable-testing-in-rust-via-dependency-injection.md).
+
+Two setup boundaries carry the snapshot explicitly:
+
+- `WasmChannelSetupRequest` supplies the `EnvContext` used for WASM channel
+  credential fallback to `setup_wasm_channels_from_context`.
+- `OrchestratorSetupContext` supplies the startup snapshot to
+  `setup_orchestrator_from_context`.
+
+The `wat` development dependency compiles the minimal WebAssembly component
+fixture used by the WASM channel setup tests; it is not part of the runtime
+dependency graph.
+
 ### Monotonic clock seam for duration measurement
 
 When a component must measure elapsed time (rather than compare against a

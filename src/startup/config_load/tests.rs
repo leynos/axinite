@@ -47,3 +47,77 @@ fn settings_are_loaded_from_the_context_base_directory() -> anyhow::Result<()> {
     assert_eq!(settings.llm_backend.as_deref(), Some("ollama"));
     Ok(())
 }
+
+#[cfg(all(feature = "metrics", feature = "test-helpers"))]
+mod telemetry {
+    //! Counter assertions for the startup configuration-load production path.
+
+    use super::*;
+    use axinite::testing::metrics;
+
+    /// Environment snapshot that resolves a complete configuration.
+    fn resolvable_env(base_dir: &std::path::Path) -> EnvContext {
+        EnvContext::default()
+            .with_env("AXINITE_BASE_DIR", base_dir.display().to_string())
+            .with_env("DATABASE_BACKEND", "libsql")
+            .with_env("DATABASE_URL", "unused://test")
+    }
+
+    #[tokio::test]
+    async fn successful_load_records_success_outcome() -> anyhow::Result<()> {
+        let base_dir = tempfile::tempdir()?;
+        let env = resolvable_env(base_dir.path());
+
+        let _guard = metrics::record();
+        load_initial_config_from(&env, None).await?;
+
+        assert_eq!(
+            metrics::counter("axinite.startup.config_load", "success"),
+            1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn malformed_settings_records_settings_error_outcome() -> anyhow::Result<()> {
+        let base_dir = tempfile::tempdir()?;
+        ambient_fs::write(base_dir.path().join("settings.json"), "{ not json")?;
+        let env = resolvable_env(base_dir.path());
+
+        let _guard = metrics::record();
+        let result = load_initial_config_from(&env, None).await;
+
+        assert!(result.is_err(), "malformed settings must fail the load");
+        assert_eq!(
+            metrics::counter("axinite.startup.config_load", "settings_error"),
+            1
+        );
+        assert_eq!(
+            metrics::counter("axinite.startup.config_load", "success"),
+            0
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_backend_records_config_error_outcome() -> anyhow::Result<()> {
+        let base_dir = tempfile::tempdir()?;
+        let env = EnvContext::default()
+            .with_env("AXINITE_BASE_DIR", base_dir.path().display().to_string())
+            .with_env("DATABASE_BACKEND", "not-a-backend");
+
+        let _guard = metrics::record();
+        let result = load_initial_config_from(&env, None).await;
+
+        assert!(result.is_err(), "an invalid backend must fail the load");
+        assert_eq!(
+            metrics::counter("axinite.startup.config_load", "config_error"),
+            1
+        );
+        assert_eq!(
+            metrics::counter("axinite.startup.config_load", "success"),
+            0
+        );
+        Ok(())
+    }
+}
