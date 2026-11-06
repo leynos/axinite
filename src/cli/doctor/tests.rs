@@ -6,6 +6,7 @@ use super::core_checks::{
     check_workspace_search_with_context,
 };
 use super::external_checks::check_binary;
+use super::settings_for_context;
 use super::subsystem_checks::{
     check_embeddings_with_context, check_routines_config_with_context, check_secrets,
 };
@@ -65,6 +66,46 @@ fn check_settings_file_rejects_invalid_field_types() {
             format_result(&other)
         ),
     }
+}
+
+/// Doctor must read settings from the snapshot's base directory, not the
+/// ambient one, so diagnostics describe the deployment being inspected.
+#[test]
+fn settings_for_context_uses_the_snapshot_base_directory() {
+    let dir = tempfile::tempdir().expect("create temp dir for settings");
+    ambient_fs::write(
+        dir.path().join("settings.json"),
+        r#"{"heartbeat":{"enabled":true,"interval_secs":321}}"#,
+    )
+    .expect("write snapshot settings.json");
+    let context = EnvContext::default().with_env(
+        "AXINITE_BASE_DIR",
+        dir.path().to_str().expect("UTF-8 temp path"),
+    );
+
+    let settings = settings_for_context(&context);
+
+    assert!(settings.heartbeat.enabled);
+    assert_eq!(settings.heartbeat.interval_secs, 321);
+}
+
+/// A malformed settings file must not abort diagnostics; defaults are used.
+#[test]
+fn settings_for_context_falls_back_to_defaults_for_invalid_settings() {
+    let dir = tempfile::tempdir().expect("create temp dir for settings");
+    ambient_fs::write(
+        dir.path().join("settings.json"),
+        r#"{"onboard_completed": "yes"}"#,
+    )
+    .expect("write invalid settings.json");
+    let context = EnvContext::default().with_env(
+        "AXINITE_BASE_DIR",
+        dir.path().to_str().expect("UTF-8 temp path"),
+    );
+
+    let settings = settings_for_context(&context);
+
+    assert!(!settings.heartbeat.enabled, "defaults should be used");
 }
 
 /// Verify that an available binary is reported as a pass.

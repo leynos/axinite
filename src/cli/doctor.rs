@@ -162,14 +162,7 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     // Capture the environment once and derive settings from the same snapshot
     // so every check observes a consistent view.
     let env_context = crate::bootstrap::capture_config_env_context();
-    let settings = match Settings::load_from(&env_context.axinite_base_dir().join("settings.json"))
-    {
-        Ok(settings) => settings,
-        Err(error) => {
-            eprintln!("Warning: {error}; continuing with default settings");
-            Settings::default()
-        }
-    };
+    let settings = settings_for_context(&env_context);
 
     run_core_checks(
         &env_context,
@@ -192,6 +185,20 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Load doctor's settings from the supplied snapshot's base directory.
+///
+/// A malformed settings file must not abort diagnostics: the warning is
+/// printed and the default settings are used instead.
+pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
+    match Settings::load_from(&env_context.axinite_base_dir().join("settings.json")) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("Warning: {error}; continuing with default settings");
+            Settings::default()
+        }
+    }
 }
 
 // ── Check runner ────────────────────────────────────────────

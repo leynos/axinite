@@ -5,6 +5,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use tracing::Instrument;
+
 use crate::channels::ChannelSecretUpdater;
 use crate::config::EnvContext;
 use crate::reload::{ConfigLoader, ListenerController, ReloadError, SecretInjector};
@@ -91,49 +93,53 @@ impl HotReloadManager {
     /// `.env` files after startup are not reread; restart the process to apply
     /// environment-backed settings such as `HTTP_HOST` and `HTTP_PORT`.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
-        let _reload_guard = self.reload_lock.lock().await;
+        async {
+            let _reload_guard = self.reload_lock.lock().await;
 
-        let mut env_context = self.env_context.clone();
+            let mut env_context = self.env_context.clone();
 
-        // Step 1: Inject secrets into this reload's configuration snapshot.
-        // Errors are logged internally by the injector; we continue regardless.
-        if let Some(ref injector) = self.secret_injector {
-            injector.inject(&mut env_context).await;
-        }
-
-        // Step 2: Load new configuration from this cycle's immutable snapshot.
-        let new_config = self.config_loader.load(env_context).await.map_err(|e| {
-            tracing::error!("Config reload failed: {}", e);
-            super::telemetry::reload_outcome("config_error");
-            ReloadError::from(e)
-        })?;
-
-        // Step 3: Parse HTTP config and restart listener if address changed
-        let Some(new_http) = new_config.channels.http else {
-            tracing::warn!("HTTP channel no longer configured, shutting down listener");
-            // Teardown the existing HTTP listener and clear secrets
-            if let Some(ref controller) = self.listener_controller {
-                controller.shutdown().await;
+            // Step 1: Inject secrets into this reload's configuration snapshot.
+            // Errors are logged internally by the injector; we continue regardless.
+            if let Some(ref injector) = self.secret_injector {
+                injector.inject(&mut env_context).await;
             }
-            for updater in &self.secret_updaters {
-                updater.update_secret(None).await;
-            }
-            super::telemetry::reload_outcome("http_removed");
-            return Ok(());
-        };
 
-        // Step 3: Restart listener if address changed (DNS lookup only if listener exists)
-        self.maybe_restart_listener(&new_http)
-            .await
-            .inspect_err(|_| {
-                super::telemetry::reload_outcome("listener_error");
+            // Step 2: Load new configuration from this cycle's immutable snapshot.
+            let new_config = self.config_loader.load(env_context).await.map_err(|e| {
+                tracing::error!("Config reload failed: {}", e);
+                super::telemetry::reload_outcome("config_error");
+                ReloadError::from(e)
             })?;
 
-        // Step 4: Update channel secrets
-        self.update_channel_secrets(&new_http).await;
+            // Step 3: Parse HTTP config and restart listener if address changed
+            let Some(new_http) = new_config.channels.http else {
+                tracing::warn!("HTTP channel no longer configured, shutting down listener");
+                // Teardown the existing HTTP listener and clear secrets
+                if let Some(ref controller) = self.listener_controller {
+                    controller.shutdown().await;
+                }
+                for updater in &self.secret_updaters {
+                    updater.update_secret(None).await;
+                }
+                super::telemetry::reload_outcome("http_removed");
+                return Ok(());
+            };
 
-        super::telemetry::reload_outcome("success");
-        Ok(())
+            // Step 3: Restart listener if address changed (DNS lookup only if listener exists)
+            self.maybe_restart_listener(&new_http)
+                .await
+                .inspect_err(|_| {
+                    super::telemetry::reload_outcome("listener_error");
+                })?;
+
+            // Step 4: Update channel secrets
+            self.update_channel_secrets(&new_http).await;
+
+            super::telemetry::reload_outcome("success");
+            Ok(())
+        }
+        .instrument(tracing::info_span!("reload.cycle"))
+        .await
     }
 
     async fn resolve_http_addrs<L, Fut, I>(

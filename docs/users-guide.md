@@ -184,9 +184,19 @@ On Unix, Axinite reloads configuration without a restart when it receives
 drives the hot-reload manager directly. A reload:
 
 1. applies secrets supplied by the configured secret injector;
-2. loads the new configuration from the settings source in use; and
-3. restarts the HTTP listener when its bind address changed, starts it when
-   `channels.http` is added, and stops it when `channels.http` is removed.
+2. loads the new configuration from the settings source in use, re-reading
+   `settings.json` and the default `config.toml` overlay from the base
+   directory selected by the startup snapshot, so edits to those files take
+   effect on the next reload;
+3. restarts the HTTP listener when its bind address changed, restarts it when it
+   stopped while the configured address stayed the same, starts it when
+   `channels.http` is added, and stops it when `channels.http` is removed; and
+4. fans out rotated or cleared webhook secrets to live channel instances without
+   restarting them.
+
+Startup config-load and reload outcomes are logged through `tracing`. Success
+is logged at `debug`, and failures at `info`, so a failed reload is visible at
+the default log level even when the `metrics` feature is off.
 
 A reload never rereads process environment variables or `.env` files. Every
 reload starts from the environment snapshot captured once at startup, so
