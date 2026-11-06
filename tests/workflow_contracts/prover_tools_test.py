@@ -57,6 +57,7 @@ class _ProverHarness:
         self,
         target: str,
         *,
+        dry_run: bool = False,
         unset: tuple[str, ...] = (),
         **overrides: str,
     ) -> subprocess.CompletedProcess[str]:
@@ -75,8 +76,11 @@ class _ProverHarness:
         environment.update(overrides)
         for name in unset:
             environment.pop(name, None)
+        command = [self.make_context.make_executable, "--no-print-directory"]
+        if dry_run:
+            command.append("--dry-run")
         return subprocess.run(
-            [self.make_context.make_executable, "--no-print-directory", target],
+            [*command, target],
             cwd=REPOSITORY_ROOT,
             env=environment,
             check=False,
@@ -219,6 +223,52 @@ def test_default_kani_installation_follows_the_version_pin(
     assert result.returncode == 0, result.stderr
     exec_arguments = _calls(harness.log)[1]["argv"]
     assert _option_value(exec_arguments, "--installation") == f"{home}/kani-9.9.9"
+
+
+@pytest.mark.parametrize("pin_state", ("missing", "unreadable"))
+def test_unusable_kani_pin_fails_the_kani_command(
+    make_context: _MakeTestContext, pin_state: str
+) -> None:
+    """Fail the Kani command, not Makefile parsing, when the pin is unusable."""
+    harness = _prover_harness(make_context)
+    root = make_context.tmp_path / "unusable pin"
+    root.mkdir()
+    pin = root / "VERSION"
+    if pin_state == "unreadable":
+        pin.mkdir()
+    home = root / "kani home"
+
+    result = harness.run(
+        "kani",
+        KANI_VERSION_FILE=str(pin),
+        KANI_HOME=str(home),
+        unset=("KANI_INSTALLATION", "KANI_VERSION"),
+    )
+
+    assert result.returncode != 0
+    assert "Kani version file" in result.stderr
+    assert [call["argv"][:2] for call in _calls(harness.log)] == [
+        ["kani", "check-version"]
+    ]
+
+
+def test_unrelated_targets_do_not_read_the_kani_pin(
+    make_context: _MakeTestContext,
+) -> None:
+    """Leave the pin unread for targets that never run a prover."""
+    harness = _prover_harness(make_context)
+    missing_pin = make_context.tmp_path / "absent" / "VERSION"
+
+    result = harness.run(
+        "check-fmt",
+        dry_run=True,
+        KANI_VERSION_FILE=str(missing_pin),
+        unset=("KANI_INSTALLATION", "KANI_VERSION"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert str(missing_pin) not in result.stderr
+    assert _calls(harness.log) == []
 
 
 @pytest.mark.parametrize("target", ("kani", "kani-full"))
@@ -404,6 +454,48 @@ def test_failed_kani_proof_stops_formal_pr_before_verus(
     assert [call["argv"][:2] for call in calls] == [
         ["kani", "check-version"],
         ["kani", "exec"],
+    ]
+
+
+def test_successful_formal_pr_runs_kani_then_verus(
+    make_context: _MakeTestContext,
+) -> None:
+    """Run both proof suites in order and succeed when both pass."""
+    harness = _prover_harness(make_context)
+    verus_inputs, _, _ = _verus_inputs(make_context.tmp_path)
+
+    result = harness.run(
+        "formal-pr", **_kani_inputs(make_context.tmp_path), **verus_inputs
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert [call["argv"][:2] for call in _calls(harness.log)] == [
+        ["kani", "check-version"],
+        ["kani", "exec"],
+        ["verus", "run"],
+    ]
+
+
+def test_verus_failure_fails_formal_pr_after_kani(
+    make_context: _MakeTestContext,
+) -> None:
+    """Propagate a Verus failure rather than reporting the aggregate as passing."""
+    harness = _prover_harness(make_context)
+    verus_inputs, _, _ = _verus_inputs(make_context.tmp_path)
+
+    result = harness.run(
+        "formal-pr",
+        **_kani_inputs(make_context.tmp_path),
+        **verus_inputs,
+        PROVER_FAKE_FAIL_ON="verus run",
+        PROVER_FAKE_EXIT="23",
+    )
+
+    assert result.returncode != 0
+    assert [call["argv"][:2] for call in _calls(harness.log)] == [
+        ["kani", "check-version"],
+        ["kani", "exec"],
+        ["verus", "run"],
     ]
 
 

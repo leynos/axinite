@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+DEFAULT_KANI_VERSION_FILE = "tools/kani/VERSION"
+
 
 def _setting(name: str) -> str:
     """Return the non-empty setting ``name``.
@@ -79,6 +81,40 @@ def _proof_arguments() -> list[str]:
     )
 
 
+def _kani_installation() -> str:
+    """Return the selected Kani release root.
+
+    The Makefile leaves ``KANI_INSTALLATION`` unset so the pin is read only
+    when a Kani command needs it. A missing, unreadable, or empty pin fails
+    here instead of expanding to an empty version during Makefile parsing.
+
+    Returns
+    -------
+    str
+        The configured installation directory, or the default derived from
+        ``KANI_HOME`` and the pinned version.
+
+    Raises
+    ------
+    ValueError
+        If the pin cannot be read or contains no version.
+    """
+    configured = os.environ.get("KANI_INSTALLATION", "")
+    if configured:
+        return configured
+    version_file = os.environ.get("KANI_VERSION_FILE", DEFAULT_KANI_VERSION_FILE)
+    try:
+        version = Path(version_file).read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(
+            f"cannot read Kani version file {version_file}: {error.strerror or error}"
+        ) from error
+    version = "".join(version.split())
+    if not version:
+        raise ValueError(f"Kani version file {version_file} is empty")
+    return str(Path(_setting("KANI_HOME")) / f"kani-{version}")
+
+
 def _arguments(action: str) -> list[str]:
     """Return the package arguments for one supported prover action.
 
@@ -97,7 +133,7 @@ def _arguments(action: str) -> list[str]:
     ValueError
         If ``action`` is not a recognized prover action.
     """
-    version_file = os.environ.get("KANI_VERSION_FILE", "tools/kani/VERSION")
+    version_file = os.environ.get("KANI_VERSION_FILE", DEFAULT_KANI_VERSION_FILE)
     if action == "install-kani":
         return [
             "kani",
@@ -129,7 +165,7 @@ def _arguments(action: str) -> list[str]:
             "kani",
             "exec",
             "--installation",
-            _setting("KANI_INSTALLATION"),
+            _kani_installation(),
             "--cwd",
             _setting("KANI_PROOF_DIR"),
             selection,
