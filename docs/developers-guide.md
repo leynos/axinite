@@ -2143,10 +2143,22 @@ directly.
   process environment.
 
 A scoped `#[expect(clippy::disallowed_methods, reason = "...")]` is permitted
-only for a call site that has not yet been migrated. Keep the attribute on the
-smallest enclosing item, state the migration issue in the reason, and remove
-the attribute when the call site moves to `EnvContext`. Do not add a new
-exception to silence a warning without a tracked migration.
+in two cases, and the reason must say which one applies:
+
+- **Owning boundary.** A component that must read the process environment
+  because that is its job keeps a permanent, reasoned exception. The ambient
+  capture in `src/config/context.rs` (`capture_ambient_inputs`) is the sole
+  sanctioned process-environment read; every other component receives the
+  resulting `EnvContext`. A Cargo build script (`build.rs`) reads `CARGO_*` and
+  `OUT_DIR` because Cargo supplies build inputs and outputs through the
+  environment, so those reads are also owning-boundary exceptions.
+- **Transitional exception.** A call site that has not yet been migrated keeps
+  a temporary exception whose reason names the tracked migration issue, and the
+  attribute is removed when the call site moves to `EnvContext`.
+
+Keep the attribute on the smallest enclosing item. Do not add a new exception
+to silence a warning without either an owning-boundary justification or a
+tracked migration.
 
 Tests build their inputs with `EnvContext::for_testing(...)` or
 `EnvContext::default().with_env(...)`, then pass the snapshot to the
