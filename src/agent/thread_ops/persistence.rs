@@ -46,7 +46,7 @@ fn summarize_tool_call(
         obj["result"] = result.clone();
     }
     if let Some(ref error) = tc.error {
-        obj["error"] = serde_json::Value::String(error.clone());
+        obj["error"] = serde_json::Value::String(truncate_preview(error, 500));
     }
     obj
 }
@@ -177,5 +177,66 @@ impl Agent {
         {
             tracing::warn!("Failed to persist tool calls: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for persisted tool call summaries.
+
+    use serde_json::json;
+
+    use super::*;
+    use crate::agent::session::TurnToolCall;
+
+    fn tool_call(result: Option<serde_json::Value>, error: Option<&str>) -> TurnToolCall {
+        TurnToolCall {
+            name: "fetch_weather".to_string(),
+            parameters: json!({ "city": "Oxford" }),
+            result,
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn summarize_tool_call_preserves_short_error_and_json_shape() {
+        let tool_call = tool_call(Some(json!("sunny")), Some("service unavailable"));
+
+        let summary = summarize_tool_call(7, 2, &tool_call);
+
+        assert_eq!(
+            summary,
+            json!({
+                "name": "fetch_weather",
+                "call_id": "turn7_2",
+                "parameters": { "city": "Oxford" },
+                "result": "sunny",
+                "result_preview": "sunny",
+                "error": "service unavailable",
+            })
+        );
+    }
+
+    #[test]
+    fn summarize_tool_call_truncates_long_error() {
+        let error = "e".repeat(501);
+        let tool_call = tool_call(None, Some(&error));
+
+        let summary = summarize_tool_call(0, 0, &tool_call);
+        let summarized_error = summary["error"]
+            .as_str()
+            .expect("tool call error should be a string");
+
+        assert_eq!(summarized_error, format!("{}...", "e".repeat(500)));
+        assert!(summarized_error.ends_with("..."));
+    }
+
+    #[test]
+    fn summarize_tool_call_omits_absent_error() {
+        let tool_call = tool_call(None, None);
+
+        let summary = summarize_tool_call(0, 0, &tool_call);
+
+        assert!(summary.get("error").is_none());
     }
 }
