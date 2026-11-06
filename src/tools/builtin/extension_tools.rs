@@ -58,11 +58,13 @@ fn to_json_output<T: serde::Serialize>(result: &T) -> serde_json::Value {
 
 // ── tool_search ──────────────────────────────────────────────────────────
 
+/// Built-in `tool_search` tool: finds extensions, optionally searching online.
 pub struct ToolSearchTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ToolSearchTool {
+    /// Create the tool over the shared extension manager.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }
@@ -102,11 +104,13 @@ impl NativeTool for ToolSearchTool {
 
 // ── tool_install ─────────────────────────────────────────────────────────
 
+/// Built-in `tool_install` tool: installs an extension by registry name or explicit URL.
 pub struct ToolInstallTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ToolInstallTool {
+    /// Create the tool over the shared extension manager.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }
@@ -150,11 +154,13 @@ impl NativeTool for ToolInstallTool {
 
 // ── tool_auth ────────────────────────────────────────────────────────────
 
+/// Built-in `tool_auth` tool: starts authentication and activates the extension once it succeeds.
 pub struct ToolAuthTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ToolAuthTool {
+    /// Create the tool over the shared extension manager.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }
@@ -218,11 +224,13 @@ impl NativeTool for ToolAuthTool {
 
 // ── tool_activate ────────────────────────────────────────────────────────
 
+/// Built-in `tool_activate` tool: starts an installed extension's channels, tools or MCP link.
 pub struct ToolActivateTool {
     manager: Arc<ExtensionManager>,
 }
 
 impl ToolActivateTool {
+    /// Create the tool over the shared extension manager.
     pub fn new(manager: Arc<ExtensionManager>) -> Self {
         Self { manager }
     }

@@ -5,12 +5,14 @@
 
 use super::*;
 
+/// Built-in `routine_delete` tool: removes a routine and its run history for good.
 pub struct RoutineDeleteTool {
     store: Arc<dyn Database>,
     engine: Arc<RoutineEngine>,
 }
 
 impl RoutineDeleteTool {
+    /// Create the tool over the routine store and the engine whose event cache it refreshes.
     pub fn new(store: Arc<dyn Database>, engine: Arc<RoutineEngine>) -> Self {
         Self { store, engine }
     }

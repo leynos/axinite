@@ -14,12 +14,28 @@ use crate::tools::mcp::{
 /// Error returned when MCP client creation fails.
 #[derive(Debug, thiserror::Error)]
 pub enum McpFactoryError {
+    /// The stdio child process for the server could not be spawned.
     #[error("Failed to spawn stdio MCP server '{name}': {reason}")]
-    StdioSpawn { name: String, reason: String },
+    StdioSpawn {
+        /// Configured name of the MCP server.
+        name: String,
+        /// Display text of the underlying spawn error.
+        reason: String,
+    },
+    /// The Unix domain socket for the server could not be connected.
     #[error("Failed to connect to Unix MCP server '{name}': {reason}")]
-    UnixConnect { name: String, reason: String },
+    UnixConnect {
+        /// Configured name of the MCP server.
+        name: String,
+        /// Display text of the underlying connection error.
+        reason: String,
+    },
+    /// Unix socket transport was configured on a platform that does not support it.
     #[error("Unix socket transport is not supported on this platform (server '{name}')")]
-    UnixNotSupported { name: String },
+    UnixNotSupported {
+        /// Configured name of the MCP server.
+        name: String,
+    },
 }
 
 /// Create an `McpClient` from a server configuration, dispatching on the

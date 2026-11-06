@@ -10,24 +10,38 @@ use crate::history::Store;
 /// Statistics about jobs.
 #[derive(Debug, Default)]
 pub struct JobStats {
+    /// Number of jobs in `agent_jobs`, whatever their status.
     pub total_jobs: u64,
+    /// Number of jobs with status `accepted`.
     pub completed_jobs: u64,
+    /// Number of jobs with status `failed`.
     pub failed_jobs: u64,
+    /// `completed_jobs / total_jobs` as a fraction from 0.0 to 1.0. Zero when there are no jobs.
     pub success_rate: f64,
+    /// Mean wall-clock duration in seconds over jobs that have a `completed_at`. Zero if none.
     pub avg_duration_secs: f64,
+    /// Mean `actual_cost` across all jobs, in the units of that column. Zero if none.
     pub avg_cost: Decimal,
+    /// Sum of `actual_cost` across all jobs, in the units of that column.
     pub total_cost: Decimal,
 }
 
 /// Statistics about tool usage.
 #[derive(Debug)]
 pub struct ToolStats {
+    /// Tool the figures are grouped by, as recorded in `job_actions`.
     pub tool_name: String,
+    /// Number of recorded calls to this tool.
     pub total_calls: u64,
+    /// Calls recorded with `success = true`.
     pub successful_calls: u64,
+    /// Calls recorded with `success = false`.
     pub failed_calls: u64,
+    /// `successful_calls / total_calls` as a fraction from 0.0 to 1.0. Zero when no calls.
     pub success_rate: f64,
+    /// Mean execution time of the calls, in milliseconds.
     pub avg_duration_ms: f64,
+    /// Sum of the per-call `cost` values, in the units of that column.
     pub total_cost: Decimal,
 }
 

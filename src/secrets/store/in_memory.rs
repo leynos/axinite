@@ -12,12 +12,17 @@ use crate::secrets::crypto::SecretsCrypto;
 use crate::secrets::store::NativeSecretsStore;
 use crate::secrets::types::{CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef};
 
+/// Process-memory secrets store for tests and development.
+///
+/// Secrets are keyed by user ID and name. Values are encrypted with `crypto` before they are
+/// stored, and they are lost when the process exits.
 pub struct InMemorySecretsStore {
     secrets: RwLock<HashMap<(String, String), Secret>>,
     crypto: Arc<SecretsCrypto>,
 }
 
 impl InMemorySecretsStore {
+    /// Creates an empty store that uses `crypto` for encryption and decryption.
     pub fn new(crypto: Arc<SecretsCrypto>) -> Self {
         Self {
             secrets: RwLock::new(HashMap::new()),

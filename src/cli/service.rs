@@ -4,6 +4,7 @@ use clap::Subcommand;
 
 use crate::service::ServiceAction;
 
+/// Subcommands of `axinite service`, one per lifecycle action on the OS service.
 #[derive(Subcommand, Debug, Clone)]
 pub enum ServiceCommand {
     /// Install the OS service (launchd on macOS, systemd on Linux).

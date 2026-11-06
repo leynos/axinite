@@ -104,9 +104,14 @@ impl Default for ContainerJobConfig {
 /// State of a container.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContainerState {
+    /// Container record exists but no container ID has been assigned yet.
     Creating,
+    /// Container has an ID and is running.
     Running,
+    /// Container has exited, either after completing or after being reaped.
     Stopped,
+    /// Container is in an error state. The sandbox poll loop handles this
+    /// separately from `Stopped`.
     Failed,
 }
 

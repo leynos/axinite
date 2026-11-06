@@ -44,34 +44,59 @@ impl HookPoint {
 pub enum HookEvent {
     /// An inbound user message about to be processed.
     Inbound {
+        /// ID of the user who sent the message.
         user_id: String,
+        /// Name of the channel the message arrived on.
         channel: String,
+        /// Message text. A `BeforeInbound` hook may replace it with a modification.
         content: String,
+        /// Thread the message belongs to, when the channel supplies one.
         thread_id: Option<String>,
     },
     /// A tool call about to be executed.
     ToolCall {
+        /// Name of the tool being called.
         tool_name: String,
+        /// Tool arguments as JSON. A `BeforeToolCall` hook may replace them with a JSON
+        /// modification.
         parameters: serde_json::Value,
+        /// ID of the user on whose behalf the tool is called.
         user_id: String,
         /// "chat" for interactive, or a job ID string for autonomous jobs.
         context: String,
     },
     /// An outbound response about to be sent.
     Outbound {
+        /// ID of the user the response is addressed to.
         user_id: String,
+        /// Name of the channel the response will be delivered on.
         channel: String,
+        /// Response text. A `BeforeOutbound` hook may replace it with a modification.
         content: String,
+        /// Thread the response belongs to, when there is one.
         thread_id: Option<String>,
     },
     /// A new session was created.
-    SessionStart { user_id: String, session_id: String },
+    SessionStart {
+        /// Owner of the new session.
+        user_id: String,
+        /// Identifier of the new session.
+        session_id: String,
+    },
     /// A session was ended (pruned).
-    SessionEnd { user_id: String, session_id: String },
+    SessionEnd {
+        /// Owner of the session that ended.
+        user_id: String,
+        /// Identifier of the session that ended.
+        session_id: String,
+    },
     /// The final response is being transformed before completing a turn.
     ResponseTransform {
+        /// Owner of the thread.
         user_id: String,
+        /// Thread the response completes a turn in.
         thread_id: String,
+        /// Final response text. A `TransformResponse` hook may replace it.
         response: String,
     },
 }
@@ -163,14 +188,29 @@ pub enum HookFailureMode {
 /// Hook execution errors.
 #[derive(Debug, thiserror::Error)]
 pub enum HookError {
+    /// The hook failed. The registry returns this only for a `FailClosed` hook; a
+    /// `FailOpen` hook's failure is logged and the chain continues.
     #[error("Hook execution failed: {reason}")]
-    ExecutionFailed { reason: String },
+    ExecutionFailed {
+        /// Description of the failure, prefixed with the hook's name by the registry.
+        reason: String,
+    },
 
+    /// The hook exceeded its `timeout()`. As with `ExecutionFailed`, the registry returns
+    /// this only for a `FailClosed` hook.
     #[error("Hook timed out after {timeout:?}")]
-    Timeout { timeout: Duration },
+    Timeout {
+        /// The limit that was exceeded.
+        timeout: Duration,
+    },
 
+    /// The hook returned `HookOutcome::Reject`, which stops the chain at that hook. This
+    /// is a deliberate veto, not a failure, so the failure mode does not apply.
     #[error("Hook rejected: {reason}")]
-    Rejected { reason: String },
+    Rejected {
+        /// Reason the hook gave for the rejection.
+        reason: String,
+    },
 }
 
 /// Context passed to hooks alongside the event.

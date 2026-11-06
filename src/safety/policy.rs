@@ -7,9 +7,13 @@ use regex::Regex;
 /// Severity level for safety issues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Severity {
+    /// Minor issue with little impact. The lowest rank.
     Low,
+    /// Moderate issue, ranked above `Low` and below `High`.
     Medium,
+    /// Serious issue, ranked above `Medium` and below `Critical`.
     High,
+    /// The most severe level, ranked above all others.
     Critical,
 }
 

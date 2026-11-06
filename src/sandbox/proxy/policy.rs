@@ -79,6 +79,7 @@ pub enum NetworkDecision {
 }
 
 impl NetworkDecision {
+    /// Return `true` unless the decision is `Deny`. `AllowWithCredentials` counts as allowed.
     pub fn is_allowed(&self) -> bool {
         !matches!(self, NetworkDecision::Deny { .. })
     }
@@ -210,6 +211,7 @@ pub struct DenyAllDecider {
 }
 
 impl DenyAllDecider {
+    /// Create a decider that denies every request, copying `reason` into each `Deny`.
     pub fn new(reason: &str) -> Self {
         Self {
             reason: reason.to_string(),

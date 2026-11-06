@@ -31,12 +31,15 @@ fn parse_event_filters(
     }
 }
 
+/// Native tool that persists a new routine from `routine_create` arguments.
 pub struct RoutineCreateTool {
     store: Arc<dyn Database>,
     engine: Arc<RoutineEngine>,
 }
 
 impl RoutineCreateTool {
+    /// Build the tool over the routine store and the engine whose event cache is refreshed
+    /// after an event or system-event routine is created.
     pub fn new(store: Arc<dyn Database>, engine: Arc<RoutineEngine>) -> Self {
         Self { store, engine }
     }

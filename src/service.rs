@@ -33,10 +33,15 @@ pub fn handle_command(command: &ServiceAction) -> Result<()> {
 /// The five service lifecycle actions.
 #[derive(Debug, Clone)]
 pub enum ServiceAction {
+    /// Create the platform service definition (launchd plist or systemd unit).
     Install,
+    /// Start the installed service.
     Start,
+    /// Stop the running service.
     Stop,
+    /// Report whether the service is running.
     Status,
+    /// Stop the service and remove its definition file.
     Uninstall,
 }
 

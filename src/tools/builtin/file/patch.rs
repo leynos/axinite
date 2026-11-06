@@ -17,10 +17,12 @@ pub struct ApplyPatchTool {
 }
 
 impl ApplyPatchTool {
+    /// Create a tool with no base directory, so paths are not confined to a sandbox.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Confine edits to paths under `dir`.
     pub fn with_base_dir(mut self, dir: PathBuf) -> Self {
         self.base_dir = Some(dir);
         self

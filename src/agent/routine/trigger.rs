@@ -16,7 +16,10 @@ use super::required_str_field;
 pub enum Trigger {
     /// Fire on a cron schedule (e.g. "0 9 * * MON-FRI" or "every 2h").
     Cron {
+        /// Cron expression in the `cron` crate syntax, parsed by `next_cron_fire`.
         schedule: String,
+        /// IANA timezone name the schedule runs in. `None` means UTC. Invalid names
+        /// read from the database are dropped when the trigger is parsed.
         #[serde(default)]
         timezone: Option<String>,
     },

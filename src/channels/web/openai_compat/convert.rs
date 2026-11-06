@@ -25,6 +25,10 @@ pub(super) fn parse_role(s: &str) -> Result<Role, String> {
     }
 }
 
+/// Converts OpenAI chat messages into internal `ChatMessage` values.
+///
+/// Errors name the offending index. `tool` messages must carry `tool_call_id` and `name`.
+/// Assistant tool-call arguments that are not valid JSON are replaced with an empty object.
 pub fn convert_messages(messages: &[OpenAiMessage]) -> Result<Vec<ChatMessage>, String> {
     messages
         .iter()
@@ -78,6 +82,10 @@ pub fn convert_messages(messages: &[OpenAiMessage]) -> Result<Vec<ChatMessage>, 
         .collect()
 }
 
+/// Converts the OpenAI `function` tools into `ToolDefinition` values.
+///
+/// Entries whose `type` is not `"function"` are dropped. A missing description becomes an
+/// empty string, and missing parameters default to an empty object schema.
 pub fn convert_tools(tools: &[OpenAiTool]) -> Vec<ToolDefinition> {
     tools
         .iter()
@@ -108,6 +116,9 @@ pub(super) fn convert_tool_calls_to_openai(calls: &[ToolCall]) -> Vec<OpenAiTool
         .collect()
 }
 
+/// Maps an internal `FinishReason` to the OpenAI `finish_reason` wire string.
+///
+/// `ToolUse` becomes `"tool_calls"`. `Unknown` falls back to `"stop"`.
 pub fn finish_reason_str(reason: FinishReason) -> String {
     match reason {
         FinishReason::Stop => "stop".to_string(),

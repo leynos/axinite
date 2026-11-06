@@ -125,8 +125,11 @@ where
 pub enum Task {
     /// Full LLM-driven job (current Worker behaviour).
     Job {
+        /// Identifier of the job, generated as a v4 UUID by [`Task::job`].
         id: Uuid,
+        /// Short human-readable title for the job.
         title: String,
+        /// Natural-language brief the LLM works from.
         description: String,
     },
 
@@ -143,7 +146,10 @@ pub enum Task {
     /// Background computation (no LLM, uses a custom handler).
     /// Note: The handler is wrapped in Arc for cloning.
     Background {
+        /// Caller-chosen identifier, shown in `Debug` output. The scheduler tracks
+        /// the subtask under its own generated ID rather than this one.
         id: Uuid,
+        /// Handler whose `run` method executes the computation.
         handler: std::sync::Arc<dyn TaskHandler>,
     },
 }

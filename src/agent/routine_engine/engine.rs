@@ -30,9 +30,13 @@ pub(super) enum EventMatcher {
 
 /// Collaborator dependencies required to construct a [`RoutineEngine`].
 pub struct RoutineEngineDeps {
+    /// Engine limits and feature flags, such as enablement, concurrency and cooldowns.
     pub config: RoutineConfig,
+    /// Database that routines and their run records are loaded from and saved to.
     pub store: Arc<dyn Database>,
+    /// Provider used for the LLM calls of lightweight routines.
     pub llm: Arc<dyn LlmProvider>,
+    /// Workspace supplying the system prompt and the state files of lightweight routines.
     pub workspace: Arc<Workspace>,
     /// Sender for notifications (routed to channel manager).
     pub notify_tx: mpsc::Sender<OutgoingResponse>,
@@ -65,6 +69,10 @@ pub struct RoutineEngine {
 }
 
 impl RoutineEngine {
+    /// Create an engine with no routine running and an empty event-matcher cache.
+    ///
+    /// The cache is filled by `refresh_event_cache`, which must run before event
+    /// triggers can match.
     pub fn new(deps: RoutineEngineDeps) -> Self {
         Self {
             config: deps.config,

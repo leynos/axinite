@@ -19,15 +19,25 @@ use crate::error::DatabaseError;
 /// with `source = 'sandbox'`.
 #[derive(Debug, Clone)]
 pub struct SandboxJobRecord {
+    /// Job identifier, the primary key of its `agent_jobs` row.
     pub id: Uuid,
+    /// Task the job was created to perform.
     pub task: String,
+    /// Lifecycle status: `creating`, `running`, `completed`, `failed` or `interrupted`.
     pub status: String,
+    /// Owner of the job.
     pub user_id: UserId,
+    /// Project directory the job works in.
     pub project_dir: String,
+    /// Outcome once the job has finished; `None` while it is still unfinished.
     pub success: Option<bool>,
+    /// Reason recorded when the job failed, if one was given.
     pub failure_reason: Option<String>,
+    /// When the job record was created.
     pub created_at: DateTime<Utc>,
+    /// When the job started running; `None` if it has not started.
     pub started_at: Option<DateTime<Utc>>,
+    /// When the job finished; `None` while it is unfinished.
     pub completed_at: Option<DateTime<Utc>>,
     /// Serialized JSON of `Vec<CredentialGrant>` for restart support.
     pub credential_grants_json: String,
@@ -36,15 +46,22 @@ pub struct SandboxJobRecord {
 /// Summary of sandbox job counts grouped by status.
 #[derive(Debug, Clone, Default)]
 pub struct SandboxJobSummary {
+    /// Jobs counted across all statuses, including unrecognized ones.
     pub total: usize,
+    /// Jobs in the `creating` state.
     pub creating: usize,
+    /// Jobs in the `running` state.
     pub running: usize,
+    /// Jobs in the `completed` state.
     pub completed: usize,
+    /// Jobs in the `failed` state.
     pub failed: usize,
+    /// Jobs in the `interrupted` state.
     pub interrupted: usize,
 }
 
 impl SandboxJobSummary {
+    /// Add `count` to the total, and to the bucket for `status` if it is a known status.
     pub fn add_count(&mut self, status: &str, count: usize) {
         self.total += count;
         match status {
@@ -61,10 +78,15 @@ impl SandboxJobSummary {
 /// A persisted job streaming event (from worker or Claude Code bridge).
 #[derive(Debug, Clone)]
 pub struct JobEventRecord {
+    /// Database-assigned event identifier.
     pub id: i64,
+    /// Job the event belongs to.
     pub job_id: Uuid,
+    /// Kind of event, as reported by the worker or Claude Code bridge.
     pub event_type: SandboxEventType,
+    /// Event payload as JSON; its shape depends on `event_type`.
     pub data: serde_json::Value,
+    /// When the event was recorded.
     pub created_at: DateTime<Utc>,
 }
 

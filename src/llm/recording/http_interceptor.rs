@@ -87,6 +87,7 @@ impl Default for RecordingHttpInterceptor {
 }
 
 impl RecordingHttpInterceptor {
+    /// Creates an empty recorder. Exchanges are stored in the order they complete.
     pub fn new() -> Self {
         Self {
             exchanges: Mutex::new(Vec::new()),
@@ -130,6 +131,7 @@ pub struct ReplayingHttpInterceptor {
 }
 
 impl ReplayingHttpInterceptor {
+    /// Creates a replayer that serves `exchanges` in the given order, one per request.
     pub fn new(exchanges: Vec<HttpExchange>) -> Self {
         Self {
             exchanges: Mutex::new(VecDeque::from(exchanges)),

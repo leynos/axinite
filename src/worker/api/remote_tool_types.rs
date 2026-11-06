@@ -39,8 +39,12 @@ pub struct RemoteToolExecutionResponse {
 /// serialized catalogue payload.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct RemoteToolCatalogResponse {
+    /// Model-facing definitions of the hosted tools visible to the worker.
     pub tools: Vec<ToolDefinition>,
+    /// Human-readable guidance strings for the toolset. Defaults to empty when absent.
     #[serde(default)]
     pub toolset_instructions: Vec<String>,
+    /// Hash of the catalogue content (tool names, descriptions, parameter schemas and
+    /// instructions). It changes whenever that content changes.
     pub catalog_version: u64,
 }

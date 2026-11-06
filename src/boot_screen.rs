@@ -11,35 +11,63 @@ use crate::tunnel::Tunnel;
 
 /// Runtime-computed values used to populate the startup boot screen.
 pub struct BootData<'a> {
+    /// Primary LLM model identifier shown on the model line.
     pub llm_model: String,
+    /// Optional cheaper model identifier. `None` omits the `cheap` label.
     pub cheap_model: Option<String>,
+    /// Number of tools registered with the agent at startup.
     pub tool_count: usize,
+    /// Gateway web-UI URL, present only when the gateway channel is active.
     pub gateway_url: Option<String>,
+    /// Docker availability, used to pick the sandbox feature label.
     pub docker_status: crate::sandbox::detect::DockerStatus,
+    /// Names of the enabled channels, shown on the channels line.
     pub channel_names: Vec<String>,
+    /// Live tunnel handle. A public URL it reports takes precedence over the
+    /// static `tunnel.public_url` from configuration.
     pub active_tunnel: &'a Option<Box<dyn Tunnel>>,
 }
 
 /// All displayable fields for the boot screen.
 pub struct BootInfo {
+    /// Crate version from `CARGO_PKG_VERSION`, shown after the agent name.
     pub version: String,
+    /// Configured agent name, used as the banner title.
     pub agent_name: String,
+    /// LLM backend identifier, shown as `via {backend}` on the model line.
     pub llm_backend: String,
+    /// Primary LLM model identifier.
     pub llm_model: String,
+    /// Cheaper model identifier, shown with a `cheap` label when set.
     pub cheap_model: Option<String>,
+    /// Database backend name, or `none` when the run skips the database.
     pub db_backend: String,
+    /// Whether the database is connected. `false` renders the status as `none`.
     pub db_connected: bool,
+    /// Number of registered tools, shown on the tools line.
     pub tool_count: usize,
+    /// Gateway web-UI URL, sanitised for display. `None` when no gateway is active.
     pub gateway_url: Option<String>,
+    /// Whether embeddings are enabled. Adds an `embeddings` feature label.
     pub embeddings_enabled: bool,
+    /// Embedding provider name. Present only when embeddings are enabled.
     pub embeddings_provider: Option<String>,
+    /// Whether the heartbeat task is enabled. Adds a `heartbeat` feature label.
     pub heartbeat_enabled: bool,
+    /// Heartbeat interval in seconds. The label shows whole minutes, rounded down.
     pub heartbeat_interval_secs: u64,
+    /// Whether sandboxing is enabled in configuration. This struct records the flag;
+    /// the rendered sandbox label is driven by `docker_status`.
     pub sandbox_enabled: bool,
+    /// Docker availability. Selects the sandbox feature label, or no label when disabled.
     pub docker_status: crate::sandbox::detect::DockerStatus,
+    /// Whether Claude Code integration is enabled. Adds a `claude-code` feature label.
     pub claude_code_enabled: bool,
+    /// Whether scheduled routines are enabled. Adds a `routines` feature label.
     pub routines_enabled: bool,
+    /// Whether skills are enabled. Adds a `skills` feature label.
     pub skills_enabled: bool,
+    /// Names of the active channels, shown on the channels line when non-empty.
     pub channels: Vec<String>,
     /// Public URL from a managed tunnel (e.g., "https://abc.ngrok.io").
     pub tunnel_url: Option<String>,

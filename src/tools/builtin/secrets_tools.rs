@@ -21,11 +21,13 @@ use crate::tools::tool::{
 
 // ── secret_list ──────────────────────────────────────────────────────────────
 
+/// The `secret_list` tool: reports stored secret names and provider metadata.
 pub struct SecretListTool {
     store: Arc<dyn SecretsStore + Send + Sync>,
 }
 
 impl SecretListTool {
+    /// Creates the tool over the secrets store it lists from.
     pub fn new(store: Arc<dyn SecretsStore + Send + Sync>) -> Self {
         Self { store }
     }
@@ -84,11 +86,13 @@ impl NativeTool for SecretListTool {
 
 // ── secret_delete ─────────────────────────────────────────────────────────────
 
+/// The `secret_delete` tool: permanently removes a secret by name for the calling user.
 pub struct SecretDeleteTool {
     store: Arc<dyn SecretsStore + Send + Sync>,
 }
 
 impl SecretDeleteTool {
+    /// Creates the tool over the secrets store that deletions are applied to.
     pub fn new(store: Arc<dyn SecretsStore + Send + Sync>) -> Self {
         Self { store }
     }

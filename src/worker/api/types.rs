@@ -25,15 +25,21 @@ pub use remote_tool_types::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkerState {
+    /// The container worker has started and is executing its job.
     InProgress,
+    /// The Claude Code bridge process has been spawned and is running the job.
     Running,
+    /// The job finished successfully.
     Completed,
+    /// The job ended with an error.
     Failed,
+    /// A state string this version does not recognise, produced by serde's fallback.
     #[serde(other)]
     Unknown,
 }
 
 impl WorkerState {
+    /// Wire string for this state, matching the `snake_case` serde representation.
     pub const fn as_wire(self) -> &'static str {
         match self {
             Self::InProgress => "in_progress",
@@ -131,8 +137,11 @@ pub fn worker_job_url(orchestrator_url: &str, job_id: &str, path: &str) -> Strin
 /// Status update sent from worker to orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusUpdate {
+    /// Lifecycle state being reported.
     pub state: WorkerState,
+    /// Optional human-readable detail, such as the step that has just started.
     pub message: Option<String>,
+    /// Worker iterations completed so far; `0` before the first iteration.
     pub iteration: u32,
 }
 
@@ -154,11 +163,15 @@ impl StatusUpdate {
 /// Job description fetched from orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JobDescription {
+    /// Short title for the job, shown in the UI.
     pub title: String,
+    /// Full task text the worker should carry out.
     pub description: String,
+    /// Project directory bound into the worker, or `None` when the job has none.
     pub project_dir: Option<String>,
 }
 
+/// Final report a worker sends when its job ends, successfully or not.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompletionReport {
     /// Whether the worker completed the job successfully.
@@ -173,16 +186,23 @@ pub struct CompletionReport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobEventType {
+    /// Progress or lifecycle update about the job.
     Status,
+    /// Assistant text emitted while the job runs.
     Message,
+    /// A tool invocation started by the agent.
     ToolUse,
+    /// The outcome of a tool invocation.
     ToolResult,
+    /// Terminal event whose payload is a [`TerminalResult`].
     Result,
+    /// An event type this version does not recognise, produced by serde's fallback.
     #[serde(other)]
     Unknown,
 }
 
 impl JobEventType {
+    /// Wire string for this event type, matching the `snake_case` serde representation.
     pub const fn as_wire(self) -> &'static str {
         match self {
             Self::Status => "status",
@@ -213,7 +233,9 @@ pub struct JobEventPayload {
 /// Response from the prompt polling endpoint.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PromptResponse {
+    /// Follow-up prompt text supplied for the running job.
     pub content: String,
+    /// `true` when no further prompts will follow. Defaults to `false` when omitted.
     #[serde(default)]
     pub done: bool,
 }
@@ -223,7 +245,9 @@ pub struct PromptResponse {
 /// Shared between the orchestrator endpoint and the worker client.
 #[derive(Serialize, Deserialize)]
 pub struct CredentialResponse {
+    /// Name of the environment variable under which the worker exposes the secret.
     pub env_var: String,
+    /// Decrypted secret value. Redacted in the `Debug` output.
     pub value: String,
 }
 

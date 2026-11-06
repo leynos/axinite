@@ -49,24 +49,38 @@ const UPSERT_AGENT_JOB_SQL: &str = r#"
 /// Lightweight record for agent (non-sandbox) jobs, used by the web Jobs tab.
 #[derive(Debug, Clone)]
 pub struct AgentJobRecord {
+    /// Job UUID, stored as `agent_jobs.id`.
     pub id: Uuid,
+    /// Human-readable job title shown in the Jobs tab.
     pub title: String,
+    /// Raw status string as stored, such as `pending`, `in_progress` or `completed`.
     pub status: String,
+    /// ID of the user who owns the job.
     pub user_id: String,
+    /// When the job was created (UTC); listings are ordered by this, newest first.
     pub created_at: DateTime<Utc>,
+    /// When the job started running (UTC), or `None` if it has not started.
     pub started_at: Option<DateTime<Utc>>,
+    /// When the job finished (UTC), or `None` while it is unfinished.
     pub completed_at: Option<DateTime<Utc>>,
+    /// Failure reason recorded for the job, or `None` when none was recorded.
     pub failure_reason: Option<String>,
 }
 
 /// Summary counts for agent (non-sandbox) jobs.
 #[derive(Debug, Clone, Default)]
 pub struct AgentJobSummary {
+    /// Every job counted, including statuses that fall into none of the buckets below.
     pub total: usize,
+    /// Jobs with status `pending`.
     pub pending: usize,
+    /// Jobs with status `in_progress`.
     pub in_progress: usize,
+    /// Jobs with status `completed`, `submitted` or `accepted`.
     pub completed: usize,
+    /// Jobs with status `failed` or `cancelled`.
     pub failed: usize,
+    /// Jobs with status `stuck`.
     pub stuck: usize,
 }
 

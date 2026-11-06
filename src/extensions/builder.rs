@@ -40,28 +40,49 @@ pub type ExtensionInitResult = (
 
 /// Inputs needed to build the extension manager.
 pub struct BuildExtensionManagerParams<'a> {
+    /// Application configuration. Supplies the WASM tool and channel directories and the
+    /// tunnel's public URL.
     pub config: &'a Config,
+    /// Database for persisted MCP server configuration. `None` falls back to the filesystem.
     pub db: Option<Arc<dyn Database>>,
+    /// Registry that activated MCP and WASM tools are registered into.
     pub tools: &'a Arc<ToolRegistry>,
+    /// Hook registry handed to WASM tool activation.
     pub hooks: &'a Arc<HookRegistry>,
+    /// Shared MCP session manager, used when connecting to MCP servers.
     pub mcp_session_manager: &'a Arc<McpSessionManager>,
+    /// Shared manager for MCP server processes.
     pub mcp_process_manager: &'a Arc<McpProcessManager>,
+    /// Secrets store that activation reads credentials from.
     pub ext_secrets: Arc<dyn SecretsStore + Send + Sync>,
+    /// WASM runtime for loading WASM tools. `None` when WASM is disabled.
     pub wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
+    /// Registry entries offered to in-chat extension discovery.
     pub catalog_entries: Vec<RegistryEntry>,
+    /// Active MCP clients, shared with the extension manager.
     pub mcp_clients: McpClientsMap,
+    /// Relay channel configuration. `None` when no relay is configured.
     pub relay_config: Option<crate::config::RelayConfig>,
+    /// Gateway token forwarded to the extension manager and channel activation.
     pub gateway_token: Option<String>,
 }
 
 /// Inputs needed to initialize all extension runtime components.
 pub struct BuildExtensionsParams<'a> {
+    /// Application configuration. Supplies the extension directories, the WASM settings and the
+    /// tunnel's public URL.
     pub config: &'a Config,
+    /// Database for persisted MCP server configuration. `None` falls back to the filesystem.
     pub db: Option<Arc<dyn Database>>,
+    /// Secrets store for extensions. `None` makes startup use an ephemeral in-memory store.
     pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// Registry that loaded WASM and MCP tools are registered into.
     pub tools: &'a Arc<ToolRegistry>,
+    /// Hook registry handed to WASM tool activation.
     pub hooks: &'a Arc<HookRegistry>,
+    /// Relay channel configuration. `None` when no relay is configured.
     pub relay_config: Option<crate::config::RelayConfig>,
+    /// Gateway token forwarded to the extension manager and channel activation.
     pub gateway_token: Option<String>,
 }
 
@@ -128,6 +149,9 @@ fn mk_wasm_channel_activation_config(
     }
 }
 
+/// Builds the `ExtensionManager` with live MCP, WASM tool and WASM channel activation.
+///
+/// Also registers the manager's discovery tools with `params.tools`.
 pub async fn build_extension_manager(
     params: BuildExtensionManagerParams<'_>,
 ) -> Arc<ExtensionManager> {
@@ -240,6 +264,11 @@ fn maybe_register_dev_tools(config: &Config, tools: &Arc<ToolRegistry>) {
     }
 }
 
+/// Starts up all extension runtime pieces: the MCP managers, the WASM tool runtime, the
+/// WASM tools and MCP servers loaded at startup, the catalogue, and the extension manager.
+///
+/// Returns the MCP managers, the WASM runtime, the extension manager, the catalogue entries
+/// and the names of the tools loaded at startup.
 pub async fn build_extensions(
     params: BuildExtensionsParams<'_>,
 ) -> Result<ExtensionInitResult, anyhow::Error> {

@@ -30,6 +30,8 @@ pub struct HttpChannel {
     state: Arc<HttpChannelState>,
 }
 
+/// State shared between the channel and its axum handlers. Created by
+/// `HttpChannel::new`; the message sender is filled in by `start()`.
 pub struct HttpChannelState {
     /// Sender for incoming messages.
     tx: RwLock<Option<mpsc::Sender<IncomingMessage>>>,

@@ -22,10 +22,15 @@ use crate::worker::api::WorkerHttpClient;
 
 /// Configuration for the Claude bridge runtime.
 pub struct ClaudeBridgeConfig {
+    /// Orchestrator job that this bridge runs on behalf of.
     pub job_id: Uuid,
+    /// Base URL of the orchestrator the bridge reports to.
     pub orchestrator_url: String,
+    /// Maximum agentic turns, passed to the Claude CLI as `--max-turns`.
     pub max_turns: u32,
+    /// Model identifier, passed to the Claude CLI as `--model`.
     pub model: String,
+    /// Wall-clock budget for the bridge run.
     pub timeout: Duration,
     /// Tool patterns to auto-approve via project-level settings.json.
     pub allowed_tools: Vec<String>,

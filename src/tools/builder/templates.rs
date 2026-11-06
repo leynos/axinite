@@ -35,9 +35,13 @@ pub enum TemplateType {
 /// A code template with placeholders.
 #[derive(Debug, Clone)]
 pub struct Template {
+    /// The kind of template this value was built from.
     pub template_type: TemplateType,
+    /// Display name, such as "CLI Binary".
     pub name: &'static str,
+    /// One-line summary of what the scaffold produces.
     pub description: &'static str,
+    /// Files to write. Paths may contain `{{name}}` placeholders, which are rendered too.
     pub files: Vec<TemplateFile>,
 }
 
@@ -56,6 +60,7 @@ pub struct TemplateEngine {
 }
 
 impl TemplateEngine {
+    /// Create an engine with no variables set. Same as `TemplateEngine::default()`.
     pub fn new() -> Self {
         Self::default()
     }

@@ -31,18 +31,25 @@ use crate::secrets::{
 /// Error during credential injection.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum InjectionError {
+    /// The store has no secret under the mapped name. Carries the secret name.
     #[error("Secret not found: {0}")]
     SecretNotFound(String),
 
+    /// The secret is not in the allowed list, or the store refused access. Carries the
+    /// secret name, or `"unknown"` when the store error did not name it.
     #[error("Secret access denied: {0}")]
     AccessDenied(String),
 
+    /// The secret exists but has expired. Carries the secret name, or `"unknown"`.
     #[error("Secret has expired: {0}")]
     SecretExpired(String),
 
+    /// The secret could not be decrypted. Carries the store's error message.
     #[error("Decryption failed: {0}")]
     DecryptionFailed(String),
 
+    /// Reserved for a host with no matching credential. `inject` currently returns empty
+    /// credentials for such hosts rather than this error.
     #[error("No matching credential for host: {0}")]
     NoMatchingCredential(String),
 }
@@ -69,6 +76,7 @@ pub struct InjectedCredentials {
 }
 
 impl InjectedCredentials {
+    /// No headers and no query parameters, returned when no mapping matches the host.
     pub fn empty() -> Self {
         Self {
             headers: HashMap::new(),
@@ -76,6 +84,7 @@ impl InjectedCredentials {
         }
     }
 
+    /// True when neither headers nor query parameters were produced.
     pub fn is_empty(&self) -> bool {
         self.headers.is_empty() && self.query_params.is_empty()
     }

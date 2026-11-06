@@ -32,17 +32,23 @@ pub enum AuthStatus {
     NoAuthRequired,
     /// OAuth flow started — user must open `auth_url` in their browser.
     AwaitingAuthorization {
+        /// URL the user must open in a browser to grant access.
         auth_url: String,
+        /// Where the OAuth callback is handled: `local`, `gateway` or `redirect`.
         callback_type: String,
     },
     /// Waiting for user to provide a token/key manually.
     AwaitingToken {
+        /// Steps for obtaining the token and entering it.
         instructions: String,
+        /// Page where the user can create or find the token, if known.
         setup_url: Option<String>,
     },
     /// OAuth client credentials need to be configured before auth can proceed.
     NeedsSetup {
+        /// Steps for configuring the OAuth client credentials.
         instructions: String,
+        /// Page where the user can create the OAuth client, if known.
         setup_url: Option<String>,
     },
 }
@@ -84,8 +90,11 @@ impl AuthStatus {
 /// Result of authenticating an extension.
 #[derive(Debug, Clone)]
 pub struct AuthResult {
+    /// Extension name, as registered with the extension manager.
     pub name: String,
+    /// Kind of extension this result describes.
     pub kind: ExtensionKind,
+    /// Typed auth state, serialised to the flat `status` wire string.
     pub status: AuthStatus,
 }
 
@@ -140,14 +149,18 @@ impl AuthResult {
         Self::with_status(name, kind, to_status(instructions, setup_url))
     }
 
+    /// Result for an extension whose credentials are already in place.
     pub fn authenticated(name: impl Into<String>, kind: ExtensionKind) -> Self {
         Self::with_status(name, kind, AuthStatus::Authenticated)
     }
 
+    /// Result for an extension that needs no authentication.
     pub fn no_auth_required(name: impl Into<String>, kind: ExtensionKind) -> Self {
         Self::with_status(name, kind, AuthStatus::NoAuthRequired)
     }
 
+    /// Result for an OAuth flow that has started. The user must open `auth_url`, and
+    /// `callback_type` names the handler that will receive the callback.
     pub fn awaiting_authorization(
         name: impl Into<String>,
         kind: ExtensionKind,
@@ -178,10 +191,12 @@ impl AuthResult {
 
     // ── Accessors ─────────────────────────────────────────────────────
 
+    /// True only for the `Authenticated` status.
     pub fn is_authenticated(&self) -> bool {
         matches!(self.status, AuthStatus::Authenticated)
     }
 
+    /// The authorization URL, or `None` unless the status is `AwaitingAuthorization`.
     pub fn auth_url(&self) -> Option<&str> {
         match &self.status {
             AuthStatus::AwaitingAuthorization { auth_url, .. } => Some(auth_url),
@@ -189,6 +204,7 @@ impl AuthResult {
         }
     }
 
+    /// The callback handler name, or `None` unless the status is `AwaitingAuthorization`.
     pub fn callback_type(&self) -> Option<&str> {
         match &self.status {
             AuthStatus::AwaitingAuthorization { callback_type, .. } => Some(callback_type),
@@ -196,6 +212,7 @@ impl AuthResult {
         }
     }
 
+    /// Setup steps for the token and client-credential statuses, or `None` otherwise.
     pub fn instructions(&self) -> Option<&str> {
         match &self.status {
             AuthStatus::AwaitingToken { instructions, .. }
@@ -204,6 +221,7 @@ impl AuthResult {
         }
     }
 
+    /// Setup page for the token and client-credential statuses, if one was given.
     pub fn setup_url(&self) -> Option<&str> {
         match &self.status {
             AuthStatus::AwaitingToken { setup_url, .. }
@@ -212,10 +230,12 @@ impl AuthResult {
         }
     }
 
+    /// True only for the `AwaitingToken` status. Also emitted as the `awaiting_token` field.
     pub fn is_awaiting_token(&self) -> bool {
         matches!(self.status, AuthStatus::AwaitingToken { .. })
     }
 
+    /// The wire-format status string for this result.
     pub fn status_str(&self) -> &'static str {
         self.status.as_str()
     }

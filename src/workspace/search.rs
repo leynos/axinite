@@ -116,12 +116,16 @@ impl SearchResult {
 /// Raw result from a single search method.
 #[derive(Debug, Clone)]
 pub struct RankedResult {
+    /// Chunk this rank refers to; used to join results from different methods.
     pub chunk_id: Uuid,
+    /// Document that owns the chunk.
     pub document_id: Uuid,
     /// File path of the source document.
     pub document_path: String,
+    /// Text of the chunk.
     pub content: String,
-    pub rank: u32, // 1-based rank
+    /// Position in this method's result list (1-based). RRF scores it as `1 / (k + rank)`.
+    pub rank: u32,
 }
 
 /// Reciprocal Rank Fusion algorithm.

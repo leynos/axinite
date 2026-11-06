@@ -11,22 +11,46 @@ use crate::channels::IncomingMessage;
 pub enum MessageIntent {
     /// Create a new job.
     CreateJob {
+        /// Title taken from the words after `/job` or `/create`.
         title: String,
+        /// Job description. The parser currently copies the title here.
         description: String,
+        /// Optional job category. The command parser always leaves this as `None`.
         category: Option<String>,
     },
     /// Check status of a job.
-    CheckJobStatus { job_id: Option<String> },
+    CheckJobStatus {
+        /// Job identifier from `/status <id>`; `None` when no identifier was given.
+        job_id: Option<String>,
+    },
     /// Cancel a job.
-    CancelJob { job_id: String },
+    CancelJob {
+        /// Job identifier from `/cancel <id>`. Only produced when an identifier is present.
+        job_id: String,
+    },
     /// List jobs.
-    ListJobs { filter: Option<String> },
+    ListJobs {
+        /// Optional word from `/list <filter>`, passed through without validation.
+        filter: Option<String>,
+    },
     /// Help with a stuck job.
-    HelpJob { job_id: String },
+    HelpJob {
+        /// Identifier of the stuck job from `/help <id>`.
+        job_id: String,
+    },
     /// General conversation/question.
-    Chat { content: String },
+    Chat {
+        /// Message text for general conversation. `Router` never produces this variant.
+        content: String,
+    },
     /// System command.
-    Command { command: String, args: Vec<String> },
+    Command {
+        /// Command word after the prefix, lowercased. Any word not matched by a
+        /// dedicated variant lands here, including `/help` without an identifier.
+        command: String,
+        /// Words following the command word, in their original case.
+        args: Vec<String>,
+    },
     /// Unknown intent.
     Unknown,
 }

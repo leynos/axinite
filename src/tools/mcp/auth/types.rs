@@ -9,33 +9,45 @@ use sha2::{Digest, Sha256};
 /// OAuth authorization error.
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
+    /// The server has no OAuth configuration, or no dynamic registration endpoint
+    /// when one is needed.
     #[error("Server does not support OAuth authorization")]
     NotSupported,
 
+    /// Endpoint discovery failed: an invalid or unsafe URL, a non-success HTTP status,
+    /// or metadata that could not be parsed. The string carries the detail.
     #[error("Failed to discover authorization endpoints: {0}")]
     DiscoveryFailed(String),
 
+    /// The user declined the authorization request.
     #[error("Authorization denied by user")]
     AuthorizationDenied,
 
+    /// The token endpoint rejected the authorization code or returned an unusable response.
     #[error("Token exchange failed: {0}")]
     TokenExchangeFailed(String),
 
+    /// A stored refresh token could not be used to obtain a new access token.
     #[error("Token expired and refresh failed: {0}")]
     RefreshFailed(String),
 
+    /// No access token is stored for the server.
     #[error("No access token available")]
     NoToken,
 
+    /// The browser callback did not arrive before the flow's deadline.
     #[error("Timeout waiting for authorization callback")]
     Timeout,
 
+    /// The local listener for the OAuth callback could not bind its port.
     #[error("Could not bind to callback port")]
     PortUnavailable,
 
+    /// A network or HTTP failure, or a callback error such as a CSRF state mismatch.
     #[error("HTTP error: {0}")]
     Http(String),
 
+    /// Reading or writing the secret store failed.
     #[error("Secrets error: {0}")]
     Secrets(String),
 }

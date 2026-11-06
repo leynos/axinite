@@ -12,11 +12,18 @@ use crate::llm::{ChatMessage, ToolCall, ToolDefinition};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FinishReason {
+    /// The model ended its turn naturally or hit a stop sequence.
     Stop,
+    /// Output stopped at the token ceiling.
     Length,
+    /// The model stopped to request tool calls. Serialised as `tool_use`, and
+    /// `tool_calls` is accepted on input.
     #[serde(alias = "tool_calls")]
     ToolUse,
+    /// The provider withheld output under its content policy.
     ContentFilter,
+    /// Fallback for any wire value this build does not recognise, so that newer
+    /// provider reasons still deserialise.
     #[serde(other)]
     Unknown,
 }

@@ -27,14 +27,20 @@ pub type McpClientsMap = Arc<RwLock<HashMap<String, Arc<McpClientCell>>>>;
 
 /// Configuration for [`LiveMcpActivation`].
 pub struct LiveMcpActivationConfig {
+    /// Session manager used when connecting to MCP servers.
     pub mcp_session_manager: Arc<McpSessionManager>,
+    /// Manager for the MCP server processes this adapter starts.
     pub mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
     /// Shared with [`ExtensionManager`] so both see the same set of active
     /// MCP clients.
     pub mcp_clients: McpClientsMap,
+    /// Secrets store that supplies credentials to MCP server connections.
     pub secrets: Arc<dyn SecretsStore + Send + Sync>,
+    /// Registry that receives the tools discovered on each activated server.
     pub tool_registry: Arc<ToolRegistry>,
+    /// Owner under which MCP server settings and secrets are looked up.
     pub user_id: String,
+    /// Database holding MCP server configuration. `None` reads it from the filesystem.
     pub store: Option<Arc<dyn crate::db::Database>>,
 }
 
@@ -52,6 +58,7 @@ pub struct LiveMcpActivation {
 }
 
 impl LiveMcpActivation {
+    /// Stores the wiring. No connection is made until an extension is activated.
     pub fn new(config: LiveMcpActivationConfig) -> Self {
         Self {
             mcp_session_manager: config.mcp_session_manager,

@@ -21,6 +21,7 @@ fn default_tools_dir() -> PathBuf {
     axinite_base_dir().join("tools")
 }
 
+/// Subcommands of `axinite tool`, for managing WASM tools.
 #[derive(Subcommand, Debug, Clone)]
 pub enum ToolCommand {
     /// Install a WASM tool from source directory or .wasm file

@@ -33,13 +33,21 @@ use crate::tools::{ApprovalContext, ToolRegistry};
 /// reducing the number of arguments to `Worker::new`.
 #[derive(Clone)]
 pub struct WorkerDeps {
+    /// State of every concurrent job, keyed by job ID.
     pub context_manager: Arc<ContextManager>,
+    /// LLM provider used for the job's reasoning turns.
     pub llm: Arc<dyn LlmProvider>,
+    /// Safety layer applied to tool output before it reaches the LLM.
     pub safety: Arc<SafetyLayer>,
+    /// Registry of tools the job may call.
     pub tools: Arc<ToolRegistry>,
+    /// Database backend for job persistence. `None` disables persistence.
     pub store: Option<Arc<dyn Database>>,
+    /// Hook registry consulted during job execution.
     pub hooks: Arc<HookRegistry>,
+    /// Hard wall-clock limit for the whole job execution.
     pub timeout: Duration,
+    /// When true, the worker plans before executing tools.
     pub use_planning: bool,
     /// SSE broadcast sender for live job event streaming to the web gateway.
     pub sse_tx: Option<tokio::sync::broadcast::Sender<SseEvent>>,

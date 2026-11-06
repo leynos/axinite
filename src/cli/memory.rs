@@ -33,6 +33,7 @@ pub async fn run_memory_command_with_db(
     }
 }
 
+/// Subcommands under `axinite memory`. Paths are relative to the workspace root.
 #[derive(Subcommand, Debug, Clone)]
 pub enum MemoryCommand {
     /// Search workspace memory (hybrid full-text + semantic)

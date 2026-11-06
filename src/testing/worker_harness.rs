@@ -182,10 +182,15 @@ pub async fn transition_to_in_progress(worker: &Worker) -> anyhow::Result<()> {
 
 /// Bundles the expected terminal-state outcome for persistence assertions.
 pub struct TerminalPersistenceExpectation<'a> {
+    /// Terminal job state the persisted status update must record.
     pub state: JobState,
+    /// Status string the persisted status update must carry, such as `completed`.
     pub status_str: &'a str,
+    /// Expected `success` flag on the result event; true only for a completed job.
     pub success: bool,
+    /// Expected `message` on the result event, or `None` when it must be null.
     pub message: Option<String>,
+    /// Expected failure reason on the status update, or `None` when there must be none.
     pub reason: Option<&'a str>,
 }
 
@@ -318,8 +323,11 @@ pub async fn assert_terminal_persistence_with_snapshot(
 /// Methods for driving terminal state transitions in tests.
 #[derive(Debug, Clone, Copy)]
 pub enum TerminalMethod {
+    /// Mark the worker's job as completed.
     Completed,
+    /// Mark the worker's job as failed, recording the given reason.
     Failed(&'static str),
+    /// Mark the worker's job as stuck, recording the given reason.
     Stuck(&'static str),
 }
 

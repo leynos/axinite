@@ -67,6 +67,9 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// Create a limiter allowing `max_requests` per `window_secs`-second window.
+    ///
+    /// The first window starts now.
     pub fn new(max_requests: u64, window_secs: u64) -> Self {
         Self {
             remaining: AtomicU64::new(max_requests),

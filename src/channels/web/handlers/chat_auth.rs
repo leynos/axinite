@@ -142,6 +142,11 @@ pub async fn chat_auth_cancel_handler(
     Ok(Json(ActionResponse::ok("Auth cancelled")))
 }
 
+/// Clears pending auth prompts on the gateway user's session threads.
+///
+/// With `None`, every thread's pending auth is cleared. With `Some(name)`, only threads
+/// whose pending auth targets that extension are cleared. Does nothing when no session
+/// manager is configured.
 pub async fn clear_auth_mode(state: &GatewayState, extension_name: Option<&str>) {
     if let Some(ref sm) = state.session_manager {
         let session = sm.get_or_create_session(&state.user_id).await;

@@ -187,9 +187,13 @@ pub struct CustomTunnelConfig {
 pub struct TunnelProviderConfig {
     /// Provider name: "none", "cloudflare", "tailscale", "ngrok", "custom".
     pub provider: String,
+    /// Cloudflare settings, read only when `provider` is "cloudflare".
     pub cloudflare: Option<CloudflareTunnelConfig>,
+    /// Tailscale settings, read only when `provider` is "tailscale".
     pub tailscale: Option<TailscaleTunnelConfig>,
+    /// ngrok settings, read only when `provider` is "ngrok".
     pub ngrok: Option<NgrokTunnelConfig>,
+    /// Custom command settings, read only when `provider` is "custom".
     pub custom: Option<CustomTunnelConfig>,
 }
 

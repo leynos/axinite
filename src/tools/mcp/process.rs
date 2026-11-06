@@ -30,6 +30,7 @@ pub struct McpProcessManager {
 }
 
 impl McpProcessManager {
+    /// Create a manager with no running transports and no saved spawn configs.
     pub fn new() -> Self {
         Self {
             transports: RwLock::new(HashMap::new()),

@@ -54,8 +54,11 @@ impl DockerStatus {
 /// Host platform for install guidance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
+    /// macOS, detected from `std::env::consts::OS` as `"macos"`.
     MacOS,
+    /// Linux. Also the fallback for any OS that is neither macOS nor Windows.
     Linux,
+    /// Windows, detected from `std::env::consts::OS` as `"windows"`.
     Windows,
 }
 
@@ -96,7 +99,9 @@ impl Platform {
 
 /// Result of a Docker detection check.
 pub struct DockerDetection {
+    /// Result of the Docker availability check.
     pub status: DockerStatus,
+    /// Host platform, which selects the install and start hints.
     pub platform: Platform,
 }
 
@@ -141,6 +146,7 @@ pub async fn check_docker() -> DockerDetection {
     }
 }
 
+/// Reports Docker as disabled, because the `docker` feature is not compiled in.
 #[cfg(not(feature = "docker"))]
 pub async fn check_docker() -> DockerDetection {
     DockerDetection {

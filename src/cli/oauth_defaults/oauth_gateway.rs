@@ -15,22 +15,40 @@ use crate::secrets::SecretsStore;
 /// Created by `start_wasm_oauth()` and consumed by the web gateway's
 /// `/oauth/callback` handler when running in hosted mode.
 pub struct PendingOAuthFlow {
+    /// Name of the extension being authorized. Used to cancel flows for that extension.
     pub extension_name: String,
+    /// Name shown on the landing page after the callback completes.
     pub display_name: String,
+    /// Provider token endpoint that the authorization code is exchanged at.
     pub token_url: String,
+    /// OAuth client identifier sent with the code exchange.
     pub client_id: String,
+    /// OAuth client secret, when the provider uses one. `None` for PKCE-only clients.
     pub client_secret: Option<String>,
+    /// Redirect URI that was sent with the authorization request. It must match on exchange.
     pub redirect_uri: String,
+    /// PKCE code verifier paired with the challenge sent at authorization time.
     pub code_verifier: Option<String>,
+    /// Name of the JSON field in the token response that holds the access token.
     pub access_token_field: String,
+    /// Secret-store name the access token is saved under. The refresh token is saved
+    /// as `{secret_name}_refresh_token`.
     pub secret_name: String,
+    /// Provider hint saved alongside the tokens, such as `"notion"`.
     pub provider: Option<String>,
+    /// Endpoint the new access token is checked against before it is stored.
     pub validation_endpoint: Option<crate::tools::wasm::ValidationEndpointSchema>,
+    /// Scopes requested by the flow. Saved as `{secret_name}_scopes` when non-empty.
     pub scopes: Vec<String>,
+    /// Owner the tokens are stored for.
     pub user_id: String,
+    /// Secret store that receives the tokens once the exchange succeeds.
     pub secrets: Arc<dyn SecretsStore + Send + Sync>,
+    /// Channel for notifying the web UI when the flow finishes. `None` when no UI is listening.
     pub sse_sender: Option<tokio::sync::broadcast::Sender<crate::channels::web::types::SseEvent>>,
+    /// Bearer token for the hosted token-exchange proxy. Only used when the proxy is configured.
     pub gateway_token: Option<String>,
+    /// When the flow was registered. Flows older than `OAUTH_FLOW_EXPIRY` are swept.
     pub created_at: std::time::Instant,
 }
 

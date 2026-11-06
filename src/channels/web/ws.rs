@@ -29,12 +29,14 @@ pub struct WsConnectionTracker {
 }
 
 impl WsConnectionTracker {
+    /// Create a tracker with no open connections.
     pub fn new() -> Self {
         Self {
             count: AtomicU64::new(0),
         }
     }
 
+    /// Number of WebSocket connections currently open.
     pub fn connection_count(&self) -> u64 {
         self.count.load(Ordering::Relaxed)
     }

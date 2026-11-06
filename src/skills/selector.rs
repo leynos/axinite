@@ -29,7 +29,9 @@ const MAX_REGEX_SCORE: u32 = 40;
 /// Result of prefiltering with score information.
 #[derive(Debug)]
 pub struct ScoredSkill<'a> {
+    /// The candidate skill that was scored.
     pub skill: &'a LoadedSkill,
+    /// Total points for the message, after the per-category caps (keyword, tag, regex).
     pub score: u32,
 }
 

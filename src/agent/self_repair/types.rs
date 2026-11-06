@@ -44,13 +44,25 @@ pub struct BrokenTool {
 #[derive(Debug, Clone)]
 pub enum RepairResult {
     /// Repair was successful.
-    Success { message: String },
+    Success {
+        /// Human-readable account of what was repaired.
+        message: String,
+    },
     /// Repair failed but can be retried.
-    Retry { message: String },
+    Retry {
+        /// Human-readable reason the attempt failed.
+        message: String,
+    },
     /// Repair failed permanently.
-    Failed { message: String },
+    Failed {
+        /// Human-readable reason the repair cannot succeed.
+        message: String,
+    },
     /// Manual intervention required.
-    ManualRequired { message: String },
+    ManualRequired {
+        /// Human-readable description of what an operator must do.
+        message: String,
+    },
 }
 
 /// Boxed future used at the dyn self-repair boundary.

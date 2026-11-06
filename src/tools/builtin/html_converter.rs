@@ -12,11 +12,15 @@ use kuchikikiki::traits::*;
 #[cfg(feature = "html-to-markdown")]
 use readability_js::Readability;
 
+/// Stand-in used when the `html-to-markdown` feature is off: returns `html` unchanged.
 #[cfg(not(feature = "html-to-markdown"))]
 pub fn convert_html_to_markdown(html: &str, _url: &str) -> Result<String, ToolError> {
     Ok(html.to_string())
 }
 
+/// Extracts the main article from `html` with readability, using `url` as the base
+/// for relative links, then converts it to Markdown. Returns `ToolError::ExecutionFailed`
+/// if extraction or conversion fails.
 #[cfg(feature = "html-to-markdown")]
 pub fn convert_html_to_markdown(html: &str, url: &str) -> Result<String, ToolError> {
     let readability = Readability::new()

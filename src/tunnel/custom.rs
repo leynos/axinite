@@ -30,6 +30,8 @@ pub struct CustomTunnel {
 }
 
 impl CustomTunnel {
+    /// Create a tunnel that runs `start_command` when started. No process is
+    /// spawned here; `url_pattern` filters which URL found on stdout is used.
     pub fn new(
         start_command: String,
         health_url: Option<String>,

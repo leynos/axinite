@@ -11,6 +11,8 @@ use subtle::ConstantTimeEq;
 /// Shared auth state injected via axum middleware state.
 #[derive(Clone)]
 pub struct AuthState {
+    /// Expected bearer token. Compared in constant time with the value from the
+    /// `Authorization` header or the `?token=` query parameter.
     pub token: String,
 }
 

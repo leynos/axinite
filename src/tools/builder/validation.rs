@@ -10,28 +10,48 @@ use thiserror::Error;
 /// Errors during WASM validation.
 #[derive(Debug, Error)]
 pub enum ValidationError {
+    /// The WASM file could not be read from disk.
     #[error("Failed to read WASM file: {0}")]
     IoError(#[from] std::io::Error),
 
+    /// The bytes do not parse as a WASM module, or an export or import entry is malformed.
     #[error("Invalid WASM module: {0}")]
     InvalidModule(String),
 
+    /// A required export, such as `run`, is absent. The string is its name.
     #[error("Missing required export: {0}")]
     MissingExport(String),
 
+    /// An export exists but its function signature differs from the one required.
     #[error("Invalid export signature for '{name}': expected {expected}, got {actual}")]
     InvalidSignature {
+        /// Export whose signature was checked.
         name: String,
+        /// Signature the interface requires.
         expected: String,
+        /// Signature the module declares.
         actual: String,
     },
 
+    /// The module imports from a namespace that is not on the allowed list.
     #[error("Module uses disallowed import: {module}::{name}")]
-    DisallowedImport { module: String, name: String },
+    DisallowedImport {
+        /// Import namespace, such as `env`.
+        module: String,
+        /// Name of the imported item.
+        name: String,
+    },
 
+    /// The module is larger than the validator's size limit.
     #[error("Module exceeds size limit: {size} bytes (max: {max} bytes)")]
-    TooLarge { size: u64, max: u64 },
+    TooLarge {
+        /// Module size in bytes.
+        size: u64,
+        /// Size limit in bytes.
+        max: u64,
+    },
 
+    /// Any other validation failure. The string is the message.
     #[error("Validation failed: {0}")]
     Other(String),
 }
@@ -111,6 +131,8 @@ impl Default for WasmValidator {
 }
 
 impl WasmValidator {
+    /// Create a validator with the default 10 MB limit, requiring a `run` export and
+    /// allowing only the `env` and WASI import namespaces.
     pub fn new() -> Self {
         Self::default()
     }

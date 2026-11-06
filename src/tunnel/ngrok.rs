@@ -18,6 +18,9 @@ pub struct NgrokTunnel {
 }
 
 impl NgrokTunnel {
+    /// Creates a tunnel that passes `auth_token` to `ngrok` as `NGROK_AUTHTOKEN`.
+    ///
+    /// A `domain` of `Some` is passed as `--domain` when the tunnel starts.
     pub fn new(auth_token: String, domain: Option<String>) -> Self {
         Self {
             auth_token,

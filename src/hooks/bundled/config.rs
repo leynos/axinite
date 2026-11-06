@@ -13,43 +13,90 @@ pub(super) const MAX_HOOK_TIMEOUT_MS: u64 = 30_000;
 /// Errors while parsing or compiling declarative hook bundles.
 #[derive(Debug, thiserror::Error)]
 pub enum HookBundleError {
+    /// The bundle JSON does not match the expected shape; carries the parser message.
     #[error("Invalid hook bundle format: {0}")]
     InvalidFormat(String),
 
+    /// A hook declares no lifecycle points, so it would never fire.
     #[error("Hook '{hook}' must declare at least one hook point")]
-    MissingHookPoints { hook: String },
+    MissingHookPoints {
+        /// Name of the hook without points.
+        hook: String,
+    },
 
+    /// A regex in a rule, either its `when_regex` guard or a replacement, does not compile.
     #[error("Hook '{hook}' has invalid regex '{pattern}': {reason}")]
     InvalidRegex {
+        /// Name of the hook containing the regex.
         hook: String,
+        /// Pattern text that failed to compile.
         pattern: String,
+        /// Compiler error message.
         reason: String,
     },
 
+    /// A timeout is zero or exceeds `max_ms`.
     #[error("Hook '{hook}' timeout must be between 1 and {max_ms} ms")]
-    InvalidTimeout { hook: String, max_ms: u64 },
+    InvalidTimeout {
+        /// Name of the hook with the rejected timeout.
+        hook: String,
+        /// Largest permitted timeout, in milliseconds.
+        max_ms: u64,
+    },
 
+    /// A webhook URL cannot be parsed.
     #[error("Outbound webhook hook '{hook}' has invalid url: {url}")]
-    InvalidWebhookUrl { hook: String, url: String },
+    InvalidWebhookUrl {
+        /// Name of the webhook hook.
+        hook: String,
+        /// URL text that failed to parse.
+        url: String,
+    },
 
+    /// A webhook URL uses a scheme other than `https`.
     #[error("Outbound webhook hook '{hook}' must use https, got '{scheme}'")]
-    InvalidWebhookScheme { hook: String, scheme: String },
+    InvalidWebhookScheme {
+        /// Name of the webhook hook.
+        hook: String,
+        /// Scheme the URL actually uses.
+        scheme: String,
+    },
 
+    /// A webhook targets a host that the outbound network policy forbids.
     #[error("Outbound webhook hook '{hook}' cannot target host '{host}'")]
-    ForbiddenWebhookHost { hook: String, host: String },
+    ForbiddenWebhookHost {
+        /// Name of the webhook hook.
+        hook: String,
+        /// Host that was rejected.
+        host: String,
+    },
 
+    /// A static webhook header has an invalid name or value.
     #[error("Outbound webhook hook '{hook}' has invalid header '{header}': {reason}")]
     InvalidWebhookHeader {
+        /// Name of the webhook hook.
         hook: String,
+        /// Header name that was rejected.
         header: String,
+        /// Reason the name or value is invalid.
         reason: String,
     },
 
+    /// A webhook sets a restricted header, which the bundle may not send.
     #[error("Outbound webhook hook '{hook}' cannot set restricted header '{header}'")]
-    ForbiddenWebhookHeader { hook: String, header: String },
+    ForbiddenWebhookHeader {
+        /// Name of the webhook hook.
+        hook: String,
+        /// Restricted header name.
+        header: String,
+    },
 
+    /// A webhook's `max_in_flight` is zero.
     #[error("Outbound webhook hook '{hook}' max_in_flight must be at least 1")]
-    InvalidWebhookMaxInFlight { hook: String },
+    InvalidWebhookMaxInFlight {
+        /// Name of the webhook hook.
+        hook: String,
+    },
 }
 
 /// A declarative hook bundle loaded from workspace files or extension capabilities.
@@ -105,6 +152,7 @@ impl HookRegistrationSummary {
         self.hooks + self.outbound_webhooks
     }
 
+    /// Add the counts from `other` into this summary.
     pub fn merge(&mut self, other: HookRegistrationSummary) {
         self.hooks += other.hooks;
         self.outbound_webhooks += other.outbound_webhooks;
@@ -148,7 +196,9 @@ pub struct HookRuleConfig {
 /// A single regex replacement step in a rule hook.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegexReplacementConfig {
+    /// Regular expression to search for in the event's primary content.
     pub pattern: String,
+    /// Text that replaces each match of `pattern`.
     pub replacement: String,
 }
 

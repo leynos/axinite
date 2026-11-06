@@ -59,9 +59,13 @@ use crate::tools::ToolRegistry;
 
 /// Result of orchestrator setup, containing all handles needed by the agent.
 pub struct OrchestratorSetup {
+    /// Container job manager; `None` unless sandboxing is enabled and Docker is available.
     pub container_job_manager: Option<Arc<ContainerJobManager>>,
+    /// Job event broadcast sender (capacity 256), present exactly when the job manager is.
     pub job_event_tx: Option<broadcast::Sender<(Uuid, SseEvent)>>,
+    /// Pending follow-up prompts keyed by job ID, polled by workers between turns.
     pub prompt_queue: Arc<Mutex<HashMap<Uuid, VecDeque<api::PendingPrompt>>>>,
+    /// Detected Docker status; `Disabled` when sandboxing is turned off.
     pub docker_status: crate::sandbox::DockerStatus,
 }
 

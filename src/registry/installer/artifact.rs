@@ -14,6 +14,10 @@ use super::validation::{
 use super::{InstallOutcome, RegistryInstaller};
 
 impl RegistryInstaller {
+    /// Installs the extension from its verified `wasm32-wasip2` artifact. If the manifest
+    /// has no artifact, or the artifact install fails with a fallback-eligible error and
+    /// the source directory exists, it builds from source instead. `force` is passed to
+    /// whichever path runs.
     pub async fn install_with_source_fallback(
         &self,
         manifest: &ExtensionManifest,

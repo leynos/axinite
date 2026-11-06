@@ -49,7 +49,9 @@ pub struct ExtensionManifest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ManifestKind {
+    /// A WASM tool, serialized as `"tool"`. Maps to `ExtensionKind::WasmTool`.
     Tool,
+    /// A WASM channel, serialized as `"channel"`. Maps to `ExtensionKind::WasmChannel`.
     Channel,
 }
 
@@ -147,6 +149,7 @@ pub struct BundleDefinition {
 /// Top-level structure of `_bundles.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BundlesFile {
+    /// Bundle definitions keyed by bundle identifier.
     pub bundles: std::collections::HashMap<String, BundleDefinition>,
 }
 

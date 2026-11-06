@@ -168,12 +168,15 @@ async fn persist_and_output(
     Ok(ToolOutput::success(result, elapsed))
 }
 
+/// Native tool that updates an existing routine in place, looked up by name.
 pub struct RoutineUpdateTool {
     store: Arc<dyn Database>,
     engine: Arc<RoutineEngine>,
 }
 
 impl RoutineUpdateTool {
+    /// Create the tool over the routine store, and the engine whose event cache is refreshed
+    /// after each successful update.
     pub fn new(store: Arc<dyn Database>, engine: Arc<RoutineEngine>) -> Self {
         Self { store, engine }
     }

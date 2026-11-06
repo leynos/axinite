@@ -10,10 +10,13 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 
 use crate::config::SslMode;
 
+/// Errors from building a PostgreSQL connection pool.
 #[derive(Debug, thiserror::Error)]
 pub enum PoolCreationError {
+    /// The rustls client configuration failed, for example while selecting protocol versions.
     #[error("failed to configure rustls client: {0}")]
     TlsConfig(#[from] rustls::Error),
+    /// deadpool rejected the pool configuration when creating the pool.
     #[error(transparent)]
     Pool(#[from] deadpool_postgres::CreatePoolError),
 }

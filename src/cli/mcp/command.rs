@@ -56,6 +56,7 @@ pub struct McpAddArgs {
     pub description: Option<String>,
 }
 
+/// Subcommands of `mcp`, each acting on the MCP servers configured for the agent.
 #[derive(Subcommand, Debug, Clone)]
 pub enum McpCommand {
     /// Add an MCP server

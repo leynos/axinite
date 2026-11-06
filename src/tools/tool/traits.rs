@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::context::JobContext;
 
@@ -19,30 +18,8 @@ use super::approval_policy::{
 /// Boxed future used at the dyn `Tool` boundary.
 pub type ToolFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Error type for tool execution.
-#[derive(Debug, Error)]
-pub enum ToolError {
-    #[error("Invalid parameters: {0}")]
-    InvalidParameters(String),
-
-    #[error("Execution failed: {0}")]
-    ExecutionFailed(String),
-
-    #[error("Timeout after {0:?}")]
-    Timeout(Duration),
-
-    #[error("Not authorized: {0}")]
-    NotAuthorized(String),
-
-    #[error("Rate limited, retry after {0:?}")]
-    RateLimited(Option<Duration>),
-
-    #[error("External service error: {0}")]
-    ExternalService(String),
-
-    #[error("Sandbox error: {0}")]
-    Sandbox(String),
-}
+mod error;
+pub use error::ToolError;
 
 /// Output from a tool execution.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

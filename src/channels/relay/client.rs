@@ -246,15 +246,24 @@ impl RelayClient {
 /// Errors from relay client operations.
 #[derive(Debug, thiserror::Error)]
 pub enum RelayError {
+    /// The request failed before a response arrived, or the HTTP client could not be built.
     #[error("Network error: {0}")]
     Network(String),
 
+    /// The relay answered with a non-success HTTP status.
     #[error("API error (HTTP {status}): {message}")]
-    Api { status: u16, message: String },
+    Api {
+        /// HTTP status code returned by the relay.
+        status: u16,
+        /// Raw response body, or empty if the body could not be read.
+        message: String,
+    },
 
+    /// The relay responded, but the body or headers did not have the expected shape.
     #[error("Protocol error: {0}")]
     Protocol(String),
 
+    /// The relay rejected the stream token with HTTP 401; the caller should renew it.
     #[error("Stream token expired")]
     TokenExpired,
 }

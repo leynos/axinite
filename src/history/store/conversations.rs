@@ -25,14 +25,18 @@ use crate::error::DatabaseError;
 /// Summary of a conversation for the thread list.
 #[derive(Debug, Clone)]
 pub struct ConversationSummary {
+    /// Conversation identifier.
     pub id: Uuid,
     /// Preview title: typically the first user message, truncated to 100 chars.
     ///
     /// Falls back to metadata-backed titles such as `title` or
     /// `routine_name` when no user message is available.
     pub title: Option<String>,
+    /// Number of user-role messages in the conversation. Assistant messages are not counted.
     pub message_count: i64,
+    /// When the conversation was created.
     pub started_at: DateTime<Utc>,
+    /// Time of the latest activity. The thread list is ordered by this, newest first.
     pub last_activity: DateTime<Utc>,
     /// Thread type extracted from metadata (e.g. "assistant", "thread").
     pub thread_type: Option<String>,
@@ -43,9 +47,13 @@ pub struct ConversationSummary {
 /// A single message in a conversation.
 #[derive(Debug, Clone)]
 pub struct ConversationMessage {
+    /// Message identifier.
     pub id: Uuid,
+    /// Role of the author as stored, such as `user` or `assistant`.
     pub role: String,
+    /// Message body text.
     pub content: String,
+    /// When the message was stored.
     pub created_at: DateTime<Utc>,
 }
 

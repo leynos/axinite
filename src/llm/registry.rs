@@ -61,20 +61,26 @@ pub enum SetupHint {
     },
     /// Ollama-style setup: just a base URL, no API key.
     Ollama {
+        /// Human-readable name for display in the wizard.
         display_name: String,
+        /// Whether this provider supports `/v1/models` listing.
         #[serde(default)]
         can_list_models: bool,
     },
     /// Generic OpenAI-compatible: ask for base URL + optional API key.
     OpenAiCompatible {
+        /// Key name in the secrets store under which the API key is kept.
         secret_name: String,
+        /// Human-readable name for display in the wizard.
         display_name: String,
+        /// Whether this provider supports `/v1/models` listing.
         #[serde(default)]
         can_list_models: bool,
     },
 }
 
 impl SetupHint {
+    /// Human-readable name shown in the setup wizard.
     pub fn display_name(&self) -> &str {
         match self {
             Self::ApiKey { display_name, .. } => display_name,
@@ -83,6 +89,7 @@ impl SetupHint {
         }
     }
 
+    /// Whether the provider can list its models via `/v1/models`.
     pub fn can_list_models(&self) -> bool {
         match self {
             Self::ApiKey {
@@ -97,6 +104,7 @@ impl SetupHint {
         }
     }
 
+    /// Secrets-store key name for the credential; `None` for Ollama, which needs no key.
     pub fn secret_name(&self) -> Option<&str> {
         match self {
             Self::ApiKey { secret_name, .. } => Some(secret_name),
@@ -105,6 +113,7 @@ impl SetupHint {
         }
     }
 
+    /// Filter applied when listing models, if set. Only the `ApiKey` variant carries one.
     pub fn models_filter(&self) -> Option<&str> {
         match self {
             Self::ApiKey { models_filter, .. } => models_filter.as_deref(),

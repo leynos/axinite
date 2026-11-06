@@ -59,17 +59,25 @@ pub struct RegistryEntry {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ExtensionSource {
     /// URL to a hosted MCP server.
-    McpUrl { url: String },
+    McpUrl {
+        /// Base URL of the hosted MCP server.
+        url: String,
+    },
     /// Downloadable WASM binary.
     WasmDownload {
+        /// URL of the `.wasm` file or tar.gz bundle to download.
         wasm_url: String,
+        /// Separate capabilities-file URL, fetched alongside bare `.wasm` binaries.
         #[serde(default)]
         capabilities_url: Option<String>,
     },
     /// Build from local source directory.
     WasmBuildable {
+        /// Source directory to build from. Also accepted as `repo_url`.
         #[serde(alias = "repo_url")]
         source_dir: String,
+        /// Build output directory, absolute or relative to the manifest directory.
+        /// `None` means the manifest directory itself.
         #[serde(default)]
         build_dir: Option<String>,
         /// Crate name used to locate the build artefact binary.
@@ -77,9 +85,15 @@ pub enum ExtensionSource {
         crate_name: Option<String>,
     },
     /// Discovered online (not yet validated for a specific source type).
-    Discovered { url: String },
+    Discovered {
+        /// URL at which the extension was found. Not yet validated.
+        url: String,
+    },
     /// External channel via channel-relay service.
-    ChannelRelay { relay_url: String },
+    ChannelRelay {
+        /// Base URL of the channel-relay service.
+        relay_url: String,
+    },
 }
 
 /// Hint about what authentication method is needed.

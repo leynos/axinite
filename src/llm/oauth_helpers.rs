@@ -21,18 +21,31 @@ pub const OAUTH_CALLBACK_PORT: u16 = 9876;
 /// Error from the OAuth callback listener.
 #[derive(Debug, thiserror::Error)]
 pub enum OAuthCallbackError {
+    /// The callback port is already bound, usually by another auth flow. Carries the
+    /// port and the bind error text.
     #[error("Port {0} is in use (another auth flow running?): {1}")]
     PortInUse(u16, String),
 
+    /// The user refused access at the provider's consent screen.
     #[error("Authorization denied by user")]
     Denied,
 
+    /// No callback arrived within the five-minute listener window.
     #[error("Timed out waiting for authorization")]
     Timeout,
 
+    /// The callback's `state` did not match the value the flow started with, so the
+    /// response is rejected as a possible CSRF attempt.
     #[error("CSRF state mismatch: expected {expected}, got {actual}")]
-    StateMismatch { expected: String, actual: String },
+    StateMismatch {
+        /// The `state` value the flow was started with.
+        expected: String,
+        /// The `state` value the callback carried.
+        actual: String,
+    },
 
+    /// Any other failure in the callback or token exchange, such as an I/O or HTTP
+    /// error. Carries the error text.
     #[error("IO error: {0}")]
     Io(String),
 }

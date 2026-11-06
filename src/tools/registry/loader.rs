@@ -32,10 +32,15 @@ use super::{
     wasm_registration::{WasmRegistrationError, WasmToolRegistration, normalized_description},
 };
 
+/// Request to register a WASM tool whose record and binary are held in storage.
 pub struct WasmFromStorageRegistration<'a> {
+    /// Storage backend holding the tool record and binary.
     pub store: &'a dyn WasmToolStore,
+    /// Runtime used to compile the stored binary.
     pub runtime: &'a Arc<WasmToolRuntime>,
+    /// Owner of the stored tool record.
     pub user_id: &'a str,
+    /// Name the tool is stored under for `user_id`.
     pub name: &'a str,
 }
 

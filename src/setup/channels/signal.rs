@@ -11,13 +11,22 @@ use super::secrets::ChannelSetupError;
 /// Result of Signal channel setup.
 #[derive(Debug, Clone)]
 pub struct SignalSetupResult {
+    /// Whether the Signal channel should be enabled; always `true` for a completed setup.
     pub enabled: bool,
+    /// Base URL of the signal-cli daemon in HTTP mode (`http` or `https`).
     pub http_url: String,
+    /// Signal account in E.164 form, such as `+15550001234`.
     pub account: String,
+    /// Comma-separated direct-message senders allowed through: `*`, E.164 numbers,
+    /// or `uuid:<id>` entries. Empty when none are set.
     pub allow_from: String,
+    /// Comma-separated group IDs allowed through, or `*` for any group. Empty for none.
     pub allow_from_groups: String,
+    /// Direct-message policy: `open`, `allowlist` or `pairing`. Defaults to `pairing`.
     pub dm_policy: String,
+    /// Group message policy: `allowlist`, `open` or `disabled`. Defaults to `allowlist`.
     pub group_policy: String,
+    /// Comma-separated member IDs allowed to post in groups. Empty inherits `allow_from`.
     pub group_allow_from: String,
 }
 

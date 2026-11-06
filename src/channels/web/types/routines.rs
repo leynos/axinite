@@ -5,19 +5,32 @@ use uuid::Uuid;
 
 // --- Routines ---
 
+/// Trimmed routine summary for list views, built by `RoutineInfo::from_routine`.
 #[derive(Debug, Serialize)]
 pub struct RoutineInfo {
+    /// Stable routine identifier (UUID).
     pub id: Uuid,
+    /// Display name set by the user.
     pub name: String,
+    /// Free-text description; may be empty.
     pub description: String,
+    /// Whether the routine is allowed to fire.
     pub enabled: bool,
+    /// Trigger family: `cron`, `event`, `system_event` or `manual`.
     pub trigger_type: String,
+    /// Human-readable trigger, such as `cron: <schedule>` or `manual only`.
     pub trigger_summary: String,
+    /// Action family: `lightweight` or `full_job`.
     pub action_type: String,
+    /// RFC 3339 time of the most recent run, or `null` if it has never run.
     pub last_run_at: Option<String>,
+    /// RFC 3339 time of the next scheduled fire, or `null` if none is scheduled.
     pub next_fire_at: Option<String>,
+    /// Total number of runs recorded for the routine.
     pub run_count: u64,
+    /// Failed runs in a row; any value above zero makes `status` read `failing`.
     pub consecutive_failures: u32,
+    /// Derived state: `disabled`, `failing` or `active`, checked in that order.
     pub status: String,
 }
 
@@ -75,46 +88,79 @@ impl RoutineInfo {
     }
 }
 
+/// Response body for the routine list endpoint.
 #[derive(Debug, Serialize)]
 pub struct RoutineListResponse {
+    /// Routines in list order, each in its trimmed `RoutineInfo` form.
     pub routines: Vec<RoutineInfo>,
 }
 
+/// Aggregate routine counts for the dashboard summary.
 #[derive(Debug, Serialize)]
 pub struct RoutineSummaryResponse {
+    /// Number of routines in any state.
     pub total: u64,
+    /// Routines with `enabled` set.
     pub enabled: u64,
+    /// Routines with `enabled` cleared.
     pub disabled: u64,
+    /// Routines with `consecutive_failures` above zero.
     pub failing: u64,
+    /// Routines whose last run time falls on or after the start of the current UTC day.
+    /// Counts routines, not individual runs.
     pub runs_today: u64,
 }
 
+/// Full routine detail, including its recent run history.
 #[derive(Debug, Serialize)]
 pub struct RoutineDetailResponse {
+    /// Stable routine identifier (UUID).
     pub id: Uuid,
+    /// Display name set by the user.
     pub name: String,
+    /// Free-text description; may be empty.
     pub description: String,
+    /// Whether the routine is allowed to fire.
     pub enabled: bool,
+    /// Serialized trigger configuration; the JSON shape follows the `Trigger` enum.
     pub trigger: serde_json::Value,
+    /// Serialized action configuration; the JSON shape follows `RoutineAction`.
     pub action: serde_json::Value,
+    /// Serialized guardrail limits applied to each run.
     pub guardrails: serde_json::Value,
+    /// Serialized notification settings for run outcomes.
     pub notify: serde_json::Value,
+    /// RFC 3339 time of the most recent run, or `null` if it has never run.
     pub last_run_at: Option<String>,
+    /// RFC 3339 time of the next scheduled fire, or `null` if none is scheduled.
     pub next_fire_at: Option<String>,
+    /// Total number of runs recorded for the routine.
     pub run_count: u64,
+    /// Failed runs in a row; any value above zero marks the routine as failing.
     pub consecutive_failures: u32,
+    /// RFC 3339 time the routine was created.
     pub created_at: String,
+    /// Up to 20 most recent runs, newest first.
     pub recent_runs: Vec<RoutineRunInfo>,
 }
 
+/// One execution of a routine, as shown in run history.
 #[derive(Debug, Serialize)]
 pub struct RoutineRunInfo {
+    /// Run identifier (UUID).
     pub id: Uuid,
+    /// Trigger family that started this run.
     pub trigger_type: String,
+    /// RFC 3339 time the run started.
     pub started_at: String,
+    /// RFC 3339 time the run finished, or `null` while it is still in progress.
     pub completed_at: Option<String>,
+    /// Debug name of the run status: `Running`, `Ok`, `Attention` or `Failed`.
     pub status: String,
+    /// Outcome summary text, when the run produced one.
     pub result_summary: Option<String>,
+    /// LLM tokens consumed by the run, when they were recorded.
     pub tokens_used: Option<i32>,
+    /// Job created by the run, if any.
     pub job_id: Option<Uuid>,
 }

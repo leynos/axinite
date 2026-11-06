@@ -32,48 +32,63 @@ pub use crate::llm::error::LlmError;
 /// Top-level error type for the agent.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Settings could not be loaded or validated.
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
 
+    /// A database operation failed.
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
 
+    /// An input or output channel failed.
     #[error("Channel error: {0}")]
     Channel(#[from] ChannelError),
 
+    /// A call to an LLM provider failed.
     #[error("LLM error: {0}")]
     Llm(#[from] LlmError),
 
+    /// A tool could not be found, run, or returned an unusable result.
     #[error("Tool error: {0}")]
     Tool(#[from] ToolError),
 
+    /// The safety layer rejected or could not process content.
     #[error("Safety error: {0}")]
     Safety(#[from] SafetyError),
 
+    /// A job could not be created, run, or completed.
     #[error("Job error: {0}")]
     Job(#[from] JobError),
 
+    /// Cost or duration estimation failed.
     #[error("Estimation error: {0}")]
     Estimation(#[from] EstimationError),
 
+    /// An evaluation step failed.
     #[error("Evaluation error: {0}")]
     Evaluation(#[from] EvaluationError),
 
+    /// A self-repair attempt failed.
     #[error("Repair error: {0}")]
     Repair(#[from] RepairError),
 
+    /// A workspace operation failed.
     #[error("Workspace error: {0}")]
     Workspace(#[from] WorkspaceError),
 
+    /// A lifecycle hook failed.
     #[error("Hook error: {0}")]
     Hook(#[from] crate::hooks::HookError),
 
+    /// Container management or the internal orchestrator API failed.
     #[error("Orchestrator error: {0}")]
     Orchestrator(#[from] OrchestratorError),
 
+    /// A worker failed to execute its job.
     #[error("Worker error: {0}")]
     Worker(#[from] WorkerError),
 
+    /// A scheduled routine failed.
     #[error("Routine error: {0}")]
     Routine(#[from] RoutineError),
 }

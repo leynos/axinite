@@ -60,6 +60,8 @@ impl LibSqlDatabase {
         Self { db, temp_path }
     }
 
+    /// Path of the temp file backing this handle, or `None` for a persistent database.
+    /// Tests use it to check that cleanup happens on the last drop.
     #[cfg(test)]
     pub fn temp_path(&self) -> Option<PathBuf> {
         self.temp_path.clone()

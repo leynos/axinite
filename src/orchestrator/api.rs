@@ -38,16 +38,22 @@ use handlers::{
 /// A follow-up prompt queued for a Claude Code bridge.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingPrompt {
+    /// Follow-up text for the bridge to send as the next turn.
     pub content: String,
+    /// `true` marks the final prompt. The bridge exits its loop once it has received it.
     pub done: bool,
 }
 
 /// Shared state for the orchestrator API.
 #[derive(Clone)]
 pub struct OrchestratorState {
+    /// Provider that serves workers' completion requests, so workers never call it directly.
     pub llm: Arc<dyn LlmProvider>,
+    /// Tool registry behind the remote tool catalogue and remote tool execution routes.
     pub tools: Arc<ToolRegistry>,
+    /// Container job manager that records job completion reported by workers.
     pub job_manager: Arc<ContainerJobManager>,
+    /// Per-job bearer tokens and their grants, checked by `worker_auth_middleware`.
     pub token_store: TokenStore,
     /// Broadcast channel for job events (consumed by the web gateway SSE).
     pub job_event_tx: Option<broadcast::Sender<(Uuid, SseEvent)>>,

@@ -44,11 +44,13 @@ fn strict_object_schema(properties: serde_json::Value, required: &[&str]) -> ser
 
 // ── skill_list ──────────────────────────────────────────────────────────
 
+/// Built-in `skill_list` tool: lists the loaded skills with their trust level and source.
 pub struct SkillListTool {
     registry: Arc<std::sync::RwLock<SkillRegistry>>,
 }
 
 impl SkillListTool {
+    /// Create the tool over the shared skill registry, which is read-locked on each call.
     pub fn new(registry: Arc<std::sync::RwLock<SkillRegistry>>) -> Self {
         Self { registry }
     }
@@ -138,12 +140,14 @@ impl NativeTool for SkillListTool {
 
 // ── skill_search ────────────────────────────────────────────────────────
 
+/// Built-in `skill_search` tool: searches the remote skill catalogue and the local skills.
 pub struct SkillSearchTool {
     registry: Arc<std::sync::RwLock<SkillRegistry>>,
     catalogue: Arc<SkillCatalog>,
 }
 
 impl SkillSearchTool {
+    /// Create the tool over the shared skill registry and the skill catalogue.
     pub fn new(
         registry: Arc<std::sync::RwLock<SkillRegistry>>,
         catalogue: Arc<SkillCatalog>,

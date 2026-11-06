@@ -36,10 +36,15 @@ const MAX_LOG_MESSAGE_BYTES: usize = 4096;
 /// Log levels matching the WIT interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
+    /// Finest-grained diagnostics, usually disabled.
     Trace,
+    /// Diagnostics useful while developing a tool.
     Debug,
+    /// Normal operational events.
     Info,
+    /// Recoverable problems the tool worked around.
     Warn,
+    /// Failures the tool could not recover from.
     Error,
 }
 
@@ -58,8 +63,11 @@ impl std::fmt::Display for LogLevel {
 /// A single log entry from WASM execution.
 #[derive(Debug, Clone)]
 pub struct LogEntry {
+    /// Severity the tool logged the message at.
     pub level: LogLevel,
+    /// Message text, cut to 4096 bytes with a `... (truncated)` suffix when longer.
     pub message: String,
+    /// Milliseconds since the Unix epoch when the host recorded the entry.
     pub timestamp_millis: u64,
 }
 

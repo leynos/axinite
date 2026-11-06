@@ -75,9 +75,13 @@ impl std::fmt::Display for LeakAction {
 /// Severity of a detected leak.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LeakSeverity {
+    /// Minor exposure with limited impact.
     Low,
+    /// A possible secret that should be reviewed.
     Medium,
+    /// A likely credential.
     High,
+    /// The most severe level. Every default pattern at this level blocks the output.
     Critical,
 }
 
@@ -95,17 +99,24 @@ impl std::fmt::Display for LeakSeverity {
 /// A pattern for detecting secret leaks.
 #[derive(Debug, Clone)]
 pub struct LeakPattern {
+    /// Name reported in matches to identify the pattern.
     pub name: String,
+    /// Regex run against the scanned content.
     pub regex: Regex,
+    /// Severity assigned to each match of this pattern.
     pub severity: LeakSeverity,
+    /// Action taken on each match of this pattern.
     pub action: LeakAction,
 }
 
 /// A detected potential secret leak.
 #[derive(Debug, Clone)]
 pub struct LeakMatch {
+    /// Name of the pattern that matched.
     pub pattern_name: String,
+    /// Severity of the matched pattern.
     pub severity: LeakSeverity,
+    /// Action the matched pattern requires.
     pub action: LeakAction,
     /// Location in the scanned content.
     pub location: Range<usize>,
@@ -352,6 +363,12 @@ impl Default for LeakDetector {
 /// Error from leak detection.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum LeakDetectionError {
+    /// Output was refused because a pattern with the `Block` action matched.
     #[error("Secret leak blocked: pattern '{pattern}' matched '{preview}'")]
-    SecretLeakBlocked { pattern: String, preview: String },
+    SecretLeakBlocked {
+        /// Name of the blocking pattern.
+        pattern: String,
+        /// Masked preview of the matched text; the middle of the secret is hidden.
+        preview: String,
+    },
 }

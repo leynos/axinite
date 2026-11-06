@@ -40,18 +40,30 @@ use notifications::apply_before_outbound_hooks;
 ///
 /// Bundles the shared components to reduce argument count.
 pub struct AgentDeps {
+    /// Database backend for persisted threads and jobs. `None` when no database
+    /// is configured, in which case state is not persisted.
     pub store: Option<Arc<dyn Database>>,
+    /// Main LLM provider used for agent turns.
     pub llm: Arc<dyn LlmProvider>,
     /// Cheap/fast LLM for lightweight tasks (heartbeat, routing, evaluation).
     /// Falls back to the main `llm` if None.
     pub cheap_llm: Option<Arc<dyn LlmProvider>>,
+    /// Safety layer that sanitises tool output and validates inbound content.
     pub safety: Arc<SafetyLayer>,
+    /// Registry of built-in and extension tools the agent may call.
     pub tools: Arc<ToolRegistry>,
+    /// Workspace used for memory and indexed documents. `None` disables both.
     pub workspace: Option<Arc<Workspace>>,
+    /// Lifecycle manager for installed extensions. `None` disables extension
+    /// activation and auth flows.
     pub extension_manager: Option<Arc<ExtensionManager>>,
+    /// Loaded skills, behind a lock so the set can change at runtime.
     pub skill_registry: Option<Arc<std::sync::RwLock<SkillRegistry>>>,
+    /// Remote skill catalogue used for searching and installing skills.
     pub skill_catalog: Option<Arc<crate::skills::catalog::SkillCatalog>>,
+    /// Skill discovery and selection settings.
     pub skills_config: SkillsConfig,
+    /// Hook registry consulted at lifecycle points such as before outbound messages.
     pub hooks: Arc<HookRegistry>,
     /// Cost enforcement guardrails (daily budget, hourly rate limits).
     pub cost_guard: Arc<crate::agent::cost_guard::CostGuard>,

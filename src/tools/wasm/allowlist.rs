@@ -29,6 +29,7 @@ pub enum AllowlistResult {
 }
 
 impl AllowlistResult {
+    /// True only for [`AllowlistResult::Allowed`]; every denial returns false.
     pub fn is_allowed(&self) -> bool {
         matches!(self, AllowlistResult::Allowed)
     }
@@ -42,9 +43,19 @@ pub enum DenyReason {
     /// Host is not in the allowlist.
     HostNotAllowed(String),
     /// Path does not match any allowed prefix.
-    PathNotAllowed { host: String, path: String },
+    PathNotAllowed {
+        /// Lowercased host the request targeted.
+        host: String,
+        /// Request path after percent-decoding, with `.`, `..` and empty segments resolved.
+        path: String,
+    },
     /// HTTP method is not allowed for this endpoint.
-    MethodNotAllowed { method: String, host: String },
+    MethodNotAllowed {
+        /// Method as the caller supplied it, unchanged.
+        method: String,
+        /// Lowercased host whose matching endpoints do not permit the method.
+        host: String,
+    },
     /// Allowlist is empty (no endpoints configured).
     EmptyAllowlist,
     /// URL scheme is not HTTPS.

@@ -48,10 +48,12 @@ pub struct WriteFileTool {
 }
 
 impl WriteFileTool {
+    /// Create the tool without a sandbox directory.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Confine writes to paths inside `dir`. Paths that resolve outside it are rejected.
     pub fn with_base_dir(mut self, dir: PathBuf) -> Self {
         self.base_dir = Some(dir);
         self

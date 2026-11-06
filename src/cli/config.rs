@@ -10,6 +10,7 @@ use clap::Subcommand;
 use crate::db::{SettingKey, UserId};
 use crate::settings::Settings;
 
+/// Subcommands of `axinite config`, for viewing and changing stored settings.
 #[derive(Subcommand, Debug, Clone)]
 pub enum ConfigCommand {
     /// Generate a default config.toml file

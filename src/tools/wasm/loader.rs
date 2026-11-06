@@ -55,30 +55,41 @@ pub use wit_compat::check_wit_version_compat;
 /// Error during WASM tool loading.
 #[derive(Debug, thiserror::Error)]
 pub enum WasmLoadError {
+    /// Reading a tool file failed; converted from `std::io::Error`.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The `.wasm` path passed to a loader does not exist. Carries that path.
     #[error("WASM file not found: {0}")]
     WasmNotFound(PathBuf),
 
+    /// A capabilities file path was expected but is missing. The current loader
+    /// does not raise this: a missing capabilities file means default deny.
     #[error("Capabilities file not found: {0}")]
     CapabilitiesNotFound(PathBuf),
 
+    /// The `.capabilities.json` file failed to parse. Carries the parser message.
     #[error("Invalid capabilities JSON: {0}")]
     InvalidCapabilities(String),
 
+    /// The WASM module failed to compile; wraps the underlying `WasmError`.
     #[error("WASM compilation error: {0}")]
     Compilation(#[from] WasmError),
 
+    /// Reading the tool from the WASM tool store failed; wraps `WasmStorageError`.
     #[error("Storage error: {0}")]
     Storage(#[from] WasmStorageError),
 
+    /// The tool could not be registered with the tool registry.
     #[error("Registration error: {0}")]
     Registration(#[from] WasmRegistrationError),
 
+    /// The tool name is empty or contains a path separator. Carries the rejected name.
     #[error("Invalid tool name: {0}")]
     InvalidName(String),
 
+    /// The declared WIT version cannot be used with the host. Carries a rebuild or
+    /// update hint for the user.
     #[error("WIT version mismatch: {0}")]
     WitVersionMismatch(String),
 }

@@ -28,11 +28,19 @@ fn resolve_default_timezone(ctx: &EnvContext, settings: &Settings) -> Result<Str
 /// Agent behaviour configuration.
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
+    /// Agent display name, from `AGENT_NAME`.
     pub name: String,
+    /// Maximum jobs that may run concurrently, from `AGENT_MAX_PARALLEL_JOBS`.
     pub max_parallel_jobs: usize,
+    /// Timeout passed to each job's worker, in seconds (`AGENT_JOB_TIMEOUT_SECS`).
     pub job_timeout: Duration,
+    /// How long a job must stay stuck before self-repair reports it, in seconds
+    /// (`AGENT_STUCK_THRESHOLD_SECS`).
     pub stuck_threshold: Duration,
+    /// How often self-repair runs its checks, in seconds (`SELF_REPAIR_CHECK_INTERVAL_SECS`).
     pub repair_check_interval: Duration,
+    /// Repair attempts after which a stuck job or broken tool is no longer retried
+    /// (`SELF_REPAIR_MAX_ATTEMPTS`).
     pub max_repair_attempts: u32,
     /// Whether to use planning before tool execution.
     pub use_planning: bool,

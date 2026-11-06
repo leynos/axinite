@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 pub use loading::{check_gating, compute_hash};
 pub use staged_install::{CommitPreparedInstallError, PreparedSkillInstall, SkillInstallPayload};
 
-use crate::skills::bundle::SkillBundleError;
 use crate::skills::{LoadedSkill, SkillPackageKind, SkillSource, SkillTrust};
 
 /// Maximum number of skills that can be discovered from a single directory.
@@ -33,59 +32,8 @@ fn to_lowercase_vec(items: &[String]) -> Vec<String> {
     items.iter().map(|s| s.to_lowercase()).collect()
 }
 
-/// Error type for skill registry operations.
-#[derive(Debug, thiserror::Error)]
-pub enum SkillRegistryError {
-    #[error("Skill not found: {0}")]
-    NotFound(String),
-
-    #[error("Failed to read skill file {path}: {reason}")]
-    ReadError { path: String, reason: String },
-
-    #[error("Failed to parse SKILL.md for '{name}': {reason}")]
-    ParseError { name: String, reason: String },
-
-    #[error("Skill file too large for '{name}': {size} bytes (max {max} bytes)")]
-    FileTooLarge { name: String, size: u64, max: u64 },
-
-    #[error("Symlink detected in skills directory: {path}")]
-    SymlinkDetected { path: String },
-
-    #[error("Skill '{name}' failed gating: {reason}")]
-    GatingFailed { name: String, reason: String },
-
-    #[error(
-        "Skill '{name}' prompt exceeds token budget: ~{approx_tokens} tokens but declares max_context_tokens={declared}"
-    )]
-    TokenBudgetExceeded {
-        name: String,
-        approx_tokens: usize,
-        declared: usize,
-    },
-
-    #[error("Skill '{name}' already exists")]
-    AlreadyExists { name: String },
-
-    #[error("Cannot remove skill '{name}': {reason}")]
-    CannotRemove { name: String, reason: String },
-
-    #[error("Failed to write skill file {path}: {reason}")]
-    WriteError { path: String, reason: String },
-
-    #[error("{0}")]
-    InvalidBundle(#[from] SkillBundleError),
-
-    #[error("Invalid skill content: {reason}")]
-    InvalidContent { reason: String },
-}
-
-impl From<crate::skills::LoadedSkillLocationError> for SkillRegistryError {
-    fn from(error: crate::skills::LoadedSkillLocationError) -> Self {
-        SkillRegistryError::InvalidContent {
-            reason: error.to_string(),
-        }
-    }
-}
+mod error;
+pub use error::SkillRegistryError;
 
 /// Registry of available skills.
 pub struct SkillRegistry {

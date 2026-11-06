@@ -14,12 +14,19 @@ use core::pin::Pin;
 /// Supported audio formats for transcription.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioFormat {
+    /// Ogg container, typically Vorbis or Opus audio.
     Ogg,
+    /// MPEG-1 Audio Layer III.
     Mp3,
+    /// MPEG-4 container.
     Mp4,
+    /// RIFF/WAVE PCM audio.
     Wav,
+    /// WebM container.
     Webm,
+    /// Free Lossless Audio Codec.
     Flac,
+    /// MPEG-4 audio (AAC), as used in `.m4a` files.
     M4a,
 }
 
@@ -56,12 +63,18 @@ impl AudioFormat {
 /// Errors from the transcription pipeline.
 #[derive(Debug, thiserror::Error)]
 pub enum TranscriptionError {
+    /// The provider request or its response failed. The string describes the failure.
     #[error("Transcription request failed: {0}")]
     RequestFailed(String),
 
+    /// The attachment's MIME type maps to no supported `AudioFormat`.
     #[error("Unsupported audio format: {mime_type}")]
-    UnsupportedFormat { mime_type: String },
+    UnsupportedFormat {
+        /// The MIME type that no `AudioFormat` covers.
+        mime_type: String,
+    },
 
+    /// The attachment contained no bytes, so there is nothing to transcribe.
     #[error("Audio data is empty")]
     EmptyAudio,
 }

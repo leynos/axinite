@@ -28,6 +28,8 @@ pub struct LibSqlWasmToolStore {
 }
 
 impl LibSqlWasmToolStore {
+    /// Wrap a shared libSQL database handle. No connection is opened here; each
+    /// operation calls `connect` for its own.
     pub fn new(db: std::sync::Arc<crate::db::libsql::LibSqlDatabase>) -> Self {
         Self { db }
     }

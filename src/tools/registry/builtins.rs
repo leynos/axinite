@@ -26,41 +26,8 @@ use crate::tools::registry::loader::ToolRegistry;
 use crate::tools::tool::{Tool, ToolDomain};
 use crate::workspace::Workspace;
 
-pub struct ImageToolsRegistration {
-    pub api_base_url: String,
-    pub api_key: String,
-    pub gen_model: String,
-    pub base_dir: Option<std::path::PathBuf>,
-}
-
-impl ImageToolsRegistration {
-    pub fn new(api_base_url: String, api_key: String, gen_model: String) -> Self {
-        Self {
-            api_base_url,
-            api_key,
-            gen_model,
-            base_dir: None,
-        }
-    }
-}
-
-pub struct VisionToolsRegistration {
-    pub api_base_url: String,
-    pub api_key: String,
-    pub vision_model: String,
-    pub base_dir: Option<std::path::PathBuf>,
-}
-
-pub struct RegisterJobToolsOptions {
-    pub context_manager: Arc<ContextManager>,
-    pub scheduler_slot: Option<crate::tools::builtin::SchedulerSlot>,
-    pub job_manager: Option<Arc<ContainerJobManager>>,
-    pub store: Option<Arc<dyn Database>>,
-    pub job_event_tx: Option<tokio::sync::broadcast::Sender<(uuid::Uuid, SseEvent)>>,
-    pub inject_tx: Option<tokio::sync::mpsc::Sender<IncomingMessage>>,
-    pub prompt_queue: Option<PromptQueue>,
-    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-}
+mod options;
+pub use options::{ImageToolsRegistration, RegisterJobToolsOptions, VisionToolsRegistration};
 
 impl ToolRegistry {
     /// Register all built-in tools.

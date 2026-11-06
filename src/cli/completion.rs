@@ -14,6 +14,8 @@ pub struct Completion {
 }
 
 impl Completion {
+    /// Writes the completion script for `self.shell` to stdout. Zsh scripts
+    /// are patched so the `compdef` call is safe before `compinit`.
     pub fn run(&self) -> anyhow::Result<()> {
         let mut cmd = crate::cli::Cli::command();
         let bin_name = cmd.get_name().to_string();
