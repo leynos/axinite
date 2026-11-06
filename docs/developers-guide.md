@@ -563,9 +563,9 @@ surfaces: the root `Cargo.toml` and the standalone
 `tools-src/telegram/patches/grammers-crypto` patch crate, which sits outside
 the root workspace and would otherwise be unreadable to the dependency-family
 rule. Workspace members are read through their workspace root and are not
-declared. A nested manifest is judged as a project root by the build rules
-only when it carries a `[profile]` table of its own. Declare a new standalone
-crate here when it is added.
+declared. A nested manifest is judged as a project root by the build rules only
+when it carries a `[profile]` table of its own. Declare a new standalone crate
+here when it is added.
 
 ### Development build footprint
 
