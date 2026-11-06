@@ -17,7 +17,6 @@ extend-exclude = [
     "Cargo.lock",
     "axinite.png",
     "bun.lock",
-    "crates/pg-embed-setup-unpriv/**",
     "data/typos-oxendict-base.toml",
     "dist",
     "node_modules",

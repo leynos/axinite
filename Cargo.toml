@@ -209,7 +209,7 @@ zbus = "5"
 # published for Linux targets only. The Windows lanes build with
 # --all-features, so this is target-scoped as well as feature-scoped; scoping
 # by feature alone leaves that lane trying to resolve it.
-pg_embedded_setup_unpriv = { package = "pg-embed-setup-unpriv", version = "0.6.3", optional = true }
+pg_embedded_setup_unpriv = { package = "pg-embed-setup-unpriv", version = "0.7.0", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -332,5 +332,3 @@ aarch64-apple-darwin = "macos-15"
 [patch.crates-io]
 # Update the SDK transport without forking libSQL; see the patch UPSTREAM.md.
 hyper-rustls = { path = "crates/hyper-rustls" }
-# Keep a slot sweep and its following claim atomic; see the patch UPSTREAM.md.
-pg-embed-setup-unpriv = { path = "crates/pg-embed-setup-unpriv" }

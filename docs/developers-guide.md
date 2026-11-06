@@ -455,7 +455,7 @@ With `TEST_DATABASE_URL` set it uses that database, skipping only when nothing
 answers and the lane did not promise one (`AXINITE_REQUIRE_POSTGRES`).
 Otherwise, on Linux with `embedded-postgres`,
 `src/testing/postgres/embedded.rs` bootstraps PostgreSQL 17.11 through
-`pg-embed-setup-unpriv` 0.6, migrates one template database named after a hash
+`pg-embed-setup-unpriv` 0.7, migrates one template database named after a hash
 of `migrations/`, and clones a fresh database per test that is dropped when the
 test ends. A bootstrap failure is a test failure, never a skip: it means the
 harness is broken, not that nobody provided a database. There is no fallback to
