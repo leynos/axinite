@@ -1,6 +1,6 @@
 # Import Kani and Verus support from Netsuke
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose and big picture
 
@@ -272,8 +272,10 @@ adoption programme complete.
       passed on that commit: `Kani Smoke Proof` (51 s) and `Verus Proofs`
       (52 s) both succeeded, and the required `gh run rerun` repeat (attempt 2,
       20:23:47–20:24:34 UTC) passed both jobs again. The remaining hosted checks
-      on `f1e245c8` are green; Package jobs for the two macOS targets were still
-      queueing when this note was written.
+      on `f1e245c8` were green; its two macOS Package jobs were superseded by
+      the next push. On `55a0dcee` the proof jobs passed again, and the only
+      non-green check was `Package (x86_64-apple-darwin)`, cancelled at its
+      90-minute job timeout; that job was rerun.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -289,16 +291,24 @@ with CBMC 6.8.0; Verus reported four verified, zero errors; 1,842 seconds), and
 `make test-prover-tools` (2 Kani and 6 Verus tests passed; 597 seconds). The
 remaining local checks also passed: Markdown lint (zero issues), Nixie (all
 diagrams), `git diff --check`, and Ruff format/check (11 Python files). Logs
-are under `/tmp/*-axinite-import-prover-tools-m4-3.out`. These results precede
-the required rebase, so rerun the candidate gates after rebasing and retain the
-new evidence before using this milestone for hosted assessment.
+are under `/tmp/*-axinite-import-prover-tools-m4-3.out`. After the rebase and
+the review-response changes, the candidate gates were rerun on the `f1e245c8`
+working tree and passed: `make check-fmt` (174 files unchanged), `make lint`,
+`make typecheck`, `make test` (4,444 passed, 12 skipped),
+`make test-workflow-contracts` (1,980 passed, 11 skipped), `make formal-pr`
+(Kani verified one harness with zero failures; Verus reported four verified and
+zero errors), `make test-prover-tools` (2 Kani and 6 Verus tests passed),
+`make markdownlint` (zero issues), `make nixie` (all diagrams), and
+`git diff --check` (clean). Logs are under
+`/tmp/*-axinite-import-prover-tools.out`.
 
 The required dependency audit initially descended into the installed Kani
 toolchain under the generated `.cache/` directory and failed while parsing an
 upstream manifest that inherits workspace lints. The audit traversal now skips
 generated `.cache/` content, and its contract fixture includes a fake cached
 tool manifest to ensure it stays out of the repository audit. The corrected
-audit and complete post-rebase gates remain outstanding.
+audit passed in hosted CI on `f1e245c8` and `55a0dcee` (`Dependency Audit`),
+and the post-rebase candidate gates above passed locally.
 
 ## Surprises & discoveries
 
