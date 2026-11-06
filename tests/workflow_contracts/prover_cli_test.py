@@ -8,11 +8,13 @@ proved to fail before any prover process starts. Run via
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 from _makefile_test_support import shell_quote
@@ -20,6 +22,15 @@ from _makefile_test_support import shell_quote
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PROVER_CLI = REPOSITORY_ROOT / "scripts" / "prover_cli.py"
 CALL_LOG_NAME = "prover calls.jsonl"
+
+
+def _load_cli() -> ModuleType:
+    """Load the prover CLI as a module for direct query-boundary tests."""
+    spec = importlib.util.spec_from_file_location("prover_cli_under_test", PROVER_CLI)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _fake_prover(tmp_path: Path, *, terminate: bool = False) -> Path:
@@ -182,3 +193,115 @@ def test_install_verus_forwards_custom_version_and_checksum_files(
             "/custom/verus checksums",
         ]
     ]
+
+
+class _DependencyRecorder:
+    """Record which injected dependency an argument query asked for."""
+
+    def __init__(self) -> None:
+        self.names: list[str] = []
+
+    def setting(self, name: str) -> str:
+        self.names.append(name)
+        return f"/resolved/{name.lower()}"
+
+    def proof_arguments(self) -> list[str]:
+        self.names.append("proof_arguments")
+        return ["--proof-file", "/resolved/proof.rs"]
+
+    def kani_installation(self) -> str:
+        self.names.append("kani_installation")
+        return "/resolved/kani release"
+
+
+def test_argument_queries_resolve_only_the_dependencies_they_need() -> None:
+    """Query arguments without ambient reads or eager fallible resolution."""
+    cli = _load_cli()
+
+    recorder = _DependencyRecorder()
+    assert cli._arguments(
+        "kani-check",
+        setting=recorder.setting,
+        proof_arguments=recorder.proof_arguments,
+        kani_installation=recorder.kani_installation,
+        version_file="/custom/pin",
+    ) == [
+        "kani",
+        "check-version",
+        "--version-file",
+        "/custom/pin",
+        "--kani-command",
+        "/resolved/kani_bin_dir/cargo-kani",
+    ]
+    assert recorder.names == ["KANI_BIN_DIR"]
+
+    recorder = _DependencyRecorder()
+    assert cli._arguments(
+        "kani-full",
+        setting=recorder.setting,
+        proof_arguments=recorder.proof_arguments,
+        kani_installation=recorder.kani_installation,
+        version_file="/custom/pin",
+    ) == [
+        "kani",
+        "exec",
+        "--installation",
+        "/resolved/kani release",
+        "--cwd",
+        "/resolved/kani_proof_dir",
+        "--extra-arg=--output-format=regular",
+    ]
+    assert recorder.names == ["kani_installation", "KANI_PROOF_DIR"]
+
+    recorder = _DependencyRecorder()
+    assert cli._arguments(
+        "verus",
+        setting=recorder.setting,
+        proof_arguments=recorder.proof_arguments,
+        kani_installation=recorder.kani_installation,
+        version_file="/custom/pin",
+    ) == ["verus", "run", "--proof-file", "/resolved/proof.rs"]
+    assert recorder.names == ["proof_arguments"]
+
+
+def test_argument_queries_propagate_a_failed_kani_pin_read() -> None:
+    """Keep the fallible installation boundary visible to the caller."""
+    cli = _load_cli()
+
+    def unusable_pin() -> str:
+        raise ValueError("Kani version file /pin is empty")
+
+    with pytest.raises(ValueError, match="is empty"):
+        cli._arguments(
+            "kani",
+            setting=lambda name: f"/resolved/{name.lower()}",
+            proof_arguments=lambda: [],
+            kani_installation=unusable_pin,
+            version_file="/pin",
+        )
+
+
+@pytest.mark.parametrize("pin_contents", ("", " \n\t"))
+def test_empty_kani_pin_fails_before_the_proof_starts(
+    tmp_path: Path,
+    pin_contents: str,
+) -> None:
+    """Reject an empty pin at the default installation boundary."""
+    prover = _fake_prover(tmp_path)
+    pin = tmp_path / "VERSION"
+    pin.write_text(pin_contents, encoding="utf-8")
+
+    result = _run_cli(
+        tmp_path,
+        "kani",
+        environment={
+            "PROVER_TOOLS": shell_quote(str(prover)),
+            "KANI_VERSION_FILE": str(pin),
+            "KANI_HOME": str(tmp_path / "kani home"),
+            "KANI_PROOF_DIR": "/unused",
+        },
+    )
+
+    assert result.returncode == 1
+    assert "is empty" in result.stderr
+    assert _calls(tmp_path) == []
