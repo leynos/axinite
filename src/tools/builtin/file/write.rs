@@ -53,7 +53,8 @@ impl WriteFileTool {
         Self::default()
     }
 
-    /// Confine writes to paths inside `dir`. Paths that resolve outside it are rejected.
+    /// Reject writes to paths that resolve outside `dir`. A dangling symlink inside `dir`
+    /// that points outside it is not detected, so this is not a full sandbox.
     pub fn with_base_dir(mut self, dir: PathBuf) -> Self {
         self.base_dir = Some(dir);
         self

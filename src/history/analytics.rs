@@ -18,9 +18,11 @@ pub struct JobStats {
     pub failed_jobs: u64,
     /// `completed_jobs / total_jobs` as a fraction from 0.0 to 1.0. Zero when there are no jobs.
     pub success_rate: f64,
-    /// Mean wall-clock duration in seconds over jobs that have a `completed_at`. Zero if none.
+    /// Mean wall-clock duration in seconds over jobs that have both `started_at` and
+    /// `completed_at`; jobs missing either are left out. Zero if none.
     pub avg_duration_secs: f64,
-    /// Mean `actual_cost` across all jobs, in the units of that column. Zero if none.
+    /// Mean `actual_cost` over jobs whose `actual_cost` is set, in the units of that column.
+    /// Zero if none.
     pub avg_cost: Decimal,
     /// Sum of `actual_cost` across all jobs, in the units of that column.
     pub total_cost: Decimal,

@@ -25,7 +25,7 @@ pub struct MessageTool {
 }
 
 impl MessageTool {
-    /// Create the tool, sandboxing attachment paths to the axinite base directory.
+    /// Create the tool, limiting attachment paths to the axinite base directory and `/tmp`.
     pub fn new(channel_manager: Arc<ChannelManager>) -> Self {
         let base_dir = axinite_base_dir();
 

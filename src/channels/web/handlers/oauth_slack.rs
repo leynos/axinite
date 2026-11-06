@@ -23,7 +23,8 @@ struct ValidatedSlackCallback {
 /// Handles the relay's redirect back from Slack OAuth at `/oauth/slack/callback`.
 ///
 /// Requests rejected by the rate limiter, parameter validation, the extension-manager check
-/// or the CSRF state check get a failure page and no side effects. Otherwise the relay is
+/// or the CSRF state check get a failure page and complete no relay; a request that passes
+/// the rate limiter still uses one of its slots. Otherwise the relay is
 /// completed, the relay auth mode is cleared on success, and an `AuthCompleted` event is
 /// broadcast to SSE clients.
 pub async fn slack_relay_oauth_callback_handler(
