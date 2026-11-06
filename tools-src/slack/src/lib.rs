@@ -30,10 +30,16 @@ use types::SlackAction;
 
 // Generate bindings from the WIT interface.
 // This creates the `bindings` module with types and traits.
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+// The generated bindings live in a private module so the undocumented
+// wit-bindgen items are not part of the crate's documented surface.
+mod bindings {
+    wit_bindgen::generate!({
+        world: "sandboxed-tool",
+        path: "../../wit/tool.wit",
+    });
+}
+
+use bindings::{exports, near};
 
 /// Implementation of the tool interface.
 struct SlackTool;
@@ -162,4 +168,4 @@ fn execute_inner(params: &str) -> Result<String, String> {
 }
 
 // Export the tool implementation.
-export!(SlackTool);
+bindings::export!(SlackTool with_types_in bindings);

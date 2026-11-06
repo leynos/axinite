@@ -37,10 +37,16 @@ mod types;
 
 use types::GoogleDriveAction;
 
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+// The generated bindings live in a private module so the undocumented
+// wit-bindgen items are not part of the crate's documented surface.
+mod bindings {
+    wit_bindgen::generate!({
+        world: "sandboxed-tool",
+        path: "../../wit/tool.wit",
+    });
+}
+
+use bindings::{exports, near};
 
 struct GoogleDriveTool;
 
@@ -302,4 +308,4 @@ fn execute_inner(params: &str) -> Result<String, String> {
     Ok(result)
 }
 
-export!(GoogleDriveTool);
+bindings::export!(GoogleDriveTool with_types_in bindings);

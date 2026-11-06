@@ -20,19 +20,23 @@
 //! - Webhook verify token validation by host
 
 // Generate bindings from the WIT file
-wit_bindgen::generate!({
-    world: "sandboxed-channel",
-    path: "../../wit/channel.wit",
-});
+// The generated bindings live in a private module so the undocumented
+// wit-bindgen items are not part of the crate's documented surface.
+mod bindings {
+    wit_bindgen::generate!({
+        world: "sandboxed-channel",
+        path: "../../wit/channel.wit",
+    });
+}
 
 use serde::{Deserialize, Serialize};
 
 // Re-export generated types
-use exports::near::agent::channel::{
+use bindings::exports::near::agent::channel::{
     AgentResponse, ChannelConfig, Guest, HttpEndpointConfig, IncomingHttpRequest,
     OutgoingHttpResponse, StatusUpdate,
 };
-use near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
+use bindings::near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
 
 // ============================================================================
 // WhatsApp Cloud API Types
@@ -957,7 +961,7 @@ fn json_response(status: u16, value: serde_json::Value) -> OutgoingHttpResponse 
 }
 
 // Export the component
-export!(WhatsAppChannel);
+bindings::export!(WhatsAppChannel with_types_in bindings);
 
 // ============================================================================
 // Tests

@@ -13,10 +13,16 @@
 //! - workflow (for triggering actions)
 //! - read:org (for org repos)
 
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+// The generated bindings live in a private module so the undocumented
+// wit-bindgen items are not part of the crate's documented surface.
+mod bindings {
+    wit_bindgen::generate!({
+        world: "sandboxed-tool",
+        path: "../../wit/tool.wit",
+    });
+}
+
+use bindings::{exports, near};
 
 mod schema;
 
@@ -695,7 +701,7 @@ fn is_invalid_workflow_id(workflow_id: &str) -> bool {
     workflow_id.contains('/') || workflow_id.contains("..") || workflow_id.contains(':')
 }
 
-export!(GitHubTool);
+bindings::export!(GitHubTool with_types_in bindings);
 
 #[cfg(test)]
 mod tests {

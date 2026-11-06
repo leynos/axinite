@@ -2,10 +2,22 @@
 // that are deserialized for compatibility but not read by every module.
 #![allow(dead_code)]
 
-wit_bindgen::generate!({
-    world: "sandboxed-channel",
-    path: "../../wit/channel.wit",
-});
+//! Telegram channel for Axinite.
+//!
+//! This WASM component implements the channel interface for receiving
+//! Telegram updates by webhook or polling and sending replies, status updates
+//! and attachments back through the Telegram Bot API.
+
+// The generated bindings live in a private module so the undocumented
+// wit-bindgen items are not part of the crate's documented surface.
+mod bindings {
+    wit_bindgen::generate!({
+        world: "sandboxed-channel",
+        path: "../../wit/channel.wit",
+    });
+}
+
+use bindings::{exports, near};
 
 mod attachments;
 mod downloads;
@@ -24,4 +36,4 @@ mod tests;
 struct TelegramChannel;
 
 // Export the component
-export!(TelegramChannel);
+bindings::export!(TelegramChannel with_types_in bindings);
