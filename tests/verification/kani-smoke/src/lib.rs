@@ -7,6 +7,11 @@ pub fn exact_projection(requested: u8, permitted: u8) -> u8 {
     requested & permitted & FOUR_ENTRY_MASK
 }
 
+/// Kani harnesses that check `exact_projection` against the four-entry mask.
+///
+/// The harness explores arbitrary `requested` and `permitted` bytes and
+/// asserts that each of the four projected entries matches the corresponding
+/// requested-and-permitted membership, and that no higher bit survives.
 #[cfg(kani)]
 mod proofs {
     use super::{exact_projection, FOUR_ENTRY_MASK};
