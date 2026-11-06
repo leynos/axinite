@@ -275,7 +275,13 @@ adoption programme complete.
       on `f1e245c8` were green; its two macOS Package jobs were superseded by
       the next push. On `55a0dcee` the proof jobs passed again, and the only
       non-green check was `Package (x86_64-apple-darwin)`, cancelled at its
-      90-minute job timeout; that job was rerun.
+      90-minute job timeout; that job was rerun. On the review-repair commit
+      `36b29c63`, hosted run
+      [42186729132](https://github.com/leynos/axinite/actions/runs/42186729132)
+      passed both proof jobs (`Kani Smoke Proof` 08:37:20–08:38:01 UTC, `Verus
+      Proofs` 08:40:30–08:41:24 UTC); the required `gh run rerun` repeat
+      (attempt 2, 08:55:23–08:57:05 UTC) passed them again, and
+      `Dependency Audit` passed on the same commit.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
