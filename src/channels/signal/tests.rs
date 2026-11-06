@@ -83,12 +83,21 @@ fn make_config_with_allowed_group(group_id: &str) -> SignalConfig {
     }
 }
 
+/// Build a channel from a literal test config.
+///
+/// `SignalChannel::new` can fail if the HTTP client backend cannot
+/// initialize, so the helper stays fallible and each test handles the
+/// failure at its own boundary.
+fn make_channel_from_config(config: SignalConfig) -> Result<SignalChannel, ChannelError> {
+    SignalChannel::new(config)
+}
+
 fn make_channel() -> Result<SignalChannel, ChannelError> {
-    SignalChannel::new(make_config())
+    make_channel_from_config(make_config())
 }
 
 fn make_channel_with_allowed_group(group_id: &str) -> Result<SignalChannel, ChannelError> {
-    SignalChannel::new(make_config_with_allowed_group(group_id))
+    make_channel_from_config(make_config_with_allowed_group(group_id))
 }
 
 fn make_envelope(source_number: Option<&str>, message: Option<&str>) -> Envelope {

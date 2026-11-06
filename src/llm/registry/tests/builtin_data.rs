@@ -2,17 +2,17 @@
 
 use crate::llm::registry::{ProviderDefinition, ProviderProtocol, ProviderRegistry, SetupHint};
 
-fn builtin_registry() -> ProviderRegistry {
-    ProviderRegistry::new(serde_json::from_str(include_str!("../../../../providers.json")).unwrap())
+fn builtin_registry() -> Result<ProviderRegistry, serde_json::Error> {
+    builtin_providers().map(ProviderRegistry::new)
 }
 
-fn builtin_providers() -> Vec<ProviderDefinition> {
-    serde_json::from_str(include_str!("../../../../providers.json")).unwrap()
+fn builtin_providers() -> Result<Vec<ProviderDefinition>, serde_json::Error> {
+    serde_json::from_str(include_str!("../../../../providers.json"))
 }
 
 #[test]
 fn test_builtin_registry_loads() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     assert!(
         registry.all().len() >= 5,
         "should have at least 5 built-in providers"
@@ -21,7 +21,7 @@ fn test_builtin_registry_loads() {
 
 #[test]
 fn test_find_by_id() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     let openai = registry.find("openai").expect("openai should exist");
     assert_eq!(openai.id, "openai");
     assert_eq!(openai.protocol, ProviderProtocol::OpenAiCompletions);
@@ -29,7 +29,7 @@ fn test_find_by_id() {
 
 #[test]
 fn test_find_by_alias() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     let openai = registry
         .find("open_ai")
         .expect("alias open_ai should resolve");
@@ -38,7 +38,7 @@ fn test_find_by_alias() {
 
 #[test]
 fn test_find_case_insensitive() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     assert!(registry.find("OpenAI").is_some());
     assert!(registry.find("GROQ").is_some());
     assert!(registry.find("Tinfoil").is_some());
@@ -46,20 +46,20 @@ fn test_find_case_insensitive() {
 
 #[test]
 fn test_find_unknown_returns_none() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     assert!(registry.find("nonexistent_provider").is_none());
 }
 
 #[test]
 fn test_model_env_var_nearai() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     assert_eq!(registry.model_env_var("nearai"), "NEARAI_MODEL");
     assert_eq!(registry.model_env_var("near_ai"), "NEARAI_MODEL");
 }
 
 #[test]
 fn test_model_env_var_registry_provider() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     assert_eq!(registry.model_env_var("groq"), "GROQ_MODEL");
     assert_eq!(registry.model_env_var("tinfoil"), "TINFOIL_MODEL");
     assert_eq!(registry.model_env_var("openai"), "OPENAI_MODEL");
@@ -67,13 +67,13 @@ fn test_model_env_var_registry_provider() {
 
 #[test]
 fn test_model_env_var_unknown_fallback() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     assert_eq!(registry.model_env_var("nonexistent"), "LLM_MODEL");
 }
 
 #[test]
 fn test_is_known() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     assert!(registry.is_known("nearai"));
     assert!(registry.is_known("openai"));
     assert!(registry.is_known("groq"));
@@ -82,7 +82,7 @@ fn test_is_known() {
 
 #[test]
 fn test_all_providers_have_required_fields() {
-    let providers = builtin_providers();
+    let providers = builtin_providers().expect("built-in providers.json should deserialize");
     for def in &providers {
         assert!(!def.id.is_empty(), "provider must have an id");
         assert!(!def.model_env.is_empty(), "{}: model_env required", def.id);
@@ -111,7 +111,7 @@ fn requires_default_base_url(def: &ProviderDefinition) -> bool {
 
 #[test]
 fn test_openai_compatible_providers_have_base_url() {
-    let providers = builtin_providers();
+    let providers = builtin_providers().expect("built-in providers.json should deserialize");
     for def in &providers {
         if requires_default_base_url(def) {
             assert!(
@@ -125,7 +125,7 @@ fn test_openai_compatible_providers_have_base_url() {
 
 #[test]
 fn test_models_filter_accessor() {
-    let registry = builtin_registry();
+    let registry = builtin_registry().expect("built-in providers.json should deserialize");
     // Groq has models_filter: "chat"
     let groq = registry.find("groq").expect("groq should exist");
     let filter = groq
@@ -160,10 +160,13 @@ fn test_models_filter_accessor() {
 
 #[test]
 fn test_unsupported_params_deserialized() {
-    let providers = builtin_providers();
+    let providers = builtin_providers().expect("built-in providers.json should deserialize");
 
     // Tinfoil should have temperature in unsupported_params
-    let tinfoil = providers.iter().find(|p| p.id == "tinfoil").unwrap();
+    let tinfoil = providers
+        .iter()
+        .find(|p| p.id == "tinfoil")
+        .expect("tinfoil provider should exist");
     assert!(
         tinfoil
             .unsupported_params
@@ -172,7 +175,10 @@ fn test_unsupported_params_deserialized() {
     );
 
     // OpenAI should also have temperature in unsupported_params
-    let openai = providers.iter().find(|p| p.id == "openai").unwrap();
+    let openai = providers
+        .iter()
+        .find(|p| p.id == "openai")
+        .expect("openai provider should exist");
     assert!(
         openai
             .unsupported_params
@@ -181,7 +187,10 @@ fn test_unsupported_params_deserialized() {
     );
 
     // Providers without the field in JSON should deserialize to empty vec
-    let groq = providers.iter().find(|p| p.id == "groq").unwrap();
+    let groq = providers
+        .iter()
+        .find(|p| p.id == "groq")
+        .expect("groq provider should exist");
     assert!(
         groq.unsupported_params.is_empty(),
         "groq should have empty unsupported_params (field absent in JSON)"
@@ -227,7 +236,10 @@ fn test_unsupported_params_validation_rejects_invalid() {
         "should reject invalid parameter name 'temperrature'"
     );
     assert!(
-        result.err().unwrap().to_string().contains("temperrature"),
+        result
+            .expect_err("deserialization should fail")
+            .to_string()
+            .contains("temperrature"),
         "error message should mention the invalid parameter"
     );
 }
@@ -236,7 +248,7 @@ fn test_unsupported_params_validation_rejects_invalid() {
 fn test_all_builtin_api_key_providers_have_api_key_env() {
     // Every built-in provider with SetupHint::ApiKey must have api_key_env
     // set, otherwise inject_llm_keys_from_secrets can't map the secret.
-    let providers = builtin_providers();
+    let providers = builtin_providers().expect("built-in providers.json should deserialize");
     for def in &providers {
         if let Some(SetupHint::ApiKey { .. }) = &def.setup {
             assert!(
