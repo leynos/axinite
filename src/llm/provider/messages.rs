@@ -53,7 +53,7 @@ pub struct ImageUrl {
 /// A message in a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
-    /// Speaker of this message. Serialised in lowercase (`system`, `user`, ...).
+    /// Speaker of this message. Serialized in lowercase (`system`, `user`, ...).
     pub role: Role,
     /// Text of the message. For tool results this is the tool output, and it may be
     /// empty for an assistant message that only carries tool calls.

@@ -28,7 +28,7 @@ pub struct OpenAiChatRequest {
     #[serde(default)]
     pub tools: Option<Vec<OpenAiTool>>,
     /// Raw tool-choice value: a string such as `auto`, or an object naming a function.
-    /// Normalised by `normalize_tool_choice`.
+    /// Normalized by `normalize_tool_choice`.
     #[serde(default)]
     pub tool_choice: Option<serde_json::Value>,
     /// Stop sequences, as either one string or an array of strings. Parsed by `parse_stop`.
@@ -41,7 +41,7 @@ pub struct OpenAiChatRequest {
 pub struct OpenAiMessage {
     /// Speaker role: `system`, `user`, `assistant` or `tool`.
     pub role: String,
-    /// Text content. Omitted from serialised output when `None`.
+    /// Text content. Omitted from serialized output when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     /// Name of the function whose result a `tool` message carries. Required for `tool`.

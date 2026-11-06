@@ -40,7 +40,7 @@ pub enum PairingStoreError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Serialising pairing state to JSON failed.
+    /// Serializing pairing state to JSON failed.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 

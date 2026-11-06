@@ -32,7 +32,7 @@ pub struct VisionToolsRegistration {
     pub api_base_url: String,
     /// API key sent with each analysis request.
     pub api_key: String,
-    /// Model used to analyze images.
+    /// Model used to analyse images.
     pub vision_model: String,
     /// Directory that image input paths must stay inside, when set.
     pub base_dir: Option<std::path::PathBuf>,

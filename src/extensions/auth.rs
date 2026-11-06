@@ -94,7 +94,7 @@ pub struct AuthResult {
     pub name: String,
     /// Kind of extension this result describes.
     pub kind: ExtensionKind,
-    /// Typed auth state, serialised to the flat `status` wire string.
+    /// Typed auth state, serialized to the flat `status` wire string.
     pub status: AuthStatus,
 }
 

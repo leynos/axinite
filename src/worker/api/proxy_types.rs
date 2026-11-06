@@ -16,14 +16,14 @@ pub enum FinishReason {
     Stop,
     /// Output stopped at the token ceiling.
     Length,
-    /// The model stopped to request tool calls. Serialised as `tool_use`, and
+    /// The model stopped to request tool calls. Serialized as `tool_use`, and
     /// `tool_calls` is accepted on input.
     #[serde(alias = "tool_calls")]
     ToolUse,
     /// The provider withheld output under its content policy.
     ContentFilter,
-    /// Fallback for any wire value this build does not recognise, so that newer
-    /// provider reasons still deserialise.
+    /// Fallback for any wire value this build does not recognize, so that newer
+    /// provider reasons still deserialize.
     #[serde(other)]
     Unknown,
 }

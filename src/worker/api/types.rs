@@ -33,7 +33,7 @@ pub enum WorkerState {
     Completed,
     /// The job ended with an error.
     Failed,
-    /// A state string this version does not recognise, produced by serde's fallback.
+    /// A state string this version does not recognize, produced by serde's fallback.
     #[serde(other)]
     Unknown,
 }
@@ -196,7 +196,7 @@ pub enum JobEventType {
     ToolResult,
     /// Terminal event whose payload is a [`TerminalResult`].
     Result,
-    /// An event type this version does not recognise, produced by serde's fallback.
+    /// An event type this version does not recognize, produced by serde's fallback.
     #[serde(other)]
     Unknown,
 }

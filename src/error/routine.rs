@@ -9,14 +9,14 @@ pub enum RoutineError {
     /// Returned when a trigger type string cannot be parsed into a known kind.
     #[error("Unknown trigger type: {trigger_type}")]
     UnknownTriggerType {
-        /// The unrecognised trigger type string, exactly as supplied.
+        /// The unrecognized trigger type string, exactly as supplied.
         trigger_type: String,
     },
 
     /// Returned when an action type string cannot be parsed into a known kind.
     #[error("Unknown action type: {action_type}")]
     UnknownActionType {
-        /// The unrecognised action type string, exactly as supplied.
+        /// The unrecognized action type string, exactly as supplied.
         action_type: String,
     },
 
@@ -39,7 +39,7 @@ pub enum RoutineError {
     /// Returned when a stored routine run-state string is not recognized.
     #[error("Unknown run status: {status}")]
     UnknownRunStatus {
-        /// The stored run-state string that was not recognised.
+        /// The stored run-state string that was not recognized.
         status: String,
     },
 

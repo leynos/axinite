@@ -48,7 +48,7 @@ pub struct AgentDeps {
     /// Cheap/fast LLM for lightweight tasks (heartbeat, routing, evaluation).
     /// Falls back to the main `llm` if None.
     pub cheap_llm: Option<Arc<dyn LlmProvider>>,
-    /// Safety layer that sanitises tool output and validates inbound content.
+    /// Safety layer that sanitizes tool output and validates inbound content.
     pub safety: Arc<SafetyLayer>,
     /// Registry of built-in and extension tools the agent may call.
     pub tools: Arc<ToolRegistry>,

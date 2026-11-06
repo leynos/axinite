@@ -217,7 +217,7 @@ pub enum WasmStorageError {
     #[error("Database error: {0}")]
     Database(String),
 
-    /// A stored row could not be decoded into a domain value, such as an unparseable
+    /// A stored row could not be decoded into a domain value, such as an unparsable
     /// UUID or an unknown status string. Carries the decoding error message.
     #[error("Invalid data: {0}")]
     InvalidData(String),

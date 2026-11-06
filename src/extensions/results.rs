@@ -147,7 +147,7 @@ pub enum ExtensionError {
     #[error("Invalid URL: {0}")]
     InvalidUrl(String),
 
-    /// Fetching an extension artifact over the network failed.
+    /// Fetching an extension artefact over the network failed.
     #[error("Download failed: {0}")]
     DownloadFailed(String),
 

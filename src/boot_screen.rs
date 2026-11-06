@@ -46,7 +46,7 @@ pub struct BootInfo {
     pub db_connected: bool,
     /// Number of registered tools, shown on the tools line.
     pub tool_count: usize,
-    /// Gateway web-UI URL, sanitised for display. `None` when no gateway is active.
+    /// Gateway web-UI URL, sanitized for display. `None` when no gateway is active.
     pub gateway_url: Option<String>,
     /// Whether embeddings are enabled. Adds an `embeddings` feature label.
     pub embeddings_enabled: bool,
