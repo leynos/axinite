@@ -93,6 +93,20 @@ def test_formal_jobs_pin_checkout_and_disable_uv_cache(
     }, "the proof jobs must not add a build or Cargo-target cache action"
 
 
+@pytest.mark.parametrize("job_id", ["kani-smoke", "verus-proofs"])
+def test_formal_jobs_cannot_be_skipped_or_soft_failed(
+    workflow: dict[str, object], job_id: str
+) -> None:
+    """Keep both proof jobs and their steps unconditional and fail-closed."""
+    job = _job(workflow, job_id)
+    assert "if" not in job, f"{job_id} must not be skippable"
+    assert "continue-on-error" not in job, f"{job_id} must fail the workflow"
+    for step in steps_of(job):
+        assert not step.guarded, (
+            f"{job_id} step {step.name!r} may be skipped or fail softly"
+        )
+
+
 def test_kani_job_installs_probes_and_checks_the_pinned_harness(
     workflow: dict[str, object],
 ) -> None:

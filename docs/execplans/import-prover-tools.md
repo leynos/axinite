@@ -380,6 +380,15 @@ and V1, V2, and V5 below account for that change.
   pair under managed compiler admission. Keep the local Cargo configuration
   warning documented; no root toolchain or wrapper change is needed.
 
+- (2026-11-06) Accept the delivered implementation budget overrun. The import
+  changes 28 non-ExecPlan files and 2,170 added or removed lines against the
+  planned limits of 20 files and 1,500 lines. The additional files are the
+  formal-verification workflow, the prover CLI and its contracts, the Kani
+  smoke package and lockfile, pinned tool metadata, proof fixtures, and
+  contributor documentation required by M2–M4. The assignment to bring PR #492
+  to merge accepts this delivered scope; no further scope expansion is
+  authorized.
+
 ## Plan of work
 
 ### M1 — Pin and demonstrate compatibility
