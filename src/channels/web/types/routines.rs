@@ -136,7 +136,7 @@ pub struct RoutineDetailResponse {
     pub next_fire_at: Option<String>,
     /// Total number of runs recorded for the routine.
     pub run_count: u64,
-    /// Failed runs in a row; above zero, the routine counts as failing unless it is disabled.
+    /// Failed runs in a row; any value above zero counts the routine as failing.
     pub consecutive_failures: u32,
     /// RFC 3339 time the routine was created.
     pub created_at: String,

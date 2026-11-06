@@ -44,6 +44,11 @@ pub async fn routines_list_handler(
     Ok(Json(RoutineListResponse { routines: items }))
 }
 
+/// Summarizes all routines: totals, enabled and disabled counts, how many have failed runs
+/// in a row (disabled routines included), and how many last ran today (UTC).
+///
+/// `runs_today` counts routines whose last run was today, not individual runs. Answers `503`
+/// when no database is configured and `500` when the routines cannot be listed.
 pub async fn routines_summary_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Result<Json<RoutineSummaryResponse>, (StatusCode, String)> {
