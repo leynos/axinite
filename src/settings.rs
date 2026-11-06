@@ -19,6 +19,33 @@ pub use execution::{
 
 use serde::{Deserialize, Serialize};
 
+/// Error returned when a persisted settings file cannot be read or parsed.
+///
+/// A *missing* settings file is not an error: [`Settings::load_from`] reports
+/// [`Settings::default`] for it so that a first run needs no configuration.
+/// Only a file that exists but cannot be turned into [`Settings`] produces one
+/// of these values.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum SettingsError {
+    /// The settings file exists but could not be read.
+    #[error("failed to read settings file {path}: {message}")]
+    Read {
+        /// Path of the settings file.
+        path: String,
+        /// Underlying I/O error message.
+        message: String,
+    },
+
+    /// The settings file was read but is not valid JSON.
+    #[error("failed to parse settings file {path}: {message}")]
+    Parse {
+        /// Path of the settings file.
+        path: String,
+        /// Underlying parse error message.
+        message: String,
+    },
+}
+
 /// User settings persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {

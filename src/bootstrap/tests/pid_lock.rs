@@ -27,6 +27,7 @@ fn test_pid_lock_acquire_and_drop() {
     assert!(!pid_path.exists());
 }
 
+/// Verify that a second acquisition of a held PID lock reports the owning process.
 #[test]
 fn test_pid_lock_rejects_second_acquire() {
     let dir = tempdir().expect("create temp dir for double-acquire test");
@@ -92,23 +93,41 @@ fn test_pid_lock_creates_parent_dirs() {
 }
 
 #[test]
+/// Child-process helper for the cross-process lock test: when invoked with
+/// `AXINITE_PID_LOCK_CHILD=1`, acquire the configured pid lock and hold it for
+/// the requested duration; otherwise return immediately.
 fn test_pid_lock_child_helper_holds_lock() {
-    if std::env::var("AXINITE_PID_LOCK_CHILD").ok().as_deref() != Some("1") {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+        std::env::var("AXINITE_PID_LOCK_CHILD")
+    }
+    .ok()
+    .as_deref()
+        != Some("1")
+    {
         return;
     }
 
     let pid_path = PathBuf::from(
-        std::env::var("AXINITE_PID_LOCK_PATH").expect("AXINITE_PID_LOCK_PATH missing"),
+        {
+            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+            std::env::var("AXINITE_PID_LOCK_PATH")
+        }
+        .expect("AXINITE_PID_LOCK_PATH missing"),
     );
-    let hold_ms = std::env::var("AXINITE_PID_LOCK_HOLD_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(3000);
+    let hold_ms = {
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+        std::env::var("AXINITE_PID_LOCK_HOLD_MS")
+    }
+    .ok()
+    .and_then(|value| value.parse::<u64>().ok())
+    .unwrap_or(3000);
 
     let _lock = PidLock::acquire_at(pid_path).expect("child failed to acquire pid lock");
     thread::sleep(Duration::from_millis(hold_ms));
 }
 
+/// Verify that a lock held by another process is reported as already running.
 #[test]
 fn test_pid_lock_rejects_lock_held_by_other_process() {
     let dir = tempdir().expect("create temp dir for external pid lock test");

@@ -83,7 +83,7 @@ impl SetupWizard {
         secret_name: &str,
         display_name: &str,
     ) -> Result<bool, SetupError> {
-        let Ok(existing) = std::env::var(env_var) else {
+        let Some(existing) = self.env_context.get_owned(env_var) else {
             return Ok(false);
         };
 
@@ -125,15 +125,25 @@ impl SetupWizard {
         }
 
         let key_str = key.expose_secret();
-
-        // Make key visible to `optional_env()` for subsequent config resolution.
-        // Uses the thread-safe overlay instead of `std::env::set_var` to avoid
-        // UB on multi-threaded runtimes.
-        crate::config::inject_single_var(env_var, key_str);
+        self.record_api_key(env_var, key_str);
 
         // Cache key in memory for model fetching later in the wizard
         self.llm_api_key = Some(SecretString::from(key_str.to_string()));
         Ok(())
+    }
+
+    /// Publish an API key to the legacy overlay and the wizard's snapshot.
+    ///
+    /// `optional_env()` callers still read the ambient overlay, so the key is
+    /// injected there without touching the process environment. Startup,
+    /// however, resolves configuration from the snapshot captured before
+    /// onboarding. Recording the key in that snapshot as well keeps a freshly
+    /// entered key usable in `--no-db` runs, where the secrets store is
+    /// unavailable and the ambient overlay never reaches the returned
+    /// [`EnvContext`].
+    pub(super) fn record_api_key(&mut self, env_var: &str, key: &str) {
+        crate::config::inject_single_var(env_var, key);
+        self.env_context.inject_secret(env_var, key);
     }
 
     /// Generic Ollama-style setup: just needs a base URL, no API key.
@@ -204,7 +214,7 @@ impl SetupWizard {
             .settings
             .openai_compatible_base_url
             .clone()
-            .or_else(|| std::env::var("LLM_BASE_URL").ok());
+            .or_else(|| self.env_context.get_owned("LLM_BASE_URL"));
 
         if let Some(u) = existing_url {
             let url_input = optional_input("Base URL", Some(&format!("current: {}", u)))

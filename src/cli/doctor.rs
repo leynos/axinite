@@ -11,8 +11,8 @@ mod subsystem_checks;
 mod tests;
 
 use core_checks::{
-    check_database, check_llm_config, check_nearai_session, check_settings_file,
-    check_workspace_dir, check_workspace_search,
+    check_database_with_context, check_llm_config_with_context, check_nearai_session,
+    check_settings_file, check_workspace_dir, check_workspace_search_with_context,
 };
 use external_checks::{check_binary, check_docker_daemon, check_service_installed};
 use subsystem_checks::{
@@ -20,9 +20,11 @@ use subsystem_checks::{
     check_skills,
 };
 
+use crate::config::EnvContext;
 use crate::settings::Settings;
 
 async fn run_core_checks(
+    env_context: &EnvContext,
     settings: &Settings,
     passed: &mut u32,
     failed: &mut u32,
@@ -30,42 +32,42 @@ async fn run_core_checks(
 ) {
     check(
         "Settings file",
-        check_settings_file(),
+        check_settings_file(env_context),
         passed,
         failed,
         skipped,
     );
     check(
         "NEAR AI session",
-        check_nearai_session().await,
+        check_nearai_session(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "LLM configuration",
-        check_llm_config(settings),
+        check_llm_config_with_context(env_context, settings),
         passed,
         failed,
         skipped,
     );
     check(
         "Database backend",
-        check_database().await,
+        check_database_with_context(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "Workspace search",
-        check_workspace_search().await,
+        check_workspace_search_with_context(env_context).await,
         passed,
         failed,
         skipped,
     );
     check(
         "Workspace directory",
-        check_workspace_dir(),
+        check_workspace_dir(env_context),
         passed,
         failed,
         skipped,
@@ -157,10 +159,19 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     let mut failed = 0u32;
     let mut skipped = 0u32;
 
-    // Load settings once for checks that need them.
-    let settings = Settings::load();
+    // Capture the environment once and derive settings from the same snapshot
+    // so every check observes a consistent view.
+    let env_context = crate::bootstrap::capture_config_env_context();
+    let settings = settings_for_context(&env_context);
 
-    run_core_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
+    run_core_checks(
+        &env_context,
+        &settings,
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+    )
+    .await;
     run_subsystem_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
     run_external_binary_checks(&mut passed, &mut failed, &mut skipped).await;
 
@@ -174,6 +185,20 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Load doctor's settings from the supplied snapshot's base directory.
+///
+/// A malformed settings file must not abort diagnostics: the warning is
+/// printed and the default settings are used instead.
+pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
+    match Settings::load_from(&env_context.axinite_base_dir().join("settings.json")) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("Warning: {error}; continuing with default settings");
+            Settings::default()
+        }
+    }
 }
 
 // ── Check runner ────────────────────────────────────────────

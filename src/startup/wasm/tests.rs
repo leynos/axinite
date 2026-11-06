@@ -11,7 +11,7 @@ use axinite::{
         wasm::{WasmChannelRouter, WasmChannelRuntime, WasmChannelRuntimeConfig},
         web::types::SseEvent,
     },
-    config::Config,
+    config::{Config, EnvContext},
     extensions::{ActivateResult, ExtensionError, ExtensionKind},
     llm::create_session_manager,
     pairing::PairingStore,
@@ -90,6 +90,7 @@ impl WasmRuntimeWiringPort for FakeRuntimeManager {
         self.relay_channels.lock().await.contains(name)
     }
 
+    /// Record the activation attempt and fail for channels the test marked as failing.
     async fn activate(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
         self.wasm_activation_calls
             .lock()
@@ -157,7 +158,7 @@ async fn run_init_wasm_channels(
         channel_names: &mut channel_names,
         webhook_routes: &mut webhook_routes,
     };
-    init_wasm_channels(config, components, &mut reg).await
+    init_wasm_channels(config, components, &EnvContext::default(), &mut reg).await
 }
 
 struct WasmWiringFixture {

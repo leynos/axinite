@@ -58,6 +58,8 @@ fn is_invalid_project_id(project_id: &str) -> bool {
     has_path_separator || is_traversal_or_empty
 }
 
+/// Serve a file from a project directory after validating the project ID and
+/// confirming the canonical path stays inside the project root.
 async fn serve_project_file(project_id: &str, path: &str) -> axum::response::Response {
     if is_invalid_project_id(project_id) {
         return (StatusCode::BAD_REQUEST, "Invalid project ID").into_response();
@@ -159,7 +161,8 @@ pub async fn logs_level_set_handler(
     tracing::info!("Log level changed to '{}'", handle.current_level());
     Ok(Json(serde_json::json!({ "level": handle.current_level() })))
 }
-
+/// Serve gateway health data: version, connection counts, uptime, cost and
+/// model usage when a cost guard is present, and whether restart is enabled.
 pub async fn gateway_status_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Json<GatewayStatusResponse> {
@@ -190,9 +193,12 @@ pub async fn gateway_status_handler(
         (None, None, None)
     };
 
-    let restart_enabled = std::env::var("AXINITE_IN_DOCKER")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+    let restart_enabled = {
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+        std::env::var("AXINITE_IN_DOCKER")
+    }
+    .map(|v| v.to_lowercase() == "true")
+    .unwrap_or(false);
 
     Json(GatewayStatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),

@@ -227,6 +227,8 @@ proptest = "1.6.0"
 delegate = "0.13"
 gag = "1.0.0"
 scopeguard = "1.2.0"
+# Compiles the minimal component fixture used by WASM channel setup tests.
+wat = "1"
 
 [features]
 default = ["postgres", "libsql", "html-to-markdown", "docker"]

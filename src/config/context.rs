@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use crate::config::INJECTED_VARS;
-#[cfg(any(test, feature = "test-helpers"))]
-use crate::config::helpers::ENV_MUTEX;
+use crate::config::{Config, ConfigError, INJECTED_VARS, runtime_support};
+use crate::settings::Settings;
+
+use crate::llm::config::LlmConfig;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
@@ -23,6 +24,18 @@ pub struct EnvContext {
     env_vars: HashMap<String, String>,
     secrets: HashMap<String, String>,
     base_dir: PathBuf,
+}
+
+/// Inputs used to re-resolve an LLM configuration after credential injection.
+pub struct LlmResolutionContext<'a> {
+    /// Environment snapshot containing the effective configuration values.
+    pub env_context: &'a EnvContext,
+    /// Optional settings store used to resolve provider settings.
+    pub settings_store: Option<&'a (dyn crate::db::SettingsStore + Sync)>,
+    /// User whose stored settings should be loaded.
+    pub user_id: &'a str,
+    /// Optional TOML overlay applied to stored settings.
+    pub toml_path: Option<&'a std::path::Path>,
 }
 
 impl Default for EnvContext {
@@ -56,14 +69,34 @@ impl EnvContext {
         }
     }
 
+    /// Look up a raw environment value in the snapshot.
+    ///
+    /// Windows environment variable names are case-insensitive, so a
+    /// mixed-case spelling such as `Path` still resolves there, matching the
+    /// previous `std::env` behaviour. Unix names stay exact-case.
+    fn lookup_env(&self, key: &str) -> Option<&str> {
+        if let Some(value) = self.env_vars.get(key) {
+            return Some(value.as_str());
+        }
+        #[cfg(windows)]
+        {
+            self.env_vars
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(key))
+                .map(|(_, value)| value.as_str())
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
+    }
+
     /// Get a value from the snapshot, preferring env vars over injected secrets.
     ///
     /// Empty strings are treated as unset so they do not block fallback lookup.
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.env_vars
-            .get(key)
+        self.lookup_env(key)
             .filter(|value| !value.is_empty())
-            .map(String::as_str)
             .or_else(|| {
                 self.secrets
                     .get(key)
@@ -77,9 +110,25 @@ impl EnvContext {
         self.get(key).map(str::to_string)
     }
 
-    /// Whether either map contains the key.
+    /// Whether either map has a non-empty value for `key`.
     pub fn contains_key(&self, key: &str) -> bool {
         self.get(key).is_some()
+    }
+
+    /// Whether the environment snapshot contains `key`, including empty values.
+    ///
+    /// Unlike [`Self::contains_key`], this ignores the secret overlay and does
+    /// not treat an empty environment value as absent.
+    pub(crate) fn contains_env_var(&self, key: &str) -> bool {
+        self.lookup_env(key).is_some()
+    }
+
+    /// Raw environment value for `key`, including empty strings; ignores secrets.
+    ///
+    /// Windows lookups are case-insensitive, so a captured `Path` entry is
+    /// found when callers ask for `PATH`.
+    pub(crate) fn env_var_raw(&self, key: &str) -> Option<&str> {
+        self.lookup_env(key)
     }
 
     /// Add or replace an env var in the snapshot.
@@ -104,9 +153,18 @@ impl EnvContext {
         self.secrets.insert(key.into(), value.into());
     }
 
+    /// Remove one injected secret without changing process-global state.
+    pub fn remove_secret(&mut self, key: &str) {
+        self.secrets.remove(key);
+    }
+
     /// Merge multiple secret overlay values without mutating global state.
     pub fn merge_secrets(&mut self, secrets: HashMap<String, String>) {
         self.secrets.extend(secrets);
+    }
+
+    pub(crate) fn secret_values(&self) -> HashMap<String, String> {
+        self.secrets.clone()
     }
 
     /// Resolve the effective Axinite base directory from the snapshot.
@@ -115,20 +173,68 @@ impl EnvContext {
     }
 }
 
-#[cfg(any(test, feature = "test-helpers"))]
-fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
-    // EnvMutex::lock is infallible, so the Ok pattern is irrefutable.
-    let Ok(_env_lock) = ENV_MUTEX.lock();
-    let env_vars = collect_utf8_env_vars(std::env::vars_os());
-    let secrets = match INJECTED_VARS.lock() {
-        Ok(map) => map.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
-    };
-    (env_vars, secrets)
+impl Config {
+    /// Re-resolve only the LLM config after credential injection.
+    ///
+    /// Called by `AppBuilder::init_secrets()` after injecting API keys into
+    /// the env overlay. Only rebuilds `self.llm` — all other config fields
+    /// are unaffected, preserving values from the initial config load (or
+    /// from `Config::for_testing()` in test mode).
+    pub async fn re_resolve_llm(
+        &mut self,
+        store: Option<&(dyn crate::db::SettingsStore + Sync)>,
+        user_id: &str,
+        toml_path: Option<&std::path::Path>,
+    ) -> Result<(), ConfigError> {
+        let env_context = EnvContext::capture_ambient();
+        self.re_resolve_llm_with_context(LlmResolutionContext {
+            env_context: &env_context,
+            settings_store: store,
+            user_id,
+            toml_path,
+        })
+        .await
+    }
+
+    /// Re-resolve only the LLM config from an explicit environment snapshot.
+    pub async fn re_resolve_llm_with_context(
+        &mut self,
+        context: LlmResolutionContext<'_>,
+    ) -> Result<(), ConfigError> {
+        let LlmResolutionContext {
+            env_context,
+            settings_store,
+            user_id,
+            toml_path,
+        } = context;
+        let settings = if let Some(store) = settings_store {
+            let mut s = match store
+                .get_all_settings(crate::db::UserId::from(user_id))
+                .await
+            {
+                Ok(map) => Settings::from_db_map(&map),
+                Err(_) => Settings::default(),
+            };
+            runtime_support::apply_toml_overlay(&mut s, toml_path)?;
+            s
+        } else {
+            Settings::default()
+        };
+        self.llm = LlmConfig::resolve_from(env_context, &settings)?;
+        Ok(())
+    }
 }
 
-#[cfg(not(any(test, feature = "test-helpers")))]
+/// Capture the process environment and any injected variables as the two
+/// maps used to build an environment snapshot.
+///
+/// This is the sole sanctioned ambient environment boundary; all other code
+/// reads through the resulting snapshot.
 fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "sole sanctioned ambient environment boundary; all other code reads via EnvContext"
+    )]
     let env_vars = collect_utf8_env_vars(std::env::vars_os());
     let secrets = match INJECTED_VARS.lock() {
         Ok(map) => map.clone(),
@@ -186,6 +292,7 @@ mod tests {
         assert_eq!(ctx.get("OPENAI_API_KEY"), Some("env"));
     }
 
+    /// An empty environment value is treated as unset, so the secret wins.
     #[test]
     fn empty_env_value_falls_back_to_secret() {
         let ctx = EnvContext::for_testing(
@@ -194,6 +301,26 @@ mod tests {
         );
 
         assert_eq!(ctx.get("OPENAI_API_KEY"), Some("secret"));
+    }
+
+    #[test]
+    fn contains_env_var_counts_empty_values_and_ignores_secrets() {
+        let ctx = EnvContext::default()
+            .with_env("EMPTY_BACKEND", "")
+            .with_secret("SECRET_BACKEND", "postgres");
+
+        assert!(ctx.contains_env_var("EMPTY_BACKEND"));
+        assert!(!ctx.contains_env_var("SECRET_BACKEND"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn lookup_is_case_insensitive_on_windows() {
+        let ctx = EnvContext::default().with_env("Path", r"C:\Windows\System32");
+
+        assert_eq!(ctx.get("PATH"), Some(r"C:\Windows\System32"));
+        assert!(ctx.contains_env_var("PATH"));
+        assert_eq!(ctx.env_var_raw("PATH"), Some(r"C:\Windows\System32"));
     }
 
     #[test]

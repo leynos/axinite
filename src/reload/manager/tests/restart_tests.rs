@@ -12,6 +12,7 @@ use rstest::rstest;
 use super::super::*;
 use super::common::{AddrTestCase, http_config, test_config_with_http};
 use crate::channels::ChannelSecretUpdater;
+use crate::config::EnvContext;
 use crate::reload::test_stubs::{
     SpySecretUpdater, StubConfigLoader, StubListenerController, StubSecretInjector,
 };
@@ -36,6 +37,9 @@ use crate::reload::test_stubs::{
     description: "localhost hostname",
 })]
 #[tokio::test]
+/// Verify a successful reload resolves the configured address, restarts the
+/// listener once, invokes the secret injector, and passes the new webhook
+/// secret to channel secret updaters.
 async fn successful_reload_invokes_all_dependencies(
     #[case] test_case: AddrTestCase,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -54,12 +58,13 @@ async fn successful_reload_invokes_all_dependencies(
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
 
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
-    );
+    let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(controller as Arc<dyn ListenerController>),
+        secret_injector: Some(injector as Arc<dyn SecretInjector>),
+        secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+    });
 
     let result = manager.perform_reload().await;
     assert!(
@@ -114,6 +119,9 @@ async fn successful_reload_invokes_all_dependencies(
 #[case::ipv4("127.0.0.1:8080")]
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
+/// Verify a reload leaves the listener running when the configured address
+/// matches the current bind address, while still updating the channel
+/// webhook secret.
 async fn address_unchanged_skips_listener_restart(
     #[case] addr_str: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -131,12 +139,13 @@ async fn address_unchanged_skips_listener_restart(
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
 
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
-    );
+    let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(controller as Arc<dyn ListenerController>),
+        secret_injector: Some(injector as Arc<dyn SecretInjector>),
+        secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+    });
 
     let result = manager.perform_reload().await;
     assert!(result.is_ok(), "Reload should succeed for {}", addr_str);
@@ -158,6 +167,8 @@ async fn address_unchanged_skips_listener_restart(
 #[case::ipv4("127.0.0.1:8080")]
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
+/// Verify a listener restart failure aborts the reload and leaves channel
+/// secret updaters uncalled.
 async fn listener_restart_failure_prevents_secret_update(
     #[case] addr_str: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -174,12 +185,13 @@ async fn listener_restart_failure_prevents_secret_update(
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
 
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
-    );
+    let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(controller as Arc<dyn ListenerController>),
+        secret_injector: Some(injector as Arc<dyn SecretInjector>),
+        secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+    });
 
     let result = manager.perform_reload().await;
     assert!(
@@ -195,6 +207,9 @@ async fn listener_restart_failure_prevents_secret_update(
 }
 
 #[tokio::test]
+/// Verify that after a reload removes the HTTP listener, re-adding the
+/// original address restarts the stopped listener even though the address is
+/// unchanged.
 async fn readding_same_listener_address_restarts_after_shutdown()
 -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
@@ -205,12 +220,13 @@ async fn readding_same_listener_address_restarts_after_shutdown()
 
     let (_remove_temp_dir, remove_config) = test_config_with_http(None).await?;
     let remove_loader = Arc::new(StubConfigLoader::new_success(remove_config));
-    let remove_manager = HotReloadManager::new(
-        remove_loader as Arc<dyn ConfigLoader>,
-        Some(Arc::clone(&controller) as Arc<dyn ListenerController>),
-        Some(Arc::clone(&injector) as Arc<dyn SecretInjector>),
-        vec![Arc::clone(&spy) as Arc<dyn ChannelSecretUpdater>],
-    );
+    let remove_manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: remove_loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(Arc::clone(&controller) as Arc<dyn ListenerController>),
+        secret_injector: Some(Arc::clone(&injector) as Arc<dyn SecretInjector>),
+        secret_updaters: vec![Arc::clone(&spy) as Arc<dyn ChannelSecretUpdater>],
+    });
 
     remove_manager
         .perform_reload()
@@ -225,12 +241,13 @@ async fn readding_same_listener_address_restarts_after_shutdown()
     )))
     .await?;
     let readd_loader = Arc::new(StubConfigLoader::new_success(readd_config));
-    let readd_manager = HotReloadManager::new(
-        readd_loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
-    );
+    let readd_manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: readd_loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(controller as Arc<dyn ListenerController>),
+        secret_injector: Some(injector as Arc<dyn SecretInjector>),
+        secret_updaters: vec![spy as Arc<dyn ChannelSecretUpdater>],
+    });
 
     readd_manager
         .perform_reload()
@@ -246,6 +263,8 @@ async fn readding_same_listener_address_restarts_after_shutdown()
 }
 
 #[tokio::test]
+/// Verify a listener whose current address matches any resolved address, not
+/// only the first, is left running.
 async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_first_resolved_addr()
 -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
@@ -259,12 +278,13 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
     let (_temp_dir, config) = test_config_with_http(None).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        None,
-        Vec::new(),
-    );
+    let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(controller as Arc<dyn ListenerController>),
+        secret_injector: None,
+        secret_updaters: Vec::new(),
+    });
 
     // localhost typically resolves to both 127.0.0.1 and ::1
     // If current_addr (127.0.0.1:8080) is in the resolved list, restart should be skipped
@@ -282,6 +302,8 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
 }
 
 #[tokio::test]
+/// Verify a config requesting port 0 on the listener's current host does not
+/// trigger a restart of the ephemeral bind.
 async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
 -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:43123".parse().expect("valid socket address");
@@ -293,12 +315,13 @@ async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
     let (_temp_dir, config) = test_config_with_http(None).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        None,
-        Vec::new(),
-    );
+    let manager = HotReloadManager::new_with_context(HotReloadManagerDependencies {
+        env_context: EnvContext::default(),
+        config_loader: loader as Arc<dyn ConfigLoader>,
+        listener_controller: Some(controller as Arc<dyn ListenerController>),
+        secret_injector: None,
+        secret_updaters: Vec::new(),
+    });
 
     manager
         .maybe_restart_listener(&http_cfg)
@@ -313,6 +336,7 @@ async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
     Ok(())
 }
 
+/// Verify that listener restart retries each candidate address until one succeeds.
 #[tokio::test]
 async fn maybe_restart_listener_retries_multiple_candidates_until_success()
 -> Result<(), Box<dyn std::error::Error>> {

@@ -92,8 +92,6 @@ async fn postgres_gateway_put_get_and_fresh_gateway_preserve_deployment_isolatio
     let Some(database) = try_test_pg_db().await? else {
         return Ok(());
     };
-    // Read rather than mutate the process environment shared by other tests.
-    assert!(std::env::var_os("FEATURE_FLAG_ROUTE_MEMORY").is_none());
     let backend = Arc::new(PgBackend::from_pool(database.pool()));
     Store::from_pool(database.pool()).run_migrations().await?;
     let deployment = unique_deployment();

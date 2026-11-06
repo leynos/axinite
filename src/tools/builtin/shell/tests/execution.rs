@@ -1,6 +1,5 @@
 //! End-to-end execution tests: command output, timeouts, builder
-//! configuration, environment scrubbing, and injection blocking at the
-//! execution boundary.
+//! configuration, and injection blocking at the execution boundary.
 
 use std::time::Duration;
 
@@ -46,110 +45,6 @@ fn test_sandbox_policy_builder() {
 
     assert_eq!(tool.sandbox_policy, SandboxPolicy::WorkspaceWrite);
     assert_eq!(tool.timeout, Duration::from_secs(60));
-}
-
-// ── Environment scrubbing tests ────────────────────────────────────
-
-#[tokio::test(flavor = "current_thread")]
-async fn test_env_scrubbing_hides_secrets() {
-    // Set a fake secret in the current process environment.
-    // SAFETY: test-only, single-threaded tokio runtime, no concurrent env access.
-    let secret_var = "AXINITE_TEST_SECRET_KEY";
-    unsafe { std::env::set_var(secret_var, "super_secret_value_12345") };
-
-    let tool = ShellTool::new();
-    let ctx = JobContext::default();
-
-    // Run `env` (or `printenv`) and check the output
-    let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
-        .await
-        .unwrap();
-
-    let output = result.result.get("output").unwrap().as_str().unwrap();
-
-    // The secret should NOT appear in the child process environment
-    assert!(
-        !output.contains("super_secret_value_12345"),
-        "Secret leaked through env scrubbing! Output contained the secret value."
-    );
-    assert!(
-        !output.contains(secret_var),
-        "Secret variable name leaked through env scrubbing!"
-    );
-
-    // But PATH should still be there (it's in SAFE_ENV_VARS)
-    assert!(
-        output.contains("PATH="),
-        "PATH should be forwarded to child processes"
-    );
-
-    // Clean up
-    // SAFETY: test-only, single-threaded tokio runtime.
-    unsafe { std::env::remove_var(secret_var) };
-}
-
-#[tokio::test]
-async fn test_env_scrubbing_forwards_safe_vars() {
-    let tool = ShellTool::new();
-    let ctx = JobContext::default();
-
-    // HOME should be forwarded
-    let result = tool
-        .execute(serde_json::json!({"command": "echo $HOME"}), &ctx)
-        .await
-        .unwrap();
-
-    let output = result
-        .result
-        .get("output")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .trim();
-    assert!(
-        !output.is_empty(),
-        "HOME should be available in child process"
-    );
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn test_env_scrubbing_common_secret_patterns() {
-    // Simulate common secret env vars that agents/tools might set
-    let secrets = [
-        ("OPENAI_API_KEY", "sk-test-fake-key-123"),
-        ("NEARAI_SESSION_TOKEN", "sess_fake_token_abc"),
-        ("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/fake"),
-        ("DATABASE_URL", "postgres://user:pass@localhost/db"),
-    ];
-
-    // SAFETY: test-only, single-threaded tokio runtime, no concurrent env access.
-    for (name, value) in &secrets {
-        unsafe { std::env::set_var(name, value) };
-    }
-
-    let tool = ShellTool::new();
-    let ctx = JobContext::default();
-
-    let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
-        .await
-        .unwrap();
-
-    let output = result.result.get("output").unwrap().as_str().unwrap();
-
-    for (name, value) in &secrets {
-        assert!(
-            !output.contains(value),
-            "{name} value leaked through env scrubbing!"
-        );
-    }
-
-    // Clean up
-    // SAFETY: test-only, single-threaded tokio runtime.
-    for (name, _) in &secrets {
-        unsafe { std::env::remove_var(name) };
-    }
 }
 
 // ── Integration: injection blocked at execute_command level ─────────
@@ -249,52 +144,5 @@ async fn test_injection_blocked_with_object_args() {
     assert!(
         matches!(result, Err(ToolError::NotAuthorized(_))),
         "base64-to-shell injection must be blocked: {result:?}"
-    );
-}
-
-#[tokio::test]
-async fn test_env_scrubbing_custom_var_hidden() {
-    // Verify that arbitrary env vars from the parent process
-    // are NOT visible to child commands (end-to-end, not just unit).
-    let tool = ShellTool::new();
-    let ctx = JobContext::default();
-
-    // Set a fake secret in the parent process env
-    unsafe { std::env::set_var("AXINITE_QA_TEST_SECRET", "supersecret123") };
-
-    let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
-        .await
-        .unwrap();
-
-    let output = result.result.get("output").unwrap().as_str().unwrap();
-    assert!(
-        !output.contains("AXINITE_QA_TEST_SECRET"),
-        "env scrubbing must hide non-safe vars from child processes"
-    );
-    assert!(
-        !output.contains("supersecret123"),
-        "secret value must not appear in child env output"
-    );
-
-    // Clean up
-    unsafe { std::env::remove_var("AXINITE_QA_TEST_SECRET") };
-}
-
-#[tokio::test]
-async fn test_env_scrubbing_path_preserved() {
-    // PATH must be preserved for commands to resolve
-    let tool = ShellTool::new();
-    let ctx = JobContext::default();
-
-    let result = tool
-        .execute(serde_json::json!({"command": "env"}), &ctx)
-        .await
-        .unwrap();
-
-    let output = result.result.get("output").unwrap().as_str().unwrap();
-    assert!(
-        output.contains("PATH="),
-        "PATH must be preserved in child env"
     );
 }

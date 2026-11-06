@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::axinite_base_dir;
+use crate::config::EnvContext;
 use crate::settings::Settings;
 
 /// Load settings from JSON and TOML config files, matching the runtime
@@ -13,13 +13,16 @@ use crate::settings::Settings;
 ///
 /// This mirrors the loading chain in `Config::from_env_with_toml()` but
 /// without resolving the full `Config` (which requires async + secrets).
-fn load_settings() -> Settings {
-    load_settings_from(&Settings::default_path(), &Settings::default_toml_path())
-}
-
-/// Inner implementation with injectable paths (testable).
+/// Paths are derived from the caller's environment snapshot rather than the
+/// ambient process environment.
 fn load_settings_from(json_path: &std::path::Path, toml_path: &std::path::Path) -> Settings {
-    let mut settings = Settings::load_from(json_path);
+    let mut settings = match Settings::load_from(json_path) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("Warning: {error}; continuing with default settings");
+            Settings::default()
+        }
+    };
 
     match Settings::load_toml(toml_path) {
         Ok(Some(toml_settings)) => {
@@ -34,41 +37,44 @@ fn load_settings_from(json_path: &std::path::Path, toml_path: &std::path::Path) 
     settings
 }
 
-fn default_tools_dir() -> PathBuf {
-    axinite_base_dir().join("tools")
+fn default_tools_dir(ctx: &EnvContext) -> PathBuf {
+    ctx.axinite_base_dir().join("tools")
 }
 
-fn default_channels_dir() -> PathBuf {
-    axinite_base_dir().join("channels")
+fn default_channels_dir(ctx: &EnvContext) -> PathBuf {
+    ctx.axinite_base_dir().join("channels")
+}
+fn db_backend_name(ctx: &EnvContext) -> String {
+    crate::bootstrap::database_backend_name(ctx)
 }
 
-fn db_backend_name() -> String {
-    std::env::var("DATABASE_BACKEND")
-        .ok()
-        .unwrap_or_else(|| "postgres".to_string())
+/// Print the libSQL database path and whether Turso sync is configured.
+fn print_libsql_status(ctx: &EnvContext) {
+    let path = ctx
+        .get("LIBSQL_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| crate::config::default_libsql_path_in(&ctx.axinite_base_dir()));
+    if path.exists() {
+        let turso = if ctx.contains_env_var("LIBSQL_URL") {
+            " + Turso sync"
+        } else {
+            ""
+        };
+        println!("libSQL ({}{})", path.display(), turso);
+    } else {
+        println!("libSQL (file missing: {})", path.display());
+    }
 }
 
-async fn print_database_status(db_backend: &str) {
+/// Print the database backend and, for PostgreSQL, whether a connection
+/// succeeds.
+async fn print_database_status(ctx: &EnvContext, db_backend: &str) {
     print!("  Database:    ");
     match db_backend {
-        "libsql" | "turso" | "sqlite" => {
-            let path = std::env::var("LIBSQL_PATH")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| crate::config::default_libsql_path());
-            if path.exists() {
-                let turso = if std::env::var("LIBSQL_URL").is_ok() {
-                    " + Turso sync"
-                } else {
-                    ""
-                };
-                println!("libSQL ({}{})", path.display(), turso);
-            } else {
-                println!("libSQL (file missing: {})", path.display());
-            }
-        }
+        "libsql" | "turso" | "sqlite" => print_libsql_status(ctx),
         _ => {
-            if std::env::var("DATABASE_URL").is_ok() {
-                match check_database().await {
+            if ctx.contains_env_var("DATABASE_URL") {
+                match check_database(ctx).await {
                     Ok(()) => println!("connected (PostgreSQL)"),
                     Err(e) => println!("error ({})", e),
                 }
@@ -91,9 +97,11 @@ fn print_search_status(db_backend: &str) {
     }
 }
 
-fn print_session_status() {
+/// Print whether the NEAR AI session file exists in the configured base
+/// directory.
+fn print_session_status(ctx: &EnvContext) {
     print!("  Session:     ");
-    let session_path = crate::config::llm::default_session_path();
+    let session_path = ctx.axinite_base_dir().join("session.json");
     if session_path.exists() {
         println!("found ({})", session_path.display());
     } else {
@@ -101,11 +109,12 @@ fn print_session_status() {
     }
 }
 
-fn print_secrets_status() {
+/// Print whether a secrets master key is configured in the snapshot.
+fn print_secrets_status(ctx: &EnvContext) {
     // Secrets (auto-detect from env only; skip keychain probe to avoid
     // triggering macOS system password dialogs on a simple status check)
     print!("  Secrets:     ");
-    if std::env::var("SECRETS_MASTER_KEY").is_ok() {
+    if ctx.contains_env_var("SECRETS_MASTER_KEY") {
         println!("configured (env)");
     } else {
         // We don't probe the keychain here because get_generic_password()
@@ -115,14 +124,14 @@ fn print_secrets_status() {
         println!("env not set (keychain may be configured)");
     }
 }
-
-fn print_embeddings_status(settings: &Settings) {
+/// Print whether embeddings are enabled, treating an OpenAI API key or an
+/// explicit `EMBEDDING_ENABLED` flag as enabling them, and show the provider
+/// and model.
+fn print_embeddings_status(ctx: &EnvContext, settings: &Settings) {
     print!("  Embeddings:  ");
     let emb_enabled = settings.embeddings.enabled
-        || std::env::var("OPENAI_API_KEY").is_ok()
-        || std::env::var("EMBEDDING_ENABLED")
-            .map(|v| v == "true")
-            .unwrap_or(false);
+        || ctx.contains_env_var("OPENAI_API_KEY")
+        || ctx.get("EMBEDDING_ENABLED") == Some("true");
     if emb_enabled {
         println!(
             "enabled (provider: {}, model: {})",
@@ -133,6 +142,8 @@ fn print_embeddings_status(settings: &Settings) {
     }
 }
 
+/// Print how many `.wasm` tools are installed in `tools_dir`, or report that
+/// the directory is missing.
 fn print_wasm_tools_status(tools_dir: &std::path::Path) {
     print!("  WASM Tools:  ");
     if tools_dir.exists() {
@@ -143,13 +154,14 @@ fn print_wasm_tools_status(tools_dir: &std::path::Path) {
     }
 }
 
-fn print_channels_status(settings: &Settings) {
+/// Print the enabled channels and the WASM channel directory.
+fn print_channels_status(ctx: &EnvContext, settings: &Settings) {
     print!("  Channels:    ");
     let channels_dir = settings
         .channels
         .wasm_channels_dir
         .clone()
-        .unwrap_or_else(default_channels_dir);
+        .unwrap_or_else(|| default_channels_dir(ctx));
     let mut channel_info = vec!["cli".to_string()];
     if settings.channels.http_enabled {
         channel_info.push(format!(
@@ -165,13 +177,11 @@ fn print_channels_status(settings: &Settings) {
     }
     println!("{}", channel_info.join(", "));
 }
-
-fn print_heartbeat_status(settings: &Settings) {
+/// Print whether the heartbeat is enabled, honouring the `HEARTBEAT_ENABLED`
+/// environment override, and show its interval when enabled.
+fn print_heartbeat_status(ctx: &EnvContext, settings: &Settings) {
     print!("  Heartbeat:   ");
-    let hb_enabled = settings.heartbeat.enabled
-        || std::env::var("HEARTBEAT_ENABLED")
-            .map(|v| v == "true")
-            .unwrap_or(false);
+    let hb_enabled = settings.heartbeat.enabled || ctx.get("HEARTBEAT_ENABLED") == Some("true");
     if hb_enabled {
         println!("enabled (interval: {}s)", settings.heartbeat.interval_secs);
     } else {
@@ -179,6 +189,8 @@ fn print_heartbeat_status(settings: &Settings) {
     }
 }
 
+/// Print how many configured MCP servers are enabled, or report that none are
+/// configured.
 async fn print_mcp_status() {
     print!("  MCP Servers: ");
     match crate::tools::mcp::config::load_mcp_servers().await {
@@ -191,9 +203,24 @@ async fn print_mcp_status() {
     }
 }
 
+/// Load status settings from the supplied snapshot's base directory.
+///
+/// The snapshot selects the settings files, so a caller that supplies a
+/// divergent `AXINITE_BASE_DIR` observes that directory's settings rather than
+/// the ambient ones.
+pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
+    let base_dir = env_context.axinite_base_dir();
+    load_settings_from(
+        &base_dir.join("settings.json"),
+        &base_dir.join("config.toml"),
+    )
+}
+
 /// Run the status command, printing system health info.
 pub async fn run_status_command() -> anyhow::Result<()> {
-    let settings = load_settings();
+    let env_context = crate::bootstrap::capture_config_env_context();
+    let base_dir = env_context.axinite_base_dir();
+    let settings = settings_for_context(&env_context);
 
     println!("Axinite Status");
     println!("===============\n");
@@ -205,41 +232,40 @@ pub async fn run_status_command() -> anyhow::Result<()> {
         env!("CARGO_PKG_VERSION")
     );
 
-    let db_backend = db_backend_name();
-    print_database_status(&db_backend).await;
+    let db_backend = db_backend_name(&env_context);
+    print_database_status(&env_context, &db_backend).await;
     print_search_status(&db_backend);
-    print_session_status();
-    print_secrets_status();
-    print_embeddings_status(&settings);
+    print_session_status(&env_context);
+    print_secrets_status(&env_context);
+    print_embeddings_status(&env_context, &settings);
     print_wasm_tools_status(
         &settings
             .wasm
             .tools_dir
             .clone()
-            .unwrap_or_else(default_tools_dir),
+            .unwrap_or_else(|| default_tools_dir(&env_context)),
     );
-    print_channels_status(&settings);
-    print_heartbeat_status(&settings);
+    print_channels_status(&env_context, &settings);
+    print_heartbeat_status(&env_context, &settings);
     print_mcp_status().await;
 
     // Config path
-    println!(
-        "\n  Config:      {}",
-        crate::bootstrap::axinite_env_path().display()
-    );
+    println!("\n  Config:      {}", base_dir.join(".env").display());
 
     Ok(())
 }
 
 #[cfg(feature = "postgres")]
-async fn check_database() -> anyhow::Result<()> {
-    let url = std::env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL not set"))?;
+async fn check_database(ctx: &EnvContext) -> anyhow::Result<()> {
+    let url = ctx
+        .get("DATABASE_URL")
+        .ok_or_else(|| anyhow::anyhow!("DATABASE_URL not set"))?;
 
     let config: deadpool_postgres::Config = deadpool_postgres::Config {
-        url: Some(url),
+        url: Some(url.to_string()),
         ..Default::default()
     };
-    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
+    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_context(ctx))
         .map_err(|e| anyhow::anyhow!("pool error: {}", e))?;
 
     let client = tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
@@ -256,7 +282,7 @@ async fn check_database() -> anyhow::Result<()> {
 }
 
 #[cfg(not(feature = "postgres"))]
-async fn check_database() -> anyhow::Result<()> {
+async fn check_database(_ctx: &EnvContext) -> anyhow::Result<()> {
     // For non-postgres backends, just report configured
     Ok(())
 }
@@ -273,99 +299,4 @@ fn count_wasm_files(dir: &std::path::Path) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    //! Unit tests for status command settings loading.
-
-    use super::load_settings_from;
-
-    /// Regression test for #354: load_settings_from must read config.toml.
-    #[test]
-    fn reads_toml_heartbeat_enabled() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("config.toml");
-
-        // No JSON file — only TOML
-        ambient_fs::write(
-            &toml_path,
-            "[heartbeat]\nenabled = true\ninterval_secs = 600",
-        )
-        .expect("write toml");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 600);
-    }
-
-    /// Without any config files, defaults are returned.
-    #[test]
-    fn defaults_without_config_files() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let settings = load_settings_from(
-            &dir.path().join("nonexistent.json"),
-            &dir.path().join("nonexistent.toml"),
-        );
-        assert!(!settings.heartbeat.enabled);
-    }
-
-    /// settings.json is respected.
-    #[test]
-    fn reads_json_heartbeat_enabled() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("nonexistent.toml");
-
-        ambient_fs::write(
-            &json_path,
-            r#"{"heartbeat":{"enabled":true,"interval_secs":900}}"#,
-        )
-        .expect("write json");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 900);
-    }
-
-    /// TOML overlay wins over JSON settings.
-    #[test]
-    fn toml_overlay_wins_over_json() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("config.toml");
-
-        ambient_fs::write(
-            &json_path,
-            r#"{"heartbeat":{"enabled":false,"interval_secs":100}}"#,
-        )
-        .expect("write json");
-        ambient_fs::write(
-            &toml_path,
-            "[heartbeat]\nenabled = true\ninterval_secs = 200",
-        )
-        .expect("write toml");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 200);
-    }
-
-    /// Invalid TOML is warned but doesn't crash; falls back to JSON/defaults.
-    #[test]
-    fn invalid_toml_falls_back_gracefully() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let json_path = dir.path().join("settings.json");
-        let toml_path = dir.path().join("config.toml");
-
-        ambient_fs::write(
-            &json_path,
-            r#"{"heartbeat":{"enabled":true,"interval_secs":500}}"#,
-        )
-        .expect("write json");
-        ambient_fs::write(&toml_path, "this is not valid toml [[[").expect("write bad toml");
-
-        let settings = load_settings_from(&json_path, &toml_path);
-        // Should fall back to JSON values, not crash
-        assert!(settings.heartbeat.enabled);
-        assert_eq!(settings.heartbeat.interval_secs, 500);
-    }
-}
+mod tests;

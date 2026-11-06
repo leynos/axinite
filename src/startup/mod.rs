@@ -10,14 +10,20 @@
 pub(crate) mod boot;
 /// Channel wiring and gateway setup.
 pub(crate) mod channels;
+/// Configuration and tracing loading from the startup environment snapshot.
+pub(crate) mod config_load;
 /// Startup context structs shared across phase functions.
 pub(crate) mod context;
+/// Startup wiring for container orchestration.
+pub(crate) mod orchestrator;
 /// Ordered startup phase functions and associated context types.
 pub(crate) mod phases;
 /// Agent run loop and coordinated shutdown sequence.
 pub(crate) mod run;
 /// Shared start/run sequencing helpers for the agent loop.
 pub(crate) mod run_flow;
+/// Fixed-label startup metrics.
+pub(crate) mod telemetry;
 /// Unix-only runtime management (SIGHUP hot-reload).
 #[cfg(unix)]
 pub(crate) mod unix_runtime;
@@ -26,4 +32,4 @@ pub(crate) mod url_sanitize;
 /// WASM channel initialization and runtime wiring.
 pub(crate) mod wasm;
 
-pub(crate) use context::{CoreAgentContext, GatewayPhaseContext};
+pub(crate) use context::{CoreAgentContext, GatewayPhaseContext, RuntimeManagementContext};
