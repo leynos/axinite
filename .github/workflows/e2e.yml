@@ -73,7 +73,7 @@ jobs:
       # installs no second cargo-binstall.
       - name: Setup Rust
         id: setup-rust
-        uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
+        uses: leynos/shared-actions/.github/actions/setup-rust@d9c4e1ad5ce37404760ac02b85ba1e8db279b003
         with:
           rustflags: ''
           cache-provider: external
