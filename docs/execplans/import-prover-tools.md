@@ -290,7 +290,19 @@ adoption programme complete.
       hosted check on that commit was green. The local `make formal-pr` gate
       passed (Kani 0 of 37 failed, one harness verified; Verus four verified,
       zero errors) and `make test-prover-tools` passed (2 Kani and 6 Verus
-      tests).
+      tests). On the review-repair commit `6356b68d`, hosted run
+      [42260793089](https://github.com/leynos/axinite/actions/runs/42260793089)
+      passed both proof jobs (`Verus Proofs` 17:58:55–17:59:47 UTC, `Kani
+      Smoke Proof` 18:02:50–18:03:31 UTC), and the required `gh run rerun`
+      repeat (attempt 2) passed them again (`Kani Smoke Proof` 18:35:34–18:36:11
+      UTC, `Verus Proofs` 18:53:46–18:54:37 UTC). The full local sequence
+      passed on that exact tree: `make check-fmt` (174 files unchanged), `make
+      lint`, `make typecheck`, `make test` (4,444 passed, 12 skipped), `make
+      test-workflow-contracts` (2,001 passed, 11 skipped), `make markdownlint`
+      (zero issues), `make nixie` (all diagrams), `git diff --check` (clean),
+      `make formal-pr` (Kani 0 of 37 failed, one harness verified; Verus four
+      verified, zero errors), and `make test-prover-tools` (2 Kani and 6 Verus
+      tests passed).
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -315,7 +327,11 @@ working tree and passed: `make check-fmt` (174 files unchanged), `make lint`,
 zero errors), `make test-prover-tools` (2 Kani and 6 Verus tests passed),
 `make markdownlint` (zero issues), `make nixie` (all diagrams), and
 `git diff --check` (clean). Logs are under
-`/tmp/*-axinite-import-prover-tools.out`.
+`/tmp/*-axinite-import-prover-tools.out`. The final review-repair sequence was
+rerun on the `6356b68d` tree and passed all ten gates; its logs are under
+`/tmp/*-axinite-import-prover-tools.2.out`. The documentation-only evidence
+commit that records these results re-ran the affected Markdown gates on its
+exact tree.
 
 The required dependency audit initially descended into the installed Kani
 toolchain under the generated `.cache/` directory and failed while parsing an
@@ -404,9 +420,9 @@ and V1, V2, and V5 below account for that change.
   default installation from `KANI_VERSION_FILE` when a Kani command needs it.
   The argument builder takes its settings, proof arguments, and installation
   resolver as injected dependencies, so it performs no ambient reads and its
-  fallibility is explicit. Contracts cover missing, unreadable, and empty pins,
-  unrelated targets, the joined `--proof-file=PATH` form, and the `formal-pr`
-  success and failure order.
+  fallibility is explicit. Contracts cover the injected query boundaries,
+  missing, unreadable, and empty pins, unrelated targets, the joined
+  `--proof-file=PATH` form, and the `formal-pr` success and failure order.
 
 ## Plan of work
 
