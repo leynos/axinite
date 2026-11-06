@@ -305,3 +305,36 @@ async fn channel_without_http_capability_injects_nothing() -> anyhow::Result<()>
     assert!(channel.get_credentials().await.is_empty());
     Ok(())
 }
+
+#[tokio::test]
+#[tracing_test::traced_test]
+/// Verify that an unrelated stored secret does not mask a declared credential
+/// that no source resolved.
+async fn unrelated_store_secret_does_not_mask_missing_declared_credential() -> anyhow::Result<()> {
+    let channel = test_channel("telegram", "telegram_bot_token");
+    let store = in_memory_store();
+    NativeSecretsStore::create(
+        store.as_ref(),
+        "default",
+        CreateSecretParams::new("telegram_webhook_secret", "unrelated"),
+    )
+    .await?;
+
+    let count = inject_channel_credentials_from_context(
+        &channel,
+        Some(store.as_ref() as &dyn SecretsStore),
+        "telegram",
+        &EnvContext::default(),
+    )
+    .await?;
+
+    assert_eq!(count, 1, "the unrelated secret is still injected");
+    assert!(
+        logs_contain("Channel declares credentials but none resolved"),
+        "a missing declared credential must still be reported"
+    );
+    Ok(())
+}
+
+#[cfg(feature = "metrics")]
+mod telemetry;

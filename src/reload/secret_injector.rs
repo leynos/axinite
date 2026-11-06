@@ -363,4 +363,7 @@ mod tests {
             "inject() should preserve the existing snapshot when the store returns a non-NotFound error"
         );
     }
+
+    #[cfg(feature = "metrics")]
+    mod telemetry;
 }

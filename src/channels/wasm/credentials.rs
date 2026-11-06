@@ -55,11 +55,19 @@ pub async fn inject_channel_credentials_from_context(
 
     // 2. Fall back to the supplied environment for credentials missing from the
     // secrets store.
-    count +=
-        inject_environment_credentials(channel, channel_name, &injected_placeholders, env_context)
-            .await;
+    count += inject_environment_credentials(
+        channel,
+        channel_name,
+        &mut injected_placeholders,
+        env_context,
+    )
+    .await;
 
-    record_outcome(channel_name, declared, count);
+    // The return value counts every injected secret, but the metric reports
+    // whether the credentials the channel actually declares were resolved.
+    // Unrelated store secrets must not mask a missing declared credential.
+    let resolved_declared = resolved_declared_count(channel, &injected_placeholders);
+    record_outcome(channel_name, declared, resolved_declared);
     Ok(count)
 }
 
@@ -131,12 +139,31 @@ fn declared_credential_count(channel: &Arc<WasmChannel>) -> usize {
         .map_or(0, |http| http.credentials.len())
 }
 
+/// Count the declared credential mappings whose placeholders were resolved.
+///
+/// Only placeholders named by the channel's HTTP credential mappings count.
+/// A store secret that does not correspond to a declared mapping is still
+/// injected, but it does not satisfy the channel's declared contract.
+fn resolved_declared_count(channel: &Arc<WasmChannel>, resolved: &HashSet<String>) -> usize {
+    channel
+        .capabilities()
+        .tool_capabilities
+        .http
+        .as_ref()
+        .map_or(0, |http| {
+            http.credentials
+                .values()
+                .filter(|mapping| resolved.contains(&mapping.secret_name.to_uppercase()))
+                .count()
+        })
+}
+
 /// Select the fixed metric outcome for a completed injection attempt.
 ///
 /// A channel that resolves none of its declared credentials is reported as
 /// `missing`; a channel that declares none has nothing to report.
-fn credential_outcome(declared: usize, injected: usize) -> Option<&'static str> {
-    if injected > 0 {
+fn credential_outcome(declared: usize, resolved: usize) -> Option<&'static str> {
+    if resolved > 0 {
         Some("injected")
     } else if declared > 0 {
         Some("missing")
@@ -147,12 +174,12 @@ fn credential_outcome(declared: usize, injected: usize) -> Option<&'static str> 
 
 /// Record the outcome of one injection attempt and warn when a channel
 /// declares credentials that none of its sources supplied.
-fn record_outcome(channel_name: &str, declared: usize, injected: usize) {
-    let Some(outcome) = credential_outcome(declared, injected) else {
+fn record_outcome(channel_name: &str, declared: usize, resolved: usize) {
+    let Some(outcome) = credential_outcome(declared, resolved) else {
         return;
     };
     telemetry::channel_credentials(outcome);
-    if injected == 0 {
+    if resolved == 0 {
         tracing::warn!(
             channel = %channel_name,
             declared,
@@ -166,7 +193,7 @@ fn record_outcome(channel_name: &str, declared: usize, injected: usize) {
 async fn inject_environment_credentials(
     channel: &Arc<WasmChannel>,
     channel_name: &str,
-    injected_placeholders: &HashSet<String>,
+    injected_placeholders: &mut HashSet<String>,
     env_context: &EnvContext,
 ) -> usize {
     let prefix = format!("{}_", channel_name.to_ascii_uppercase());
@@ -193,6 +220,7 @@ async fn inject_environment_credentials(
                     "Injecting credential from environment variable"
                 );
                 channel.set_credential(&placeholder, env_value).await;
+                injected_placeholders.insert(placeholder);
                 count += 1;
             }
         }
