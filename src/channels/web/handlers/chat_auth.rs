@@ -19,6 +19,11 @@ pub fn routes() -> Router<Arc<GatewayState>> {
         .route("/api/chat/auth-cancel", post(chat_auth_cancel_handler))
 }
 
+/// Forwards a tool-execution approval decision to the agent as an incoming message.
+///
+/// `action` is `approve`, `always` or `deny`; anything else, or a `request_id` that is not
+/// a UUID, gets `400`. It answers `503` when the channel has not started, and `500` when
+/// the decision cannot be serialized or the channel is closed.
 pub async fn chat_approval_handler(
     State(state): State<Arc<GatewayState>>,
     Json(req): Json<ApprovalRequest>,
@@ -134,6 +139,10 @@ pub async fn chat_auth_token_handler(
     }
 }
 
+/// Cancels pending authentication for the named extension on the gateway user's threads.
+///
+/// Always answers with a success response; it clears nothing when no session manager is
+/// configured or no thread is waiting on that extension.
 pub async fn chat_auth_cancel_handler(
     State(state): State<Arc<GatewayState>>,
     Json(req): Json<AuthCancelRequest>,

@@ -41,7 +41,7 @@ pub struct ToolStats {
     pub failed_calls: u64,
     /// `successful_calls / total_calls` as a fraction from 0.0 to 1.0. Zero when no calls.
     pub success_rate: f64,
-    /// Mean execution time of the calls, in milliseconds.
+    /// Mean execution time in milliseconds over calls with a recorded `duration_ms`. Zero if none.
     pub avg_duration_ms: f64,
     /// Sum of the per-call `cost` values, in the units of that column.
     pub total_cost: Decimal,

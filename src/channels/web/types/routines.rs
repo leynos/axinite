@@ -28,7 +28,7 @@ pub struct RoutineInfo {
     pub next_fire_at: Option<String>,
     /// Total number of runs recorded for the routine.
     pub run_count: u64,
-    /// Failed runs in a row; any value above zero makes `status` read `failing`.
+    /// Failed runs in a row; above zero, `status` reads `failing` unless the routine is disabled.
     pub consecutive_failures: u32,
     /// Derived state: `disabled`, `failing` or `active`, checked in that order.
     pub status: String,
@@ -136,7 +136,7 @@ pub struct RoutineDetailResponse {
     pub next_fire_at: Option<String>,
     /// Total number of runs recorded for the routine.
     pub run_count: u64,
-    /// Failed runs in a row; any value above zero marks the routine as failing.
+    /// Failed runs in a row; above zero, the routine counts as failing unless it is disabled.
     pub consecutive_failures: u32,
     /// RFC 3339 time the routine was created.
     pub created_at: String,

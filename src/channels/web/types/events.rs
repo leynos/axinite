@@ -61,7 +61,7 @@ pub enum SseEvent {
     ToolResult {
         /// Name of the tool that produced the output.
         name: String,
-        /// Brief preview of the output, not the full text.
+        /// Sanitized preview of the output; a short output can appear in full.
         preview: String,
         /// Thread the event belongs to; omitted when not tied to a thread.
         #[serde(skip_serializing_if = "Option::is_none")]
