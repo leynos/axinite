@@ -420,6 +420,25 @@ def test_repeated_quoted_verus_proof_files_replace_default_in_order(
     assert str(default_proof) not in arguments
 
 
+def test_joined_verus_proof_file_replaces_default(
+    make_context: _MakeTestContext,
+) -> None:
+    """Honour the ``--proof-file=PATH`` form and skip the default proof."""
+    harness = _prover_harness(make_context)
+    inputs, default_proof, _ = _verus_inputs(make_context.tmp_path)
+    proof_file = make_context.tmp_path / "joined proof with spaces.rs"
+    proof_file.write_text("fn main() {}\n", encoding="utf-8")
+    inputs["VERUS_FLAGS"] = f"--proof-file={shell_quote(str(proof_file))}"
+
+    result = harness.run("verus", **inputs)
+
+    assert result.returncode == 0, result.stderr
+    arguments = _calls(harness.log)[0]["argv"]
+    assert f"--proof-file={proof_file}" in arguments
+    assert "--proof-file" not in arguments
+    assert str(default_proof) not in arguments
+
+
 def test_malformed_verus_flags_fail_before_the_prover_is_invoked(
     make_context: _MakeTestContext,
 ) -> None:

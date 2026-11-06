@@ -281,7 +281,16 @@ adoption programme complete.
       passed both proof jobs (`Kani Smoke Proof` 08:37:20–08:38:01 UTC, `Verus
       Proofs` 08:40:30–08:41:24 UTC); the required `gh run rerun` repeat
       (attempt 2, 08:55:23–08:57:05 UTC) passed them again, and
-      `Dependency Audit` passed on the same commit.
+      `Dependency Audit` passed on the same commit. On the final review-repair
+      commit `40718c30`, hosted run
+      [42207484221](https://github.com/leynos/axinite/actions/runs/42207484221)
+      passed both proof jobs (`Kani Smoke Proof` 11:25:24–11:26:06 UTC,
+      `Verus Proofs` 11:19:42–11:20:36 UTC), the required `gh run rerun` repeat
+      (attempt 2, 12:23:45–12:27:23 UTC) passed them again, and every other
+      hosted check on that commit was green. The local `make formal-pr` gate
+      passed (Kani 0 of 37 failed, one harness verified; Verus four verified,
+      zero errors) and `make test-prover-tools` passed (2 Kani and 6 Verus
+      tests).
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -388,6 +397,16 @@ and V1, V2, and V5 below account for that change.
   contributor documentation required by M2–M4. The assignment to bring PR #492
   to merge accepts this delivered scope; no further scope expansion is
   authorized.
+
+- (2026-11-06) Move the Kani pin read to the prover command boundary. The
+  Makefile no longer expands a fallible `$(shell tr ...)` read while parsing;
+  `KANI_INSTALLATION` stays unset and `scripts/prover_cli.py` derives the
+  default installation from `KANI_VERSION_FILE` when a Kani command needs it.
+  The argument builder takes its settings, proof arguments, and installation
+  resolver as injected dependencies, so it performs no ambient reads and its
+  fallibility is explicit. Contracts cover missing, unreadable, and empty pins,
+  unrelated targets, the joined `--proof-file=PATH` form, and the `formal-pr`
+  success and failure order.
 
 ## Plan of work
 

@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 DEFAULT_KANI_VERSION_FILE = "tools/kani/VERSION"
@@ -115,13 +116,33 @@ def _kani_installation() -> str:
     return str(Path(_setting("KANI_HOME")) / f"kani-{version}")
 
 
-def _arguments(action: str) -> list[str]:
+def _arguments(
+    action: str,
+    *,
+    setting: Callable[[str], str],
+    proof_arguments: Callable[[], list[str]],
+    kani_installation: Callable[[], str],
+    version_file: str,
+) -> list[str]:
     """Return the package arguments for one supported prover action.
+
+    The builder is a query over its injected dependencies: it reads no
+    environment variable itself, so callers can supply the settings and the
+    fallible Kani installation resolution explicitly.
 
     Parameters
     ----------
     action : str
         Make target name requesting the prover command.
+    setting : Callable[[str], str]
+        Resolves a required non-empty setting by name.
+    proof_arguments : Callable[[], list[str]]
+        Resolves the Verus proof arguments, including the default proof file.
+    kani_installation : Callable[[], str]
+        Resolves the Kani release root from the configured pin.
+    version_file : str
+        Path to the Kani version pin passed to the install and check
+        commands.
 
     Returns
     -------
@@ -131,9 +152,9 @@ def _arguments(action: str) -> list[str]:
     Raises
     ------
     ValueError
-        If ``action`` is not a recognized prover action.
+        If ``action`` is not a recognized prover action, a required setting is
+        missing, or the Kani pin cannot be read.
     """
-    version_file = os.environ.get("KANI_VERSION_FILE", DEFAULT_KANI_VERSION_FILE)
     if action == "install-kani":
         return [
             "kani",
@@ -142,9 +163,9 @@ def _arguments(action: str) -> list[str]:
             "--version-file",
             version_file,
             "--install-dir",
-            _setting("KANI_BIN_DIR"),
+            setting("KANI_BIN_DIR"),
             "--cache-dir",
-            _setting("KANI_CACHE_DIR"),
+            setting("KANI_CACHE_DIR"),
         ]
     if action == "kani-check":
         return [
@@ -153,7 +174,7 @@ def _arguments(action: str) -> list[str]:
             "--version-file",
             version_file,
             "--kani-command",
-            shlex.join([str(Path(_setting("KANI_BIN_DIR")) / "cargo-kani")]),
+            shlex.join([str(Path(setting("KANI_BIN_DIR")) / "cargo-kani")]),
         ]
     if action in {"kani", "kani-full"}:
         selection = (
@@ -165,9 +186,9 @@ def _arguments(action: str) -> list[str]:
             "kani",
             "exec",
             "--installation",
-            _kani_installation(),
+            kani_installation(),
             "--cwd",
-            _setting("KANI_PROOF_DIR"),
+            setting("KANI_PROOF_DIR"),
             selection,
         ]
     if action == "install-verus":
@@ -175,14 +196,14 @@ def _arguments(action: str) -> list[str]:
             "verus",
             "install",
             "--version-file",
-            _setting("VERUS_VERSION_FILE"),
+            setting("VERUS_VERSION_FILE"),
             "--checksum-file",
-            _setting("VERUS_CHECKSUM_FILE"),
+            setting("VERUS_CHECKSUM_FILE"),
         ]
     if action == "install-z3":
-        return ["z3", "install", "--install-dir", _setting("Z3_INSTALL_DIR")]
+        return ["z3", "install", "--install-dir", setting("Z3_INSTALL_DIR")]
     if action == "verus":
-        return ["verus", "run", *_proof_arguments()]
+        return ["verus", "run", *proof_arguments()]
     raise ValueError("unknown prover action")
 
 
@@ -195,7 +216,15 @@ def main() -> int:
         command = _split(_setting("PROVER_TOOLS"), "PROVER_TOOLS")
         if not command:
             raise ValueError("PROVER_TOOLS must contain a command")
-        arguments = _arguments(action)
+        arguments = _arguments(
+            action,
+            setting=_setting,
+            proof_arguments=_proof_arguments,
+            kani_installation=_kani_installation,
+            version_file=os.environ.get(
+                "KANI_VERSION_FILE", DEFAULT_KANI_VERSION_FILE
+            ),
+        )
         environment = os.environ.copy()
         # Standalone proof packages do not inherit the root workspace profile.
         environment["CARGO_INCREMENTAL"] = "0"
