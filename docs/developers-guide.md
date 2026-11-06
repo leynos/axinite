@@ -556,6 +556,17 @@ binary, not to read a version string.
 `tests/workflow_contracts/workflow_tooling_test.py` enforces all of the above,
 including that each installer precedes the first step that uses its command.
 
+### Governed Rust surfaces
+
+`.concordat` declares which Cargo manifests the Concordat rules read as Rust
+surfaces: the root `Cargo.toml` and the standalone
+`tools-src/telegram/patches/grammers-crypto` patch crate, which sits outside
+the root workspace and would otherwise be unreadable to the dependency-family
+rule. Workspace members are read through their workspace root and are not
+declared. A nested manifest is judged as a project root by the build rules
+only when it carries a `[profile]` table of its own. Declare a new standalone
+crate here when it is added.
+
 ### Development build footprint
 
 The Concordat `rust-dev-build-footprint` rule keeps default development builds
