@@ -5,6 +5,7 @@ use super::core_checks::{
     check_database_with_context, check_llm_config_with_context, check_settings_file,
     check_workspace_search_with_context,
 };
+use super::doctor_report;
 use super::external_checks::check_binary;
 use super::settings_for_context;
 use super::subsystem_checks::{
@@ -239,4 +240,35 @@ fn format_result(r: &CheckResult) -> String {
         CheckResult::Fail(s) => format!("Fail({s})"),
         CheckResult::Skip(s) => format!("Skip({s})"),
     }
+}
+
+/// The doctor command boundary must inspect the deployment selected by the
+/// supplied snapshot, so a divergent `AXINITE_BASE_DIR` changes the report.
+#[tokio::test]
+async fn doctor_report_uses_the_snapshot_base_directory() {
+    let dir = tempfile::tempdir().expect("create temp dir for settings");
+    ambient_fs::write(
+        dir.path().join("settings.json"),
+        r#"{"onboard_completed": "yes"}"#,
+    )
+    .expect("write invalid settings.json");
+    let context = EnvContext::default().with_env(
+        "AXINITE_BASE_DIR",
+        dir.path().to_str().expect("UTF-8 temp path"),
+    );
+
+    let report = doctor_report(&context).await;
+
+    assert!(
+        report.contains("Axinite Doctor"),
+        "report must render the doctor header, got:\n{report}"
+    );
+    assert!(
+        report.contains("[FAIL] Settings file: settings.json is invalid"),
+        "report must fail the snapshot's invalid settings file, got:\n{report}"
+    );
+    assert!(
+        report.contains(&dir.path().join("settings.json").display().to_string()),
+        "report must name the snapshot's settings path, got:\n{report}"
+    );
 }

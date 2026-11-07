@@ -40,48 +40,95 @@ pub use wizard::{SetupConfig, SetupWizard};
 
 /// Check if onboarding is needed and return the reason.
 ///
-/// Reads environment variables (`DATABASE_URL`, `LIBSQL_PATH`,
-/// `ONBOARD_COMPLETED`, `NEARAI_API_KEY`) and checks for the default
-/// session file on disk. Not safe to call concurrently with `env::set_var`.
+/// Reads `DATABASE_URL`, `LIBSQL_PATH`, `ONBOARD_COMPLETED`, and
+/// `NEARAI_API_KEY` from the supplied snapshot, and checks for the default
+/// libSQL database and session files under that snapshot's base directory.
 #[cfg(any(feature = "postgres", feature = "libsql"))]
-pub fn check_onboard_needed() -> Option<&'static str> {
-    let has_db = {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("DATABASE_URL")
-    }
-    .is_ok()
-        || {
-            #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-            std::env::var("LIBSQL_PATH")
-        }
-        .is_ok()
-        || crate::config::default_libsql_path().exists();
+pub fn check_onboard_needed(env_context: &crate::config::EnvContext) -> Option<&'static str> {
+    let base_dir = env_context.axinite_base_dir();
+    let has_db = env_context.get("DATABASE_URL").is_some()
+        || env_context.get("LIBSQL_PATH").is_some()
+        || crate::config::default_libsql_path_in(&base_dir).exists();
 
     if !has_db {
         return Some("Database not configured");
     }
 
-    if {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("ONBOARD_COMPLETED")
-    }
-    .map(|v| v == "true")
-    .unwrap_or(false)
-    {
+    if env_context.get("ONBOARD_COMPLETED") == Some("true") {
         return None;
     }
 
-    if {
-        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
-        std::env::var("NEARAI_API_KEY")
-    }
-    .is_err()
-    {
-        let session_path = crate::config::default_session_path();
-        if !session_path.exists() {
-            return Some("First run");
-        }
+    if env_context.get("NEARAI_API_KEY").is_none() && !base_dir.join("session.json").exists() {
+        return Some("First run");
     }
 
     None
+}
+
+#[cfg(all(test, any(feature = "postgres", feature = "libsql")))]
+mod tests {
+    //! Onboarding-detection tests. Detection reads only the supplied snapshot.
+
+    use super::check_onboard_needed;
+    use crate::config::EnvContext;
+
+    /// A snapshot base directory in a fresh temporary directory.
+    fn snapshot(dir: &tempfile::TempDir) -> EnvContext {
+        EnvContext::default().with_env("AXINITE_BASE_DIR", dir.path().display().to_string())
+    }
+
+    /// A database configured in the snapshot satisfies the check even though
+    /// the ambient environment holds no database configuration.
+    #[test]
+    fn check_onboard_needed_reads_the_snapshot_database() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ctx = snapshot(&dir)
+            .with_env("DATABASE_URL", "postgres://example/db")
+            .with_env("ONBOARD_COMPLETED", "true");
+
+        assert_eq!(check_onboard_needed(&ctx), None);
+    }
+
+    /// Without a database in the snapshot, onboarding is still required.
+    #[test]
+    fn check_onboard_needed_reports_missing_database_from_the_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        assert_eq!(
+            check_onboard_needed(&snapshot(&dir)),
+            Some("Database not configured")
+        );
+    }
+
+    /// A libSQL database file inside the snapshot's base directory satisfies
+    /// the database check without any environment variable.
+    #[test]
+    fn check_onboard_needed_detects_a_libsql_file_in_the_snapshot_base_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        ambient_fs::write(dir.path().join("axinite.db"), "").expect("write database file");
+        let ctx = snapshot(&dir).with_env("ONBOARD_COMPLETED", "true");
+
+        assert_eq!(check_onboard_needed(&ctx), None);
+    }
+
+    /// With a database configured but onboarding unfinished, the reason names
+    /// the first run.
+    #[test]
+    fn check_onboard_needed_reports_first_run_from_the_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ctx = snapshot(&dir).with_env("DATABASE_URL", "postgres://example/db");
+
+        assert_eq!(check_onboard_needed(&ctx), Some("First run"));
+    }
+
+    /// A session file in the snapshot's base directory satisfies the first-run
+    /// check without `NEARAI_API_KEY`.
+    #[test]
+    fn check_onboard_needed_accepts_a_snapshot_session_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        ambient_fs::write(dir.path().join("session.json"), "{}").expect("write session file");
+        let ctx = snapshot(&dir).with_env("DATABASE_URL", "postgres://example/db");
+
+        assert_eq!(check_onboard_needed(&ctx), None);
+    }
 }

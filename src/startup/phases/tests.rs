@@ -113,3 +113,65 @@ async fn onboarding_snapshot_preserves_the_wizard_snapshot() {
          onboarding"
     );
 }
+
+/// Scripted onboarding that returns a snapshot carrying the provider
+/// credential the wizard would have collected interactively.
+struct ScriptedOnboarding;
+
+impl OnboardingRunner for ScriptedOnboarding {
+    async fn run(&self, env_context: &EnvContext) -> anyhow::Result<EnvContext> {
+        Ok(env_context
+            .clone()
+            .with_secret("NEARAI_API_KEY", "entered-during-onboarding"))
+    }
+}
+
+fn onboarding_input(dir: &std::path::Path, db_path: &std::path::Path) -> EnvContext {
+    EnvContext::default()
+        .with_env("AXINITE_BASE_DIR", dir.display().to_string())
+        .with_env("DATABASE_BACKEND", "libsql")
+        .with_env("LIBSQL_PATH", db_path.display().to_string())
+}
+
+/// The startup phase must continue from the snapshot onboarding produced, and
+/// the configuration loaded next must carry the credential entered during
+/// onboarding. If startup used the snapshot captured before onboarding, the
+/// credential would never reach configuration loading.
+#[tokio::test]
+async fn onboarding_credential_reaches_startup_configuration() -> anyhow::Result<()> {
+    use secrecy::ExposeSecret;
+
+    let dir = tempfile::tempdir()?;
+    let db_dir = tempfile::tempdir()?;
+    let input = onboarding_input(dir.path(), &db_dir.path().join("phase.db"));
+
+    let (_pid_lock, returned) =
+        phase_pid_and_onboard(&cli_no_db(), &input, &ScriptedOnboarding).await?;
+
+    assert_eq!(
+        returned.get("NEARAI_API_KEY"),
+        Some("entered-during-onboarding"),
+        "startup must continue from the post-onboarding snapshot"
+    );
+
+    let loaded = phase_load_config_and_tracing_from(&cli_no_db(), &returned).await?;
+    assert_eq!(
+        loaded
+            .config
+            .llm
+            .nearai
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret()),
+        Some("entered-during-onboarding"),
+        "the onboarding credential must reach the startup configuration"
+    );
+
+    let stale = phase_load_config_and_tracing_from(&cli_no_db(), &input).await?;
+    assert!(
+        stale.config.llm.nearai.api_key.is_none(),
+        "the pre-onboarding snapshot must not supply a provider credential, \
+         so this assertion would fail if startup reused it"
+    );
+    Ok(())
+}

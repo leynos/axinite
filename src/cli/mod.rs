@@ -21,6 +21,7 @@ pub mod memory;
 pub mod oauth_defaults;
 mod pairing;
 mod registry;
+mod report;
 mod service;
 pub mod status;
 mod tool;

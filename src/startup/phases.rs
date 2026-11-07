@@ -1,5 +1,6 @@
 //! Coordinated startup phases for the host binary.
 
+use std::future::Future;
 use std::sync::Arc;
 
 use axinite::{
@@ -21,21 +22,70 @@ use crate::startup::{boot, context::*, orchestrator::setup_orchestrator_context,
 
 pub(crate) use crate::startup::config_load::phase_load_config_and_tracing_from;
 
+/// Runs first-run onboarding for a startup environment snapshot.
+///
+/// Production uses [`InteractiveOnboarding`], which drives the setup wizard.
+/// Tests substitute a scripted implementation so the phase can be driven
+/// without a terminal.
+pub(crate) trait OnboardingRunner {
+    /// Run onboarding for `env_context` and return the snapshot that startup
+    /// must use afterwards.
+    fn run(
+        &self,
+        env_context: &EnvContext,
+    ) -> impl Future<Output = anyhow::Result<EnvContext>> + Send;
+}
+
+/// Runs the interactive setup wizard when the snapshot shows onboarding is
+/// still required.
+pub(crate) struct InteractiveOnboarding;
+
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+impl OnboardingRunner for InteractiveOnboarding {
+    async fn run(&self, env_context: &EnvContext) -> anyhow::Result<EnvContext> {
+        let Some(reason) = axinite::setup::check_onboard_needed(env_context) else {
+            return Ok(env_context.clone());
+        };
+
+        println!("Onboarding needed: {reason}");
+        println!();
+        let mut wizard = SetupWizard::with_config_and_env_context(
+            SetupConfig {
+                quick: true,
+                ..Default::default()
+            },
+            env_context.clone(),
+        );
+        wizard.run().await?;
+        onboarding_snapshot(&wizard)
+    }
+}
+
+#[cfg(not(any(feature = "postgres", feature = "libsql")))]
+impl OnboardingRunner for InteractiveOnboarding {
+    async fn run(&self, env_context: &EnvContext) -> anyhow::Result<EnvContext> {
+        Ok(env_context.clone())
+    }
+}
+
 /// Acquires the optional PID lock and runs first-run onboarding when requested.
 ///
-/// The returned environment snapshot includes bootstrap values persisted by
-/// successful onboarding.
-pub(crate) async fn phase_pid_and_onboard(
+/// The PID lock lives in the snapshot's base directory, and the returned
+/// environment snapshot includes bootstrap values persisted by successful
+/// onboarding.
+pub(crate) async fn phase_pid_and_onboard<O: OnboardingRunner>(
     cli: &Cli,
     env_context: &EnvContext,
+    onboarding: &O,
 ) -> anyhow::Result<(Option<axinite::bootstrap::PidLock>, EnvContext)> {
-    let pid_lock = match axinite::bootstrap::PidLock::acquire() {
+    let base_dir = env_context.axinite_base_dir();
+    let pid_lock = match axinite::bootstrap::PidLock::acquire_in(&base_dir) {
         Ok(lock) => Some(lock),
         Err(axinite::bootstrap::PidLockError::AlreadyRunning { pid }) => anyhow::bail!(
             "Another Axinite instance is already running (PID {}). \
              If this is incorrect, remove the stale PID file: {}",
             pid,
-            axinite::bootstrap::pid_lock_path().display()
+            base_dir.join("axinite.pid").display()
         ),
         Err(e) => {
             eprintln!("Warning: Could not acquire PID lock: {e}");
@@ -44,7 +94,11 @@ pub(crate) async fn phase_pid_and_onboard(
         }
     };
 
-    let env_context = run_first_run_onboarding_if_needed(cli, env_context).await?;
+    let env_context = if cli.no_onboard {
+        env_context.clone()
+    } else {
+        onboarding.run(env_context).await?
+    };
 
     Ok((pid_lock, env_context))
 }
@@ -300,31 +354,6 @@ pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<
     run::run_agent(ctx).await
 }
 
-/// Runs first-run onboarding when the required database feature is enabled.
-#[cfg(any(feature = "postgres", feature = "libsql"))]
-async fn run_first_run_onboarding_if_needed(
-    cli: &Cli,
-    env_context: &EnvContext,
-) -> anyhow::Result<EnvContext> {
-    if !cli.no_onboard
-        && let Some(reason) = axinite::setup::check_onboard_needed()
-    {
-        println!("Onboarding needed: {reason}");
-        println!();
-        let mut wizard = SetupWizard::with_config_and_env_context(
-            SetupConfig {
-                quick: true,
-                ..Default::default()
-            },
-            env_context.clone(),
-        );
-        wizard.run().await?;
-        onboarding_snapshot(&wizard)
-    } else {
-        Ok(env_context.clone())
-    }
-}
-
 /// Merge bootstrap values persisted by onboarding into the wizard's snapshot.
 ///
 /// The wizard's own snapshot carries credentials entered during onboarding
@@ -336,16 +365,6 @@ fn onboarding_snapshot(wizard: &SetupWizard) -> anyhow::Result<EnvContext> {
     Ok(axinite::bootstrap::merge_axinite_env_into_context(
         wizard.env_context(),
     )?)
-}
-
-/// No-op onboarding stub used when neither database feature is compiled in.
-#[cfg(not(any(feature = "postgres", feature = "libsql")))]
-async fn run_first_run_onboarding_if_needed(
-    cli: &Cli,
-    env_context: &EnvContext,
-) -> anyhow::Result<EnvContext> {
-    let _ = cli;
-    Ok(env_context.clone())
 }
 
 #[cfg(test)]

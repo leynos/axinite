@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use super::report::{Report, out, outln};
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -48,8 +49,8 @@ fn db_backend_name(ctx: &EnvContext) -> String {
     crate::bootstrap::database_backend_name(ctx)
 }
 
-/// Print the libSQL database path and whether Turso sync is configured.
-fn print_libsql_status(ctx: &EnvContext) {
+/// Render the libSQL database path and whether Turso sync is configured.
+fn print_libsql_status(ctx: &EnvContext, report: &mut Report) {
     let path = ctx
         .get("LIBSQL_PATH")
         .map(std::path::PathBuf::from)
@@ -60,103 +61,105 @@ fn print_libsql_status(ctx: &EnvContext) {
         } else {
             ""
         };
-        println!("libSQL ({}{})", path.display(), turso);
+        outln!(report, "libSQL ({}{})", path.display(), turso);
     } else {
-        println!("libSQL (file missing: {})", path.display());
+        outln!(report, "libSQL (file missing: {})", path.display());
     }
 }
 
-/// Print the database backend and, for PostgreSQL, whether a connection
+/// Render the database backend and, for PostgreSQL, whether a connection
 /// succeeds.
-async fn print_database_status(ctx: &EnvContext, db_backend: &str) {
-    print!("  Database:    ");
+async fn print_database_status(ctx: &EnvContext, db_backend: &str, report: &mut Report) {
+    out!(report, "  Database:    ");
     match db_backend {
-        "libsql" | "turso" | "sqlite" => print_libsql_status(ctx),
+        "libsql" | "turso" | "sqlite" => print_libsql_status(ctx, report),
         _ => {
             if ctx.contains_env_var("DATABASE_URL") {
                 match check_database(ctx).await {
-                    Ok(()) => println!("connected (PostgreSQL)"),
-                    Err(e) => println!("error ({})", e),
+                    Ok(()) => outln!(report, "connected (PostgreSQL)"),
+                    Err(e) => outln!(report, "error ({})", e),
                 }
             } else {
-                println!("not configured");
+                outln!(report, "not configured");
             }
         }
     }
 }
 
-fn print_search_status(db_backend: &str) {
-    print!("  Search:      ");
+fn print_search_status(db_backend: &str, report: &mut Report) {
+    out!(report, "  Search:      ");
     match db_backend {
         "libsql" | "turso" | "sqlite" => {
-            println!("hybrid (brute-force cosine)");
+            outln!(report, "hybrid (brute-force cosine)");
         }
         _ => {
-            println!("hybrid (pgvector)");
+            outln!(report, "hybrid (pgvector)");
         }
     }
 }
 
-/// Print whether the NEAR AI session file exists in the configured base
+/// Render whether the NEAR AI session file exists in the configured base
 /// directory.
-fn print_session_status(ctx: &EnvContext) {
-    print!("  Session:     ");
+fn print_session_status(ctx: &EnvContext, report: &mut Report) {
+    out!(report, "  Session:     ");
     let session_path = ctx.axinite_base_dir().join("session.json");
     if session_path.exists() {
-        println!("found ({})", session_path.display());
+        outln!(report, "found ({})", session_path.display());
     } else {
-        println!("not found (run `axinite onboard`)");
+        outln!(report, "not found (run `axinite onboard`)");
     }
 }
 
-/// Print whether a secrets master key is configured in the snapshot.
-fn print_secrets_status(ctx: &EnvContext) {
+/// Render whether a secrets master key is configured in the snapshot.
+fn print_secrets_status(ctx: &EnvContext, report: &mut Report) {
     // Secrets (auto-detect from env only; skip keychain probe to avoid
     // triggering macOS system password dialogs on a simple status check)
-    print!("  Secrets:     ");
+    out!(report, "  Secrets:     ");
     if ctx.contains_env_var("SECRETS_MASTER_KEY") {
-        println!("configured (env)");
+        outln!(report, "configured (env)");
     } else {
         // We don't probe the keychain here because get_generic_password()
         // triggers macOS unlock+authorisation dialogs, which is bad UX for
         // a read-only status command. If onboarding completed with keychain
         // storage, the key is there; we just can't cheaply verify it.
-        println!("env not set (keychain may be configured)");
+        outln!(report, "env not set (keychain may be configured)");
     }
 }
-/// Print whether embeddings are enabled, treating an OpenAI API key or an
+/// Render whether embeddings are enabled, treating an OpenAI API key or an
 /// explicit `EMBEDDING_ENABLED` flag as enabling them, and show the provider
 /// and model.
-fn print_embeddings_status(ctx: &EnvContext, settings: &Settings) {
-    print!("  Embeddings:  ");
+fn print_embeddings_status(ctx: &EnvContext, settings: &Settings, report: &mut Report) {
+    out!(report, "  Embeddings:  ");
     let emb_enabled = settings.embeddings.enabled
         || ctx.contains_env_var("OPENAI_API_KEY")
         || ctx.get("EMBEDDING_ENABLED") == Some("true");
     if emb_enabled {
-        println!(
+        outln!(
+            report,
             "enabled (provider: {}, model: {})",
-            settings.embeddings.provider, settings.embeddings.model
+            settings.embeddings.provider,
+            settings.embeddings.model
         );
     } else {
-        println!("disabled");
+        outln!(report, "disabled");
     }
 }
 
-/// Print how many `.wasm` tools are installed in `tools_dir`, or report that
+/// Render how many `.wasm` tools are installed in `tools_dir`, or report that
 /// the directory is missing.
-fn print_wasm_tools_status(tools_dir: &std::path::Path) {
-    print!("  WASM Tools:  ");
+fn print_wasm_tools_status(tools_dir: &std::path::Path, report: &mut Report) {
+    out!(report, "  WASM Tools:  ");
     if tools_dir.exists() {
         let count = count_wasm_files(tools_dir);
-        println!("{} installed ({})", count, tools_dir.display());
+        outln!(report, "{} installed ({})", count, tools_dir.display());
     } else {
-        println!("directory not found ({})", tools_dir.display());
+        outln!(report, "directory not found ({})", tools_dir.display());
     }
 }
 
-/// Print the enabled channels and the WASM channel directory.
-fn print_channels_status(ctx: &EnvContext, settings: &Settings) {
-    print!("  Channels:    ");
+/// Render the enabled channels and the WASM channel directory.
+fn print_channels_status(ctx: &EnvContext, settings: &Settings, report: &mut Report) {
+    out!(report, "  Channels:    ");
     let channels_dir = settings
         .channels
         .wasm_channels_dir
@@ -175,31 +178,35 @@ fn print_channels_status(ctx: &EnvContext, settings: &Settings) {
             channel_info.push(format!("{} wasm", wasm_count));
         }
     }
-    println!("{}", channel_info.join(", "));
+    outln!(report, "{}", channel_info.join(", "));
 }
-/// Print whether the heartbeat is enabled, honouring the `HEARTBEAT_ENABLED`
+/// Render whether the heartbeat is enabled, honouring the `HEARTBEAT_ENABLED`
 /// environment override, and show its interval when enabled.
-fn print_heartbeat_status(ctx: &EnvContext, settings: &Settings) {
-    print!("  Heartbeat:   ");
+fn print_heartbeat_status(ctx: &EnvContext, settings: &Settings, report: &mut Report) {
+    out!(report, "  Heartbeat:   ");
     let hb_enabled = settings.heartbeat.enabled || ctx.get("HEARTBEAT_ENABLED") == Some("true");
     if hb_enabled {
-        println!("enabled (interval: {}s)", settings.heartbeat.interval_secs);
+        outln!(
+            report,
+            "enabled (interval: {}s)",
+            settings.heartbeat.interval_secs
+        );
     } else {
-        println!("disabled");
+        outln!(report, "disabled");
     }
 }
 
-/// Print how many configured MCP servers are enabled, or report that none are
+/// Render how many configured MCP servers are enabled, or report that none are
 /// configured.
-async fn print_mcp_status() {
-    print!("  MCP Servers: ");
+async fn print_mcp_status(report: &mut Report) {
+    out!(report, "  MCP Servers: ");
     match crate::tools::mcp::config::load_mcp_servers().await {
         Ok(servers) => {
             let enabled = servers.servers.iter().filter(|s| s.enabled).count();
             let total = servers.servers.len();
-            println!("{} enabled / {} configured", enabled, total);
+            outln!(report, "{} enabled / {} configured", enabled, total);
         }
-        Err(_) => println!("none configured"),
+        Err(_) => outln!(report, "none configured"),
     }
 }
 
@@ -216,42 +223,59 @@ pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
     )
 }
 
-/// Run the status command, printing system health info.
-pub async fn run_status_command() -> anyhow::Result<()> {
-    let env_context = crate::bootstrap::capture_config_env_context();
+/// Render the status report for the supplied environment snapshot.
+///
+/// Settings, paths, and database selection all come from `env_context`, so a
+/// caller that supplies a divergent `AXINITE_BASE_DIR` sees that deployment's
+/// state. The returned text is exactly what [`run_status_command`] prints.
+pub(crate) async fn status_report(env_context: &EnvContext) -> String {
     let base_dir = env_context.axinite_base_dir();
-    let settings = settings_for_context(&env_context);
+    let settings = settings_for_context(env_context);
+    let mut report = Report::default();
 
-    println!("Axinite Status");
-    println!("===============\n");
+    outln!(report, "Axinite Status");
+    outln!(report, "===============\n");
 
     // Version
-    println!(
+    outln!(
+        report,
         "  Version:     {} v{}",
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION")
     );
 
-    let db_backend = db_backend_name(&env_context);
-    print_database_status(&env_context, &db_backend).await;
-    print_search_status(&db_backend);
-    print_session_status(&env_context);
-    print_secrets_status(&env_context);
-    print_embeddings_status(&env_context, &settings);
+    let db_backend = db_backend_name(env_context);
+    print_database_status(env_context, &db_backend, &mut report).await;
+    print_search_status(&db_backend, &mut report);
+    print_session_status(env_context, &mut report);
+    print_secrets_status(env_context, &mut report);
+    print_embeddings_status(env_context, &settings, &mut report);
     print_wasm_tools_status(
         &settings
             .wasm
             .tools_dir
             .clone()
-            .unwrap_or_else(|| default_tools_dir(&env_context)),
+            .unwrap_or_else(|| default_tools_dir(env_context)),
+        &mut report,
     );
-    print_channels_status(&env_context, &settings);
-    print_heartbeat_status(&env_context, &settings);
-    print_mcp_status().await;
+    print_channels_status(env_context, &settings, &mut report);
+    print_heartbeat_status(env_context, &settings, &mut report);
+    print_mcp_status(&mut report).await;
 
     // Config path
-    println!("\n  Config:      {}", base_dir.join(".env").display());
+    outln!(
+        report,
+        "\n  Config:      {}",
+        base_dir.join(".env").display()
+    );
 
+    report.into_string()
+}
+
+/// Run the status command, printing system health info.
+pub async fn run_status_command() -> anyhow::Result<()> {
+    let env_context = crate::bootstrap::capture_config_env_context();
+    print!("{}", status_report(&env_context).await);
     Ok(())
 }
 
