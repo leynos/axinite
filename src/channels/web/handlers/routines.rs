@@ -100,7 +100,7 @@ pub async fn routines_summary_handler(
 }
 
 /// Returns one routine with its trigger, action, guardrails, notification settings and its
-/// 20 most recent runs.
+/// up to 20 most recent runs.
 ///
 /// Answers `400` for an id that is not a UUID, `404` for an unknown routine, `503` when no
 /// database is configured and `500` when the store fails.
@@ -205,9 +205,15 @@ pub struct ToggleRequest {
 /// Enables or disables one routine and answers with a JSON object holding the fields
 /// `status` (`"enabled"` or `"disabled"`) and `routine_id`.
 ///
-/// With a body whose `enabled` is set, the routine takes that state; otherwise its current
-/// state is flipped. Answers `400` for an id that is not a UUID, `404` for an unknown
-/// routine, `503` when no database is configured and `500` when the store fails.
+/// The body is an optional JSON extractor. A request sent with `Content-Type:
+/// application/json` and a body whose `enabled` is set gives the routine that state. A
+/// request with no `Content-Type` header is treated as having no body, even when it sends
+/// bytes, and so is a body whose `enabled` is absent or null: the routine's current state
+/// is flipped. A JSON content type with an empty or malformed body is rejected by the
+/// extractor before the handler runs (`400`, or `422` for JSON of the wrong shape), and
+/// another content type is rejected with `415`. Otherwise the handler answers `400` for
+/// an id that is not a UUID, `404` for an unknown routine, `503` when no database is
+/// configured and `500` when the store fails.
 pub async fn routines_toggle_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
