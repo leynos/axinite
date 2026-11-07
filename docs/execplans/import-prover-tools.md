@@ -303,6 +303,21 @@ adoption programme complete.
       `make formal-pr` (Kani 0 of 37 failed, one harness verified; Verus four
       verified, zero errors), and `make test-prover-tools` (2 Kani and 6 Verus
       tests passed).
+- [x] (2026-11-07) Review repair for the CodeScene and pre-merge findings at
+      `2e41616b`. The full local sequence passed on that exact tree: `make
+      check-fmt` (174 files unchanged), `make lint`, `make typecheck`, `make
+      test` (4,444 passed, 12 skipped), `make test-workflow-contracts` (2,006
+      passed, 11 skipped), `make markdownlint` (zero issues), `make nixie` (all
+      diagrams), `git diff --check` (clean), `make formal-pr` (Kani 0 of 37
+      failed, one harness verified; Verus 4 verified, 0 errors), and `make
+      test-prover-tools` (2 Kani and 6 Verus tests passed). Logs are under
+      `/tmp/*-axinite-import-prover-tools.5.out`. Hosted `Formal Verification`
+      run [42333936016](https://github.com/leynos/axinite/actions/runs/42333936016)
+      passed both proof jobs (`Kani Smoke Proof` 03:25:22–03:26:06 UTC, `Verus
+      Proofs` 03:25:22–03:26:23 UTC), and the required `gh run rerun` repeat
+      (attempt 2) passed them again (`Kani Smoke Proof` 03:28:22–03:29:03 UTC,
+      `Verus Proofs` 03:28:23–03:29:20 UTC). The hosted `CodeScene Code Health
+      Review (main)` and every other check on that commit were green.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
