@@ -2104,6 +2104,80 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps tests
 independent of host machine secrets, keychains, and shell state.
 
+### Settings file loading contract
+
+`Settings::load()` and `Settings::load_from(path)` return
+`Result<Settings, SettingsError>`:
+
+- A missing file yields `Settings::default()`, so a first run needs no
+  configuration.
+- An existing file that cannot be read yields `SettingsError::Read`.
+- An existing file whose contents are not valid JSON yields
+  `SettingsError::Parse`.
+
+Callers that treat an unreadable or malformed `settings.json` as fatal must
+propagate the error. Do not fall back to defaults silently: `Settings::load`
+only substitutes defaults for a genuinely absent file. The operator-facing
+behaviour is described in the [user's guide](users-guide.md#settings-file).
+
+### Environment policy
+
+The process environment is a global resource. Capture it once at the
+composition boundary and pass an `EnvContext` snapshot through the application.
+Production code and in-process tests must not read or mutate process state
+directly.
+
+`clippy.toml` enforces this with `clippy::disallowed_methods`:
+
+- `std::env::var`, `std::env::var_os`, `std::env::vars`, and
+  `std::env::vars_os` — inject an environment reader instead.
+- `std::env::set_var` and `std::env::remove_var` — use a stub environment in
+  tests instead.
+- `std::env::set_current_dir` — inject a base-directory seam; confine working
+  directory changes to `Command::current_dir`.
+- `dotenvy::var`, `dotenvy::vars`, `dotenvy::dotenv`,
+  `dotenvy::dotenv_override`, `dotenvy::from_path`,
+  `dotenvy::from_path_override`, `dotenvy::from_filename`,
+  `dotenvy::from_filename_override`, `dotenvy::from_read`, and
+  `dotenvy::from_read_override` — use `EnvContext` instead of mutating the
+  process environment.
+
+A scoped `#[expect(clippy::disallowed_methods, reason = "...")]` is permitted
+in two cases, and the reason must say which one applies:
+
+- **Owning boundary.** A component that must read the process environment
+  because that is its job keeps a permanent, reasoned exception. The ambient
+  capture in `src/config/context.rs` (`capture_ambient_inputs`) is the sole
+  sanctioned process-environment read; every other component receives the
+  resulting `EnvContext`. A Cargo build script (`build.rs`) reads `CARGO_*` and
+  `OUT_DIR` because Cargo supplies build inputs and outputs through the
+  environment, so those reads are also owning-boundary exceptions.
+- **Transitional exception.** A call site that has not yet been migrated keeps
+  a temporary exception whose reason names the tracked migration issue, and the
+  attribute is removed when the call site moves to `EnvContext`.
+
+Keep the attribute on the smallest enclosing item. Do not add a new exception
+to silence a warning without either an owning-boundary justification or a
+tracked migration.
+
+Tests build their inputs with `EnvContext::for_testing(...)` or
+`EnvContext::default().with_env(...)`, then pass the snapshot to the
+context-aware entrypoint. Never call `std::env::set_var` in a test: it races
+with every other test in the process and leaks state between them. The
+dependency-injection patterns are described in
+[reliable testing in Rust](reliable-testing-in-rust-via-dependency-injection.md).
+
+Two setup boundaries carry the snapshot explicitly:
+
+- `WasmChannelSetupRequest` supplies the `EnvContext` used for WASM channel
+  credential fallback to `setup_wasm_channels_from_context`.
+- `OrchestratorSetupContext` supplies the startup snapshot to
+  `setup_orchestrator_from_context`.
+
+The `wat` development dependency compiles the minimal WebAssembly component
+fixture used by the WASM channel setup tests; it is not part of the runtime
+dependency graph.
+
 ### Monotonic clock seam for duration measurement
 
 When a component must measure elapsed time (rather than compare against a
@@ -2143,7 +2217,12 @@ effects separate from construction so tests can avoid background I/O.
 
 ```rust
 // Production usage (src/startup/phases.rs::phase_build_components):
-let (components, side_effects) = AppBuilder::new(…).build_components().await?;
+let (components, side_effects, env_context) = AppBuilder::new_with_context(
+    AppBuilderParams { config, flags, toml_path, session, log_broadcaster },
+    env_context,
+)
+.build_components_with_context()
+.await?;
 side_effects.start();   // activates background tasks after construction
 
 // Test usage (tests/support/test_rig/builder.rs):
@@ -2158,6 +2237,30 @@ later.
 
 - `init_skills()` runs during `build_components()` construction;
   `RuntimeSideEffects::start()` does not load skills.
+
+### Environment snapshot ownership
+
+Startup owns exactly one environment snapshot. `main()` captures it once with
+`capture_config_env_context()` before the Tokio runtime starts, after loading
+`.env` files. `phase_pid_and_onboard` then supplies that snapshot to the setup
+wizard, which records any credential it collects in its own copy; the phase
+returns the wizard's updated snapshot with `.env` merged on top. A key entered
+during a `--no-db` first run therefore survives into configuration resolution
+even though the secrets store is unavailable.
+`phase_load_config_and_tracing_from` loads configuration from the resulting
+snapshot with `Config::from_context` rather than rereading process state.
+
+`AppBuilder::new_with_context(params, env_context)` accepts that snapshot and
+`build_components_with_context()` returns the updated snapshot alongside the
+components and side effects. The returned snapshot is the one propagated to the
+orchestrator, gateway, reload manager, and channel setup, so every downstream
+consumer resolves environment-backed settings from the same inputs.
+
+`AppBuilder::new(params)` remains for callers that do not already own a
+snapshot; it captures the ambient environment once and delegates to
+`new_with_context`. `build_components()` is the two-value wrapper over
+`build_components_with_context()` for callers that do not need the snapshot
+back. Prefer the context-taking forms in new code and in tests.
 
 #### init_skills()
 
@@ -2355,6 +2458,37 @@ Latency starts immediately after the in-process repair claim is acquired, so
 manual precondition exits and duplicate-claim retries do not emit latency.
 Export pipeline wiring, such as Prometheus or OpenTelemetry integration, is out
 of scope for this feature flag.
+
+#### Reliability metrics
+
+The `metrics` feature also gates the reliability counters for startup
+configuration loading, hot reload, secret injection, and WASM channel
+credentials. It only enables the emission points: no recorder or exporter is
+bundled, so enabling the feature without installing a recorder drops the
+counters.
+
+Table: Reliability metrics.
+
+| Metric                             | Type    | Labels                                                                                 |
+| ---------------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `axinite.startup.config_load`      | counter | `outcome` = `success` \| `settings_error` \| `config_error`                            |
+| `axinite.reload.outcomes`          | counter | `outcome` = `success` \| `http_removed` \| `config_error` \| `listener_error`          |
+| `axinite.reload.secret_injection`  | counter | `outcome` = `injected` \| `missing` \| `retained_after_error` \| `error`               |
+| `axinite.wasm.channel_credentials` | counter | `outcome` = `injected` \| `partial` \| `missing` \| `list_error` \| `decryption_error` |
+
+All labels are fixed compile-time constants; no paths, identifiers, or secret
+values are attached. For `axinite.wasm.channel_credentials`, `partial` means a
+channel declared several credentials and only some of them resolved, while
+`missing` means none resolved. A diagnostic warning logs the `declared` and
+`resolved` counts without secret names or values.
+
+Every outcome is also emitted through `tracing` on channels
+`startup.config_load`, `reload.outcome`, `reload.secret_injection`, and
+`wasm.channel_credentials`. Success and `injected` outcomes log at `debug`;
+every non-success outcome logs at `info`, so a default production build
+surfaces failures without the `metrics` feature. Config-load and reload cycles
+run inside fieldless spans (`startup.config_load` and `reload.cycle`,
+respectively) that carry no sensitive fields.
 
 ### In-process repair claim tracking
 
@@ -2970,11 +3104,14 @@ triggered by the Unix hangup signal (SIGHUP) in production environments.
 Four trait boundaries separate reload policy from I/O:
 
 - `ConfigLoader` — Loads configuration from database (`DbConfigLoader`) or
-  environment variables (`EnvConfigLoader`).
+  the supplied environment snapshot (`EnvConfigLoader`), with the signature
+  `load(&self, ctx: EnvContext) -> Result<Config, ConfigError>`.
 - `ListenerController` — Controls HTTP listener restarts, implemented by
   `WebhookListenerController` for the webhook server.
-- `SecretInjector` — Injects secrets into an environment variable overlay,
-  implemented by `DbSecretInjector` for database-backed secrets.
+- `SecretInjector` — Injects secrets into the `EnvContext` snapshot,
+  implemented by `DbSecretInjector` for database-backed secrets. Its signature
+  is `inject(&self, ctx: &mut EnvContext)`; the mutable reference is the
+  per-cycle snapshot that each reload starts from.
 - `ChannelSecretUpdater` — Propagates rotated or cleared channel secrets
   without restarting the channel. `HotReloadManager` uses this boundary in step
   4 of the reload flow to fan out webhook-secret changes to live channels.
@@ -2990,7 +3127,7 @@ dyn-compatible boxed-future form.
 `HotReloadManager` composes the four boundaries and coordinates the reload
 sequence:
 
-1. Inject secrets into the environment overlay
+1. Inject secrets into the `EnvContext` snapshot
 2. Load new configuration
 3. Restart the HTTP listener if the bind address changed, restart a
    stopped listener when `channels.http` is present, or call `shutdown()` when
@@ -2999,6 +3136,12 @@ sequence:
 
 The manager is created via `create_hot_reload_manager()` which wires together
 the default implementations based on available stores.
+
+The manager starts each reload from the `EnvContext` captured during startup,
+then applies secrets supplied by its injector. It does not reread process
+variables or `.env` files. Restart the process to apply changes to
+environment-backed settings such as `HTTP_HOST` and `HTTP_PORT`; database
+settings and injected secrets follow the reload path.
 
 ### Webhook server lifecycle / listener-based API
 
@@ -3040,7 +3183,11 @@ Adding a new config source:
 
 1. Implement `NativeConfigLoader` for the type.
 2. The blanket impl automatically provides `ConfigLoader`.
-3. Pass the loader to `HotReloadManager::new()`.
+3. Pass the loader to `HotReloadManager::new_with_context(..)` taking a
+   `HotReloadManagerDependencies { .. }` when the caller owns an explicit
+   startup snapshot. Use `HotReloadManager::new()` only for early-startup paths
+   that genuinely capture the ambient environment; `new()` captures that
+   environment itself.
 
 Adding a new listener controller:
 
@@ -3055,9 +3202,11 @@ Adding a new listener controller:
 
 The `src/reload/test_stubs.rs` module provides hand-rolled stubs for testing:
 
-- `StubConfigLoader` — Returns a pre-configured config or error.
+- `StubConfigLoader` — Returns a pre-configured config or error and retains
+  the most recent `EnvContext` snapshot supplied to `load()`.
 - `StubListenerController` — Records restart calls, can simulate failures.
-- `StubSecretInjector` — Records whether `inject()` was called.
+- `StubSecretInjector` — Records whether `inject()` was called and can add a
+  configured key/value to the snapshot.
 - `SpySecretUpdater` — Records all secret update calls.
 
 Use these in unit tests to verify manager behaviour without real I/O. Example
@@ -3437,16 +3586,20 @@ tests belong in `workspace/tests.rs`.
 
 ### AppBuilder integration
 
-`phase_build_components` feeds `AppBuilderFlags` derived from `&Cli` to
-`AppBuilder` and returns a `BuiltComponentsContext` containing both the
-completed `AppComponents` and deferred `RuntimeSideEffects`. Downstream startup
-phases pass that context forward intact: they consume `AppComponents` while
-assembling the long-running runtime, and the default run path crosses the
+`phase_build_components` takes the `LoadedConfigContext` from configuration
+loading, feeds `AppBuilderFlags` derived from `&Cli` plus the context's
+`config`, `toml_path`, and `session` to `AppBuilder`, and returns a
+`BuiltComponentsContext` containing the completed `AppComponents`, the deferred
+`RuntimeSideEffects`, and the `env_context` returned by
+`AppBuilder::build_components_with_context()`. Downstream startup phases pass
+that context forward intact: they consume `AppComponents` while assembling the
+long-running runtime, and the default run path crosses the
 `side_effects.start()` boundary only immediately before the agent loop begins.
 Extend `AppBuilderFlags` (in the `axinite` library crate) when a new component
 must be conditionally included at startup, then thread the resulting
-`AppComponents` and `RuntimeSideEffects` through the appropriate startup
-context.
+`AppComponents`, `RuntimeSideEffects`, and `EnvContext` through the appropriate
+startup context. A phase must not recapture the environment; forward the
+snapshot it receives.
 
 ### Parameter-object structs in store helpers
 
@@ -3521,6 +3674,8 @@ Caption: Responsibilities of startup submodules.
 | -------------- | ----------------------------- | ------------------------------------------------------------------------ |
 | `context`      | `src/startup/context.rs`      | Defines the startup hand-off structs and shared core runtime context     |
 | `phases`       | `src/startup/phases.rs`       | Orchestrates each startup phase function                                 |
+| `config_load`  | `src/startup/config_load.rs`  | Loads `settings.json` and configuration from the startup `EnvContext`    |
+| `telemetry`    | `src/startup/telemetry.rs`    | Records fixed-label startup config-load outcomes                         |
 | `channels`     | `src/startup/channels.rs`     | Wires REPL/signal/HTTP/WASM channels; configures the gateway channel     |
 | `wasm`         | `src/startup/wasm.rs`         | Bootstraps WASM channel runtime; hot-wires it into the extension manager |
 | `boot`         | `src/startup/boot.rs`         | Builds and prints the startup boot screen                                |
@@ -3547,13 +3702,18 @@ phase.
 
 Caption: Shared startup context structs.
 
-| Struct                   | Produced by                     | Key fields                                                                                         |
-| ------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `LoadedConfigContext`    | `phase_load_config_and_tracing` | `config`, `session`, `log_broadcaster`                                                             |
-| `BuiltComponentsContext` | `phase_build_components`        | `components`, `side_effects`                                                                       |
-| `CoreAgentContext`       | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue`                   |
-| `AgentRunContext`        | `phase_tunnel_and_orchestrator` | `core`                                                                                             |
-| `GatewayPhaseContext`    | `phase_init_channels_and_hooks` | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
+| Struct                   | Produced by                          | Key fields                                                                                         |
+| ------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `LoadedConfigContext`    | `phase_load_config_and_tracing_from` | `config`, `env_context`, `toml_path`, `session`, `log_broadcaster`, `workspace_import_dir`         |
+| `BuiltComponentsContext` | `phase_build_components`             | `components`, `env_context`, `side_effects`, `log_broadcaster`                                     |
+| `CoreAgentContext`       | `phase_tunnel_and_orchestrator`      | `components`, `config`, `env_context`, `active_tunnel`, `container_job_manager`, `prompt_queue`    |
+| `AgentRunContext`        | `phase_tunnel_and_orchestrator`      | `core`                                                                                             |
+| `GatewayPhaseContext`    | `phase_init_channels_and_hooks`      | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
+
+Every struct that carries `env_context` forwards the same startup snapshot; do
+not recapture it in a later phase. Downstream consumers such as the hot-reload
+manager and channel setup resolve environment-backed settings from that single
+snapshot.
 
 ### CLI dispatch
 
@@ -3575,24 +3735,32 @@ async_main()
 
 ### Phase sequence
 
-`async_main()` calls the following phase functions in order. Each phase
-consumes the context struct produced by the previous one.
+`main()` captures the startup `EnvContext` once, before the Tokio runtime
+exists, and passes it to `async_main()`. `async_main()` then calls the
+following phase functions in order. Each phase consumes the context struct
+produced by the previous one.
 
 Caption: Startup phase sequence.
 
-| #   | Function                        | Input                          | Output                   |
-| --- | ------------------------------- | ------------------------------ | ------------------------ |
-| 1   | `phase_pid_and_onboard`         | `&Cli`                         | `Option<PidLock>`        |
-| 2   | `phase_load_config_and_tracing` | `&Cli`                         | `LoadedConfigContext`    |
-| 3   | `phase_build_components`        | `&Cli`, `LoadedConfigContext`  | `BuiltComponentsContext` |
-| 4   | `phase_tunnel_and_orchestrator` | `BuiltComponentsContext`       | `AgentRunContext`        |
-| 5   | `phase_init_channels_and_hooks` | `&Cli`, `AgentRunContext`      | `GatewayPhaseContext`    |
-| 6   | `phase_setup_gateway`           | `&mut GatewayPhaseContext`     | *(mutates in place)*     |
-| 7   | `phase_print_boot_screen`       | `&Cli`, `&GatewayPhaseContext` | *(side effect)*          |
-| 8   | `phase_run_agent`               | `GatewayPhaseContext`          | `anyhow::Result<()>`     |
+| #   | Function                             | Input                          | Output                          |
+| --- | ------------------------------------ | ------------------------------ | ------------------------------- |
+| 1   | `phase_pid_and_onboard`              | `&Cli`, `&EnvContext`          | `(Option<PidLock>, EnvContext)` |
+| 2   | `phase_load_config_and_tracing_from` | `&Cli`, `&EnvContext`          | `LoadedConfigContext`           |
+| 3   | `phase_build_components`             | `&Cli`, `LoadedConfigContext`  | `BuiltComponentsContext`        |
+| —   | `install_legacy_env_overlay`         | `&BuiltComponentsContext`      | *(fills the legacy overlay)*    |
+| 4   | `phase_tunnel_and_orchestrator`      | `BuiltComponentsContext`       | `AgentRunContext`               |
+| 5   | `phase_init_channels_and_hooks`      | `&Cli`, `AgentRunContext`      | `GatewayPhaseContext`           |
+| 6   | `phase_setup_gateway`                | `&mut GatewayPhaseContext`     | *(mutates in place)*            |
+| 7   | `phase_print_boot_screen`            | `&Cli`, `&GatewayPhaseContext` | *(side effect)*                 |
+| 8   | `phase_run_agent`                    | `GatewayPhaseContext`          | `anyhow::Result<()>`            |
 
 Phases 1–4 are infallible or propagate configuration errors early so subsequent
-phases can assume a fully valid environment.
+phases can assume a fully valid environment. Phase 2 loads `settings.json` from
+the snapshot's base directory; a missing file yields defaults, while an
+unreadable or malformed one fails startup. `install_legacy_env_overlay` runs
+after component construction and before the orchestrator phase; it copies the
+snapshot's injected secrets into the legacy secret overlay for code that still
+reads that overlay. The snapshot itself is not replaced.
 
 #### `src/skills/bundle/`
 

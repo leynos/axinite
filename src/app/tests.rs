@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     channels::web::log_layer::LogBroadcaster,
-    config::Config,
+    config::{Config, EnvContext},
     db::{Database, SettingKey, UserId},
     llm::{LlmProvider, SessionConfig, SessionManager},
     testing::StubLlm,
@@ -39,6 +39,8 @@ async fn assert_no_activation(workspace: &Arc<Workspace>, import_dir: &Path) -> 
 
 #[cfg(feature = "libsql")]
 #[fixture]
+/// Build an `AppBuilder` over a migrated temporary libSQL database, with a
+/// workspace import directory containing a marker file.
 async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)> {
     let temp_dir = tempfile::tempdir()?;
     let db_path = temp_dir.path().join("app-builder-test.db");
@@ -63,16 +65,19 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
     let log_broadcaster = Arc::new(LogBroadcaster::new());
     let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
 
-    let mut builder = AppBuilder::new(AppBuilderParams {
-        config,
-        flags: AppBuilderFlags {
-            workspace_import_dir: Some(workspace_import_dir.clone()),
-            ..AppBuilderFlags::default()
+    let mut builder = AppBuilder::new_with_context(
+        AppBuilderParams {
+            config,
+            flags: AppBuilderFlags {
+                workspace_import_dir: Some(workspace_import_dir.clone()),
+                ..AppBuilderFlags::default()
+            },
+            toml_path: None,
+            session,
+            log_broadcaster,
         },
-        toml_path: None,
-        session,
-        log_broadcaster,
-    });
+        EnvContext::default().with_secret("ANTHROPIC_API_KEY", "overlay-only-key"),
+    );
     builder.with_database(db);
     builder.with_llm(llm);
 
@@ -81,8 +86,18 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
 
 #[cfg(feature = "libsql")]
 #[tokio::test]
+/// Verify that `init_database` migrates legacy `settings.json` into the
+/// database and renames the file. The test re-executes itself as a child
+/// process so the migration runs with a controlled environment.
 async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
-    if std::env::var("AXINITE_APP_MIGRATION_CHILD").ok().as_deref() == Some("1") {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+        std::env::var("AXINITE_APP_MIGRATION_CHILD")
+    }
+    .ok()
+    .as_deref()
+        == Some("1")
+    {
         run_init_database_migration_child().await?;
         return Ok(());
     }
@@ -129,12 +144,38 @@ async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "libsql")]
+/// Child-process half of the legacy settings migration test: read the paths
+/// from the environment, run `init_database`, and assert the setting was
+/// migrated and the legacy file renamed.
 async fn run_init_database_migration_child() -> anyhow::Result<()> {
-    let axinite_dir = PathBuf::from(std::env::var("AXINITE_BASE_DIR")?);
-    let db_path = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_DB_PATH")?);
-    let skills_dir = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")?);
-    let installed_skills_dir =
-        PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")?);
+    let axinite_dir = PathBuf::from({
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
+        std::env::var("AXINITE_BASE_DIR")
+    }?);
+    let db_path = PathBuf::from({
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
+        std::env::var("AXINITE_APP_MIGRATION_DB_PATH")
+    }?);
+    let skills_dir = PathBuf::from({
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
+        std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")
+    }?);
+    let installed_skills_dir = PathBuf::from({
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
+        std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")
+    }?);
 
     let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
     let session = Arc::new(SessionManager::new(SessionConfig::default()));
@@ -168,11 +209,18 @@ async fn run_init_database_migration_child() -> anyhow::Result<()> {
 #[cfg(feature = "libsql")]
 #[rstest]
 #[tokio::test]
+/// Verify that `build_components` constructs the workspace without importing
+/// or seeding it, and that `RuntimeSideEffects::start` performs the deferred
+/// import.
 async fn build_components_returns_without_activating_side_effects(
     #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
 ) -> anyhow::Result<()> {
     let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
-    let (components, side_effects) = builder.build_components().await?;
+    let (components, side_effects, env_context) = builder.build_components_with_context().await?;
+    assert_eq!(
+        env_context.get("ANTHROPIC_API_KEY"),
+        Some("overlay-only-key")
+    );
     assert!(components.tools.count() > 0);
     let workspace = components
         .workspace

@@ -21,11 +21,6 @@ use crate::error::ConfigError;
 use super::EnvContext;
 use super::INJECTED_VARS;
 
-#[cfg(any(test, feature = "test-helpers"))]
-use std::cell::Cell;
-#[cfg(any(test, feature = "test-helpers"))]
-use std::convert::Infallible;
-
 /// A typed wrapper for an environment-variable name.
 ///
 /// Using `EnvKey` instead of a bare `&str` makes the domain intent explicit and
@@ -77,54 +72,6 @@ fn parse_bool_core(key: EnvKey, raw: Option<String>, default: bool) -> Result<bo
     }
 }
 
-#[cfg(any(test, feature = "test-helpers"))]
-thread_local! {
-    static ENV_MUTEX_DEPTH: Cell<usize> = const { Cell::new(0) };
-}
-
-#[cfg(any(test, feature = "test-helpers"))]
-pub(crate) struct EnvMutex(std::sync::Mutex<()>);
-
-#[cfg(any(test, feature = "test-helpers"))]
-pub(crate) struct EnvMutexGuard<'a> {
-    guard: Option<std::sync::MutexGuard<'a, ()>>,
-}
-
-#[cfg(any(test, feature = "test-helpers"))]
-impl EnvMutex {
-    const fn new() -> Self {
-        Self(std::sync::Mutex::new(()))
-    }
-
-    pub(crate) fn lock(&'static self) -> Result<EnvMutexGuard<'static>, Infallible> {
-        if ENV_MUTEX_DEPTH.with(|depth| depth.get()) > 0 {
-            ENV_MUTEX_DEPTH.with(|depth| depth.set(depth.get() + 1));
-            return Ok(EnvMutexGuard { guard: None });
-        }
-
-        let guard = self
-            .0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        ENV_MUTEX_DEPTH.with(|depth| depth.set(1));
-        Ok(EnvMutexGuard { guard: Some(guard) })
-    }
-}
-
-#[cfg(any(test, feature = "test-helpers"))]
-impl Drop for EnvMutexGuard<'_> {
-    fn drop(&mut self) {
-        let _ = self.guard.as_ref();
-        ENV_MUTEX_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
-    }
-}
-
-#[cfg(any(test, feature = "test-helpers"))]
-pub(crate) static ENV_MUTEX: EnvMutex = EnvMutex::new();
-
-#[cfg(any(test, feature = "test-helpers"))]
-const _: &EnvMutex = &ENV_MUTEX;
-
 pub(crate) fn optional_env_from(
     ctx: &EnvContext,
     key: EnvKey,
@@ -132,8 +79,17 @@ pub(crate) fn optional_env_from(
     Ok(ctx.get_owned(key.as_str()))
 }
 
+/// Read an optional value from the ambient process environment, falling back
+/// to the injected-variable overlay.
+///
+/// Retained for legacy callers; new code should use [`optional_env_from`] with
+/// an explicit [`EnvContext`].
 pub(crate) fn optional_env(key: EnvKey) -> Result<Option<String>, ConfigError> {
     // Check real env vars first (always win over injected secrets)
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "FIXME: legacy ambient fallback; migrate callers to EnvContext, see https://github.com/leynos/axinite/issues/333"
+    )]
     match std::env::var(key.as_str()) {
         Ok(val) if val.is_empty() => {}
         Ok(val) => return Ok(Some(val)),

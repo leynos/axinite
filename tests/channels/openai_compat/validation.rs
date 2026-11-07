@@ -169,9 +169,12 @@ async fn test_models_no_auth() {
 }
 
 #[tokio::test]
+/// Verify a gateway state without an LLM provider responds 503 to a chat
+/// completions request.
 async fn test_no_llm_provider_returns_503() {
     // Create state WITHOUT llm_provider
     let state = Arc::new(GatewayState {
+        env_flag_overlay: Default::default(),
         feature_flags: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
         msg_tx: tokio::sync::RwLock::new(None),
         sse: SseManager::new(),

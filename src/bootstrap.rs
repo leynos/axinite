@@ -13,9 +13,10 @@ pub mod tools;
 pub use migration::{MigrationError, migrate_disk_to_db};
 pub use pid_lock::{PidLock, PidLockError, pid_lock_path};
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use crate::config::EnvContext;
 use migration::migrate_bootstrap_json_to_env;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
@@ -29,7 +30,12 @@ static AXINITE_BASE_DIR: LazyLock<PathBuf> = LazyLock::new(compute_axinite_base_
 /// `axinite_base_dir()` function (which caches the result) and tests
 /// (which need to verify different configurations).
 pub fn compute_axinite_base_dir() -> PathBuf {
-    std::env::var(AXINITE_BASE_DIR_ENV)
+    compute_axinite_base_dir_from(&EnvContext::capture_ambient())
+}
+
+/// Compute the Axinite base directory from an explicit environment snapshot.
+pub fn compute_axinite_base_dir_from(ctx: &EnvContext) -> PathBuf {
+    ctx.get(AXINITE_BASE_DIR_ENV)
         .map(PathBuf::from)
         .map(|path| {
             if path.as_os_str().is_empty() {
@@ -44,7 +50,7 @@ pub fn compute_axinite_base_dir() -> PathBuf {
                 path
             }
         })
-        .unwrap_or_else(|_| default_base_dir())
+        .unwrap_or_else(default_base_dir)
 }
 
 /// Get the default Axinite base directory (~/.axinite).
@@ -99,10 +105,8 @@ pub fn axinite_env_path() -> PathBuf {
 /// extracts `DATABASE_URL` from it and writes the `.env` file (one-time
 /// upgrade from the old config format).
 ///
-/// After loading the `.env` file, auto-detects the libsql backend: if
-/// `DATABASE_BACKEND` is still unset and `~/.axinite/axinite.db` (or the
-/// pre-rename `~/.axinite/ironclaw.db`) exists, defaults to `libsql` so
-/// cloud instances work out of the box without any manual configuration.
+/// Database backend auto-detection is added to the immutable configuration
+/// context by [`capture_config_env_context`].
 pub fn load_axinite_env() {
     let path = axinite_env_path();
 
@@ -112,22 +116,66 @@ pub fn load_axinite_env() {
     }
 
     if path.exists() {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "FIXME: load Axinite dotenv values into EnvContext, see https://github.com/leynos/axinite/issues/333"
+        )]
         let _ = dotenvy::from_path(&path);
     }
+}
 
-    // Auto-detect libsql: if DATABASE_BACKEND is still unset after loading
-    // all env files, and the local SQLite DB exists, default to libsql.
-    // This avoids the chicken-and-egg problem on cloud instances where no
-    // DATABASE_URL is configured but axinite.db is already present.
-    if std::env::var("DATABASE_BACKEND").is_err() {
-        // The default path falls back to the pre-rename `ironclaw.db` when
-        // only the legacy file exists, keeping migrated installs working.
-        let default_db = crate::config::default_libsql_path();
-        if default_db.exists() {
-            // SAFETY: `load_axinite_env` is called from a synchronous `fn main()`
-            // before the Tokio runtime is started, so no other threads exist yet.
-            unsafe { std::env::set_var("DATABASE_BACKEND", "libsql") };
+/// Merge saved Axinite dotenv values into an explicit environment snapshot.
+///
+/// Values already present in `ctx` take precedence, matching dotenv loading at
+/// startup. This is useful after onboarding writes bootstrap values while the
+/// process is running, when recapturing the ambient environment is unsafe.
+pub fn merge_axinite_env_into_context(ctx: &EnvContext) -> std::io::Result<EnvContext> {
+    let path = compute_axinite_base_dir_from(ctx).join(".env");
+    let values = match dotenvy::from_path_iter(path) {
+        Ok(values) => values,
+        Err(error) if error.not_found() => return Ok(ctx.clone()),
+        Err(error) => return Err(std::io::Error::other(error)),
+    };
+
+    let mut merged = ctx.clone();
+    for value in values {
+        let (key, value) = value.map_err(std::io::Error::other)?;
+        if !merged.contains_env_var(&key) {
+            merged = merged.with_env(key, value);
         }
+    }
+
+    Ok(merged)
+}
+
+/// Capture the ambient inputs and resolve the inferred local libSQL backend.
+///
+/// An explicitly present `DATABASE_BACKEND`, including an empty value, takes
+/// precedence. This never mutates the process environment.
+pub fn capture_config_env_context() -> EnvContext {
+    with_libsql_backend_autodetection(
+        EnvContext::capture_ambient(),
+        &crate::config::default_libsql_path(),
+    )
+}
+
+/// Return the configured database backend from a resolved environment snapshot.
+///
+/// The startup snapshot includes local libSQL auto-detection, so CLI diagnostics
+/// use the same backend choice as application configuration.
+pub(crate) fn database_backend_name(ctx: &EnvContext) -> String {
+    ctx.get_owned("DATABASE_BACKEND")
+        .unwrap_or_else(|| "postgres".to_string())
+}
+
+/// Return the context with `DATABASE_BACKEND` set to `libsql` when the
+/// variable is absent and the database file exists; otherwise return it
+/// unchanged.
+pub(crate) fn with_libsql_backend_autodetection(ctx: EnvContext, db_path: &Path) -> EnvContext {
+    if !ctx.contains_env_var("DATABASE_BACKEND") && db_path.exists() {
+        ctx.with_env("DATABASE_BACKEND", "libsql")
+    } else {
+        ctx
     }
 }
 

@@ -19,11 +19,12 @@ use axinite::{
     workspace::Workspace,
 };
 
+/// Exercise the heartbeat end to end against a live database and LLM.
 #[tokio::test]
 #[ignore] // Requires running database and LLM credentials
 async fn test_heartbeat_end_to_end() {
-    // Load .env and set up logging
-    let _ = dotenvy::dotenv();
+    // This test does not load `.env` files. Export `DATABASE_URL` and the LLM
+    // credentials in the process environment before running it.
     let _ = tracing_subscriber::fmt()
         .with_env_filter("axinite=debug")
         .try_init();

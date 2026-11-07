@@ -3,14 +3,9 @@
 use crate::test_support::ExpectValid;
 use std::process::Command;
 
-use crate::testing::test_utils::EnvVarsGuard;
 use tempfile::tempdir;
 
 use super::super::*;
-
-fn would_autodetect_libsql(db_path: &std::path::Path) -> bool {
-    std::env::var("DATABASE_BACKEND").is_err() && db_path.exists()
-}
 
 fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
     assert!(env_path.exists(), ".env must exist after migration");
@@ -60,11 +55,23 @@ fn test_migrate_bootstrap_json_to_env() {
     assert_bootstrap_file_renamed(dir.path());
 }
 
+/// Exercise the `bootstrap.json` to `.env` migration, including the child-process branch that performs the load.
 #[test]
 fn load_axinite_env_migrates_bootstrap_json_to_env() {
-    if std::env::var("AXINITE_LOAD_ENV_CHILD").ok().as_deref() == Some("1") {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+        std::env::var("AXINITE_LOAD_ENV_CHILD")
+    }
+    .ok()
+    .as_deref()
+        == Some("1")
+    {
         let base_dir = std::path::PathBuf::from(
-            std::env::var("AXINITE_BASE_DIR").expect_valid("AXINITE_BASE_DIR missing"),
+            {
+                #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+                std::env::var("AXINITE_BASE_DIR")
+            }
+            .expect_valid("AXINITE_BASE_DIR missing"),
         );
         let env_path = base_dir.join(".env");
 
@@ -135,39 +142,60 @@ fn test_migrate_bootstrap_json_missing() {
 }
 
 #[test]
-fn test_libsql_autodetect_sets_backend_when_db_exists() {
-    let mut env_guard = EnvVarsGuard::new(&["DATABASE_BACKEND"]);
-    env_guard.remove("DATABASE_BACKEND");
-
+/// Verify that auto-detection leaves the backend unset when the database file
+/// is absent and selects `libsql` once the file exists.
+fn libsql_autodetection_injects_backend_when_db_exists() {
     let dir = tempdir().expect_valid("create temp dir for libsql autodetect");
     let db_path = dir.path().join("axinite.db");
 
     assert!(!db_path.exists());
     assert!(
-        !would_autodetect_libsql(&db_path),
+        with_libsql_backend_autodetection(crate::config::EnvContext::default(), &db_path)
+            .get("DATABASE_BACKEND")
+            .is_none(),
         "should not auto-detect when db file is absent"
     );
 
     ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
     assert!(
-        would_autodetect_libsql(&db_path),
+        with_libsql_backend_autodetection(crate::config::EnvContext::default(), &db_path)
+            .get("DATABASE_BACKEND")
+            == Some("libsql"),
         "should detect libsql when db file is present and backend unset"
     );
 }
 
 #[test]
+/// Verify that an explicitly configured backend is preserved even when a
+/// libSQL database file is present.
 fn test_libsql_autodetect_does_not_override_explicit_backend() {
-    let mut env_guard = EnvVarsGuard::new(&["DATABASE_BACKEND"]);
-    env_guard.set("DATABASE_BACKEND", "postgres");
-
     let dir = tempdir().expect_valid("create temp dir for explicit backend autodetect test");
     let db_path = dir.path().join("axinite.db");
     ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
 
-    let would_override = std::env::var("DATABASE_BACKEND").is_err() && db_path.exists();
+    let context = with_libsql_backend_autodetection(
+        crate::config::EnvContext::default().with_env("DATABASE_BACKEND", "postgres"),
+        &db_path,
+    );
     assert!(
-        !would_override,
+        context.get("DATABASE_BACKEND") == Some("postgres"),
         "must not override an explicitly set DATABASE_BACKEND"
+    );
+}
+
+#[test]
+/// Verify that an explicitly present but empty `DATABASE_BACKEND` blocks
+/// auto-detection rather than being treated as unset.
+fn test_libsql_autodetect_respects_an_empty_backend_environment_value() {
+    let dir = tempdir().expect_valid("create temp dir for empty backend autodetect test");
+    let db_path = dir.path().join("axinite.db");
+    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
+
+    let context = crate::config::EnvContext::default().with_env("DATABASE_BACKEND", "");
+    let resolved = with_libsql_backend_autodetection(context, &db_path);
+    assert!(
+        resolved.get("DATABASE_BACKEND").is_none(),
+        "an explicitly present empty backend must prevent auto-detection"
     );
 }
 

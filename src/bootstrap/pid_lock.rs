@@ -48,6 +48,14 @@ impl PidLock {
         Self::acquire_at(pid_lock_path())
     }
 
+    /// Acquire the PID lock inside an explicit base directory.
+    ///
+    /// Startup passes the base directory from its environment snapshot so the
+    /// lock follows the same directory as the rest of the configuration.
+    pub fn acquire_in(base_dir: &std::path::Path) -> Result<Self, PidLockError> {
+        Self::acquire_at(base_dir.join("axinite.pid"))
+    }
+
     /// Acquire at a specific path (for testing).
     pub(super) fn acquire_at(path: PathBuf) -> Result<Self, PidLockError> {
         use std::io::Write;

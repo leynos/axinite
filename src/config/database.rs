@@ -203,14 +203,21 @@ const _: () = {
 };
 
 impl SslMode {
-    /// Read from `DATABASE_SSLMODE` env var, defaulting to `Prefer`.
+    /// Read from `DATABASE_SSLMODE` in the ambient process environment,
+    /// defaulting to `Prefer`.
     ///
     /// Silently falls back to `Prefer` on missing or unparsable values.
-    /// Used by lightweight CLI tools (status, doctor) that don't run the
-    /// full config pipeline.
+    /// Prefer [`Self::from_context`] when the caller already owns an
+    /// [`EnvContext`] snapshot.
     pub fn from_env() -> Self {
-        std::env::var("DATABASE_SSLMODE")
-            .ok()
+        Self::from_context(&EnvContext::capture_ambient())
+    }
+
+    /// Read from `DATABASE_SSLMODE` in an explicit environment snapshot.
+    ///
+    /// Silently falls back to `Prefer` on missing or unparsable values.
+    pub fn from_context(ctx: &EnvContext) -> Self {
+        ctx.get("DATABASE_SSLMODE")
             .and_then(|s| s.parse().ok())
             .unwrap_or_default()
     }

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::channels::web::log_layer::LogBroadcaster;
-use crate::config::Config;
+use crate::config::{Config, EnvContext};
 use crate::db::Database;
 use crate::hooks::HookRegistry;
 use crate::llm::{LlmProvider, RecordingLlm, SessionManager};
@@ -47,6 +47,7 @@ pub struct AppBuilderParams {
 /// Builder that orchestrates the 5 mechanical init phases.
 pub struct AppBuilder {
     pub(super) config: Config,
+    pub(super) env_context: EnvContext,
     pub(super) flags: AppBuilderFlags,
     pub(super) toml_path: Option<std::path::PathBuf>,
     pub(super) session: Arc<SessionManager>,
@@ -68,8 +69,17 @@ pub struct AppBuilder {
 impl AppBuilder {
     /// Create a new builder.
     pub fn new(params: AppBuilderParams) -> Self {
+        Self::new_with_context(params, crate::bootstrap::capture_config_env_context())
+    }
+
+    /// Create a builder using the environment snapshot resolved by its owner.
+    ///
+    /// Startup uses this constructor to keep configuration, secret injection,
+    /// and downstream setup on one explicit environment boundary.
+    pub fn new_with_context(params: AppBuilderParams, env_context: EnvContext) -> Self {
         Self {
             config: params.config,
+            env_context: env_context.clone(),
             flags: params.flags,
             toml_path: params.toml_path,
             session: params.session,
@@ -78,8 +88,8 @@ impl AppBuilder {
             secrets_store: None,
             llm_override: None,
             handles: None,
-            relay_config: crate::config::RelayConfig::from_env(),
-            gateway_token: std::env::var("GATEWAY_AUTH_TOKEN").ok(),
+            relay_config: crate::config::RelayConfig::from_context(&env_context),
+            gateway_token: env_context.get_owned("GATEWAY_AUTH_TOKEN"),
         }
     }
 
@@ -113,6 +123,18 @@ impl AppBuilder {
         self.init_llm().await
     }
 
+    /// Validates that LLM credentials are configured for non-nearai backends.
+    pub(super) fn validate_llm_config(&self) -> Result<(), anyhow::Error> {
+        if self.config.llm.backend != "nearai" && self.config.llm.provider.is_none() {
+            let backend = &self.config.llm.backend;
+            anyhow::bail!(
+                "LLM_BACKEND={backend} is configured but no credentials were found. \
+                 Set the appropriate API key environment variable or run the setup wizard."
+            );
+        }
+        Ok(())
+    }
+
     /// Run all init phases in order and return the assembled components
     /// along with deferred runtime side effects.
     ///
@@ -121,8 +143,17 @@ impl AppBuilder {
     /// activate deferred work (workspace import, seeding, embedding backfill,
     /// stale job cleanup).
     pub async fn build_components(
-        mut self,
+        self,
     ) -> Result<(AppComponents, RuntimeSideEffects), anyhow::Error> {
+        let (components, side_effects, _) = self.build_components_with_context().await?;
+        Ok((components, side_effects))
+    }
+
+    /// Build components and return the environment snapshot after credential
+    /// overlays have been applied.
+    pub async fn build_components_with_context(
+        mut self,
+    ) -> Result<(AppComponents, RuntimeSideEffects, EnvContext), anyhow::Error> {
         self.init_database().await?;
         self.init_secrets().await?;
 
@@ -188,7 +219,7 @@ impl AppBuilder {
             embeddings_available,
         );
 
-        Ok((components, side_effects))
+        Ok((components, side_effects, self.env_context))
     }
 
     /// Convenience wrapper that builds components and immediately starts

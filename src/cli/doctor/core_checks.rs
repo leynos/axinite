@@ -4,7 +4,6 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -12,39 +11,46 @@ use super::CheckResult;
 
 // ── Settings file ───────────────────────────────────────────
 
-pub(super) fn check_settings_file() -> CheckResult {
-    let path = Settings::default_path();
-    if !path.exists() {
-        return CheckResult::Pass("no settings file (defaults will be used)".into());
+/// Report whether the settings file is absent, valid, or invalid.
+///
+/// Validation deserializes [`Settings`] rather than a generic JSON value, so a
+/// file that startup would reject (for example, a field with the wrong type)
+/// is reported as a failure here too.
+pub(super) fn check_settings_file(ctx: &EnvContext) -> CheckResult {
+    let path = ctx.axinite_base_dir().join("settings.json");
+    match path.try_exists() {
+        Ok(false) => return CheckResult::Pass("no settings file (defaults will be used)".into()),
+        Ok(true) => {}
+        Err(error) => {
+            return CheckResult::Fail(format!("cannot inspect {}: {error}", path.display()));
+        }
     }
 
-    match ambient_fs::read_to_string(&path) {
-        Ok(data) => match serde_json::from_str::<serde_json::Value>(&data) {
-            Ok(_) => CheckResult::Pass(format!("valid ({})", path.display())),
-            Err(e) => CheckResult::Fail(format!(
-                "settings.json is malformed: {}. Fix or delete {}",
-                e,
-                path.display()
-            )),
-        },
-        Err(e) => CheckResult::Fail(format!("cannot read {}: {}", path.display(), e)),
+    match Settings::load_from(&path) {
+        Ok(_) => CheckResult::Pass(format!("valid ({})", path.display())),
+        Err(error) => CheckResult::Fail(format!(
+            "settings.json is invalid: {error}. Fix or delete {}",
+            path.display()
+        )),
     }
 }
 
 // ── NEAR AI session ─────────────────────────────────────────
 
-pub(super) async fn check_nearai_session() -> CheckResult {
-    let session_path = crate::config::llm::default_session_path();
+/// Check the NEAR AI session file in the configured base directory, passing
+/// when an API key is set but no session file exists.
+pub(super) async fn check_nearai_session(ctx: &EnvContext) -> CheckResult {
+    let session_path = ctx.axinite_base_dir().join("session.json");
     if !session_path.exists() {
-        return missing_session_result(&session_path);
+        return missing_session_result(ctx, &session_path);
     }
     verify_session_file(&session_path)
 }
 
 /// Result when no session file exists: pass in API-key mode, otherwise
 /// direct the user to onboarding.
-fn missing_session_result(session_path: &std::path::Path) -> CheckResult {
-    if std::env::var("NEARAI_API_KEY").is_ok() {
+fn missing_session_result(ctx: &EnvContext, session_path: &std::path::Path) -> CheckResult {
+    if ctx.contains_env_var("NEARAI_API_KEY") {
         return CheckResult::Pass("API key configured".into());
     }
     CheckResult::Fail(format!(
@@ -66,10 +72,8 @@ fn verify_session_file(session_path: &std::path::Path) -> CheckResult {
 
 // ── LLM configuration ──────────────────────────────────────
 
-pub(super) fn check_llm_config(settings: &Settings) -> CheckResult {
-    check_llm_config_with_context(&EnvContext::capture_ambient(), settings)
-}
-
+/// Resolve the LLM configuration from the supplied snapshot and report the
+/// active backend and model.
 pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
     match crate::llm::LlmConfig::resolve_from(ctx, settings) {
         Ok(config) => {
@@ -88,23 +92,23 @@ pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Setting
 }
 
 // ── Database ────────────────────────────────────────────────
-
-pub(super) async fn check_database() -> CheckResult {
-    let backend = std::env::var("DATABASE_BACKEND")
-        .ok()
-        .unwrap_or_else(|| "postgres".into());
+/// Report database health for the backend selected by the environment
+/// snapshot, delegating to the libSQL or PostgreSQL check as appropriate.
+pub(super) async fn check_database_with_context(ctx: &EnvContext) -> CheckResult {
+    let backend = crate::bootstrap::database_backend_name(ctx);
 
     match backend.as_str() {
-        "libsql" | "turso" | "sqlite" => check_libsql_database(),
-        _ => check_postgres_database().await,
+        "libsql" | "turso" | "sqlite" => check_libsql_database(ctx),
+        _ => check_postgres_database(ctx).await,
     }
 }
 
 /// Report whether the configured libSQL database file already exists.
-fn check_libsql_database() -> CheckResult {
-    let path = std::env::var("LIBSQL_PATH")
+fn check_libsql_database(ctx: &EnvContext) -> CheckResult {
+    let path = ctx
+        .get_owned("LIBSQL_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| crate::config::default_libsql_path());
+        .unwrap_or_else(|| crate::config::default_libsql_path_in(&ctx.axinite_base_dir()));
 
     if path.exists() {
         CheckResult::Pass(format!("libSQL database exists ({})", path.display()))
@@ -117,12 +121,12 @@ fn check_libsql_database() -> CheckResult {
 }
 
 /// Attempt a PostgreSQL connection, or report the missing `DATABASE_URL`.
-async fn check_postgres_database() -> CheckResult {
-    if std::env::var("DATABASE_URL").is_err() {
+async fn check_postgres_database(ctx: &EnvContext) -> CheckResult {
+    if ctx.get("DATABASE_URL").is_none() {
         return CheckResult::Fail("DATABASE_URL not set".into());
     }
 
-    match try_pg_connect().await {
+    match try_pg_connect(ctx).await {
         Ok(()) => CheckResult::Pass("PostgreSQL connected".into()),
         Err(e) => CheckResult::Fail(format!("PostgreSQL connection failed: {e}")),
     }
@@ -131,14 +135,16 @@ async fn check_postgres_database() -> CheckResult {
 /// Acquire a PostgreSQL client from `DATABASE_URL` with a 5-second
 /// connection timeout. Shared by the connection and pgvector checks.
 #[cfg(feature = "postgres")]
-async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
-    let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not set".to_string())?;
+async fn pg_client_from_env(ctx: &EnvContext) -> Result<deadpool_postgres::Client, String> {
+    let url = ctx
+        .get("DATABASE_URL")
+        .ok_or_else(|| "DATABASE_URL not set".to_string())?;
 
     let config = deadpool_postgres::Config {
-        url: Some(url),
+        url: Some(url.to_string()),
         ..Default::default()
     };
-    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
+    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_context(ctx))
         .map_err(|e| format!("pool error: {e}"))?;
 
     tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
@@ -148,8 +154,10 @@ async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
 }
 
 #[cfg(feature = "postgres")]
-async fn try_pg_connect() -> Result<(), String> {
-    let client = pg_client_from_env().await?;
+/// Connect to PostgreSQL and run a trivial query to confirm the connection
+/// works.
+async fn try_pg_connect(ctx: &EnvContext) -> Result<(), String> {
+    let client = pg_client_from_env(ctx).await?;
 
     client
         .execute("SELECT 1", &[])
@@ -160,16 +168,15 @@ async fn try_pg_connect() -> Result<(), String> {
 }
 
 #[cfg(not(feature = "postgres"))]
-async fn try_pg_connect() -> Result<(), String> {
+async fn try_pg_connect(_ctx: &EnvContext) -> Result<(), String> {
     Err("postgres feature not compiled in".into())
 }
 
 // ── Workspace search ────────────────────────────────────────
 
-pub(super) async fn check_workspace_search() -> CheckResult {
-    let backend = std::env::var("DATABASE_BACKEND")
-        .ok()
-        .unwrap_or_else(|| "postgres".into());
+/// Report the workspace search mode for the configured database backend.
+pub(super) async fn check_workspace_search_with_context(ctx: &EnvContext) -> CheckResult {
+    let backend = crate::bootstrap::database_backend_name(ctx);
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => {
@@ -180,8 +187,8 @@ pub(super) async fn check_workspace_search() -> CheckResult {
             // PostgreSQL with pgvector
             #[cfg(feature = "postgres")]
             {
-                if std::env::var("DATABASE_URL").is_ok() {
-                    match try_pgvector_check().await {
+                if ctx.get("DATABASE_URL").is_some() {
+                    match try_pgvector_check(ctx).await {
                         Ok(()) => CheckResult::Pass("hybrid search (pgvector)".into()),
                         Err(e) => {
                             CheckResult::Fail(format!("pgvector extension check failed: {}", e))
@@ -200,8 +207,10 @@ pub(super) async fn check_workspace_search() -> CheckResult {
 }
 
 #[cfg(feature = "postgres")]
-async fn try_pgvector_check() -> Result<(), String> {
-    let client = pg_client_from_env().await?;
+/// Verify that the pgvector extension is installed by querying PostgreSQL's
+/// extension catalogue.
+async fn try_pgvector_check(ctx: &EnvContext) -> Result<(), String> {
+    let client = pg_client_from_env(ctx).await?;
 
     // Check if pgvector extension is available
     let row = client
@@ -215,8 +224,9 @@ async fn try_pgvector_check() -> Result<(), String> {
 
 // ── Workspace directory ─────────────────────────────────────
 
-pub(super) fn check_workspace_dir() -> CheckResult {
-    let dir = axinite_base_dir();
+/// Report whether the Axinite base directory exists and is a directory.
+pub(super) fn check_workspace_dir(ctx: &EnvContext) -> CheckResult {
+    let dir = ctx.axinite_base_dir();
 
     if dir.exists() {
         if dir.is_dir() {

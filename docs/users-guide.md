@@ -177,6 +177,111 @@ If a hosted-visible remote tool is selected, the worker sends one generic
 execution request to the orchestrator rather than using tool-family-specific
 proxy routes.
 
+## Configuration reload
+
+On Unix, Axinite reloads configuration without a restart when it receives
+`SIGHUP`; on every platform the same reload sequence is available to code that
+drives the hot-reload manager directly. A reload:
+
+1. applies secrets supplied by the configured secret injector;
+2. loads the new configuration from the settings source the deployment uses. A
+   database-backed deployment re-reads database settings and the default
+   `config.toml` overlay; a snapshot-backed deployment re-reads `settings.json`
+   and the same overlay. Both anchor on the base directory selected by the
+   startup snapshot, and edits to those sources take effect on the next reload;
+3. reconciles the HTTP listener when a listener controller is configured:
+   restarts it when its bind address changed, restarts it when it stopped while
+   the configured address stayed the same, starts it when `channels.http` is
+   added, and stops it when `channels.http` is removed. Without a configured
+   controller no listener work is attempted, so a reload cannot start a
+   listener that startup did not create; and
+4. fans out rotated or cleared webhook secrets to live channel instances without
+   restarting them.
+
+Startup config-load and reload outcomes are logged through `tracing`. Success
+is logged at `debug`, and failures at `info`, so a failed reload is visible at
+the default log level even when the `metrics` feature is off.
+
+A reload never rereads process environment variables or `.env` files. Every
+reload starts from the environment snapshot captured once at startup, so
+environment-backed settings such as `HTTP_HOST`, `HTTP_PORT`, API keys, and
+other `*_ENV`-style overrides keep their startup values until the process
+restarts. To apply a change to any of those settings, edit the environment of
+the service unit and restart the daemon rather than signalling it.
+
+Settings that live in the database, and secrets delivered by the injector,
+follow the reload path and take effect without a restart. If a reload fails,
+Axinite keeps serving the previous configuration; check the daemon log for the
+reported error before restarting.
+
+### Reliability metrics
+
+Building with the optional `metrics` feature emits counters for startup
+configuration loading, hot reload, secret injection, and WASM channel
+credentials. Axinite does not bundle a recorder or exporter: enable the feature
+only when the embedding deployment installs one, otherwise the counters are
+dropped silently.
+
+| Counter                            | `outcome` labels                                                   |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| `axinite.startup.config_load`      | `success`, `settings_error`, `config_error`                        |
+| `axinite.reload.outcomes`          | `success`, `http_removed`, `config_error`, `listener_error`        |
+| `axinite.reload.secret_injection`  | `injected`, `missing`, `retained_after_error`, `error`             |
+| `axinite.wasm.channel_credentials` | `injected`, `partial`, `missing`, `list_error`, `decryption_error` |
+
+`partial` means a channel declared several credentials and only some of them
+resolved; `missing` means none of the declared credentials resolved.
+
+Every outcome is also emitted through `tracing` with an `outcome` field:
+successful outcomes at `debug`, and every other outcome at `info`, so failures
+stay visible at the default log level without the `metrics` feature and without
+a recorder. A partial-resolution warning additionally names the channel and its
+declared and resolved credential counts. No log field carries a secret name or
+value.
+
+## Settings file
+
+Axinite reads persisted preferences from `settings.json` in its base directory.
+The base directory is `~/.axinite` unless `AXINITE_BASE_DIR` overrides it in
+the startup environment. The file is optional, so a first run needs no manual
+setup:
+
+- **Missing file** — Axinite applies the built-in defaults and continues
+  starting.
+- **Unreadable file** — for example when the file exists but the daemon's user
+  lacks read permission. Startup fails and reports
+  `failed to read settings file <path>: <reason>`.
+- **Malformed file** — when the file is not valid JSON. Startup fails and
+  reports `failed to parse settings file <path>: <reason>`.
+
+A reported settings error is fatal rather than silently replaced by defaults,
+so a corrupted file cannot quietly discard a configured database or provider.
+To recover, restore the file from backup, correct the reported syntax or
+permission problem, or remove the file to return to defaults and run
+`axinite onboard` again. The same rules apply to the reload path: a settings
+file that becomes unreadable or malformed fails that reload cycle, Axinite
+keeps serving the previous configuration, and the daemon log names the
+offending path.
+
+The `settings.json` schema is tolerant of unknown keys and of keys omitted by
+older releases; missing fields take their defaults.
+
+### Settings loading for library consumers
+
+Code that embeds Axinite, including its tests, can load settings through the
+same API the daemon uses. `Settings::load()` reads `settings.json` from the
+base directory, and `Settings::load_from(path)` reads a specific file. Both
+return `Result<Settings, SettingsError>`:
+
+- A missing file yields `Settings::default()`, matching first-run behaviour.
+- A file that exists but cannot be read yields `SettingsError::Read`.
+- A file that exists but is not valid JSON yields `SettingsError::Parse`.
+
+Callers must propagate `SettingsError::Read` and `SettingsError::Parse` instead
+of substituting defaults. Only a genuinely absent file yields defaults;
+treating an unreadable or malformed file as absent would silently discard the
+operator's configuration.
+
 ## HTML-to-Markdown conversion for HTTP responses
 
 When the built-in `http` tool fetches an HTML response, Axinite converts it to
@@ -318,10 +423,12 @@ curl -X PUT http://127.0.0.1:3000/api/settings/feature_flag:route_logs \
 The value must be a JSON boolean or the string `"true"` or `"false"`
 (case-insensitive). Flag names use lowercase letters, digits, and underscores.
 The gateway stores overrides per deployment and applies writes without a
-restart. Environment variables take precedence over stored values. To remove a
-persisted override, delete its row from `feature_flag_overrides`, then restart
-each gateway process that has cached that deployment. Deleting the row alone
-does not clear its in-memory override. The settings `DELETE` route rejects
+restart. `FEATURE_FLAG_<NAME>` environment variables in the startup environment
+snapshot take precedence over stored values; as with other environment-backed
+settings, changing them requires a process restart rather than a reload. To
+remove a persisted override, delete its row from `feature_flag_overrides`, then
+restart each gateway process that has cached that deployment. Deleting the row
+alone does not clear its in-memory override. The settings `DELETE` route rejects
 `feature_flag:` keys with `400 Bad Request`.
 
 If the gateway cannot load persisted overrides, `GET /api/features` returns

@@ -47,11 +47,6 @@ impl LlmConfig {
         }
     }
 
-    // Backwards-compatible ambient entrypoint retained for existing callers.
-    pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        Self::resolve_from(&EnvContext::capture_ambient(), settings)
-    }
-
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         let registry = ProviderRegistry::load()?;
         let (backend_lower, is_nearai, is_bedrock) = Self::resolve_backend_name(ctx, settings)?;

@@ -2,5 +2,6 @@
 
 mod comprehensive_round_trip;
 mod keyed_access;
+mod persistence_errors;
 mod toml_persistence;
 mod wizard_recovery;

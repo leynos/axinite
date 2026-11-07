@@ -119,33 +119,55 @@ before channels and background services start.
 
 1. `main()` loads `.env` files and the per-user `~/.axinite/.env` bootstrap
    file before starting Tokio. This avoids mutating process environment after
-   worker threads exist.
+   worker threads exist. It then captures one `EnvContext` snapshot at the
+   process boundary; configuration resolution and SIGHUP reload read only that
+   snapshot and never re-read process variables or `.env` files. Tracing
+   initialization is the one exception: `init_tracing` still reads ambient
+   `RUST_LOG`.
 2. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
    through to the agent runtime for `axinite run` or no subcommand.
 3. The host acquires a PID lock to prevent accidental double-starts of the main
    process.
 4. If onboarding is still required and onboarding has not been suppressed, the
-   setup wizard runs before the rest of the runtime is built.
-5. `Config::from_env_with_toml()` builds the initial configuration from
-   environment variables, optional TOML, and defaults. Internally the config
-   layer now captures those inputs into an explicit `EnvContext` snapshot
-   before resolving sub-configs, so the runtime can preserve current operator
-   behaviour while tests and internal callers use `Config::from_context(...)`
-   for deterministic resolution. The database is not yet required at this point.
-6. `AppBuilder::build_components()` executes the mechanical initialization
-   phases in a fixed order, returning `(AppComponents, RuntimeSideEffects)`. In
-   production, the late startup run path calls `side_effects.start()`
+   setup wizard runs before the rest of the runtime is built. It receives the
+   captured snapshot, records credentials it collects in its own copy, and
+   startup merges `.env` into that updated copy. A key entered during a
+   `--no-db` first run therefore reaches configuration resolution even though
+   the secrets store is unavailable.
+5. `Config::from_context(...)` builds the initial configuration from that
+   snapshot, optional TOML, and defaults. The config layer never rereads
+   process variables while resolving sub-configs, so tests and internal callers
+   get deterministic resolution from the same inputs the runtime uses. The
+   database is not yet required at this point.
+6. `AppBuilder::new_with_context(params, env_context)` and
+   `build_components_with_context()` execute the mechanical initialization
+   phases in a fixed order, returning
+   `(AppComponents, RuntimeSideEffects, EnvContext)`. The returned snapshot is
+   propagated to the orchestrator, gateway, reload manager, and channel setup.
+   In production, the late startup run path calls `side_effects.start()`
    immediately before entering the long-running agent loop so deferred
    background work (stale job cleanup, workspace import or seeding, embedding
    backfill) begins only after the runtime is fully assembled. In tests, the
-   `RuntimeSideEffects` value is discarded to avoid unnecessary I/O. A
-   backward-compatible `build_all()` wrapper calls both in sequence for callers
-   that do not need the separation.
+   `RuntimeSideEffects` value is discarded to avoid unnecessary I/O. The
+   two-value `build_components()` and single-call `build_all()` wrappers remain
+   for callers that do not need the snapshot or the separation.
 7. After core components exist, `async_main()` starts optional tunnel support,
    configures the sandbox orchestrator, wires interaction channels, registers
    hooks, and creates the agent.
 8. The process finally enters `agent.run()`, while background tasks such as the
    sandbox reaper and Unix `SIGHUP` config reloader run alongside it.
+
+### 3.1.1 Reload never rereads process state
+
+A SIGHUP reload starts each cycle from the `EnvContext` captured during
+startup, applies secrets supplied by the reload injector, and then loads
+configuration. It does not reread process environment variables or `.env`
+files. Environment-backed settings therefore keep their startup values until
+the process restarts; database-backed settings and injected secrets follow the
+reload path. `HotReloadManager` owns this sequence, and `EnvConfigLoader` loads
+through the snapshot's `axinite_base_dir()` so the settings directory is as
+injectable as the environment values. This boundary is what lets reload tests
+exercise the full cycle without mutating the test process environment.
 
 ### 3.2 AppBuilder phases
 

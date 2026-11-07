@@ -9,10 +9,19 @@
 #![allow(dead_code)]
 
 mod startup {
+    //! Compile-contract shims for the `crate::startup` surface that
+    //! `src/startup/run.rs` imports when this integration test compiles it.
+    //!
+    //! These items are deliberately inert: the test only proves that the real
+    //! startup module still binds against its declared dependencies.
+
     #[path = "../trybuild/startup/run_flow.rs"]
     pub(crate) mod run_flow;
 
     pub(crate) mod wasm {
+        //! WASM runtime shim supplying the minimal `WasmWiringContext`,
+        //! `WasmChannelRuntimeState`, and `wire_wasm_channel_runtime` items
+        //! that `src/startup/run.rs` expects during the compile contract.
         use std::{collections::HashMap, sync::Arc};
 
         use axinite::{
@@ -39,11 +48,27 @@ mod startup {
 
     pub(crate) struct CoreAgentContext {
         pub(crate) config: axinite::config::Config,
+        pub(crate) env_context: axinite::config::EnvContext,
         pub(crate) components: axinite::app::AppComponents,
         pub(crate) side_effects: axinite::app::RuntimeSideEffects,
         pub(crate) active_tunnel: Option<Box<dyn axinite::tunnel::Tunnel>>,
         pub(crate) container_job_manager:
             Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
+    }
+
+    pub(crate) struct RuntimeManagementContext<'a> {
+        pub(crate) components: &'a axinite::app::AppComponents,
+        pub(crate) config: &'a axinite::config::Config,
+        #[cfg(unix)]
+        pub(crate) env_context: &'a axinite::config::EnvContext,
+        pub(crate) container_job_manager:
+            &'a Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
+        #[cfg(unix)]
+        pub(crate) webhook_server:
+            &'a Option<std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
+        #[cfg(unix)]
+        pub(crate) http_channel_state:
+            &'a Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
     }
 
     pub(crate) struct GatewayPhaseContext {
@@ -64,12 +89,12 @@ mod startup {
 
     #[cfg(unix)]
     pub(crate) mod unix_runtime {
+        //! Unix runtime-management shim that validates the
+        //! `setup_runtime_management_unix` signature against
+        //! `RuntimeManagementContext` without starting a real runtime.
+
         pub(crate) fn setup_runtime_management_unix(
-            _components: &axinite::app::AppComponents,
-            _webhook_server: &Option<
-                std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>,
-            >,
-            _http_channel_state: &Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
+            _context: &super::RuntimeManagementContext<'_>,
             _shutdown_tx: &tokio::sync::broadcast::Sender<()>,
         ) {
         }

@@ -8,7 +8,7 @@ use axinite::{
         ChannelManager,
         wasm::{WasmChannelRouter, WasmChannelRuntime},
     },
-    config::Config,
+    config::{Config, EnvContext},
     pairing::PairingStore,
 };
 
@@ -135,6 +135,7 @@ fn empty_wasm_channels_init() -> WasmChannelsInit {
     }
 }
 
+/// Check that the configured WASM channels directory exists and is readable.
 async fn validate_wasm_channels_dir(config: &Config) -> bool {
     let metadata = match tokio::fs::metadata(&config.channels.wasm_channels_dir).await {
         Ok(metadata) => ambient_fs::Metadata::from_std(metadata),
@@ -173,17 +174,21 @@ async fn validate_wasm_channels_dir(config: &Config) -> bool {
 pub(crate) async fn init_wasm_channels(
     config: &Config,
     components: &AppComponents,
+    env_context: &EnvContext,
     reg: &mut ChannelRegistrar<'_>,
 ) -> WasmChannelsInit {
     if !config.channels.wasm_channels_enabled || !validate_wasm_channels_dir(config).await {
         return empty_wasm_channels_init();
     }
 
-    let Some(result) = axinite::channels::wasm::setup_wasm_channels(
-        config,
-        &components.secrets_store,
-        components.extension_manager.as_ref(),
-        components.db.as_ref(),
+    let Some(result) = axinite::channels::wasm::setup_wasm_channels_from_context(
+        axinite::channels::wasm::WasmChannelSetupRequest {
+            config,
+            secrets_store: &components.secrets_store,
+            extension_manager: components.extension_manager.as_ref(),
+            database: components.db.as_ref(),
+            env_context,
+        },
     )
     .await
     else {

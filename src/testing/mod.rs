@@ -31,6 +31,8 @@
 pub mod credentials;
 pub mod github;
 mod harness;
+#[cfg(feature = "metrics")]
+pub mod metrics;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 #[cfg(test)]
