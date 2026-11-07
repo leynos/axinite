@@ -75,7 +75,7 @@ def _append_optional_option(
 
 
 def _append_profile_options(draw: st.DrawFn, tool: str, arguments: list[str]) -> None:
-    """Append the profile options that the tool accepts."""
+    """Optionally append the profile options that the tool accepts."""
     if tool == "cargo":
         _append_optional_option(
             draw, arguments, "--profile", ("dev", "test", "release", "bench")
@@ -88,7 +88,7 @@ def _append_profile_options(draw: st.DrawFn, tool: str, arguments: list[str]) ->
 
 
 def _append_target_option(draw: st.DrawFn, tool: str, arguments: list[str]) -> None:
-    """Append a drawn ``--target`` for cargo and nextest, or ``--all`` for whitaker."""
+    """Optionally append ``--target``; whitaker always gets ``--all`` instead."""
     if tool != "whitaker" and draw(st.booleans()):
         arguments.extend(("--target", draw(st.sampled_from(tuple(PLATFORMS)))))
     if tool == "whitaker":
