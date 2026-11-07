@@ -113,6 +113,11 @@ jobs:
           tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
           fallback: none
 
+      - name: Fetch locked dependencies
+        # Before the nextest run, so a nested Cargo build in a test does not
+        # resolve them while holding the shared package-cache lock.
+        run: cargo fetch --locked
+
       - name: Run compile-contract tests
         run: >-
           cargo nextest run --workspace ${{ matrix.flags }} --profile ci
