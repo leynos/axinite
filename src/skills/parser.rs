@@ -8,8 +8,10 @@ use crate::skills::{SkillManifest, validate_skill_name};
 /// Error type for SKILL.md parsing failures.
 #[derive(Debug, thiserror::Error)]
 pub enum SkillParseError {
-    /// The file does not start with a `---` line opening the frontmatter (after any leading
-    /// blank lines), or the frontmatter has no closing delimiter.
+    /// The content, after an optional byte-order mark and any leading newline characters,
+    /// does not begin with `---`, or the opening line has no newline after it, or the
+    /// frontmatter has no closing delimiter. Anything after `---` on the opening line (as in
+    /// `---extra`) is accepted and ignored, and a leading line holding spaces is not skipped.
     #[error("Missing YAML frontmatter delimiters (expected `---` at start of file)")]
     MissingFrontmatter,
 
