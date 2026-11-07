@@ -19,6 +19,27 @@ async fn environment_injection_records_injected_outcome() -> anyhow::Result<()> 
 }
 
 #[tokio::test]
+async fn partially_resolved_credentials_record_partial_outcome() -> anyhow::Result<()> {
+    let channel = test_channel_with_mappings(
+        "telegram",
+        &[
+            "telegram_bot_token".to_string(),
+            "telegram_api_key".to_string(),
+        ],
+    );
+    let env = EnvContext::default().with_env("TELEGRAM_BOT_TOKEN", "from-env");
+
+    let _guard = metrics::record();
+    inject_channel_credentials_from_context(&channel, None, "telegram", &env).await?;
+
+    assert_eq!(
+        metrics::counter("axinite.wasm.channel_credentials", "partial"),
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn unresolved_declared_credential_records_missing_outcome() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
 

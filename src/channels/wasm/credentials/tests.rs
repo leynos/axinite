@@ -342,5 +342,38 @@ async fn unrelated_store_secret_does_not_mask_missing_declared_credential() -> a
     Ok(())
 }
 
+/// Verify that a channel declaring several credentials is reported as
+/// `partial` when only some of them resolve, and that the warning names the
+/// channel and both counts without exposing a secret.
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn partially_resolved_declared_credentials_and_warning_are_reported() -> anyhow::Result<()> {
+    let channel = test_channel_with_mappings(
+        "telegram",
+        &[
+            "telegram_bot_token".to_string(),
+            "telegram_api_key".to_string(),
+        ],
+    );
+    let env = EnvContext::default().with_env("TELEGRAM_BOT_TOKEN", "from-env");
+
+    let count = inject_channel_credentials_from_context(&channel, None, "telegram", &env).await?;
+
+    assert_eq!(count, 1, "the supplied credential is still injected");
+    assert!(
+        logs_contain("Channel declares credentials that did not all resolve"),
+        "a partially resolved channel must be reported"
+    );
+    assert!(
+        logs_contain("channel=telegram declared=2 resolved=1"),
+        "the warning must name the channel and both counts"
+    );
+    assert!(
+        !logs_contain("from-env"),
+        "the warning must not include the resolved secret value"
+    );
+    Ok(())
+}
+
 #[cfg(feature = "metrics")]
 mod telemetry;

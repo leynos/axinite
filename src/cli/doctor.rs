@@ -20,6 +20,7 @@ use subsystem_checks::{
     check_skills,
 };
 
+use super::report::{Report, outln};
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -29,6 +30,7 @@ async fn run_core_checks(
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
+    report: &mut Report,
 ) {
     check(
         "Settings file",
@@ -36,6 +38,7 @@ async fn run_core_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "NEAR AI session",
@@ -43,6 +46,7 @@ async fn run_core_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "LLM configuration",
@@ -50,6 +54,7 @@ async fn run_core_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "Database backend",
@@ -57,6 +62,7 @@ async fn run_core_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "Workspace search",
@@ -64,6 +70,7 @@ async fn run_core_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "Workspace directory",
@@ -71,6 +78,7 @@ async fn run_core_checks(
         passed,
         failed,
         skipped,
+        report,
     );
 }
 
@@ -79,6 +87,7 @@ async fn run_subsystem_checks(
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
+    report: &mut Report,
 ) {
     check(
         "Embeddings",
@@ -86,6 +95,7 @@ async fn run_subsystem_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "Routines config",
@@ -93,6 +103,7 @@ async fn run_subsystem_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "Gateway config",
@@ -100,6 +111,7 @@ async fn run_subsystem_checks(
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "MCP servers",
@@ -107,25 +119,47 @@ async fn run_subsystem_checks(
         passed,
         failed,
         skipped,
+        report,
     );
-    check("Skills", check_skills().await, passed, failed, skipped);
-    check("Secrets", check_secrets(settings), passed, failed, skipped);
+    check(
+        "Skills",
+        check_skills().await,
+        passed,
+        failed,
+        skipped,
+        report,
+    );
+    check(
+        "Secrets",
+        check_secrets(settings),
+        passed,
+        failed,
+        skipped,
+        report,
+    );
     check(
         "Service",
         check_service_installed(),
         passed,
         failed,
         skipped,
+        report,
     );
 }
 
-async fn run_external_binary_checks(passed: &mut u32, failed: &mut u32, skipped: &mut u32) {
+async fn run_external_binary_checks(
+    passed: &mut u32,
+    failed: &mut u32,
+    skipped: &mut u32,
+    report: &mut Report,
+) {
     check(
         "Docker daemon",
         check_docker_daemon().await,
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "cloudflared",
@@ -133,6 +167,7 @@ async fn run_external_binary_checks(passed: &mut u32, failed: &mut u32, skipped:
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "ngrok",
@@ -140,6 +175,7 @@ async fn run_external_binary_checks(passed: &mut u32, failed: &mut u32, skipped:
         passed,
         failed,
         skipped,
+        report,
     );
     check(
         "tailscale",
@@ -147,43 +183,67 @@ async fn run_external_binary_checks(passed: &mut u32, failed: &mut u32, skipped:
         passed,
         failed,
         skipped,
+        report,
     );
 }
 
-/// Run all diagnostic checks and print results.
-pub async fn run_doctor_command() -> anyhow::Result<()> {
-    println!("Axinite Doctor");
-    println!("===============\n");
+/// Render the diagnostic report for the supplied environment snapshot.
+///
+/// Every check and the settings it uses come from `env_context`, so a caller
+/// supplying a divergent `AXINITE_BASE_DIR` inspects that deployment. The
+/// returned text is exactly what [`run_doctor_command`] prints.
+pub(crate) async fn doctor_report(env_context: &EnvContext) -> String {
+    let mut report = Report::default();
+    outln!(report, "Axinite Doctor");
+    outln!(report, "===============\n");
 
     let mut passed = 0u32;
     let mut failed = 0u32;
     let mut skipped = 0u32;
 
-    // Capture the environment once and derive settings from the same snapshot
-    // so every check observes a consistent view.
-    let env_context = crate::bootstrap::capture_config_env_context();
-    let settings = settings_for_context(&env_context);
+    let settings = settings_for_context(env_context);
 
     run_core_checks(
-        &env_context,
+        env_context,
         &settings,
         &mut passed,
         &mut failed,
         &mut skipped,
+        &mut report,
     )
     .await;
-    run_subsystem_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
-    run_external_binary_checks(&mut passed, &mut failed, &mut skipped).await;
+    run_subsystem_checks(
+        &settings,
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+        &mut report,
+    )
+    .await;
+    run_external_binary_checks(&mut passed, &mut failed, &mut skipped, &mut report).await;
 
     // ── Summary ───────────────────────────────────────────────
 
-    println!();
-    println!("  {passed} passed, {failed} failed, {skipped} skipped");
+    outln!(report, "");
+    outln!(
+        report,
+        "  {passed} passed, {failed} failed, {skipped} skipped"
+    );
 
     if failed > 0 {
-        println!("\n  Some checks failed. This is normal if you don't use those features.");
+        outln!(
+            report,
+            "\n  Some checks failed. This is normal if you don't use those features."
+        );
     }
 
+    report.into_string()
+}
+
+/// Run all diagnostic checks and print results.
+pub async fn run_doctor_command() -> anyhow::Result<()> {
+    let env_context = crate::bootstrap::capture_config_env_context();
+    print!("{}", doctor_report(&env_context).await);
     Ok(())
 }
 
@@ -203,19 +263,26 @@ pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
 
 // ── Check runner ────────────────────────────────────────────
 
-fn check(name: &str, result: CheckResult, passed: &mut u32, failed: &mut u32, skipped: &mut u32) {
+fn check(
+    name: &str,
+    result: CheckResult,
+    passed: &mut u32,
+    failed: &mut u32,
+    skipped: &mut u32,
+    report: &mut Report,
+) {
     match result {
         CheckResult::Pass(detail) => {
             *passed += 1;
-            println!("  [pass] {name}: {detail}");
+            outln!(report, "  [pass] {name}: {detail}");
         }
         CheckResult::Fail(detail) => {
             *failed += 1;
-            println!("  [FAIL] {name}: {detail}");
+            outln!(report, "  [FAIL] {name}: {detail}");
         }
         CheckResult::Skip(reason) => {
             *skipped += 1;
-            println!("  [skip] {name}: {reason}");
+            outln!(report, "  [skip] {name}: {reason}");
         }
     }
 }

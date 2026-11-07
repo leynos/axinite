@@ -1,6 +1,6 @@
 //! Unit tests for status command settings loading.
 
-use super::{db_backend_name, load_settings_from, settings_for_context};
+use super::{db_backend_name, load_settings_from, settings_for_context, status_report};
 use crate::config::EnvContext;
 
 #[test]
@@ -124,4 +124,35 @@ fn invalid_toml_falls_back_gracefully() {
     // Should fall back to JSON values, not crash
     assert!(settings.heartbeat.enabled);
     assert_eq!(settings.heartbeat.interval_secs, 500);
+}
+
+/// The status command boundary must render the deployment selected by the
+/// supplied snapshot, not the ambient one, so its paths and settings change
+/// with `AXINITE_BASE_DIR`.
+#[tokio::test]
+async fn status_report_uses_the_snapshot_base_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    ambient_fs::write(
+        dir.path().join("settings.json"),
+        r#"{"heartbeat":{"enabled":true,"interval_secs":432}}"#,
+    )
+    .expect("write snapshot settings.json");
+    let context = EnvContext::default().with_env(
+        "AXINITE_BASE_DIR",
+        dir.path().to_str().expect("UTF-8 temp path"),
+    );
+
+    let report = status_report(&context).await;
+
+    assert!(
+        report.contains(&format!(
+            "Config:      {}",
+            dir.path().join(".env").display()
+        )),
+        "report must name the snapshot's config path, got:\n{report}"
+    );
+    assert!(
+        report.contains("Heartbeat:   enabled (interval: 432s)"),
+        "report must render settings from the snapshot base directory, got:\n{report}"
+    );
 }

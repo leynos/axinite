@@ -19,13 +19,14 @@ Explicit invocation. Loads `.env` files, runs the wizard, exits.
 axinite          (first run, no database configured)
 ```
 
-Auto-detection via `check_onboard_needed()` in `main.rs`. Skips onboarding when
-`ONBOARD_COMPLETED` env var is set (written to `~/.axinite/.env` by the
-wizard). Otherwise triggers when no database is configured:
+Auto-detection via `check_onboard_needed(&EnvContext)` in `startup/phases.rs`,
+which reads only the startup snapshot. Skips onboarding when
+`ONBOARD_COMPLETED` is set in that snapshot (written to `~/.axinite/.env` by
+the wizard). Otherwise triggers when no database is configured:
 
-- `DATABASE_URL` env var is set
-- `LIBSQL_PATH` env var is set
-- `~/.axinite/axinite.db` exists on disk
+- `DATABASE_URL` is set in the snapshot
+- `LIBSQL_PATH` is set in the snapshot
+- `axinite.db` exists under the snapshot's base directory
 
 Auto-triggered onboarding uses **quick mode** by default.
 
@@ -41,9 +42,10 @@ ______________________________________________________________________
 3. Start the Tokio runtime and parse CLI args
 4. If Command::Onboard  → run wizard, exit
 5. If Command::Run or no command:
-   a. Acquire the PID lock
-   b. check_onboard_needed() → run wizard if needed; merge ~/.axinite/.env
-      into the wizard's snapshot so onboarding credentials are retained
+   a. Acquire the PID lock in the snapshot's base directory
+   b. check_onboard_needed(&snapshot) → run the wizard if needed; the startup
+      continues from the snapshot the wizard returns, so onboarding credentials
+      reach configuration loading
    c. Config::from_context_with_optional_toml(&ctx, ...) → build config
    d. Create SessionManager  → load session token
    e. ensure_authenticated() → validate session (NEAR AI only)

@@ -184,13 +184,17 @@ On Unix, Axinite reloads configuration without a restart when it receives
 drives the hot-reload manager directly. A reload:
 
 1. applies secrets supplied by the configured secret injector;
-2. loads the new configuration from the settings source in use, re-reading
-   `settings.json` and the default `config.toml` overlay from the base
-   directory selected by the startup snapshot, so edits to those files take
-   effect on the next reload;
-3. restarts the HTTP listener when its bind address changed, restarts it when it
-   stopped while the configured address stayed the same, starts it when
-   `channels.http` is added, and stops it when `channels.http` is removed; and
+2. loads the new configuration from the settings source the deployment uses. A
+   database-backed deployment re-reads database settings and the default
+   `config.toml` overlay; a snapshot-backed deployment re-reads `settings.json`
+   and the same overlay. Both anchor on the base directory selected by the
+   startup snapshot, and edits to those sources take effect on the next reload;
+3. reconciles the HTTP listener when a listener controller is configured:
+   restarts it when its bind address changed, restarts it when it stopped while
+   the configured address stayed the same, starts it when `channels.http` is
+   added, and stops it when `channels.http` is removed. Without a configured
+   controller no listener work is attempted, so a reload cannot start a
+   listener that startup did not create; and
 4. fans out rotated or cleared webhook secrets to live channel instances without
    restarting them.
 
@@ -209,6 +213,31 @@ Settings that live in the database, and secrets delivered by the injector,
 follow the reload path and take effect without a restart. If a reload fails,
 Axinite keeps serving the previous configuration; check the daemon log for the
 reported error before restarting.
+
+### Reliability metrics
+
+Building with the optional `metrics` feature emits counters for startup
+configuration loading, hot reload, secret injection, and WASM channel
+credentials. Axinite does not bundle a recorder or exporter: enable the feature
+only when the embedding deployment installs one, otherwise the counters are
+dropped silently.
+
+| Counter                            | `outcome` labels                                                   |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| `axinite.startup.config_load`      | `success`, `settings_error`, `config_error`                        |
+| `axinite.reload.outcomes`          | `success`, `http_removed`, `config_error`, `listener_error`        |
+| `axinite.reload.secret_injection`  | `injected`, `missing`, `retained_after_error`, `error`             |
+| `axinite.wasm.channel_credentials` | `injected`, `partial`, `missing`, `list_error`, `decryption_error` |
+
+`partial` means a channel declared several credentials and only some of them
+resolved; `missing` means none of the declared credentials resolved.
+
+Every outcome is also emitted through `tracing` with an `outcome` field:
+successful outcomes at `debug`, and every other outcome at `info`, so failures
+stay visible at the default log level without the `metrics` feature and without
+a recorder. A partial-resolution warning additionally names the channel and its
+declared and resolved credential counts. No log field carries a secret name or
+value.
 
 ## Settings file
 
