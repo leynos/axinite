@@ -99,8 +99,8 @@ pub async fn routines_summary_handler(
     }))
 }
 
-/// Returns one routine with its trigger, action, guardrails, notification settings and its
-/// up to 20 most recent runs.
+/// Returns one routine with its trigger, action, guardrails, notification settings and
+/// up to 20 of its most recent runs.
 ///
 /// Answers `400` for an id that is not a UUID, `404` for an unknown routine, `503` when no
 /// database is configured and `500` when the store fails.
