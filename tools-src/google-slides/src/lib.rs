@@ -57,6 +57,8 @@ use types::GoogleSlidesAction;
 // The generated bindings live in a private module so the undocumented
 // wit-bindgen items are not part of the crate's documented surface.
 mod bindings {
+    //! Guest bindings that wit-bindgen generates from the tool WIT world.
+
     wit_bindgen::generate!({
         world: "sandboxed-tool",
         path: "../../wit/tool.wit",
