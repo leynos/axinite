@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 
@@ -29,6 +30,8 @@ def _load_cli() -> ModuleType:
     spec = importlib.util.spec_from_file_location("prover_cli_under_test", PROVER_CLI)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # Dataclass creation looks the module up by name, so register it first.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -214,18 +217,22 @@ class _DependencyRecorder:
         return "/resolved/kani release"
 
 
+def _sources(cli: ModuleType, recorder: _DependencyRecorder) -> object:
+    """Bundle the recorder's resolvers as the builder's injected sources."""
+    return cli._ArgumentSources(
+        setting=recorder.setting,
+        proof_arguments=recorder.proof_arguments,
+        kani_installation=recorder.kani_installation,
+        version_file="/custom/pin",
+    )
+
+
 def test_argument_queries_resolve_only_the_dependencies_they_need() -> None:
     """Query arguments without ambient reads or eager fallible resolution."""
     cli = _load_cli()
 
     recorder = _DependencyRecorder()
-    assert cli._arguments(
-        "kani-check",
-        setting=recorder.setting,
-        proof_arguments=recorder.proof_arguments,
-        kani_installation=recorder.kani_installation,
-        version_file="/custom/pin",
-    ) == [
+    assert cli._arguments("kani-check", _sources(cli, recorder)) == [
         "kani",
         "check-version",
         "--version-file",
@@ -236,13 +243,7 @@ def test_argument_queries_resolve_only_the_dependencies_they_need() -> None:
     assert recorder.names == ["KANI_BIN_DIR"]
 
     recorder = _DependencyRecorder()
-    assert cli._arguments(
-        "kani-full",
-        setting=recorder.setting,
-        proof_arguments=recorder.proof_arguments,
-        kani_installation=recorder.kani_installation,
-        version_file="/custom/pin",
-    ) == [
+    assert cli._arguments("kani-full", _sources(cli, recorder)) == [
         "kani",
         "exec",
         "--installation",
@@ -254,14 +255,60 @@ def test_argument_queries_resolve_only_the_dependencies_they_need() -> None:
     assert recorder.names == ["kani_installation", "KANI_PROOF_DIR"]
 
     recorder = _DependencyRecorder()
-    assert cli._arguments(
+    assert cli._arguments("verus", _sources(cli, recorder)) == [
         "verus",
-        setting=recorder.setting,
-        proof_arguments=recorder.proof_arguments,
-        kani_installation=recorder.kani_installation,
-        version_file="/custom/pin",
-    ) == ["verus", "run", "--proof-file", "/resolved/proof.rs"]
+        "run",
+        "--proof-file",
+        "/resolved/proof.rs",
+    ]
     assert recorder.names == ["proof_arguments"]
+
+
+def test_verus_proof_query_inserts_the_default_proof_file() -> None:
+    """Prepend the configured proof file when the flags select none."""
+    cli = _load_cli()
+
+    assert cli._proof_arguments({"VERUS_PROOF_FILE": "/proofs/main.rs"}) == [
+        "--proof-file",
+        "/proofs/main.rs",
+    ]
+    assert cli._proof_arguments(
+        {
+            "VERUS_FLAGS": "--verify-root /proofs/root.rs",
+            "VERUS_PROOF_FILE": "/proofs/main.rs",
+        }
+    ) == ["--proof-file", "/proofs/main.rs", "--verify-root", "/proofs/root.rs"]
+
+
+def test_verus_proof_query_keeps_an_explicit_proof_selection() -> None:
+    """Do not add the default proof file when the flags select one."""
+    cli = _load_cli()
+
+    assert cli._proof_arguments(
+        {"VERUS_FLAGS": "--proof-file=/proofs/other.rs", "VERUS_PROOF_FILE": "/unused"}
+    ) == ["--proof-file=/proofs/other.rs"]
+    assert cli._proof_arguments(
+        {"VERUS_FLAGS": "--proof-file /proofs/other.rs"}
+    ) == ["--proof-file", "/proofs/other.rs"]
+
+
+@pytest.mark.parametrize(
+    ("settings", "message"),
+    [
+        ({"VERUS_FLAGS": "'unterminated"}, "invalid VERUS_FLAGS: unmatched quoting"),
+        ({}, "VERUS_PROOF_FILE must be configured"),
+        ({"VERUS_FLAGS": "  "}, "VERUS_PROOF_FILE must be configured"),
+    ],
+)
+def test_verus_proof_query_reports_its_failure_boundary(
+    settings: Mapping[str, str],
+    message: str,
+) -> None:
+    """Raise the documented errors for unparsable flags and a missing proof."""
+    cli = _load_cli()
+
+    with pytest.raises(ValueError, match=message):
+        cli._proof_arguments(settings)
 
 
 def test_argument_queries_propagate_a_failed_kani_pin_read() -> None:
@@ -271,14 +318,15 @@ def test_argument_queries_propagate_a_failed_kani_pin_read() -> None:
     def unusable_pin() -> str:
         raise ValueError("Kani version file /pin is empty")
 
+    sources = cli._ArgumentSources(
+        setting=lambda name: f"/resolved/{name.lower()}",
+        proof_arguments=lambda: [],
+        kani_installation=unusable_pin,
+        version_file="/pin",
+    )
+
     with pytest.raises(ValueError, match="is empty"):
-        cli._arguments(
-            "kani",
-            setting=lambda name: f"/resolved/{name.lower()}",
-            proof_arguments=lambda: [],
-            kani_installation=unusable_pin,
-            version_file="/pin",
-        )
+        cli._arguments("kani", sources)
 
 
 @pytest.mark.parametrize("pin_contents", ("", " \n\t"))

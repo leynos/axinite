@@ -6,10 +6,36 @@ import os
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_KANI_VERSION_FILE = "tools/kani/VERSION"
+
+
+def _required(name: str, value: str) -> str:
+    """Return ``value``, raising when the setting is unset or empty.
+
+    Parameters
+    ----------
+    name : str
+        Setting name used in the error message.
+    value : str
+        Candidate value supplied by the caller.
+
+    Returns
+    -------
+    str
+        The non-empty ``value``.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is empty.
+    """
+    if not value:
+        raise ValueError(f"{name} must be configured")
+    return value
 
 
 def _setting(name: str) -> str:
@@ -30,10 +56,7 @@ def _setting(name: str) -> str:
     ValueError
         If the setting is unset or empty.
     """
-    value = os.environ.get(name, "")
-    if not value:
-        raise ValueError(f"{name} must be configured")
-    return value
+    return _required(name, os.environ.get(name, ""))
 
 
 def _split(value: str, name: str) -> list[str]:
@@ -62,24 +85,45 @@ def _split(value: str, name: str) -> list[str]:
         raise ValueError(f"invalid {name}: unmatched quoting") from error
 
 
-def _proof_arguments() -> list[str]:
-    """Return Verus proof arguments, inserting the default proof file if needed.
+def _selects_proof_file(flags: list[str]) -> bool:
+    """Report whether ``flags`` already select the Verus proof file."""
+    return any(
+        flag == "--proof-file" or flag.startswith("--proof-file=") for flag in flags
+    )
+
+
+def _proof_arguments(settings: Mapping[str, str]) -> list[str]:
+    """Return Verus proof arguments for explicit settings.
+
+    Parameters
+    ----------
+    settings : Mapping[str, str]
+        Values for the Verus settings, normally the process environment.
+        ``VERUS_FLAGS`` holds the quoted flag list, and ``VERUS_PROOF_FILE``
+        supplies the default proof file when the flags select none.
 
     Returns
     -------
     list[str]
         ``VERUS_FLAGS`` as literal arguments, preceded by the configured proof
         file when the flags do not already select one.
+
+    Raises
+    ------
+    ValueError
+        If ``VERUS_FLAGS`` contains unmatched quoting, or the default proof
+        file is needed but ``VERUS_PROOF_FILE`` is empty.
     """
-    flags = _split(os.environ.get("VERUS_FLAGS", ""), "VERUS_FLAGS")
-    has_proof_file = any(
-        flag == "--proof-file" or flag.startswith("--proof-file=") for flag in flags
-    )
-    return (
-        flags
-        if has_proof_file
-        else ["--proof-file", _setting("VERUS_PROOF_FILE"), *flags]
-    )
+    flags = _split(settings.get("VERUS_FLAGS", ""), "VERUS_FLAGS")
+    if _selects_proof_file(flags):
+        return flags
+    default = _required("VERUS_PROOF_FILE", settings.get("VERUS_PROOF_FILE", ""))
+    return ["--proof-file", default, *flags]
+
+
+def _environment_proof_arguments() -> list[str]:
+    """Resolve the Verus proof arguments from the process environment."""
+    return _proof_arguments(os.environ)
 
 
 def _kani_installation() -> str:
@@ -116,24 +160,12 @@ def _kani_installation() -> str:
     return str(Path(_setting("KANI_HOME")) / f"kani-{version}")
 
 
-def _arguments(
-    action: str,
-    *,
-    setting: Callable[[str], str],
-    proof_arguments: Callable[[], list[str]],
-    kani_installation: Callable[[], str],
-    version_file: str,
-) -> list[str]:
-    """Return the package arguments for one supported prover action.
+@dataclass(frozen=True)
+class _ArgumentSources:
+    """Resolvers for the inputs one prover command needs.
 
-    The builder is a query over its injected dependencies: it reads no
-    environment variable itself, so callers can supply the settings and the
-    fallible Kani installation resolution explicitly.
-
-    Parameters
+    Attributes
     ----------
-    action : str
-        Make target name requesting the prover command.
     setting : Callable[[str], str]
         Resolves a required non-empty setting by name.
     proof_arguments : Callable[[], list[str]]
@@ -143,6 +175,104 @@ def _arguments(
     version_file : str
         Path to the Kani version pin passed to the install and check
         commands.
+    """
+
+    setting: Callable[[str], str]
+    proof_arguments: Callable[[], list[str]]
+    kani_installation: Callable[[], str]
+    version_file: str
+
+
+def _install_kani_arguments(sources: _ArgumentSources) -> list[str]:
+    """Return the arguments that install the pinned Kani release."""
+    return [
+        "kani",
+        "install",
+        "--no-compile",
+        "--version-file",
+        sources.version_file,
+        "--install-dir",
+        sources.setting("KANI_BIN_DIR"),
+        "--cache-dir",
+        sources.setting("KANI_CACHE_DIR"),
+    ]
+
+
+def _kani_check_arguments(sources: _ArgumentSources) -> list[str]:
+    """Return the arguments that verify the pinned Kani release."""
+    return [
+        "kani",
+        "check-version",
+        "--version-file",
+        sources.version_file,
+        "--kani-command",
+        shlex.join([str(Path(sources.setting("KANI_BIN_DIR")) / "cargo-kani")]),
+    ]
+
+
+def _kani_exec_arguments(sources: _ArgumentSources, selection: str) -> list[str]:
+    """Return the Kani execution arguments for one harness selection."""
+    return [
+        "kani",
+        "exec",
+        "--installation",
+        sources.kani_installation(),
+        "--cwd",
+        sources.setting("KANI_PROOF_DIR"),
+        selection,
+    ]
+
+
+def _install_verus_arguments(sources: _ArgumentSources) -> list[str]:
+    """Return the arguments that install the pinned Verus release."""
+    return [
+        "verus",
+        "install",
+        "--version-file",
+        sources.setting("VERUS_VERSION_FILE"),
+        "--checksum-file",
+        sources.setting("VERUS_CHECKSUM_FILE"),
+    ]
+
+
+def _install_z3_arguments(sources: _ArgumentSources) -> list[str]:
+    """Return the arguments that install the pinned Z3 solver."""
+    return ["z3", "install", "--install-dir", sources.setting("Z3_INSTALL_DIR")]
+
+
+def _verus_run_arguments(sources: _ArgumentSources) -> list[str]:
+    """Return the arguments that run the configured Verus proofs."""
+    return ["verus", "run", *sources.proof_arguments()]
+
+
+_KANI_SELECTIONS = {
+    "kani": "--extra-arg=--harness=verify_exact_projection_four_entries",
+    "kani-full": "--extra-arg=--output-format=regular",
+}
+
+_ARGUMENT_BUILDERS: dict[str, Callable[[_ArgumentSources], list[str]]] = {
+    "install-kani": _install_kani_arguments,
+    "kani-check": _kani_check_arguments,
+    "install-verus": _install_verus_arguments,
+    "install-z3": _install_z3_arguments,
+    "verus": _verus_run_arguments,
+}
+
+
+def _arguments(action: str, sources: _ArgumentSources) -> list[str]:
+    """Return the package arguments for one supported prover action.
+
+    The builder is a query over its injected sources: it reads no environment
+    variable itself, so callers can supply the settings and the fallible Kani
+    installation resolution explicitly.
+
+    Parameters
+    ----------
+    action : str
+        Make target name requesting the prover command.
+    sources : _ArgumentSources
+        Resolvers for the settings, proof arguments, and Kani installation
+        that the selected command needs.
 
     Returns
     -------
@@ -155,56 +285,13 @@ def _arguments(
         If ``action`` is not a recognized prover action, a required setting is
         missing, or the Kani pin cannot be read.
     """
-    if action == "install-kani":
-        return [
-            "kani",
-            "install",
-            "--no-compile",
-            "--version-file",
-            version_file,
-            "--install-dir",
-            setting("KANI_BIN_DIR"),
-            "--cache-dir",
-            setting("KANI_CACHE_DIR"),
-        ]
-    if action == "kani-check":
-        return [
-            "kani",
-            "check-version",
-            "--version-file",
-            version_file,
-            "--kani-command",
-            shlex.join([str(Path(setting("KANI_BIN_DIR")) / "cargo-kani")]),
-        ]
-    if action in {"kani", "kani-full"}:
-        selection = (
-            "--extra-arg=--harness=verify_exact_projection_four_entries"
-            if action == "kani"
-            else "--extra-arg=--output-format=regular"
-        )
-        return [
-            "kani",
-            "exec",
-            "--installation",
-            kani_installation(),
-            "--cwd",
-            setting("KANI_PROOF_DIR"),
-            selection,
-        ]
-    if action == "install-verus":
-        return [
-            "verus",
-            "install",
-            "--version-file",
-            setting("VERUS_VERSION_FILE"),
-            "--checksum-file",
-            setting("VERUS_CHECKSUM_FILE"),
-        ]
-    if action == "install-z3":
-        return ["z3", "install", "--install-dir", setting("Z3_INSTALL_DIR")]
-    if action == "verus":
-        return ["verus", "run", *proof_arguments()]
-    raise ValueError("unknown prover action")
+    selection = _KANI_SELECTIONS.get(action)
+    if selection is not None:
+        return _kani_exec_arguments(sources, selection)
+    builder = _ARGUMENT_BUILDERS.get(action)
+    if builder is None:
+        raise ValueError("unknown prover action")
+    return builder(sources)
 
 
 def main() -> int:
@@ -218,11 +305,13 @@ def main() -> int:
             raise ValueError("PROVER_TOOLS must contain a command")
         arguments = _arguments(
             action,
-            setting=_setting,
-            proof_arguments=_proof_arguments,
-            kani_installation=_kani_installation,
-            version_file=os.environ.get(
-                "KANI_VERSION_FILE", DEFAULT_KANI_VERSION_FILE
+            _ArgumentSources(
+                setting=_setting,
+                proof_arguments=_environment_proof_arguments,
+                kani_installation=_kani_installation,
+                version_file=os.environ.get(
+                    "KANI_VERSION_FILE", DEFAULT_KANI_VERSION_FILE
+                ),
             ),
         )
         environment = os.environ.copy()
