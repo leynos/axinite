@@ -76,7 +76,8 @@
 //! # fn main() {}
 //! ```
 
-#![warn(missing_docs, unreachable_pub, clippy::use_self)]
+#![deny(missing_docs)]
+#![warn(unreachable_pub, clippy::use_self)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 #[cfg(feature = "acceptor")]
