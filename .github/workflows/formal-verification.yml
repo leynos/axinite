@@ -1,0 +1,72 @@
+---
+name: Formal Verification
+"on":
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '17 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes an in-flight PR proof, but main and scheduled runs
+# continue to completion.
+concurrency:
+  group: formal-verification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  kani-smoke:
+    name: Kani Smoke Proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Setup uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: '3.14'
+          enable-cache: false
+      - name: Install Kani
+        run: make install-kani
+      - name: Probe Kani
+        run: make kani-check
+      - name: Run Kani proof
+        run: make kani
+      - name: Test Kani integration
+        run: make test-kani-tools
+
+  verus-proofs:
+    name: Verus Proofs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Setup uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: '3.14'
+          enable-cache: false
+      - name: Install Verus
+        run: make install-verus
+      - name: Install Z3
+        run: make install-z3
+      - name: Run Verus proofs
+        run: make verus
+      - name: Test Verus integration
+        run: make test-verus-tools

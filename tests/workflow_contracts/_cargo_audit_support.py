@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+
 def selected_cargo_manifests(
     utility_bin: Path,
     repository_root: Path,
@@ -21,6 +22,9 @@ def selected_cargo_manifests(
             "-o",
             "-path",
             "*/node_modules/*",
+            "-o",
+            "-path",
+            "*/.cache/*",
             "-o",
             "-path",
             "*/.venv/*",

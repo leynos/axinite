@@ -31,9 +31,8 @@
 - [axinite architecture overview](axinite-architecture-overview.md) explains the
   top-level runtime shape, major subsystems, and how the pieces fit together.
 - [Formal verification methods in Axinite](formal-verification-methods-in-axinite.md)
-  recommends where proof-oriented checks, model checking, and generated
-  property tests should land first, and why those targets have the highest
-  return.
+  describes the available Kani and Verus tooling, its demonstrated smoke
+  proofs, and candidate areas for later production proofs.
 - [Webhook server design](webhook-server-design.md) describes the unified
   webhook listener, route composition model, and rollback-focused restart
   behaviour.
@@ -124,6 +123,10 @@
     work to reduce build times and related tooling overhead.
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Import Kani and Verus support from Netsuke](execplans/import-prover-tools.md)
+    records the completed import of pinned Kani and Verus Make targets,
+    integration tests, the read-only formal-verification workflow, and their
+    demonstrated proof scope.
   - [Migrate from async-trait to native async traits](execplans/migrate-async-trait.md)
     records the completed staged migration away from `async-trait`, including
     the ADR 0006 pilot results, the broad rollout across all dyn-backed

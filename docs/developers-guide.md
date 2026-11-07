@@ -70,11 +70,37 @@ Install these tools before running the standard repository commands:
 9. Git.
 10. Node.js for `make test-workflow-contracts`; `mdtablefix` requires Node.js
     when the suite runs with its restricted `PATH`.
+11. `uv` for the workflow-contract suite and the optional formal-verification
+    targets.
 
 The root crate declares `rust-version = "1.95"` in `Cargo.toml`, and every
 workspace member declares the same. The repository also includes standalone
 WebAssembly (WASM) tool and channel crates, so WASM tooling is required for
 more than release-only workflows.
+
+### Optional Kani and Verus proof tools
+
+The proof tools are pinned for Linux x86-64 and remain outside ordinary Rust
+builds. Install and run them explicitly with `make install-kani`, `make kani`,
+`make install-verus`, `make install-z3`, and `make verus`. `make formal-pr`
+runs the selected Kani and Verus proofs. `make test-prover-tools` exercises the
+command boundaries and deliberate proof failures. These targets need network
+access for first-time installation. The prover CLI runs under `uv` with Python
+3.14; the integration test targets accept Python 3.12 or newer.
+
+The pinned Z3 archive targets glibc 2.39 and is verified on glibc 2.39 hosts.
+An older host may complete `make install-z3` but then fail when `make verus`
+starts the solver, so use a glibc 2.39 host or newer for proof runs.
+
+The initial Kani fixture and Verus model validate the toolchain and runner
+contracts only. They do not establish properties of Axinite's runtime or the
+Monty helper. See
+[formal verification methods](formal-verification-methods-in-axinite.md) for
+the demonstrated proof scope and future production-proof requirements.
+
+The prover wrapper sets `CARGO_INCREMENTAL=0` for every child command. The
+dedicated formal-verification workflow also sets it at job scope; ordinary
+builds do not install or invoke Kani or Verus.
 
 ## 4. Extra tools for the compile-time reduction effort
 
@@ -579,8 +605,9 @@ sees no source-level debug information or line tables in a default development
 build and every rebuild recompiles whole crates. To debug workspace crates, run
 with `CARGO_PROFILE_DEV_DEBUG=true`. To debug dependencies, add
 `--config 'profile.dev.package."*".debug=true'`, because the environment
-variable does not override the `"*"` package table. To rebuild incrementally,
-set `CARGO_INCREMENTAL=1`. `.cargo/config.toml` also sets
+variable does not override the `"*"` package table. Do not enable incremental
+compilation with `CARGO_INCREMENTAL=1`; it is outside the development build
+policy and the managed sccache path rejects it. `.cargo/config.toml` also sets
 `[unstable] embed-metadata = false`, the native Cargo key for nightlies from
 2026-07-31, so Cargo coordinates metadata output itself; no raw rustc metadata
 flags are used, and the pin is not moved to suit the key. The workspace
@@ -589,7 +616,7 @@ toolchain is pinned to `nightly-2026-10-16` in `rust-toolchain.toml`; see
 `tests/workflow_contracts/build_footprint_test.py` holds the settings. It also
 builds a one-file crate that carries the repository's own `[profile.dev]` table
 and Cargo configuration under the pinned channel and reads the rustc command
-line Cargo prints with `-v`, so the defaults and both overrides are proved at
+line Cargo prints with `-v`, so the defaults and debug override are proved at
 the Cargo boundary.
 
 ### Cache ownership

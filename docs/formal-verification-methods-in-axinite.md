@@ -1,5 +1,30 @@
 # Formal verification methods in Axinite
 
+## Current implementation status
+
+Axinite now has pinned local Kani and Verus tooling, a standalone Kani smoke
+package, a Verus set-intersection model, negative-control tests, and a separate
+GitHub Actions workflow. Run `make install-kani`, `make kani`,
+`make install-verus`, `make install-z3`, or `make verus` explicitly;
+`make formal-pr` runs the selected positive proofs and `make test-prover-tools`
+checks their failure boundaries. `make all` remains independent of prover
+installation.
+
+These examples establish that the selected tools and runners work. The Kani
+proof checks an exact four-entry projection over an 8-bit mask; the Verus
+proofs check mathematical set-intersection properties. Neither model is linked
+to Axinite runtime code or proves Monty's helper behaviour. Production proofs
+must establish a mechanically checked relationship between the proof model and
+the compiled implementation, and must reject stale generated artefacts. The
+candidate targets below remain future work unless explicitly marked as
+implemented.
+
+The Monty helper plan owns `verus/monty_capabilities.rs`. That file must prove
+the exact numeric capability projection against the production implementation,
+show how the proof-visible source corresponds to what Axinite compiles, and
+reject stale generated files. Importing these tools or passing the standalone
+smoke model does not discharge any of those requirements.
+
 ## Executive summary
 
 Axinite already does substantially more than basic unit testing. The
@@ -34,10 +59,11 @@ The highest-return additions are not “formalize everything”. They are:
    matcher, or a similarly crisp lifecycle kernel — not the current Tokio- and
    Docker-heavy orchestration code.[^19]
 
-The best integration path in Axinite is a split one:
+The long-term integration path for domain proofs is a split one:
 
-- Keep **Kani harnesses inside the main `axinite` package**, next to the
-  internal helpers they verify.
+- Keep future **production Kani harnesses inside the package** that owns the
+  internal helpers they verify. The current standalone harness only checks that
+  Kani runs and rejects a deliberately invalid model.
 - Put **Stateright models in a dedicated internal verification crate**, because
   those models should be abstractions of policy rather than thin wrappers
   around the runtime.
@@ -59,18 +85,19 @@ That yields a pragmatic stack for Axinite:
 
 ## Current state in Axinite
 
-Today, Axinite is already a non-virtual Cargo workspace. The root manifest
-contains `[workspace] members = ["."]`, and it explicitly excludes `fuzz/` from
-the workspace.[^20] The root package remains `axinite`, and the current
-`Makefile` drives `cargo nextest` test runs, feature-matrix variants, and
-auxiliary WASM builds.[^20][^2] The current CI is already split by concern:
-`test.yml` runs the main Rust matrix and several build-side checks,
-`coverage.yml` handles coverage-specific instrumentation, and `e2e.yml` handles
-scheduled and targeted browser E2E scenarios.[^3][^4][^5]
+Today, Axinite is already a non-virtual Cargo workspace. The root manifest lists
+`members = [".", "crates/ambient-fs", "crates/hyper-rustls"]`, and it
+explicitly excludes `fuzz/` from the workspace.[^20] The root package remains
+`axinite`, and the current `Makefile` drives `cargo nextest` test runs,
+feature-matrix variants, and auxiliary WASM builds.[^20][^2] The current CI is
+already split by concern: `test.yml` runs the main Rust matrix and several
+build-side checks, `coverage.yml` handles coverage-specific instrumentation, and
+`e2e.yml` handles scheduled and targeted browser E2E scenarios.[^3][^4][^5]
 
 That means Axinite does **not** need a new testing culture. It already has one.
-What it lacks is infrastructure for **proof-oriented** and **model-checking**
-workflows.
+It now has initial infrastructure for **proof-oriented** and **model-checking**
+workflows. It still lacks proofs over production Axinite behaviour and the
+production bridge required by Monty's helper plan.
 
 Two existing testing investments matter especially here.
 
@@ -251,9 +278,8 @@ layers:
 - `from_env_with_toml()` honours its documented legacy fallback behaviour;
 - explicit env vars always win over the lower layers they shadow.
 
-The repository does not currently carry `proptest` in `dev-dependencies`, so
-this would be a targeted new addition rather than a refactor of an existing
-property suite.[^20]
+The repository already carries `proptest` in `dev-dependencies`, so these
+properties extend an existing dependency rather than introducing a new one.[^20]
 
 ### Fifth priority: `src/registry/installer.rs`
 
@@ -357,9 +383,9 @@ That is a sensible design, but the contract should be explicit:
 
 A model checker cannot infer the intended answer. It needs one.
 
-## Recommended repository layout
+## Candidate repository layout for domain proofs
 
-### Preferred layout
+### Proposed layout
 
 Axinite does **not** need to be converted into a workspace, because it already
 is one.[^20] The right move is to **extend** the existing workspace.
@@ -438,18 +464,19 @@ public API, make local execution awkward, or both.
 The current root manifest already has a workspace section, so the change is
 small.[^20]
 
-Add the verification crate to `members`, keep the current `exclude` list
-intact, and add `proptest` as a normal dev-dependency:
+Add the verification crate to the existing `members` list, keep the current
+`exclude` list intact, and reuse the `proptest` dev-dependency the root package
+already declares:
 
 ```toml
 [workspace]
-members = [".", "crates/axinite-verification"]
+members = [".", "crates/ambient-fs", "crates/hyper-rustls", "crates/axinite-verification"]
 # keep the current exclude list, including "fuzz"
 default-members = ["."]
 resolver = "3"
 
 [dev-dependencies]
-proptest = "1"
+# already present: proptest = "1.6.0"
 ```
 
 A note on `default-members`: in a non-virtual workspace, Cargo already defaults
@@ -461,16 +488,31 @@ intent explicit once the verification crate exists.
 
 ### Kani tooling model
 
-Kani is a bounded model checker for Rust. The recommended project integration
-path is `cargo kani`, which runs proof harnesses against a Cargo package rather
-than acting as a completely separate build system.[^27] Installation is a
-two-step process: `cargo install --locked kani-verifier`, followed by
-`cargo kani setup` to install the backend binaries.[^32]
+Kani is a bounded model checker for Rust. Axinite pins Kani 0.67.0 and invokes
+it through the pinned `rust-prover-tools` CLI. `make install-kani` installs the
+verified release bundle, and `make kani-check` checks the selected version. The
+standalone package at `tests/verification/kani-smoke/` has its own manifest and
+lockfile, which keeps it out of the root workspace's Cargo graph and the
+ordinary application build. Cargo still discovers the repository's
+`.cargo/config.toml` from the ancestor directories, so this isolates the
+package graph rather than the compiler settings. The wrapper forces
+`CARGO_INCREMENTAL=0` for every prover child process.
 
-That makes Kani a good fit for Axinite’s main crate, as long as the harnesses
-stay focused and local.
+`make install-kani` selects the pinned prebuilt release with `--no-compile`; an
+installation or download failure does not fall back to a source build. The
+installed frontend in `.cache/kani/bin/` and the selected release root under
+`.cache/kani/home/` are different paths, and `kani exec` receives the latter.
+The pinned CLI requires Python 3.14 and downloads verified archives over direct
+HTTPS; proxy variables do not redirect its downloads.
 
-### Why Kani belongs in the main Axinite package
+The current harness exhaustively checks the four low bits projected from two
+arbitrary `u8` values, with an explicit unwind bound. Its test suite also
+mutates the claim and requires Kani to reject the counterexample. This
+validates bounded execution and failure propagation; it does not validate a
+runtime module. Future in-package harnesses should be added only when they can
+prove production helpers without widening public APIs or weakening the property.
+
+### Why future production proofs belong beside their implementation
 
 Axinite’s best Kani targets sit close to internal helpers:
 
@@ -492,11 +534,15 @@ mod kani;
 
 Use integration-style Kani harnesses only for APIs that are already public.
 
-### Recommended Kani targets
+### Candidate production Kani targets
 
-#### Phase 1 smoke harnesses
+The following remain unimplemented proposals. They require a separate proof
+design that connects each harness to production code.
 
-These should run on every pull request.
+#### Candidate pull-request harnesses
+
+If these production proofs are implemented, a small selected set should run on
+every pull request.
 
 1. **userinfo rejection**
    - any URL with `user@host` or `user:pass@host` must be denied, regardless of
@@ -519,9 +565,9 @@ These should run on every pull request.
      never accept unrelated suffix tricks such as
      `example.com.evil.org`.[^14][^15]
 
-#### Phase 2 full harnesses
+#### Candidate deeper harnesses
 
-These can run nightly or by manual dispatch:
+Broader production harnesses can run nightly or by manual dispatch:
 
 - larger bounded path shapes;
 - more host/method combinations;
@@ -530,19 +576,20 @@ These can run nightly or by manual dispatch:
 
 ### Smoke versus full targets
 
-Use a split target structure:
+`make kani` selects the named four-entry projection harness. `make kani-full`
+runs every harness in the standalone package. The current recipes delegate to
+the pinned CLI:
 
 ```make
-kani: ## Run practical Kani smoke harnesses
-	cargo kani -p axinite --harness verify_allowlist_userinfo_rejected
-	cargo kani -p axinite --harness verify_allowlist_normalize_path_small
-	cargo kani -p axinite --harness verify_shared_host_matcher_small
+kani: kani-check
+	python3 scripts/prover_cli.py kani
 
-kani-full: ## Run all Kani harnesses
-	cargo kani -p axinite
+kani-full: kani-check
+	python3 scripts/prover_cli.py kani-full
 ```
 
-That keeps the PR path practical while still allowing deeper checking elsewhere.
+The full target currently contains the same single harness; broader domain
+proofs are future work.
 
 ### Unwinding policy
 
@@ -770,9 +817,10 @@ because:
 
 Verus is a tool for verifying the correctness of Rust code against explicit
 specifications, with a focus on full functional correctness of low-level systems
-code.[^19] Its installation model is separate from Cargo: the upstream
-guidance is to download a release, unzip it, run `./verus`, and install the
-Rust toolchain it requests.[^30]
+code.[^19] Axinite installs the pinned Verus release and Z3 through the shared
+CLI. `make verus` passes the absolute `.cache/z3/4.16.0/z3` path to the Verus
+child, so a missing solver is an installation failure rather than a successful
+proof result.
 
 That means Axinite should treat Verus as a separate proof runner, not as “just
 another cargo test”.
@@ -781,13 +829,9 @@ another cargo test”.
 
 Do not try to make Verus look like an ordinary Cargo test target.
 
-Use:
-
-- `tools/verus/VERSION`
-- `tools/verus/SHA256SUMS`
-- `scripts/install-verus.sh`
-- `scripts/run-verus.sh`
-- `make verus`
+Use the explicit `make install-verus`, `make install-z3`, and `make verus`
+targets. The release version and archive checksum live in `tools/verus/`; the
+shared CLI owns the direct HTTPS download, digest check, and installation.
 
 That gives the repository:
 
@@ -795,6 +839,25 @@ That gives the repository:
 - reproducible local and CI installs;
 - no pollution of the normal Rust toolchain;
 - room for proof-only files under `verus/`.
+
+The current `verus/tooling_smoke/main.rs` proves set-intersection membership,
+both subset directions, and empty/non-empty witnesses. These are mathematical
+model properties and are not connected to a production Axinite function.
+`make test-verus-tools` requires the positive model to verify and a deliberate
+false union-membership claim to fail. It also checks ordered multi-file runs,
+preflight rejection of a missing path, and preservation of the prover's exit
+status when output readers close.
+
+To supply several entry points, pass repeated proof-file flags in
+`VERUS_FLAGS`. The explicit list replaces the default `VERUS_PROOF_FILE`:
+
+```sh
+VERUS_FLAGS='--proof-file verus/first.rs --proof-file verus/second.rs' make verus
+```
+
+The runner validates all paths first, runs files in order, and stops on the
+first failure while naming any files already proved. Quote paths with spaces
+within the value passed to `VERUS_FLAGS`.
 
 ### What Verus should prove in Axinite
 
@@ -860,9 +923,9 @@ will be mechanically verified end to end.
 
 ### Trigger discipline
 
-Once Verus lands, treat trigger warnings as real engineering feedback, not as
-noise to suppress. The proof code should be understandable and reviewable, not
-merely accepted by the tool.
+Treat Verus trigger warnings as engineering feedback, not noise to suppress.
+The proof code should be understandable and reviewable, not merely accepted by
+the tool.
 
 ### Representative proof tree
 
@@ -876,53 +939,42 @@ verus/
 `axinite_proofs.rs` can simply `mod` the proof files and provide a single entry
 point for `make verus`.
 
-## Recommended Makefile changes
+## Current Makefile targets
 
-Axinite’s current top-level `Makefile` has no formal-verification targets.[^2]
-The repository should add these:
+The repository exposes explicit install, check, proof, and integration-test
+targets. The core proof commands are:
 
 ```make
-.PHONY: test-verification stateright proptest-properties kani kani-full verus formal-pr formal-nightly formal
+.PHONY: install-kani kani-check kani kani-full
+.PHONY: install-verus install-z3 verus formal-pr
+.PHONY: test-kani-tools test-verus-tools test-prover-tools
 
-test-verification: ## Run the Stateright verification crate
-	cargo test -p axinite-verification
+install-kani kani-check install-verus install-z3 verus:
+	python3 scripts/prover_cli.py $@
 
-stateright: test-verification ## Alias for verification models
+kani kani-full: kani-check
+	python3 scripts/prover_cli.py $@
 
-proptest-properties: ## Run targeted generated property tests
-	cargo test --test property_config_layering
-	cargo test --test property_registry_installer
+formal-pr:
+	$(MAKE) kani
+	$(MAKE) verus
 
-kani: ## Run Kani smoke harnesses
-	cargo kani -p axinite --harness verify_allowlist_userinfo_rejected
-	cargo kani -p axinite --harness verify_allowlist_normalize_path_small
-	cargo kani -p axinite --harness verify_shared_host_matcher_small
+test-kani-tools:
+	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/kani_tools_test.py -q
 
-kani-full: ## Run all Kani harnesses
-	cargo kani -p axinite
+test-verus-tools:
+	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/verus_tools_test.py -q
 
-verus: ## Run Verus proofs
-	VERUS_BIN="$(VERUS_BIN)" scripts/run-verus.sh
-
-formal-pr: test-verification proptest-properties kani ## Fast PR gate
-
-formal-nightly: test-verification proptest-properties kani-full verus ## Deeper scheduled gate
-
-formal: formal-pr ## Default formal suite
+test-prover-tools:
+	$(MAKE) test-kani-tools
+	$(MAKE) test-verus-tools
 ```
 
-Two notes matter here.
+`make all` does not depend on these optional tools. `make test-prover-tools`
+also exercises positive and negative Kani/Verus process behaviour without being
+part of the ordinary application test gate.
 
-First, this layout uses ordinary `cargo test` for the Stateright crate rather
-than `cargo nextest run`. That keeps the first model-checking harness simple
-and predictable. If it later behaves cleanly under Nextest, switching the
-target is trivial.
-
-Second, Verus stays **out** of `formal-pr`. That is deliberate. On Axinite’s
-current priorities, Verus should arrive only after there is something small and
-stable enough to prove. Kani and Stateright are earlier wins.
-
-## Recommended CI changes
+## Current formal-verification CI
 
 ### Keep the current test, coverage, and E2E workflows intact
 
@@ -935,82 +987,26 @@ Axinite already has a sensible workflow split:
 Do **not** fold formal verification into coverage generation. It should be
 independently runnable, independently cacheable, and independently diagnosable.
 
-### Add one new workflow: `formal.yml`
+### Dedicated workflow
 
-A separate `formal.yml` should be added rather than bloating `test.yml`.
+`.github/workflows/formal-verification.yml` runs separate `kani-smoke` and
+`verus-proofs` jobs on pull requests, pushes to `main`, a weekly schedule, and
+manual dispatch. Each job uses read-only permissions, SHA-pinned checkout and
+uv actions, Python 3.14, a 30-minute timeout, and `CARGO_INCREMENTAL=0`. No
+Cargo target cache is configured. The workflow cancels superseded pull-request
+runs without cancelling main or scheduled runs. The pinned CLI and Make targets
+own tool installation; Z3 is installed and pinned separately for Verus. Job
+logs retain tool versions and proof outcomes.
 
-#### 1. `stateright-models`
+Verus runs on pull requests because the current model is small and has positive
+and negative controls. Neither job implies production proof coverage.
 
-Run on every pull request.
-
-```yaml
-stateright-models:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v6
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v2
-    - name: Run Stateright verification crate
-      run: make test-verification
-```
-
-#### 2. `kani-smoke`
-
-Run on every pull request.
-
-```yaml
-kani-smoke:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v6
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v2
-    - name: Install Kani
-      run: scripts/install-kani.sh
-    - name: Run Kani smoke harnesses
-      run: make kani
-```
-
-Where `scripts/install-kani.sh` does roughly this:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-KANI_VERSION="$(cat tools/kani/VERSION)"
-cargo install --locked kani-verifier --version "${KANI_VERSION}"
-cargo kani setup
-```
-
-That keeps local and CI execution aligned with the tool’s documented
-installation path.[^32]
-
-#### 3. `verus-proofs`
-
-Run nightly or by manual dispatch **initially**, not on every pull request.
-
-```yaml
-verus-proofs:
-  if:
-    github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v6
-    - name: Install Verus
-      run: scripts/install-verus.sh
-      env:
-        VERUS_INSTALL_DIR: ${{ runner.temp }}/verus
-    - name: Run Verus proofs
-      run: make verus
-      env:
-        VERUS_BIN: ${{ runner.temp }}/verus/verus/verus
-```
-
-### Where the new Proptest suites should run
+### Where future Proptest suites should run
 
 Because Proptest is still ordinary Rust testing, it should not get a separate
-workflow unless it becomes materially expensive. Let the new property tests run
-under `test.yml` by default, and reserve `formal.yml` for the tools that truly
-need dedicated runners.
+workflow unless they become materially expensive. Property tests belong in
+`test.yml` by default. `formal-verification.yml` is reserved for proof tools
+that need dedicated installation and execution.
 
 ## How Proptest, fuzzing, and current tests fit after these changes
 
@@ -1019,8 +1015,8 @@ additive rather than replacement-oriented.
 
 ### Add Proptest selectively
 
-Axinite does **not** currently depend on `proptest`.[^20] Add it, but do so
-selectively:
+Axinite already declares `proptest` as a root dev-dependency, but does not yet
+use it for these invariants.[^20] Add properties selectively:
 
 - configuration precedence and layering;
 - database map round-trips;
@@ -1059,15 +1055,13 @@ That is exactly the right substrate for targeted formal work.
 
 A practical implementation order for Axinite is:
 
-### Phase 1: infrastructure only
+### Phase 1: prover infrastructure (implemented)
 
-1. add `proptest` to root `dev-dependencies`;
-2. add `crates/axinite-verification`;
-3. add `tools/kani/VERSION`;
-4. add `tools/verus/*` and `scripts/install-verus.sh` / `scripts/run-verus.sh`;
-5. add `make test-verification`, `make proptest-properties`, `make kani`,
-   `make kani-full`, and `make verus`;
-6. add `formal.yml`.
+1. pin Kani, Verus, Z3, and the CLI source revision;
+2. provide explicit tool installation, version checks, and proof targets outside
+   application startup and the ordinary `make all` gate;
+3. add executable positive and negative smoke proofs;
+4. run the separate proof suites in a read-only CI workflow.
 
 ### Phase 2: low-risk, high-return verification
 
@@ -1133,26 +1127,21 @@ invariant**.
 
 ## Final recommendation
 
-The most coherent Axinite plan is:
+The current Axinite implementation provides prover tooling and smoke examples.
+The next domain-focused work should:
 
 - **add Proptest selectively** for configuration layering and registry-installer
   semantics;
-- **add Kani harnesses inside the main package** for
-  `src/tools/wasm/allowlist.rs` and the extracted shared host matcher;
+- **design and prove a production bridge** before adding Kani checks for
+  `src/tools/wasm/allowlist.rs` or the extracted shared host matcher;
 - **add `crates/axinite-verification`** for a Stateright model of
   scheduler/worker/container/reaper/token lifecycle;
-- **treat Verus as an optional later-stage tool** for a tiny pure kernel, not as
-  part of the initial rollout.
+- **use Verus for a tiny pure kernel** only when its relationship to the
+  implementation is mechanically established.
 
-If Axinite does only the first tranche of this work, make it:
-
-1. verification infrastructure and a separate `formal.yml` workflow;
-2. Kani on the WASM allowlist;
-3. Proptest on configuration layering and the registry installer;
-4. Stateright on the job lifecycle.
-
-That would give Axinite the highest bug-finding return for the least
-organizational friction.
+The imported tooling enables future domain verification. It must not be
+reported as proof of a runtime invariant until a verified relation to
+production code exists.
 
 ## References
 
@@ -1273,10 +1262,6 @@ organizational friction.
 [^31]:
     Cargo workspace reference:
     <https://doc.rust-lang.org/cargo/reference/workspaces.html>
-
-[^32]:
-    Kani install guide:
-    <https://model-checking.github.io/kani/install-guide.html>
 
 [^33]:
     Kani unwind attribute reference:
