@@ -15,6 +15,8 @@ use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
 use crate::error::RoutineError;
 
+/// Builds the router for the routine management API under `/api/routines`: list, summary,
+/// detail, manual trigger, toggle, delete and run history.
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
         .route("/api/routines", get(routines_list_handler))
@@ -26,6 +28,10 @@ pub fn routes() -> Router<Arc<GatewayState>> {
         .route("/api/routines/{id}/runs", get(routines_runs_handler))
 }
 
+/// Lists every routine as `RoutineInfo` entries.
+///
+/// Answers `503` when no database is configured and `500` when the routines cannot be
+/// listed.
 pub async fn routines_list_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Result<Json<RoutineListResponse>, (StatusCode, String)> {
@@ -93,6 +99,11 @@ pub async fn routines_summary_handler(
     }))
 }
 
+/// Returns one routine with its trigger, action, guardrails, notification settings and its
+/// 20 most recent runs.
+///
+/// Answers `400` for an id that is not a UUID, `404` for an unknown routine, `503` when no
+/// database is configured and `500` when the store fails.
 pub async fn routines_detail_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
@@ -148,6 +159,12 @@ pub async fn routines_detail_handler(
     }))
 }
 
+/// Fires one routine manually and answers `{"status": "triggered", "routine_id", "run_id"}`.
+///
+/// Answers `400` for an id that is not a UUID and `503` when the routine engine is not
+/// running. Errors from the engine map through `routine_error_status`: `404` for an
+/// unknown routine, `403` when not authorized, `409` when the routine is disabled or at its
+/// concurrency limit, and `500` otherwise.
 pub async fn routines_trigger_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
@@ -176,11 +193,19 @@ pub async fn routines_trigger_handler(
     })))
 }
 
+/// Optional request body for [`routines_toggle_handler`].
 #[derive(Deserialize)]
 pub struct ToggleRequest {
+    /// The state to set. When absent (or when the whole body is absent), the handler flips
+    /// the routine's current state instead.
     pub enabled: Option<bool>,
 }
 
+/// Enables or disables one routine, as `{"status": "enabled" | "disabled", "routine_id"}`.
+///
+/// With a body whose `enabled` is set, the routine takes that state; otherwise its current
+/// state is flipped. Answers `400` for an id that is not a UUID, `404` for an unknown
+/// routine, `503` when no database is configured and `500` when the store fails.
 pub async fn routines_toggle_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
@@ -217,6 +242,10 @@ pub async fn routines_toggle_handler(
     })))
 }
 
+/// Deletes one routine and answers `{"status": "deleted", "routine_id"}`.
+///
+/// Answers `400` for an id that is not a UUID, `404` when no routine was deleted, `503`
+/// when no database is configured and `500` when the deletion fails.
 pub async fn routines_delete_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
@@ -244,6 +273,11 @@ pub async fn routines_delete_handler(
     }
 }
 
+/// Lists up to 50 runs of one routine, as `{"routine_id", "runs"}`.
+///
+/// Answers `400` for an id that is not a UUID, `503` when no database is configured and
+/// `500` when the runs cannot be read. It does not check that the routine exists, so an
+/// unknown id yields an empty list.
 pub async fn routines_runs_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
