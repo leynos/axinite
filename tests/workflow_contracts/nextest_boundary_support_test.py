@@ -41,6 +41,7 @@ def test_preparation_uses_one_deadline_and_probes_keep_their_600_second_cap(
         timeout_seconds: float,
         context: ProcessContext,
     ) -> ProcessResult:
+        """Record the call and return canned output with fixed elapsed times."""
         del context
         calls.append((tuple(command), timeout_seconds))
         elapsed = 850.0 if command[1:2] == ("metadata",) else 349.0
@@ -88,6 +89,7 @@ def test_preparation_uses_one_deadline_and_probes_keep_their_600_second_cap(
         timeout_seconds: float,
         context: ProcessContext,
     ) -> ProcessResult:
+        """Record the probe and check that it keeps the standard subprocess timeout."""
         del context
         assert timeout_seconds == fixture_support.SUBPROCESS_TIMEOUT_SECONDS, (
             "each Nextest probe must retain its 600-second watchdog"
@@ -123,6 +125,7 @@ def test_preparation_stops_before_binary_listing_on_bad_cargo_metadata(
         timeout_seconds: float,
         context: ProcessContext,
     ) -> ProcessResult:
+        """Record the call and return the parametrized failing metadata result."""
         del timeout_seconds, context
         calls.append(tuple(command))
         return synthetic_process_result(
@@ -163,6 +166,7 @@ def test_binary_inventory_failure_is_recorded_without_publishing_fixture(
         timeout_seconds: float,
         context: ProcessContext,
     ) -> ProcessResult:
+        """Record the call; return valid metadata, then malformed inventory."""
         del timeout_seconds, context
         commands.append(tuple(command))
         stdout = (
@@ -211,6 +215,7 @@ def test_preparation_refuses_existing_metadata_instead_of_reusing_it(
         timeout_seconds: float,
         context: ProcessContext,
     ) -> ProcessResult:
+        """Record a call that the test forbids and return an unexpected result."""
         del phase, timeout_seconds, context
         calls.append(tuple(command))
         return synthetic_process_result("unexpected", command)
@@ -270,6 +275,7 @@ def test_probe_fails_closed_when_saved_metadata_is_unusable(
         timeout_seconds: float,
         context: ProcessContext,
     ) -> ProcessResult:
+        """Record a call that the test forbids and return an unexpected result."""
         del phase, timeout_seconds, context
         calls.append(tuple(command))
         return synthetic_process_result("unexpected", command)

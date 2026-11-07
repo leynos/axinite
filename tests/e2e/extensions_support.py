@@ -131,6 +131,7 @@ async def mock_ext_apis(page, *, installed=None, tools=None, registry=None):
     )
 
     async def handle_pairing(route):
+        """Answer pairing requests with no pending entries for the test channel."""
         # Default: no pending pairing requests for any channel.
         await fulfil(route, {"channel": "test-channel", "requests": []})
 

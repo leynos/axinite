@@ -87,6 +87,7 @@ def test_fixture_preparation_receipt_records_two_ordered_phases(
     )
 
     def prepare(root: Path, crate: Path, target: Path) -> Fixture:
+        """Record the prepare call and return two ordered preparation records."""
         events.append("prepare")
         assert crate.is_dir() and crate.parent == root, (
             "the fixture source must be copied beneath its unique run root"

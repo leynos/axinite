@@ -63,6 +63,7 @@ async def test_pairing_list_and_approve(page):
     approve_posts = []
 
     async def handle_pairing(route):
+        """Record approve posts, and otherwise list the pending ABC123 request."""
         url = route.request.url
         if url.rstrip("/").endswith("/approve"):
             approve_posts.append(json.loads(route.request.post_data or "{}"))

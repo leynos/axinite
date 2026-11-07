@@ -124,6 +124,8 @@ jobs:
           fallback: none
       - name: Workflow contract tests
         run: make test-workflow-contracts
+      - name: Enforce Python docstring coverage
+        run: make interrogate
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report

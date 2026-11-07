@@ -158,6 +158,7 @@ async def test_auth_card_submit_success_removes_card(page):
     posts = []
 
     async def handle(route):
+        """Record the submitted token and answer the auth-token post with success."""
         posts.append(json.loads(route.request.post_data or "{}"))
         await route.fulfill(
             status=200,

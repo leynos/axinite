@@ -54,6 +54,7 @@ class MakeDryRunError(RuntimeError):
         root: Path,
         failure: subprocess.CalledProcessError | OSError,
     ) -> None:
+        """Record the failure details and build a message that names the target."""
         self.target = target
         self.root = root
         reason, self.returncode, self.stderr = _failure_details(failure)

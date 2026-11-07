@@ -31,6 +31,7 @@ def test_empty_log_is_an_empty_tail(server_log: Path) -> None:
 
 
 def test_short_log_is_returned_whole(server_log: Path) -> None:
+    """A log shorter than the tail limit is returned in full."""
     server_log.write_text("started\nlistening\n", encoding="utf-8")
     assert conftest._server_log_tail() == "started\nlistening\n"
 
@@ -43,6 +44,7 @@ def test_long_log_is_cut_to_the_last_tail_bytes(server_log: Path) -> None:
 
 
 def test_invalid_utf8_is_replaced_not_raised(server_log: Path) -> None:
+    """Undecodable bytes in the log are replaced rather than raising."""
     server_log.write_bytes(b"ok \xff\xfe end")
     tail = conftest._server_log_tail()
     assert tail.startswith("ok ") and tail.endswith(" end")
@@ -50,6 +52,7 @@ def test_invalid_utf8_is_replaced_not_raised(server_log: Path) -> None:
 
 
 def test_the_auth_token_is_redacted(server_log: Path) -> None:
+    """An auth token in a logged request is replaced with ``token=***``."""
     server_log.write_text(f"GET /?token={AUTH_TOKEN} 200\n", encoding="utf-8")
     tail = conftest._server_log_tail()
     assert AUTH_TOKEN not in tail
@@ -79,5 +82,6 @@ def test_a_failed_phase_gets_the_server_log(server_log: Path, when: str) -> None
 
 
 def test_a_passing_phase_is_left_alone(server_log: Path) -> None:
+    """A passing phase adds no server log section to the report."""
     server_log.write_text("noise\n", encoding="utf-8")
     assert _run_hook(failed=False, when="call").sections == []

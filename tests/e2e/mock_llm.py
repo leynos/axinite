@@ -118,6 +118,10 @@ def main():
     import asyncio
 
     async def start():
+        """Start the server, print its bound port, and block indefinitely.
+
+        It prints ``MOCK_LLM_PORT=<port>`` so a caller can read an ephemeral port.
+        """
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "127.0.0.1", args.port)

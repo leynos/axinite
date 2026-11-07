@@ -21,6 +21,10 @@ from helpers import SEL, wait_until
 async def _route_setup(page, name, secrets, save_posts=None):
     """Stub one extension setup endpoint and optionally capture submitted bodies."""
     async def handle(route):
+        """Serve the setup payload on GET, and accept any other request.
+
+        Other request bodies are recorded only when the caller passes ``save_posts``.
+        """
         if route.request.method == "GET":
             await fulfil(route, {"name": name, "kind": "wasm_tool", "secrets": secrets})
         else:
@@ -113,6 +117,7 @@ async def test_remove_confirmed(page):
     remove_posts = []
 
     async def handle_remove(route):
+        """Record the remove request and answer with success."""
         remove_posts.append(True)
         await fulfil(route, {"success": True, "message": "Removed"})
 
