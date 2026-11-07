@@ -212,7 +212,8 @@ pub struct ToggleRequest {
 /// bytes, and so is a body whose `enabled` is absent or null: the routine's current state
 /// is flipped. A JSON content type with an empty or malformed body is rejected by the
 /// extractor before the handler runs (`400`, or `422` for JSON of the wrong shape), and
-/// another content type is rejected with `415`. Otherwise the handler answers `400` for
+/// another content type is rejected with `415`, and a body over the gateway's size limit
+/// with `413`. Otherwise the handler answers `400` for
 /// an id that is not a UUID, `404` for an unknown routine, `503` when no database is
 /// configured and `500` when the store fails.
 pub async fn routines_toggle_handler(
