@@ -112,12 +112,16 @@ def _proof_arguments(settings: Mapping[str, str]) -> list[str]:
     ------
     ValueError
         If ``VERUS_FLAGS`` contains unmatched quoting, or the default proof
-        file is needed but ``VERUS_PROOF_FILE`` is empty.
+        file is needed but ``VERUS_PROOF_FILE`` is unset, empty, or
+        whitespace-only. A configured path is passed through unchanged, so
+        surrounding whitespace is not silently removed.
     """
     flags = _split(settings.get("VERUS_FLAGS", ""), "VERUS_FLAGS")
     if _selects_proof_file(flags):
         return flags
-    default = _required("VERUS_PROOF_FILE", settings.get("VERUS_PROOF_FILE", ""))
+    default = settings.get("VERUS_PROOF_FILE", "")
+    if not default.strip():
+        raise ValueError("VERUS_PROOF_FILE must be configured")
     return ["--proof-file", default, *flags]
 
 
@@ -283,7 +287,8 @@ def _arguments(action: str, sources: _ArgumentSources) -> list[str]:
     ------
     ValueError
         If ``action`` is not a recognized prover action, a required setting is
-        missing, or the Kani pin cannot be read.
+        missing, the Kani pin cannot be read, or the Verus argument query
+        reports malformed ``VERUS_FLAGS`` quoting.
     """
     selection = _KANI_SELECTIONS.get(action)
     if selection is not None:

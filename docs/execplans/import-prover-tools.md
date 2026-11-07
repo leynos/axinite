@@ -460,6 +460,19 @@ and V1, V2, and V5 below account for that change.
   `scripts/prover_cli.py` instead of invoking `PROVER_TOOLS` directly, and the
   direct third-party command helper is removed.
 
+- (2026-11-07) Name the malformed-flags propagation and reject a blank proof
+  file. The next review repeated `Unit Architecture` with a narrower request:
+  `_arguments` propagates malformed `VERUS_FLAGS` through the injected proof
+  query, but its `Raises` contract did not name that failure. The contract now
+  does, and a direct dispatch test raises it through
+  `_arguments("verus", ...)`. An unverified inline finding also showed that
+  `_required` accepted a whitespace-only `VERUS_PROOF_FILE`; `_proof_arguments`
+  now rejects a blank value while passing a configured path through unchanged,
+  and the existing failure-table test covers it. The second inline finding, Ruff
+  `PIE807` for `lambda: []`, is applied as `proof_arguments=list`; the
+  repository selects no Ruff rules, so this is a readability fix rather than a
+  gate failure.
+
 ## Plan of work
 
 ### M1 — Pin and demonstrate compatibility

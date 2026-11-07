@@ -298,6 +298,7 @@ def test_verus_proof_query_keeps_an_explicit_proof_selection() -> None:
         ({"VERUS_FLAGS": "'unterminated"}, "invalid VERUS_FLAGS: unmatched quoting"),
         ({}, "VERUS_PROOF_FILE must be configured"),
         ({"VERUS_FLAGS": "  "}, "VERUS_PROOF_FILE must be configured"),
+        ({"VERUS_PROOF_FILE": " \t"}, "VERUS_PROOF_FILE must be configured"),
     ],
 )
 def test_verus_proof_query_reports_its_failure_boundary(
@@ -320,13 +321,30 @@ def test_argument_queries_propagate_a_failed_kani_pin_read() -> None:
 
     sources = cli._ArgumentSources(
         setting=lambda name: f"/resolved/{name.lower()}",
-        proof_arguments=lambda: [],
+        proof_arguments=list,
         kani_installation=unusable_pin,
         version_file="/pin",
     )
 
     with pytest.raises(ValueError, match="is empty"):
         cli._arguments("kani", sources)
+
+
+def test_argument_queries_propagate_malformed_verus_flags() -> None:
+    """Keep the Verus flag parsing failure visible through the dispatch."""
+    cli = _load_cli()
+
+    sources = cli._ArgumentSources(
+        setting=lambda name: f"/resolved/{name.lower()}",
+        proof_arguments=lambda: cli._proof_arguments(
+            {"VERUS_FLAGS": "'unterminated"}
+        ),
+        kani_installation=lambda: "/resolved/kani release",
+        version_file="/pin",
+    )
+
+    with pytest.raises(ValueError, match="invalid VERUS_FLAGS: unmatched quoting"):
+        cli._arguments("verus", sources)
 
 
 @pytest.mark.parametrize("pin_contents", ("", " \n\t"))
