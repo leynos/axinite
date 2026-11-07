@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import shlex
 import shutil
+import sys
 from pathlib import Path
 
 from prover_test_support import (
@@ -14,27 +14,12 @@ from prover_test_support import (
 )
 
 VERUS_PROOF = REPOSITORY_ROOT / "verus" / "tooling_smoke" / "main.rs"
+PROVER_CLI = REPOSITORY_ROOT / "scripts" / "prover_cli.py"
 
 
-def _verus_cli_command(*proof_files: Path) -> list[str]:
-    """Build the pinned CLI command with each proof path as a separate option."""
-    prover_tools = shlex.split(os.environ["PROVER_TOOLS"])
-    return [
-        *prover_tools,
-        "verus",
-        "run",
-        *[
-            argument
-            for proof_file in proof_files
-            for argument in ("--proof-file", str(proof_file))
-        ],
-    ]
-
-
-def _z3_environment() -> dict[str, str]:
-    """Select the same absolute Z3 binary used by the Make adapter."""
-    z3_install_dir = Path(os.environ["Z3_INSTALL_DIR"])
-    return {"VERUS_Z3_PATH": str((z3_install_dir / "z3").resolve())}
+def _prover_cli_command() -> list[str]:
+    """Run the repository's Verus boundary instead of prover-tools directly."""
+    return [sys.executable, str(PROVER_CLI), "verus"]
 
 
 def _verus_flags(*proof_files: Path) -> str:
@@ -153,11 +138,7 @@ def test_verus_preflights_all_files_before_running_any_proof(tmp_path: Path) -> 
 
 def test_verus_preserves_success_status_when_output_readers_close_early() -> None:
     """Keep a successful verifier status after stdout and stderr close."""
-    return_code = _run_cli_with_closed_readers(
-        _verus_cli_command(VERUS_PROOF),
-        "verus",
-        **_z3_environment(),
-    )
+    return_code = _run_cli_with_closed_readers(_prover_cli_command(), "verus")
 
     assert return_code == 0
 
@@ -182,9 +163,9 @@ def test_verus_preserves_failure_status_when_output_readers_close_early(
     assert "postcondition not satisfied" in output
 
     return_code = _run_cli_with_closed_readers(
-        _verus_cli_command(failing_proof),
+        _prover_cli_command(),
         "verus",
-        **_z3_environment(),
+        VERUS_FLAGS=_verus_flags(failing_proof),
     )
 
     assert return_code == 1

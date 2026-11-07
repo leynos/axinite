@@ -424,6 +424,27 @@ and V1, V2, and V5 below account for that change.
   missing, unreadable, and empty pins, unrelated targets, the joined
   `--proof-file=PATH` form, and the `formal-pr` success and failure order.
 
+- (2026-11-06) Split the argument builder per prover action. The hosted
+  `CodeScene Code Health Review` rejected `scripts/prover_cli.py` at 9.23 for a
+  large method and excess function arguments in `_arguments` (85 lines, five
+  parameters). The builder now receives one `_ArgumentSources` value holding
+  the injected resolvers and dispatches through per-action builders, which
+  scores 10.00 locally with no findings and keeps every argument query a pure
+  function of its injected sources.
+
+- (2026-11-07) Make the Verus proof-argument query explicit and test the
+  closed-reader statuses at the repository boundary. CodeRabbit's pre-merge
+  `Unit Architecture` row asked for the Verus settings to be passed into the
+  query and its parsing and missing-setting failures to be documented and
+  tested. `_proof_arguments` now takes an explicit `Mapping[str, str]` and
+  documents both `ValueError` cases; `_environment_proof_arguments` is the one
+  ambient binding, used by the composition root, and `_required` carries the
+  shared missing-setting message. Its pre-merge `Testing (Overall)` row asked
+  the closed-reader success and failure checks to exercise local behaviour, so
+  `tests/verification/verus_tools_test.py` now runs both through
+  `scripts/prover_cli.py` instead of invoking `PROVER_TOOLS` directly, and the
+  direct third-party command helper is removed.
+
 ## Plan of work
 
 ### M1 — Pin and demonstrate compatibility
