@@ -52,7 +52,7 @@ const ACTION_VERBS: &[&str] = &[
 /// Text heuristic: returns `true` if an LLM reply reads as announcing a tool action, such as
 /// "Let me search …" or "I'll fetch …", outside backtick-fenced or indented code blocks
 /// (a tilde-fenced block is not skipped). The fence detector toggles on every line that
-/// starts with three backticks and does not match fence lengths, so a three-backtick line
+/// starts with three backticks after any leading whitespace and does not match fence lengths, so a three-backtick line
 /// inside a longer fence ends the skipped region early.
 ///
 /// Exclusion phrases such as "let me explain" are checked first and make the result `false`

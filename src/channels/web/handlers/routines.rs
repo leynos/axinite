@@ -159,7 +159,8 @@ pub async fn routines_detail_handler(
     }))
 }
 
-/// Fires one routine manually and answers `{"status": "triggered", "routine_id", "run_id"}`.
+/// Fires one routine manually and answers with a JSON object holding the
+/// fields `status` (`"triggered"`), `routine_id` and `run_id`.
 ///
 /// Answers `400` for an id that is not a UUID and `503` when the routine engine is not
 /// running. Errors from the engine map through `routine_error_status`: `404` for an
@@ -201,7 +202,8 @@ pub struct ToggleRequest {
     pub enabled: Option<bool>,
 }
 
-/// Enables or disables one routine, as `{"status": "enabled" | "disabled", "routine_id"}`.
+/// Enables or disables one routine and answers with a JSON object holding the fields
+/// `status` (`"enabled"` or `"disabled"`) and `routine_id`.
 ///
 /// With a body whose `enabled` is set, the routine takes that state; otherwise its current
 /// state is flipped. Answers `400` for an id that is not a UUID, `404` for an unknown
@@ -242,7 +244,8 @@ pub async fn routines_toggle_handler(
     })))
 }
 
-/// Deletes one routine and answers `{"status": "deleted", "routine_id"}`.
+/// Deletes one routine and answers with a JSON object holding the fields `status`
+/// (`"deleted"`) and `routine_id`.
 ///
 /// Answers `400` for an id that is not a UUID, `404` when no routine was deleted, `503`
 /// when no database is configured and `500` when the deletion fails.
@@ -273,11 +276,13 @@ pub async fn routines_delete_handler(
     }
 }
 
-/// Lists up to 50 runs of one routine, as `{"routine_id", "runs"}`.
+/// Lists up to 50 runs of one routine, as a JSON object holding the fields `routine_id`
+/// and `runs`.
 ///
 /// Answers `400` for an id that is not a UUID, `503` when no database is configured and
-/// `500` when the runs cannot be read. It does not check that the routine exists, so an
-/// unknown id yields an empty list.
+/// `500` when the runs cannot be read. It does not check that the routine exists: it
+/// returns whatever run rows match the id, so an id that never had a run yields an empty
+/// list.
 pub async fn routines_runs_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
