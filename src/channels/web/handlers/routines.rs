@@ -197,8 +197,9 @@ pub async fn routines_trigger_handler(
 /// Optional request body for [`routines_toggle_handler`].
 #[derive(Deserialize)]
 pub struct ToggleRequest {
-    /// The state to set. When absent (or when the whole body is absent), the handler flips
-    /// the routine's current state instead.
+    /// The state to set. When absent or null, the handler flips the routine's current state
+    /// instead; see [`routines_toggle_handler`] for how a missing or unreadable body is
+    /// treated.
     pub enabled: Option<bool>,
 }
 
