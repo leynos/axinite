@@ -34,12 +34,22 @@ pub struct WasmChannelSetup {
     /// Router that maps webhook requests to the registered WASM channels.
     pub wasm_channel_router: Arc<WasmChannelRouter>,
 }
+
 /// Inputs for loading WASM channels with an explicit environment snapshot.
 pub struct WasmChannelSetupRequest<'a> {
+    /// Startup configuration naming the directory the channels load from.
     pub config: &'a Config,
+    /// Store used to resolve the credentials each channel declares. `None`
+    /// skips secret lookup, so channels load without credentials.
     pub secrets_store: &'a Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// Extension manager shared with the webhook router. `None` leaves the
+    /// router without hot-activation support.
     pub extension_manager: Option<&'a Arc<ExtensionManager>>,
+    /// Backend whose settings store is handed to the channel loader. `None`
+    /// leaves the loader without database-backed settings.
     pub database: Option<&'a Arc<dyn Database>>,
+    /// Environment snapshot consulted when a declared credential has no
+    /// stored value.
     pub env_context: &'a EnvContext,
 }
 
