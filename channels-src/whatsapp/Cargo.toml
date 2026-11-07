@@ -17,6 +17,9 @@ opt-level = "s"
 lto = true
 strip = true
 
+[lints.rust]
+missing_docs = "deny"
+
 [workspace]
 
 [profile.dev]

@@ -9,10 +9,18 @@
 //!
 //! Get a key at: https://brave.com/search/api/
 
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "../../wit/tool.wit",
-});
+// The generated bindings live in a private module so the undocumented
+// wit-bindgen items are not part of the crate's documented surface.
+mod bindings {
+    //! Guest bindings that wit-bindgen generates from the tool WIT world.
+
+    wit_bindgen::generate!({
+        world: "sandboxed-tool",
+        path: "../../wit/tool.wit",
+    });
+}
+
+use bindings::{exports, near};
 
 use serde::Deserialize;
 
@@ -351,7 +359,7 @@ const SCHEMA: &str = r#"{
     "additionalProperties": false
 }"#;
 
-export!(WebSearchTool);
+bindings::export!(WebSearchTool with_types_in bindings);
 
 #[cfg(test)]
 mod tests {

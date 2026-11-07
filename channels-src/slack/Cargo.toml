@@ -24,6 +24,9 @@ lto = true
 strip = true
 codegen-units = 1
 
+[lints.rust]
+missing_docs = "deny"
+
 [workspace]
 
 [profile.dev]
