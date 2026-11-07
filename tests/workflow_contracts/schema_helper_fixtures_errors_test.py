@@ -34,6 +34,7 @@ def test_unlistable_pass_directory_raises_source_read_error(
     cause = PermissionError(errno.EACCES, "permission denied", str(pass_directory))
 
     def fail_listing(path: Path) -> Iterator[Path]:
+        """Raise the listing failure for the pass directory, else list normally."""
         if path == pass_directory:
             raise cause
         return original_iterdir(path)
@@ -79,6 +80,7 @@ def test_unreadable_main_source_raises_source_read_error(
     def fail_read(
         path: Path, encoding: str | None = None, errors: str | None = None
     ) -> str:
+        """Raise the read failure for the main source, else read normally."""
         if path == main_source:
             raise cause
         return original_read_text(path, encoding=encoding, errors=errors)

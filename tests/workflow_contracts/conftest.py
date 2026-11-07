@@ -90,6 +90,7 @@ class EmptySelection:
     """
 
     def __init__(self, module: str) -> None:
+        """Record the module whose selector came back empty."""
         self.module = module
 
 

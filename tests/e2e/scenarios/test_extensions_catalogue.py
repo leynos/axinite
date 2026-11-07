@@ -88,6 +88,7 @@ async def test_registry_entry_and_install(page):
     install_posts = []
 
     async def handle_install(route):
+        """Record the install request and answer with success."""
         install_posts.append(json.loads(route.request.post_data or "{}"))
         await fulfil(route, {"success": True, "message": "Installed"})
 

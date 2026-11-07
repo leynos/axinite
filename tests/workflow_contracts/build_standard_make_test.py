@@ -214,6 +214,7 @@ def test_dry_run_classifies_make_failures(
     """A failed dry run names its target and preserves process diagnostics."""
 
     def fail_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Raise the parametrized failure instead of running Make."""
         del args, kwargs
         raise failure
 

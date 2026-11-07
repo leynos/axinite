@@ -38,6 +38,7 @@ class SourceError(Exception):
     """
 
     def __init__(self, path: Path, reason: str) -> None:
+        """Record the failing path and build a message that names it."""
         self.path = path
         super().__init__(f"{path}: {reason}")
 

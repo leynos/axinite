@@ -41,6 +41,10 @@ def _invocations(draw: st.DrawFn) -> Invocation:
 
 
 def _draw_verb(draw: st.DrawFn, tool: str) -> str:
+    """Draw a verb that the tool supports.
+
+    Cargo draws its verbs, nextest always gives run, and whitaker gives dylint.
+    """
     if tool == "cargo":
         return draw(st.sampled_from(CARGO_VERBS))
     if tool == "nextest":
@@ -49,6 +53,10 @@ def _draw_verb(draw: st.DrawFn, tool: str) -> str:
 
 
 def _base_arguments(draw: st.DrawFn, tool: str, verb: str) -> list[str]:
+    """Return the leading arguments for an invocation.
+
+    An install names the crate, and every tool except whitaker takes drawn flags.
+    """
     arguments = ["axinite-cli"] if verb == "install" else []
     if tool != "whitaker":
         arguments.extend(draw(st.lists(ARGUMENT, max_size=8)))
@@ -61,11 +69,13 @@ def _append_optional_option(
     option: str,
     choices: tuple[str, ...],
 ) -> None:
+    """Append the option with a drawn choice, or leave the arguments unchanged."""
     if draw(st.booleans()):
         arguments.extend((option, draw(st.sampled_from(choices))))
 
 
 def _append_profile_options(draw: st.DrawFn, tool: str, arguments: list[str]) -> None:
+    """Optionally append the profile options that the tool accepts."""
     if tool == "cargo":
         _append_optional_option(
             draw, arguments, "--profile", ("dev", "test", "release", "bench")
@@ -78,6 +88,7 @@ def _append_profile_options(draw: st.DrawFn, tool: str, arguments: list[str]) ->
 
 
 def _append_target_option(draw: st.DrawFn, tool: str, arguments: list[str]) -> None:
+    """Optionally append ``--target``; whitaker always gets ``--all`` instead."""
     if tool != "whitaker" and draw(st.booleans()):
         arguments.extend(("--target", draw(st.sampled_from(tuple(PLATFORMS)))))
     if tool == "whitaker":

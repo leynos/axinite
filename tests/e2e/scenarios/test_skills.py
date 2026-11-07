@@ -75,6 +75,7 @@ async def test_skills_install_and_remove(page):
     await remove_btn.click()
 
     async def removed() -> bool:
+        """Report whether the installed list has shrunk below its starting count."""
         return await installed.count() < installed_count
 
     await wait_until(removed, timeout_ms=15000, interval_ms=250)

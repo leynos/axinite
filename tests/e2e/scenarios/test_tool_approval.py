@@ -31,6 +31,7 @@ async def _install_routes(page, phase, approval_posts):
     """Intercept threads/history/approval so the card is fully deterministic."""
 
     async def handle_threads(route):
+        """Answer the threads request with one idle approval thread."""
         body = json.dumps(
             {
                 "assistant_thread": {
@@ -48,6 +49,7 @@ async def _install_routes(page, phase, approval_posts):
         await route.fulfill(status=200, content_type="application/json", body=body)
 
     async def handle_history(route):
+        """Return the thread history, with the approval only while it is pending."""
         payload = {
             "thread_id": _THREAD_ID,
             "turns": [],
@@ -62,6 +64,10 @@ async def _install_routes(page, phase, approval_posts):
         )
 
     async def handle_approval(route):
+        """Record the approval post and mark the approval as resolved.
+
+        Later history responses then omit the pending approval.
+        """
         approval_posts.append(json.loads(route.request.post_data or "{}"))
         # Once approved, subsequent history refetches carry no pending approval.
         phase["value"] = "approved"
