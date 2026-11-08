@@ -233,6 +233,20 @@ INTERROGATE_TARGETS ?= tests scripts
 # `interrogate` recipe below looks for: the rounded percentage alone can pass a
 # lone gap.
 INTERROGATE_FLAGS ?= -vv --fail-under 100
+# Cargo target directories (build output, generated stubs and the scratch crates
+# of nested probes) are not owned by the repository. Interrogate 1.7.0 resolves
+# each `--exclude` to an absolute path and skips a file when its path matches
+# "<exclude>*" under fnmatch, where `*` also crosses `/`. A pattern must
+# therefore end in `/*`: a bare `target` would also skip `target_utils.py`.
+# `target/*` prunes the root directory and `*/target/*` a nested crate's.
+# `CARGO_TARGET_DIR` and `CARGO_BUILD_TARGET_DIR` are excluded too, with the
+# fnmatch metacharacters in their values escaped so that they match literally.
+# Limitation: owned Python under a directory literally named `target` would be
+# skipped by `*/target/*`, so the recipe fails if Git tracks any such file.
+fnmatch_escape = $(subst ?,[?],$(subst *,[*],$(subst [,[[],$(1))))
+INTERROGATE_EXCLUDES ?= --exclude 'target/*' --exclude '*/target/*' \
+	$(if $(CARGO_TARGET_DIR),--exclude '$(call fnmatch_escape,$(CARGO_TARGET_DIR))/*') \
+	$(if $(CARGO_BUILD_TARGET_DIR),--exclude '$(call fnmatch_escape,$(CARGO_BUILD_TARGET_DIR))/*')
 INTERROGATE ?= $(UV_ENV) $(UV) tool run --python 3.14 --from 'interrogate==$(INTERROGATE_VERSION)' interrogate
 
 # Interrogate rounds its percentage to one decimal, so `--fail-under 100` alone
@@ -242,7 +256,12 @@ INTERROGATE ?= $(UV_ENV) $(UV) tool run --python 3.14 --from 'interrogate==$(INT
 # code-style job, which sets up uv; the Rust lint jobs do not.
 .PHONY: interrogate
 interrogate: ## Enforce complete Python docstring coverage
-	@report="$$($(INTERROGATE) $(INTERROGATE_FLAGS) $(INTERROGATE_TARGETS))"; \
+	@owned="$$(git ls-files -- ':(glob)target/**/*.py' ':(glob)**/target/**/*.py' 2>/dev/null)"; \
+	  if [ -n "$$owned" ]; then \
+	    printf '%s\n' "interrogate: tracked Python under a target/ directory is excluded from the gate; move it:" "$$owned" >&2; \
+	    exit 1; \
+	  fi
+	@report="$$($(INTERROGATE) $(INTERROGATE_FLAGS) $(INTERROGATE_EXCLUDES) $(INTERROGATE_TARGETS))"; \
 	  status=$$?; \
 	  printf '%s\n' "$$report"; \
 	  test "$$status" -eq 0 || exit "$$status"; \
