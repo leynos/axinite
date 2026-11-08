@@ -226,17 +226,21 @@ class _DependencyRecorder:
     """Record which injected dependency an argument query asked for."""
 
     def __init__(self) -> None:
+        """Start the recorder with no recorded queries."""
         self.names: list[str] = []
 
     def setting(self, name: str) -> str:
+        """Record and resolve one required-setting query."""
         self.names.append(name)
         return f"/resolved/{name.lower()}"
 
     def proof_arguments(self) -> list[str]:
+        """Record and resolve the Verus proof argument query."""
         self.names.append("proof_arguments")
         return ["--proof-file", "/resolved/proof.rs"]
 
     def kani_installation(self) -> str:
+        """Record and resolve the Kani installation query."""
         self.names.append("kani_installation")
         return "/resolved/kani release"
 
@@ -341,6 +345,7 @@ def test_argument_queries_propagate_a_failed_kani_pin_read() -> None:
     cli = _load_cli()
 
     def unusable_pin() -> str:
+        """Raise the error a pin file without a version produces."""
         raise ValueError("Kani version file /pin is empty")
 
     sources = cli._ArgumentSources(

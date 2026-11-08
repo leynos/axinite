@@ -340,6 +340,13 @@ adoption programme complete.
       frontend-identical inputs and passed on its attempt-2 rerun. The commit
       recording this evidence also adds the exit-status contract and re-ran the
       full local sequence on its exact tree.
+- [x] (2026-11-08) Rebase onto `65afa7ef`, which adds the `interrogate`
+      docstring gate, and satisfy it. The rebased candidate's
+      `tests/workflow_contracts/prover_cli_test.py` now documents
+      `_DependencyRecorder` and its resolvers plus the nested `unusable_pin`
+      helper, so `make interrogate` reports 1,644 of 1,644 definitions covered
+      (100.0%). The hosted `Formatting` job had failed at 99.7% on the five
+      undocumented definitions; nothing else in that job was red.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -395,6 +402,17 @@ prebuilt installers that the original donor pin did not expose. Multi-file
 Verus invocation and closed-pipe exit handling also changed. The newer package,
 rather than old donor recipes, now owns these behaviours; all four milestones
 and V1, V2, and V5 below account for that change.
+
+The hosted `Clippy (all-features)` job on `4f241c37` failed inside the Whitaker
+Dylint suite, not in repository code. The `nightly-2026-05-28` driver panicked
+with `duplicate specification of lint string_continuation_style` because the
+installed lint set loads both `libstring_continuation_style` and
+`libwhitaker_suite` for that toolchain, and the suite now registers the same
+lint. The identical panic appears on unrelated branches (`Code Style` run
+[42444250238](https://github.com/leynos/axinite/actions/runs/42444250238)), and
+the same job passed on this branch the previous day, so the cause is the
+floating Whitaker lint set rather than this diff. It is not repairable from the
+candidate and must be reported as a hosted-tooling blocker.
 
 ## Decision log
 
@@ -502,6 +520,14 @@ and V1, V2, and V5 below account for that change.
   `Developer Documentation` row asked for the ExecPlan's recorded proof
   evidence to name the current candidate, so the Progress entry records the
   `0458c6d1` hosted run and its required repeat.
+
+- (2026-11-08) Rebase onto `main` at `65afa7ef` and document the test helpers
+  the docstring gate reports. `main` added `interrogate` as a `lint`
+  prerequisite, and the hosted `Formatting` job reported five undocumented
+  definitions in `tests/workflow_contracts/prover_cli_test.py`. Documenting
+  them satisfies the new gate without changing behaviour. The rebase also
+  re-ran every local gate against the tree the merge commit will contain,
+  including the new docstring check.
 
 ## Plan of work
 
