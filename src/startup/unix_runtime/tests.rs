@@ -212,25 +212,75 @@ fn test_secrets_store() -> anyhow::Result<Arc<dyn SecretsStore + Send + Sync>> {
     Ok(Arc::new(InMemorySecretsStore::new(crypto)))
 }
 
-#[rstest]
-#[case(false, false, false, false, 0)]
-#[case(true, false, false, false, 0)]
-#[case(false, true, false, false, 0)]
-#[case(false, false, true, false, 0)]
-#[case(false, false, false, true, 1)]
-#[case(true, true, true, true, 1)]
-#[case(true, false, true, true, 1)]
-#[case(true, true, false, true, 1)]
+/// One permutation of the optional dependencies accepted by
+/// [`build_reload_manager_args_from_inputs`], plus the number of secret
+/// updaters that permutation must produce.
+///
+/// Every field defaults to "absent", so a case names only the dependencies it
+/// supplies.
+#[derive(Clone, Copy, Default)]
+struct ReloadArgsCase {
+    settings_store: bool,
+    webhook_server: bool,
+    secrets_store: bool,
+    http_channel_state: bool,
+    expected_updaters: usize,
+}
+
 /// Verify each combination of optional settings, webhook, secrets, and
 /// HTTP channel state is passed through, with only HTTP channel state
 /// adding a secret updater.
+#[rstest]
+#[case(ReloadArgsCase::default())]
+#[case(ReloadArgsCase {
+    settings_store: true,
+    ..ReloadArgsCase::default()
+})]
+#[case(ReloadArgsCase {
+    webhook_server: true,
+    ..ReloadArgsCase::default()
+})]
+#[case(ReloadArgsCase {
+    secrets_store: true,
+    ..ReloadArgsCase::default()
+})]
+#[case(ReloadArgsCase {
+    http_channel_state: true,
+    expected_updaters: 1,
+    ..ReloadArgsCase::default()
+})]
+#[case(ReloadArgsCase {
+    settings_store: true,
+    webhook_server: true,
+    secrets_store: true,
+    http_channel_state: true,
+    expected_updaters: 1,
+})]
+#[case(ReloadArgsCase {
+    settings_store: true,
+    secrets_store: true,
+    http_channel_state: true,
+    expected_updaters: 1,
+    ..ReloadArgsCase::default()
+})]
+#[case(ReloadArgsCase {
+    settings_store: true,
+    webhook_server: true,
+    http_channel_state: true,
+    expected_updaters: 1,
+    ..ReloadArgsCase::default()
+})]
 fn build_reload_manager_args_handles_option_permutations(
-    #[case] has_settings_store: bool,
-    #[case] has_webhook_server: bool,
-    #[case] has_secrets_store: bool,
-    #[case] has_http_channel_state: bool,
-    #[case] expected_updaters: usize,
+    #[case] case: ReloadArgsCase,
 ) -> anyhow::Result<()> {
+    let ReloadArgsCase {
+        settings_store: has_settings_store,
+        webhook_server: has_webhook_server,
+        secrets_store: has_secrets_store,
+        http_channel_state: has_http_channel_state,
+        expected_updaters,
+    } = case;
+
     let settings_store = has_settings_store.then(test_settings_store);
     let webhook_server = has_webhook_server.then(|| {
         Arc::new(tokio::sync::Mutex::new(WebhookServer::new(
