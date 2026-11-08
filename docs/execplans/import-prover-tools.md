@@ -318,6 +318,28 @@ adoption programme complete.
       (attempt 2) passed them again (`Kani Smoke Proof` 03:28:22–03:29:03 UTC,
       `Verus Proofs` 03:28:23–03:29:20 UTC). The hosted `CodeScene Code Health
       Review (main)` and every other check on that commit were green.
+- [x] (2026-11-08) Review repair for the exit-status and ExecPlan-evidence
+      findings at `0458c6d1`. `tests/workflow_contracts/prover_cli_test.py`
+      adds a direct CLI contract whose fake prover exits 23, proving that the
+      CLI returns the child's exact non-zero status rather than a fixed
+      failure; the focused contracts passed (20 passed). Validation on
+      `0458c6d1`: `make check-fmt` (174 files unchanged), `make lint`, `make
+      typecheck`, `make test` (4,444 passed, 12 skipped), `make
+      test-workflow-contracts` (2,008 passed, 11 skipped), `make markdownlint`
+      (zero issues), `make nixie` (all diagrams), `git diff --check` (clean),
+      `make formal-pr` (Kani 0 of 37 failed, one harness verified; Verus 4
+      verified, 0 errors), and `make test-prover-tools` (2 Kani and 6 Verus
+      tests passed). Hosted `Formal Verification` run
+      [42397720842](https://github.com/leynos/axinite/actions/runs/42397720842)
+      passed both proof jobs (`Kani Smoke Proof` 17:43:41–17:44:25 UTC, `Verus
+      Proofs` 17:45:51–17:46:45 UTC), and the required `gh run rerun` repeat
+      (attempt 2) passed them again (`Kani Smoke Proof` 05:24:52–05:25:30 UTC,
+      `Verus Proofs` 05:24:52–05:25:40 UTC). The hosted `CodeScene Code Health
+      Review (main)` and every other check on that commit were green;
+      `Frontend` failed non-deterministically in a UI timing test on proof- and
+      frontend-identical inputs and passed on its attempt-2 rerun. The commit
+      recording this evidence also adds the exit-status contract and re-ran the
+      full local sequence on its exact tree.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -472,6 +494,14 @@ and V1, V2, and V5 below account for that change.
   `PIE807` for `lambda: []`, is applied as `proof_arguments=list`; the
   repository selects no Ruff rules, so this is a readability fix rather than a
   gate failure.
+
+- (2026-11-08) Prove the CLI's normal non-zero status and record current
+  candidate evidence. The hosted `Testing (Overall)` row observed that the only
+  multi-digit status assertions ran through Make, so a direct CLI contract now
+  uses a fake prover that exits 23 and asserts the CLI returns 23. Its
+  `Developer Documentation` row asked for the ExecPlan's recorded proof
+  evidence to name the current candidate, so the Progress entry records the
+  `0458c6d1` hosted run and its required repeat.
 
 ## Plan of work
 

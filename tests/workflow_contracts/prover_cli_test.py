@@ -36,12 +36,19 @@ def _load_cli() -> ModuleType:
     return module
 
 
-def _fake_prover(tmp_path: Path, *, terminate: bool = False) -> Path:
-    """Create an executable that records arguments and may die by signal."""
+def _fake_prover(
+    tmp_path: Path,
+    *,
+    terminate: bool = False,
+    exit_status: int | None = None,
+) -> Path:
+    """Create an executable that records arguments and may fail deliberately."""
     executable = tmp_path / "fake prover"
     termination = (
         "import signal\nsignal.raise_signal(signal.SIGTERM)\n" if terminate else ""
     )
+    if exit_status is not None:
+        termination += f"sys.exit({exit_status})\n"
     executable.write_text(
         f"#!{sys.executable}\n"
         "import json\n"
@@ -151,6 +158,23 @@ def test_unsupported_kani_routing_action_does_not_run_the_prover(
     assert result.returncode == 1
     assert "unknown prover action" in result.stderr
     assert _calls(tmp_path) == []
+
+
+def test_normal_non_zero_exit_status_is_preserved(tmp_path: Path) -> None:
+    """Return a child's exact non-zero status instead of a fixed failure."""
+    prover = _fake_prover(tmp_path, exit_status=23)
+
+    result = _run_cli(
+        tmp_path,
+        "install-z3",
+        environment={
+            "PROVER_TOOLS": shell_quote(str(prover)),
+            "Z3_INSTALL_DIR": "/unused",
+        },
+    )
+
+    assert result.returncode == 23
+    assert len(_calls(tmp_path)) == 1
 
 
 def test_signalled_child_reports_a_shell_style_status(tmp_path: Path) -> None:
