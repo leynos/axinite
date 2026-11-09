@@ -2248,7 +2248,9 @@ returns the wizard's updated snapshot with `.env` merged on top. A key entered
 during a `--no-db` first run therefore survives into configuration resolution
 even though the secrets store is unavailable.
 `phase_load_config_and_tracing_from` loads configuration from the resulting
-snapshot with `Config::from_context` rather than rereading process state.
+snapshot with `Config::from_context` rather than rereading process state, and
+`phase_onboard_and_load_config` composes the two phases so the binary and its
+tests exercise the same hand-off.
 
 `AppBuilder::new_with_context(params, env_context)` accepts that snapshot and
 `build_components_with_context()` returns the updated snapshot alongside the
@@ -3095,9 +3097,12 @@ For the compile-time reduction effort:
 
 ## 28. Hot-reload architecture
 
-The `src/reload/` module provides hot-reload capabilities for configuration,
-HTTP listeners, and secrets without restarting the application. This is
-triggered by the Unix hangup signal (SIGHUP) in production environments.
+The `src/reload/` module provides hot reload for the HTTP webhook settings: it
+restarts or stops the listener when the bind address or `channels.http`
+presence changes, and pushes a rotated `HTTP_WEBHOOK_SECRET` to live channels.
+Other resolved fields, including database-backed settings, are discarded until
+the process restarts. This is triggered by the Unix hangup signal (SIGHUP) in
+production environments.
 
 ### Core traits
 
@@ -3140,8 +3145,11 @@ the default implementations based on available stores.
 The manager starts each reload from the `EnvContext` captured during startup,
 then applies secrets supplied by its injector. It does not reread process
 variables or `.env` files. Restart the process to apply changes to
-environment-backed settings such as `HTTP_HOST` and `HTTP_PORT`; database
-settings and injected secrets follow the reload path.
+environment-backed settings such as `HTTP_HOST` and `HTTP_PORT`. Reload applies
+only the HTTP webhook settings: it restarts or stops the listener when the bind
+address or `channels.http` presence changes, and pushes a rotated
+`HTTP_WEBHOOK_SECRET` to live channels. Other resolved fields, including
+database-backed settings, are discarded until the process restarts.
 
 ### Webhook server lifecycle / listener-based API
 
@@ -3742,17 +3750,33 @@ produced by the previous one.
 
 Caption: Startup phase sequence.
 
-| #   | Function                             | Input                          | Output                          |
-| --- | ------------------------------------ | ------------------------------ | ------------------------------- |
-| 1   | `phase_pid_and_onboard`              | `&Cli`, `&EnvContext`          | `(Option<PidLock>, EnvContext)` |
-| 2   | `phase_load_config_and_tracing_from` | `&Cli`, `&EnvContext`          | `LoadedConfigContext`           |
-| 3   | `phase_build_components`             | `&Cli`, `LoadedConfigContext`  | `BuiltComponentsContext`        |
-| —   | `install_legacy_env_overlay`         | `&BuiltComponentsContext`      | *(fills the legacy overlay)*    |
-| 4   | `phase_tunnel_and_orchestrator`      | `BuiltComponentsContext`       | `AgentRunContext`               |
-| 5   | `phase_init_channels_and_hooks`      | `&Cli`, `AgentRunContext`      | `GatewayPhaseContext`           |
-| 6   | `phase_setup_gateway`                | `&mut GatewayPhaseContext`     | *(mutates in place)*            |
-| 7   | `phase_print_boot_screen`            | `&Cli`, `&GatewayPhaseContext` | *(side effect)*                 |
-| 8   | `phase_run_agent`                    | `GatewayPhaseContext`          | `anyhow::Result<()>`            |
+| #   | Function                             | Input                                           | Output                                   |
+| --- | ------------------------------------ | ----------------------------------------------- | ---------------------------------------- |
+| 1   | `phase_pid_and_onboard`              | `&Cli`, `&EnvContext`                           | `(Option<PidLock>, EnvContext)`          |
+| 2   | `phase_load_config_and_tracing_from` | `&Cli`, `&EnvContext`                           | `LoadedConfigContext`                    |
+| 1–2 | `phase_onboard_and_load_config`      | `&Cli`, `&EnvContext`, `&impl OnboardingRunner` | `(Option<PidLock>, LoadedConfigContext)` |
+| 3   | `phase_build_components`             | `&Cli`, `LoadedConfigContext`                   | `BuiltComponentsContext`                 |
+| —   | `install_legacy_env_overlay`         | `&BuiltComponentsContext`                       | *(fills the legacy overlay)*             |
+| 4   | `phase_tunnel_and_orchestrator`      | `BuiltComponentsContext`                        | `AgentRunContext`                        |
+| 5   | `phase_init_channels_and_hooks`      | `&Cli`, `AgentRunContext`                       | `GatewayPhaseContext`                    |
+| 6   | `phase_setup_gateway`                | `&mut GatewayPhaseContext`                      | *(mutates in place)*                     |
+| 7   | `phase_print_boot_screen`            | `&Cli`, `&GatewayPhaseContext`                  | *(side effect)*                          |
+| 8   | `phase_run_agent`                    | `GatewayPhaseContext`                           | `anyhow::Result<()>`                     |
+
+`async_main()` calls `phase_onboard_and_load_config`, which composes phases 1
+and 2 and hands configuration loading the snapshot that onboarding returned.
+Keeping the composition in one function lets tests drive the same coordinator
+the binary uses, so a regression that loaded configuration from the
+pre-onboarding snapshot fails there instead of surviving untested.
+
+Onboarding itself is abstracted by the `OnboardingRunner` trait. Production uses
+`InteractiveOnboarding`, which runs the setup wizard only when
+`check_onboard_needed` reports outstanding first-run work and otherwise returns
+the original snapshot. Tests substitute an implementation such as
+`ScriptedOnboarding`, which returns a snapshot carrying a provider credential
+without a terminal. Both implementations return the `EnvContext` that startup
+must continue from; that returned snapshot, not the ambient environment, is the
+sole configuration input for the following phase.
 
 Phases 1–4 are infallible or propagate configuration errors early so subsequent
 phases can assume a fully valid environment. Phase 2 loads `settings.json` from

@@ -133,10 +133,11 @@ fn onboarding_input(dir: &std::path::Path, db_path: &std::path::Path) -> EnvCont
         .with_env("LIBSQL_PATH", db_path.display().to_string())
 }
 
-/// The startup phase must continue from the snapshot onboarding produced, and
-/// the configuration loaded next must carry the credential entered during
-/// onboarding. If startup used the snapshot captured before onboarding, the
-/// credential would never reach configuration loading.
+/// The production onboarding-to-configuration coordinator must continue from
+/// the snapshot onboarding produced, and the configuration it loads must carry
+/// the credential entered during onboarding. The coordinator is the same
+/// function the binary entry point calls, so a regression that passed the
+/// pre-onboarding snapshot would fail this test.
 #[tokio::test]
 async fn onboarding_credential_reaches_startup_configuration() -> anyhow::Result<()> {
     use secrecy::ExposeSecret;
@@ -145,16 +146,14 @@ async fn onboarding_credential_reaches_startup_configuration() -> anyhow::Result
     let db_dir = tempfile::tempdir()?;
     let input = onboarding_input(dir.path(), &db_dir.path().join("phase.db"));
 
-    let (_pid_lock, returned) =
-        phase_pid_and_onboard(&cli_no_db(), &input, &ScriptedOnboarding).await?;
+    let (_pid_lock, loaded) =
+        phase_onboard_and_load_config(&cli_no_db(), &input, &ScriptedOnboarding).await?;
 
     assert_eq!(
-        returned.get("NEARAI_API_KEY"),
+        loaded.env_context.get("NEARAI_API_KEY"),
         Some("entered-during-onboarding"),
         "startup must continue from the post-onboarding snapshot"
     );
-
-    let loaded = phase_load_config_and_tracing_from(&cli_no_db(), &returned).await?;
     assert_eq!(
         loaded
             .config

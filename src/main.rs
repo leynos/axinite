@@ -34,13 +34,12 @@ async fn async_main(env_context: axinite::config::EnvContext) -> anyhow::Result<
         return Ok(());
     }
 
-    let (_pid_lock, env_context) = startup::phases::phase_pid_and_onboard(
+    let (_pid_lock, loaded) = startup::phases::phase_onboard_and_load_config(
         &cli,
         &env_context,
         &startup::phases::InteractiveOnboarding,
     )
     .await?;
-    let loaded = startup::phases::phase_load_config_and_tracing_from(&cli, &env_context).await?;
     let built = startup::phases::phase_build_components(&cli, loaded).await?;
     startup::phases::install_legacy_env_overlay(&built);
     let agent_ctx = startup::phases::phase_tunnel_and_orchestrator(built).await;

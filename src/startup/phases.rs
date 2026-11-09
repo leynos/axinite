@@ -103,6 +103,22 @@ pub(crate) async fn phase_pid_and_onboard<O: OnboardingRunner>(
     Ok((pid_lock, env_context))
 }
 
+/// Runs onboarding and then loads configuration from the snapshot it returns.
+///
+/// The binary entry point uses this so the hand-off between the two phases is
+/// exercised by tests: configuration loading must consume the post-onboarding
+/// snapshot, never the one captured before onboarding.
+pub(crate) async fn phase_onboard_and_load_config<O: OnboardingRunner>(
+    cli: &Cli,
+    env_context: &EnvContext,
+    onboarding: &O,
+) -> anyhow::Result<(Option<axinite::bootstrap::PidLock>, LoadedConfigContext)> {
+    let (pid_lock, onboarding_context) =
+        phase_pid_and_onboard(cli, env_context, onboarding).await?;
+    let loaded = phase_load_config_and_tracing_from(cli, &onboarding_context).await?;
+    Ok((pid_lock, loaded))
+}
+
 /// Constructs all application components and runtime side-effects via
 /// [`AppBuilder`].
 pub(crate) async fn phase_build_components(

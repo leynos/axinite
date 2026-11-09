@@ -9,13 +9,6 @@ use super::{ClaudeCodeConfig, EnvContext, INJECTED_VARS};
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
-pub(crate) fn merged_settings_with_toml(
-    base: &Settings,
-    toml_path: Option<&std::path::Path>,
-) -> Result<Settings, ConfigError> {
-    merged_settings_with_toml_or_default(base, toml_path, &Settings::default_toml_path())
-}
-
 /// Merge an optional TOML overlay, using `default_path` when none is explicit.
 ///
 /// An explicit path must exist; a missing default path is silently skipped.

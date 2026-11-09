@@ -163,11 +163,15 @@ A SIGHUP reload starts each cycle from the `EnvContext` captured during
 startup, applies secrets supplied by the reload injector, and then loads
 configuration. It does not reread process environment variables or `.env`
 files. Environment-backed settings therefore keep their startup values until
-the process restarts; database-backed settings and injected secrets follow the
-reload path. `HotReloadManager` owns this sequence, and `EnvConfigLoader` loads
-through the snapshot's `axinite_base_dir()` so the settings directory is as
-injectable as the environment values. This boundary is what lets reload tests
-exercise the full cycle without mutating the test process environment.
+the process restarts. Reload applies only the HTTP webhook settings: it
+restarts or stops the listener when the bind address or `channels.http`
+presence changes, and pushes a rotated `HTTP_WEBHOOK_SECRET` to live channels.
+Other resolved fields, including database-backed settings, are discarded until
+the process restarts. `HotReloadManager` owns this sequence, and
+`EnvConfigLoader` loads through the snapshot's `axinite_base_dir()` so the
+settings directory is as injectable as the environment values. This boundary is
+what lets reload tests exercise the full cycle without mutating the test
+process environment.
 
 ### 3.2 AppBuilder phases
 

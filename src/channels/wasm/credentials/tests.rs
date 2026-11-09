@@ -147,8 +147,8 @@ impl NativeSecretsStore for StubSecretsStore {
     }
 }
 
-#[tokio::test]
 /// Verify that a whitespace-only channel name injects no credentials.
+#[tokio::test]
 async fn blank_channel_name_injects_nothing() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let env = EnvContext::default().with_env("TELEGRAM_BOT_TOKEN", "from-env");
@@ -160,9 +160,9 @@ async fn blank_channel_name_injects_nothing() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
 /// Verify that an environment variable matching a channel-prefixed
 /// placeholder is injected when no persistent secret exists.
+#[tokio::test]
 async fn environment_fallback_injects_prefixed_credential() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let env = EnvContext::default().with_env("TELEGRAM_BOT_TOKEN", "from-env");
@@ -177,8 +177,8 @@ async fn environment_fallback_injects_prefixed_credential() -> anyhow::Result<()
     Ok(())
 }
 
-#[tokio::test]
 /// Verify that a missing environment value leaves the credential uninjected.
+#[tokio::test]
 async fn environment_fallback_skips_missing_credential() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let env = EnvContext::default();
@@ -190,9 +190,9 @@ async fn environment_fallback_skips_missing_credential() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
 /// Verify that an environment variable whose name does not carry the channel
 /// prefix is not injected.
+#[tokio::test]
 async fn environment_fallback_ignores_non_prefixed_placeholder() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "slack_bot_token");
     let env = EnvContext::default().with_env("SLACK_BOT_TOKEN", "from-env");
@@ -204,9 +204,9 @@ async fn environment_fallback_ignores_non_prefixed_placeholder() -> anyhow::Resu
     Ok(())
 }
 
-#[tokio::test]
 /// Verify that a stored secret wins over a matching environment value and is
 /// injected only once.
+#[tokio::test]
 async fn persistent_secret_takes_precedence_over_environment() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let store = in_memory_store();
@@ -254,9 +254,9 @@ async fn secret_list_error_is_reported() {
     assert!(error.to_string().contains("list failed"), "{error}");
 }
 
-#[tokio::test]
 /// Verify that a secret which fails to decrypt is skipped and the environment
 /// value is injected instead.
+#[tokio::test]
 async fn decryption_failure_skips_secret_and_falls_back_to_environment() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let store = StubSecretsStore {
@@ -281,8 +281,8 @@ async fn decryption_failure_skips_secret_and_falls_back_to_environment() -> anyh
     Ok(())
 }
 
-#[tokio::test]
 /// Verify that a channel without an HTTP capability injects no credentials.
+#[tokio::test]
 async fn channel_without_http_capability_injects_nothing() -> anyhow::Result<()> {
     let runtime = Arc::new(
         WasmChannelRuntime::new(WasmChannelRuntimeConfig::for_testing()).expect("test runtime"),
@@ -308,10 +308,10 @@ async fn channel_without_http_capability_injects_nothing() -> anyhow::Result<()>
     Ok(())
 }
 
-#[tokio::test]
-#[tracing_test::traced_test]
 /// Verify that an unrelated stored secret does not mask a declared credential
 /// that no source resolved.
+#[tokio::test]
+#[tracing_test::traced_test]
 async fn unrelated_store_secret_does_not_mask_missing_declared_credential() -> anyhow::Result<()> {
     let channel = test_channel("telegram", "telegram_bot_token");
     let store = in_memory_store();

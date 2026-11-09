@@ -16,21 +16,22 @@ use core_checks::{
 };
 use external_checks::{check_binary, check_docker_daemon, check_service_installed};
 use subsystem_checks::{
-    check_embeddings, check_gateway_config, check_mcp_config, check_routines_config, check_secrets,
-    check_skills,
+    check_embeddings_with_context, check_gateway_config_with_context,
+    check_mcp_config_with_context, check_routines_config_with_context, check_secrets_with_context,
+    check_skills_with_context,
 };
 
 use super::report::{Report, outln};
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
-async fn run_core_checks(
+async fn run_core_checks<W: std::io::Write>(
     env_context: &EnvContext,
     settings: &Settings,
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
-    report: &mut Report,
+    report: &mut Report<W>,
 ) {
     check(
         "Settings file",
@@ -82,16 +83,17 @@ async fn run_core_checks(
     );
 }
 
-async fn run_subsystem_checks(
+async fn run_subsystem_checks<W: std::io::Write>(
+    env_context: &EnvContext,
     settings: &Settings,
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
-    report: &mut Report,
+    report: &mut Report<W>,
 ) {
     check(
         "Embeddings",
-        check_embeddings(settings),
+        check_embeddings_with_context(env_context, settings),
         passed,
         failed,
         skipped,
@@ -99,7 +101,7 @@ async fn run_subsystem_checks(
     );
     check(
         "Routines config",
-        check_routines_config(),
+        check_routines_config_with_context(env_context),
         passed,
         failed,
         skipped,
@@ -107,7 +109,7 @@ async fn run_subsystem_checks(
     );
     check(
         "Gateway config",
-        check_gateway_config(settings),
+        check_gateway_config_with_context(env_context, settings),
         passed,
         failed,
         skipped,
@@ -115,7 +117,7 @@ async fn run_subsystem_checks(
     );
     check(
         "MCP servers",
-        check_mcp_config().await,
+        check_mcp_config_with_context(env_context).await,
         passed,
         failed,
         skipped,
@@ -123,7 +125,7 @@ async fn run_subsystem_checks(
     );
     check(
         "Skills",
-        check_skills().await,
+        check_skills_with_context(env_context).await,
         passed,
         failed,
         skipped,
@@ -131,7 +133,7 @@ async fn run_subsystem_checks(
     );
     check(
         "Secrets",
-        check_secrets(settings),
+        check_secrets_with_context(env_context, settings),
         passed,
         failed,
         skipped,
@@ -147,11 +149,11 @@ async fn run_subsystem_checks(
     );
 }
 
-async fn run_external_binary_checks(
+async fn run_external_binary_checks<W: std::io::Write>(
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
-    report: &mut Report,
+    report: &mut Report<W>,
 ) {
     check(
         "Docker daemon",
@@ -192,8 +194,15 @@ async fn run_external_binary_checks(
 /// Every check and the settings it uses come from `env_context`, so a caller
 /// supplying a divergent `AXINITE_BASE_DIR` inspects that deployment. The
 /// returned text is exactly what [`run_doctor_command`] prints.
+#[cfg(test)]
 pub(crate) async fn doctor_report(env_context: &EnvContext) -> String {
-    let mut report = Report::default();
+    let mut report = Report::new(Vec::new());
+    render_doctor_report(env_context, &mut report).await;
+    report.into_string()
+}
+
+/// Stream the diagnostic report to `report` as each check completes.
+async fn render_doctor_report<W: std::io::Write>(env_context: &EnvContext, report: &mut Report<W>) {
     outln!(report, "Axinite Doctor");
     outln!(report, "===============\n");
 
@@ -209,18 +218,19 @@ pub(crate) async fn doctor_report(env_context: &EnvContext) -> String {
         &mut passed,
         &mut failed,
         &mut skipped,
-        &mut report,
+        report,
     )
     .await;
     run_subsystem_checks(
+        env_context,
         &settings,
         &mut passed,
         &mut failed,
         &mut skipped,
-        &mut report,
+        report,
     )
     .await;
-    run_external_binary_checks(&mut passed, &mut failed, &mut skipped, &mut report).await;
+    run_external_binary_checks(&mut passed, &mut failed, &mut skipped, report).await;
 
     // ── Summary ───────────────────────────────────────────────
 
@@ -236,14 +246,13 @@ pub(crate) async fn doctor_report(env_context: &EnvContext) -> String {
             "\n  Some checks failed. This is normal if you don't use those features."
         );
     }
-
-    report.into_string()
 }
 
 /// Run all diagnostic checks and print results.
 pub async fn run_doctor_command() -> anyhow::Result<()> {
     let env_context = crate::bootstrap::capture_config_env_context();
-    print!("{}", doctor_report(&env_context).await);
+    let mut report = Report::new(std::io::stdout().lock());
+    render_doctor_report(&env_context, &mut report).await;
     Ok(())
 }
 
@@ -263,13 +272,13 @@ pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
 
 // ── Check runner ────────────────────────────────────────────
 
-fn check(
+fn check<W: std::io::Write>(
     name: &str,
     result: CheckResult,
     passed: &mut u32,
     failed: &mut u32,
     skipped: &mut u32,
-    report: &mut Report,
+    report: &mut Report<W>,
 ) {
     match result {
         CheckResult::Pass(detail) => {

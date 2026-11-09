@@ -231,12 +231,22 @@ impl Config {
     }
 
     /// Load from env with an optional TOML config file overlay.
+    ///
+    /// The snapshot is captured before any settings are read so the legacy
+    /// `settings.json` and the default `config.toml` overlay both resolve
+    /// against the same base directory as the rest of the configuration.
+    /// A caller-supplied `toml_path` is used unchanged.
     pub async fn from_env_with_toml(
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let settings = Settings::load()?;
         let ctx = crate::bootstrap::capture_config_env_context();
-        let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;
+        let settings = Settings::load_from(&ctx.axinite_base_dir().join("settings.json"))?;
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged = runtime_support::merged_settings_with_toml_or_default(
+            &settings,
+            toml_path,
+            &default_toml,
+        )?;
         Self::from_context(&ctx, &merged).await
     }
 

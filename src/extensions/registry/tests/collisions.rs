@@ -40,7 +40,7 @@ async fn test_same_name_different_kind_both_discoverable() {
         },
     ];
 
-    let registry = ExtensionRegistry::new_with_catalog(catalog_entries);
+    let registry = ExtensionRegistry::new_with_catalog(catalog_entries, None);
     let all = registry.all_entries().await;
 
     // Both should exist since they have different kinds.
@@ -104,7 +104,7 @@ async fn test_get_returns_first_match_regardless_of_kind() {
         },
     ];
 
-    let registry = ExtensionRegistry::new_with_catalog(catalog_entries);
+    let registry = ExtensionRegistry::new_with_catalog(catalog_entries, None);
 
     // get() is name-only, returns first match.
     let entry = registry.get("myext").await;

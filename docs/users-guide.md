@@ -188,7 +188,9 @@ drives the hot-reload manager directly. A reload:
    database-backed deployment re-reads database settings and the default
    `config.toml` overlay; a snapshot-backed deployment re-reads `settings.json`
    and the same overlay. Both anchor on the base directory selected by the
-   startup snapshot, and edits to those sources take effect on the next reload;
+   startup snapshot. Reload applies only the HTTP webhook subset of that
+   configuration; every other resolved field, including database-backed
+   settings, is discarded until the process restarts;
 3. reconciles the HTTP listener when a listener controller is configured:
    restarts it when its bind address changed, restarts it when it stopped while
    the configured address stayed the same, starts it when `channels.http` is
@@ -209,10 +211,12 @@ other `*_ENV`-style overrides keep their startup values until the process
 restarts. To apply a change to any of those settings, edit the environment of
 the service unit and restart the daemon rather than signalling it.
 
-Settings that live in the database, and secrets delivered by the injector,
-follow the reload path and take effect without a restart. If a reload fails,
-Axinite keeps serving the previous configuration; check the daemon log for the
-reported error before restarting.
+Reload applies only the HTTP webhook settings: it restarts or stops the
+listener when the bind address or `channels.http` presence changes, and pushes
+a rotated `HTTP_WEBHOOK_SECRET` to live channels. Other resolved fields,
+including database-backed settings, are discarded until the process restarts.
+If a reload fails, Axinite keeps serving the previous configuration; check the
+daemon log for the reported error before restarting.
 
 ### Reliability metrics
 
@@ -258,10 +262,11 @@ A reported settings error is fatal rather than silently replaced by defaults,
 so a corrupted file cannot quietly discard a configured database or provider.
 To recover, restore the file from backup, correct the reported syntax or
 permission problem, or remove the file to return to defaults and run
-`axinite onboard` again. The same rules apply to the reload path: a settings
-file that becomes unreadable or malformed fails that reload cycle, Axinite
-keeps serving the previous configuration, and the daemon log names the
-offending path.
+`axinite onboard` again. The same rules apply to a reload in a snapshot-backed
+deployment: a settings file that becomes unreadable or malformed fails that
+reload cycle, Axinite keeps serving the previous configuration, and the daemon
+log names the offending path. A database-backed deployment reloads from the
+settings table and `config.toml` and does not inspect `settings.json`.
 
 The `settings.json` schema is tolerant of unknown keys and of keys omitted by
 older releases; missing fields take their defaults.

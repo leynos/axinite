@@ -1,6 +1,10 @@
 //! Unit tests for doctor diagnostic checks and result formatting.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use super::CheckResult;
+use super::check;
 use super::core_checks::{
     check_database_with_context, check_llm_config_with_context, check_settings_file,
     check_workspace_search_with_context,
@@ -9,10 +13,33 @@ use super::doctor_report;
 use super::external_checks::check_binary;
 use super::settings_for_context;
 use super::subsystem_checks::{
-    check_embeddings_with_context, check_routines_config_with_context, check_secrets,
+    check_embeddings_with_context, check_mcp_config_with_context,
+    check_routines_config_with_context, check_secrets_with_context,
 };
+use crate::cli::report::Report;
 use crate::config::EnvContext;
 use crate::settings::Settings;
+
+/// Writer that exposes everything written so far without waiting for a flush.
+#[derive(Clone, Default)]
+struct SharedBuffer(Rc<RefCell<Vec<u8>>>);
+
+impl SharedBuffer {
+    fn contents(&self) -> String {
+        String::from_utf8_lossy(&self.0.borrow()).into_owned()
+    }
+}
+
+impl std::io::Write for SharedBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.borrow_mut().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// Verify that the database and workspace-search checks report the auto-detected libSQL backend.
 #[tokio::test]
@@ -134,7 +161,8 @@ fn check_binary_skips_nonexistent() {
 #[test]
 fn check_secrets_none_returns_skip() {
     let settings = Settings::default();
-    match check_secrets(&settings) {
+    let ctx = EnvContext::default();
+    match check_secrets_with_context(&ctx, &settings) {
         CheckResult::Skip(msg) => {
             assert!(
                 msg.contains("not configured"),
@@ -209,29 +237,122 @@ fn check_routines_enabled_by_default() {
     }
 }
 
-/// Verify that the secrets check fails when an environment-backed key names an unset variable.
+/// Verify that the secrets check fails when the supplied snapshot lacks an
+/// environment-backed master key, even if the ambient process has one.
 #[test]
 fn check_secrets_env_without_var_returns_fail() {
     let settings = Settings {
         secrets_master_key_source: crate::settings::KeySource::Env,
         ..Default::default()
     };
-    match check_secrets(&settings) {
+    let ctx = EnvContext::for_testing(Default::default(), Default::default());
+    match check_secrets_with_context(&ctx, &settings) {
         CheckResult::Fail(msg) => {
             assert!(
                 msg.contains("SECRETS_MASTER_KEY not set"),
                 "expected mention of missing env var, got: {msg}"
             );
         }
-        CheckResult::Pass(_) => {
-            // If SECRETS_MASTER_KEY happens to be set in the environment,
-            // Pass is correct — don't fail the test.
-        }
         other => panic!(
-            "expected Fail or Pass for env key source, got: {}",
+            "expected Fail for env key source without the variable, got: {}",
             format_result(&other)
         ),
     }
+}
+
+/// The secrets check must read the master key from the supplied snapshot.
+///
+/// A key present only in the snapshot proves the check no longer reads the
+/// ambient process environment.
+#[test]
+fn check_secrets_env_with_snapshot_var_returns_pass() {
+    let settings = Settings {
+        secrets_master_key_source: crate::settings::KeySource::Env,
+        ..Default::default()
+    };
+    let ctx = EnvContext::default().with_env("SECRETS_MASTER_KEY", "from-snapshot");
+    match check_secrets_with_context(&ctx, &settings) {
+        CheckResult::Pass(msg) => {
+            assert!(
+                msg.contains("env var (set)"),
+                "expected env-sourced pass, got: {msg}"
+            );
+        }
+        other => panic!(
+            "expected Pass for a snapshot-backed key, got: {}",
+            format_result(&other)
+        ),
+    }
+}
+
+/// The MCP check must load the configuration from the snapshot's base
+/// directory rather than the ambient deployment.
+///
+/// The snapshot points at a temporary directory whose config file is invalid,
+/// so observing a failure proves the check read that file.
+#[tokio::test]
+async fn check_mcp_config_reads_the_snapshot_base_directory() {
+    let dir = tempfile::tempdir().expect("create temp dir for MCP config");
+    ambient_fs::write(
+        dir.path().join("mcp-servers.json"),
+        r#"{"servers":[{"name":"","url":"https://example.com"}]}"#,
+    )
+    .expect("write invalid mcp-servers.json");
+    let ctx = EnvContext::default().with_env(
+        "AXINITE_BASE_DIR",
+        dir.path().to_str().expect("UTF-8 temp path"),
+    );
+
+    match check_mcp_config_with_context(&ctx).await {
+        CheckResult::Fail(msg) => assert!(
+            msg.contains("invalid"),
+            "expected an invalid-server failure, got: {msg}"
+        ),
+        other => panic!(
+            "expected Fail for the snapshot's invalid MCP config, got: {}",
+            format_result(&other)
+        ),
+    }
+}
+
+/// Diagnostics must reach the writer as each check completes, not after the
+/// whole report is assembled.
+#[test]
+fn diagnostics_stream_before_later_checks_run() {
+    let buffer = SharedBuffer::default();
+    let observed = buffer.clone();
+    let mut report = Report::new(buffer);
+    let mut passed = 0u32;
+    let mut failed = 0u32;
+    let mut skipped = 0u32;
+
+    check(
+        "First",
+        CheckResult::Pass("ok".into()),
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+        &mut report,
+    );
+    assert!(
+        observed.contents().contains("[pass] First: ok"),
+        "the first diagnostic must be visible before the next check runs; saw: {}",
+        observed.contents()
+    );
+
+    check(
+        "Second",
+        CheckResult::Skip("n/a".into()),
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+        &mut report,
+    );
+    let text = observed.contents();
+    assert!(
+        text.contains("[pass] First: ok") && text.contains("[skip] Second: n/a"),
+        "both diagnostics must be present once their checks complete; saw:\n{text}"
+    );
 }
 
 fn format_result(r: &CheckResult) -> String {

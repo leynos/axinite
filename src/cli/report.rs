@@ -1,30 +1,43 @@
 //! Line-oriented report builder shared by the read-only CLI commands.
 //!
-//! Commands accumulate their output into a [`Report`] so tests can assert on
-//! the exact text a command renders from a supplied environment snapshot.
+//! Commands stream their output through a [`Report`] so an operator sees each
+//! diagnostic as soon as it is produced rather than after every probe finishes.
+//! Tests render into an in-memory buffer and assert on the exact text a command
+//! produces from a supplied environment snapshot.
 
-/// Accumulates command output before it is printed.
-#[derive(Debug, Default)]
-pub(crate) struct Report {
-    text: String,
+/// Streams command output to an injected writer.
+///
+/// Every line is flushed immediately, so a slow later check cannot hold back a
+/// diagnostic that has already been produced.
+#[derive(Debug)]
+pub(crate) struct Report<W> {
+    writer: W,
 }
 
-impl Report {
+impl<W: std::io::Write> Report<W> {
+    /// Wrap `writer` in a report that flushes after every write.
+    pub(crate) fn new(writer: W) -> Self {
+        Self { writer }
+    }
+
     /// Append formatted text without a trailing newline.
     pub(crate) fn part(&mut self, args: std::fmt::Arguments<'_>) {
-        use std::fmt::Write as _;
-        let _ = write!(self.text, "{args}");
+        let _ = write!(self.writer, "{args}");
+        let _ = self.writer.flush();
     }
 
     /// Append a formatted line.
     pub(crate) fn line(&mut self, args: std::fmt::Arguments<'_>) {
-        use std::fmt::Write as _;
-        let _ = writeln!(self.text, "{args}");
+        let _ = writeln!(self.writer, "{args}");
+        let _ = self.writer.flush();
     }
+}
 
-    /// Consume the report and return its accumulated text.
+impl Report<Vec<u8>> {
+    /// Consume a byte-backed report and return the rendered text.
+    #[cfg(test)]
     pub(crate) fn into_string(self) -> String {
-        self.text
+        String::from_utf8_lossy(&self.writer).into_owned()
     }
 }
 

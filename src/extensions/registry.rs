@@ -17,19 +17,28 @@ pub struct ExtensionRegistry {
 
 impl ExtensionRegistry {
     /// Create a new registry populated with known extensions.
+    ///
+    /// No channel-relay entry is seeded. Callers that have the startup
+    /// snapshot's relay configuration must use [`Self::new_with_catalog`]
+    /// instead, so the relay entry reflects the snapshot rather than the
+    /// process environment.
     pub fn new() -> Self {
-        Self {
-            entries: builtin_entries(),
-            discovery_cache: RwLock::new(Vec::new()),
-        }
+        Self::new_with_catalog(Vec::new(), None)
     }
 
     /// Create a new registry merging builtin entries with catalogue-provided entries.
     ///
+    /// `relay_url` is the relay URL captured in the startup environment
+    /// snapshot. `Some` seeds a channel-relay entry carrying that URL; `None`
+    /// seeds no channel-relay entry at all, regardless of ambient configuration.
+    ///
     /// Deduplicates by `(name, kind)` pair -- a builtin MCP "slack" and a registry
     /// WASM "slack" can coexist since they're different kinds.
-    pub fn new_with_catalog(catalog_entries: Vec<RegistryEntry>) -> Self {
-        let mut entries = builtin_entries();
+    pub fn new_with_catalog(
+        catalog_entries: Vec<RegistryEntry>,
+        relay_url: Option<String>,
+    ) -> Self {
+        let mut entries = builtin_entries_with_relay(relay_url);
         for entry in catalog_entries {
             if !entries
                 .iter()
@@ -229,7 +238,7 @@ fn score_entry(entry: &RegistryEntry, tokens: &[String]) -> u32 {
 
 mod builtin;
 
-pub use builtin::{builtin_entries, builtin_entries_with_relay};
+pub use builtin::builtin_entries_with_relay;
 
 #[cfg(test)]
 mod tests;
