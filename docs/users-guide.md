@@ -240,8 +240,9 @@ Every outcome is also emitted through `tracing` with an `outcome` field:
 successful outcomes at `debug`, and every other outcome at `info`, so failures
 stay visible at the default log level without the `metrics` feature and without
 a recorder. A partial-resolution warning additionally names the channel and its
-declared and resolved credential counts. No log field carries a secret name or
-value.
+declared and resolved credential counts. Other log lines name a credential's
+declared name, its channel or target environment variable, and the placeholder
+it was injected as; no log line carries a secret value or decrypted material.
 
 ## Settings file
 

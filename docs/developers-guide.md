@@ -3752,7 +3752,7 @@ Caption: Startup phase sequence.
 
 | #   | Function                             | Input                                           | Output                                   |
 | --- | ------------------------------------ | ----------------------------------------------- | ---------------------------------------- |
-| 1   | `phase_pid_and_onboard`              | `&Cli`, `&EnvContext`                           | `(Option<PidLock>, EnvContext)`          |
+| 1   | `phase_pid_and_onboard`              | `&Cli`, `&EnvContext`, `&impl OnboardingRunner` | `(Option<PidLock>, EnvContext)`          |
 | 2   | `phase_load_config_and_tracing_from` | `&Cli`, `&EnvContext`                           | `LoadedConfigContext`                    |
 | 1–2 | `phase_onboard_and_load_config`      | `&Cli`, `&EnvContext`, `&impl OnboardingRunner` | `(Option<PidLock>, LoadedConfigContext)` |
 | 3   | `phase_build_components`             | `&Cli`, `LoadedConfigContext`                   | `BuiltComponentsContext`                 |
