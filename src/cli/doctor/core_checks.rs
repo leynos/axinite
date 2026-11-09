@@ -37,10 +37,18 @@ pub(super) fn check_settings_file(ctx: &EnvContext) -> CheckResult {
 
 // ── NEAR AI session ─────────────────────────────────────────
 
+/// The NEAR AI session file under the snapshot's base directory.
+///
+/// Both the dedicated session check and the embeddings credential check use
+/// this path, so they cannot disagree about which deployment they inspect.
+pub(super) fn session_path(ctx: &EnvContext) -> PathBuf {
+    ctx.axinite_base_dir().join("session.json")
+}
+
 /// Check the NEAR AI session file in the configured base directory, passing
 /// when an API key is set but no session file exists.
 pub(super) async fn check_nearai_session(ctx: &EnvContext) -> CheckResult {
-    let session_path = ctx.axinite_base_dir().join("session.json");
+    let session_path = session_path(ctx);
     if !session_path.exists() {
         return missing_session_result(ctx, &session_path);
     }

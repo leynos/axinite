@@ -5,6 +5,8 @@
 //! pass/fail with actionable guidance on failures.
 
 mod core_checks;
+#[cfg(test)]
+mod env_tests;
 mod external_checks;
 mod subsystem_checks;
 #[cfg(test)]
@@ -28,57 +30,33 @@ use crate::settings::Settings;
 async fn run_core_checks<W: std::io::Write>(
     env_context: &EnvContext,
     settings: &Settings,
-    passed: &mut u32,
-    failed: &mut u32,
-    skipped: &mut u32,
+    counters: &mut CheckCounters,
     report: &mut Report<W>,
 ) {
-    check(
-        "Settings file",
-        check_settings_file(env_context),
-        passed,
-        failed,
-        skipped,
-        report,
-    );
-    check(
+    counters.record("Settings file", check_settings_file(env_context), report);
+    counters.record(
         "NEAR AI session",
         check_nearai_session(env_context).await,
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "LLM configuration",
         check_llm_config_with_context(env_context, settings),
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "Database backend",
         check_database_with_context(env_context).await,
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "Workspace search",
         check_workspace_search_with_context(env_context).await,
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "Workspace directory",
         check_workspace_dir(env_context),
-        passed,
-        failed,
-        skipped,
         report,
     );
 }
@@ -86,114 +64,63 @@ async fn run_core_checks<W: std::io::Write>(
 async fn run_subsystem_checks<W: std::io::Write>(
     env_context: &EnvContext,
     settings: &Settings,
-    passed: &mut u32,
-    failed: &mut u32,
-    skipped: &mut u32,
+    counters: &mut CheckCounters,
     report: &mut Report<W>,
 ) {
-    check(
+    counters.record(
         "Embeddings",
         check_embeddings_with_context(env_context, settings),
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "Routines config",
         check_routines_config_with_context(env_context),
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "Gateway config",
         check_gateway_config_with_context(env_context, settings),
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "MCP servers",
         check_mcp_config_with_context(env_context).await,
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "Skills",
         check_skills_with_context(env_context).await,
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
+    counters.record(
         "Secrets",
         check_secrets_with_context(env_context, settings),
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
-        "Service",
-        check_service_installed(),
-        passed,
-        failed,
-        skipped,
-        report,
-    );
+    counters.record("Service", check_service_installed(), report);
 }
 
 async fn run_external_binary_checks<W: std::io::Write>(
-    passed: &mut u32,
-    failed: &mut u32,
-    skipped: &mut u32,
+    counters: &mut CheckCounters,
     report: &mut Report<W>,
 ) {
-    check(
-        "Docker daemon",
-        check_docker_daemon().await,
-        passed,
-        failed,
-        skipped,
-        report,
-    );
-    check(
+    counters.record("Docker daemon", check_docker_daemon().await, report);
+    counters.record(
         "cloudflared",
         check_binary("cloudflared", &["--version"]),
-        passed,
-        failed,
-        skipped,
         report,
     );
-    check(
-        "ngrok",
-        check_binary("ngrok", &["version"]),
-        passed,
-        failed,
-        skipped,
-        report,
-    );
-    check(
-        "tailscale",
-        check_binary("tailscale", &["version"]),
-        passed,
-        failed,
-        skipped,
-        report,
-    );
+    counters.record("ngrok", check_binary("ngrok", &["version"]), report);
+    counters.record("tailscale", check_binary("tailscale", &["version"]), report);
 }
 
 /// Render the diagnostic report for the supplied environment snapshot.
 ///
-/// Every check and the settings it uses come from `env_context`, so a caller
-/// supplying a divergent `AXINITE_BASE_DIR` inspects that deployment. The
-/// returned text is exactly what [`run_doctor_command`] prints.
+/// Configuration and credential checks resolve their settings and paths from
+/// `env_context`, so a caller supplying a divergent `AXINITE_BASE_DIR`
+/// inspects that deployment. Service registration and external binaries are
+/// host facts and are probed from the running host. The returned text is
+/// exactly what [`run_doctor_command`] prints.
 #[cfg(test)]
 pub(crate) async fn doctor_report(env_context: &EnvContext) -> String {
     let mut report = Report::new(Vec::new());
@@ -206,41 +133,26 @@ async fn render_doctor_report<W: std::io::Write>(env_context: &EnvContext, repor
     outln!(report, "Axinite Doctor");
     outln!(report, "===============\n");
 
-    let mut passed = 0u32;
-    let mut failed = 0u32;
-    let mut skipped = 0u32;
+    let mut counters = CheckCounters::default();
 
     let settings = settings_for_context(env_context);
 
-    run_core_checks(
-        env_context,
-        &settings,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-        report,
-    )
-    .await;
-    run_subsystem_checks(
-        env_context,
-        &settings,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-        report,
-    )
-    .await;
-    run_external_binary_checks(&mut passed, &mut failed, &mut skipped, report).await;
+    run_core_checks(env_context, &settings, &mut counters, report).await;
+    run_subsystem_checks(env_context, &settings, &mut counters, report).await;
+    run_external_binary_checks(&mut counters, report).await;
 
     // ── Summary ───────────────────────────────────────────────
 
     outln!(report, "");
     outln!(
         report,
-        "  {passed} passed, {failed} failed, {skipped} skipped"
+        "  {} passed, {} failed, {} skipped",
+        counters.passed,
+        counters.failed,
+        counters.skipped
     );
 
-    if failed > 0 {
+    if counters.failed > 0 {
         outln!(
             report,
             "\n  Some checks failed. This is normal if you don't use those features."
@@ -272,26 +184,36 @@ pub(crate) fn settings_for_context(env_context: &EnvContext) -> Settings {
 
 // ── Check runner ────────────────────────────────────────────
 
-fn check<W: std::io::Write>(
-    name: &str,
-    result: CheckResult,
-    passed: &mut u32,
-    failed: &mut u32,
-    skipped: &mut u32,
-    report: &mut Report<W>,
-) {
-    match result {
-        CheckResult::Pass(detail) => {
-            *passed += 1;
-            outln!(report, "  [pass] {name}: {detail}");
-        }
-        CheckResult::Fail(detail) => {
-            *failed += 1;
-            outln!(report, "  [FAIL] {name}: {detail}");
-        }
-        CheckResult::Skip(reason) => {
-            *skipped += 1;
-            outln!(report, "  [skip] {name}: {reason}");
+/// Running totals for one diagnostic report, plus the reporting helper that
+/// keeps each check's outcome and the counters in step.
+#[derive(Debug, Default)]
+struct CheckCounters {
+    passed: u32,
+    failed: u32,
+    skipped: u32,
+}
+
+impl CheckCounters {
+    /// Record one check's outcome and stream its line to `report`.
+    fn record<W: std::io::Write>(
+        &mut self,
+        name: &str,
+        result: CheckResult,
+        report: &mut Report<W>,
+    ) {
+        match result {
+            CheckResult::Pass(detail) => {
+                self.passed += 1;
+                outln!(report, "  [pass] {name}: {detail}");
+            }
+            CheckResult::Fail(detail) => {
+                self.failed += 1;
+                outln!(report, "  [FAIL] {name}: {detail}");
+            }
+            CheckResult::Skip(reason) => {
+                self.skipped += 1;
+                outln!(report, "  [skip] {name}: {reason}");
+            }
         }
     }
 }

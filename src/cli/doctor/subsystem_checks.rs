@@ -18,7 +18,7 @@ pub(super) fn check_embeddings_with_context(ctx: &EnvContext, settings: &Setting
     if !config.enabled {
         return CheckResult::Skip("disabled (set EMBEDDING_ENABLED=true)".into());
     }
-    if embeddings_credentials_present(&config) {
+    if embeddings_credentials_present(&config, ctx) {
         CheckResult::Pass(format!(
             "provider={}, model={}",
             config.provider, config.model
@@ -36,22 +36,29 @@ pub(super) fn check_embeddings_with_context(ctx: &EnvContext, settings: &Setting
 }
 
 /// Whether credentials for the configured embeddings provider are present.
-fn embeddings_credentials_present(config: &crate::config::EmbeddingsConfig) -> bool {
+///
+/// The NEAR AI session is read from the snapshot's base directory, so a
+/// snapshot selecting a different deployment reports that deployment's
+/// credentials rather than the ambient one's.
+fn embeddings_credentials_present(
+    config: &crate::config::EmbeddingsConfig,
+    ctx: &EnvContext,
+) -> bool {
     match config.provider.as_str() {
         "openai" => config.openai_api_key().is_some(),
-        "nearai" => nearai_session_present(),
+        "nearai" => nearai_session_present(ctx),
         "ollama" => true, // local, no creds needed
         _ => config.openai_api_key().is_some(),
     }
 }
 
-/// Whether a non-empty NEAR AI session file exists.
+/// Whether a non-empty NEAR AI session file exists in the snapshot.
 ///
 /// NearAiEmbeddings uses SessionManager::get_token() which only returns
 /// session tokens, NOT NEARAI_API_KEY
 /// (src/workspace/embeddings.rs:309, src/llm/session.rs:132).
-fn nearai_session_present() -> bool {
-    let session_path = crate::config::llm::default_session_path();
+fn nearai_session_present(ctx: &EnvContext) -> bool {
+    let session_path = super::core_checks::session_path(ctx);
     session_path.exists()
         && ambient_fs::read_to_string(&session_path)
             .map(|s| !s.trim().is_empty())

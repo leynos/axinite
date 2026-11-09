@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use super::CheckCounters;
 use super::CheckResult;
-use super::check;
 use super::core_checks::{
     check_database_with_context, check_llm_config_with_context, check_settings_file,
     check_workspace_search_with_context,
@@ -322,36 +322,25 @@ fn diagnostics_stream_before_later_checks_run() {
     let buffer = SharedBuffer::default();
     let observed = buffer.clone();
     let mut report = Report::new(buffer);
-    let mut passed = 0u32;
-    let mut failed = 0u32;
-    let mut skipped = 0u32;
+    let mut counters = CheckCounters::default();
 
-    check(
-        "First",
-        CheckResult::Pass("ok".into()),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-        &mut report,
-    );
+    counters.record("First", CheckResult::Pass("ok".into()), &mut report);
     assert!(
         observed.contents().contains("[pass] First: ok"),
         "the first diagnostic must be visible before the next check runs; saw: {}",
         observed.contents()
     );
 
-    check(
-        "Second",
-        CheckResult::Skip("n/a".into()),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-        &mut report,
-    );
+    counters.record("Second", CheckResult::Skip("n/a".into()), &mut report);
     let text = observed.contents();
     assert!(
         text.contains("[pass] First: ok") && text.contains("[skip] Second: n/a"),
         "both diagnostics must be present once their checks complete; saw:\n{text}"
+    );
+    assert_eq!(
+        (counters.passed, counters.failed, counters.skipped),
+        (1, 0, 1),
+        "each recorded outcome must update its own counter"
     );
 }
 
