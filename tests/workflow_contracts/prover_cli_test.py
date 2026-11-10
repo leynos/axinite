@@ -308,6 +308,16 @@ def test_verus_proof_query_inserts_the_default_proof_file() -> None:
     ) == ["--proof-file", "/proofs/main.rs", "--verify-root", "/proofs/root.rs"]
 
 
+def test_verus_proof_query_passes_a_padded_path_through_unchanged() -> None:
+    """Keep a configured path's own whitespace instead of trimming it."""
+    cli = _load_cli()
+
+    assert cli._proof_arguments({"VERUS_PROOF_FILE": " /proofs/main.rs "}) == [
+        "--proof-file",
+        " /proofs/main.rs ",
+    ]
+
+
 def test_verus_proof_query_keeps_an_explicit_proof_selection() -> None:
     """Do not add the default proof file when the flags select one."""
     cli = _load_cli()
@@ -376,7 +386,7 @@ def test_argument_queries_propagate_malformed_verus_flags() -> None:
         cli._arguments("verus", sources)
 
 
-@pytest.mark.parametrize("pin_contents", ("", " \n\t"))
+@pytest.mark.parametrize("pin_contents", ["", " \n\t"])
 def test_empty_kani_pin_fails_before_the_proof_starts(
     tmp_path: Path,
     pin_contents: str,

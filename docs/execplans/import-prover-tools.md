@@ -318,12 +318,13 @@ adoption programme complete.
       (attempt 2) passed them again (`Kani Smoke Proof` 03:28:22–03:29:03 UTC,
       `Verus Proofs` 03:28:23–03:29:20 UTC). The hosted `CodeScene Code Health
       Review (main)` and every other check on that commit were green.
-- [x] (2026-11-08) Review repair for the exit-status and ExecPlan-evidence
-      findings at `0458c6d1`. `tests/workflow_contracts/prover_cli_test.py`
-      adds a direct CLI contract whose fake prover exits 23, proving that the
-      CLI returns the child's exact non-zero status rather than a fixed
-      failure; the focused contracts passed (20 passed). Validation on
-      `0458c6d1`: `make check-fmt` (174 files unchanged), `make lint`, `make
+- [x] (2026-11-08) Review repair at `4f241c37` for the exit-status and
+      ExecPlan-evidence findings raised against `0458c6d1`.
+      `tests/workflow_contracts/prover_cli_test.py` adds a direct CLI contract
+      whose fake prover exits 23, proving that the CLI returns the child's
+      exact non-zero status rather than a fixed failure; the focused contracts
+      passed (20 passed). The `0458c6d1` candidate's validation covered `make
+      check-fmt` (174 files unchanged), `make lint`, `make
       typecheck`, `make test` (4,444 passed, 12 skipped), `make
       test-workflow-contracts` (2,008 passed, 11 skipped), `make markdownlint`
       (zero issues), `make nixie` (all diagrams), `git diff --check` (clean),
@@ -347,6 +348,31 @@ adoption programme complete.
       helper, so `make interrogate` reports 1,644 of 1,644 definitions covered
       (100.0%). The hosted `Formatting` job had failed at 99.7% on the five
       undocumented definitions; nothing else in that job was red.
+- [x] (2026-11-08) Validate the rebased candidate `0e9ed925` locally and in
+      hosted CI. The full sequence passed on its exact tree: `make check-fmt`
+      (172 files unchanged), `make lint` (including `make interrogate` at
+      1,644 of 1,644 definitions), `make typecheck`, `make test` (4,444 passed,
+      12 skipped), `make test-workflow-contracts` (2,009 passed, 11 skipped),
+      `make markdownlint` (zero issues), `make nixie` (173 files),
+      `git diff --check` (clean), `make formal-pr` (Kani 0 of 37 failed, one
+      harness verified; Verus 4 verified, 0 errors), and `make
+      test-prover-tools` (2 Kani and 6 Verus tests passed). Hosted `Formal
+      Verification` run
+      [42456855548](https://github.com/leynos/axinite/actions/runs/42456855548)
+      passed `Kani Smoke Proof` (06:58:19–06:58:59 UTC) and `Verus Proofs`
+      (06:58:18–06:59:06 UTC), and the required `gh run rerun` repeat
+      (attempt 2) passed them again (07:12:32–07:13:12 and 07:12:31–07:13:16
+      UTC). `Run Tests`, `Frontend`, `Coverage Ratchet`, `Release package
+      validation`, `Regression Test Check`, and the PR classification checks
+      were green, as was `Formatting` inside `Code Style`
+      ([42456855601](https://github.com/leynos/axinite/actions/runs/42456855601)).
+      The only red job is `Clippy (all-features)` in that run, which fails
+      before compiling repository code because the pinned Whitaker installer
+      loads `libstring_continuation_style` and `libwhitaker_suite` together;
+      [leynos/whitaker#565](https://github.com/leynos/whitaker/issues/565)
+      tracks the upstream cause. Because `main` is not branch-protected, this
+      externally caused job is recorded rather than treated as candidate
+      validation.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -529,6 +555,17 @@ candidate and must be reported as a hosted-tooling blocker.
   re-ran every local gate against the tree the merge commit will contain,
   including the new docstring check.
 
+- (2026-11-08) Record the rebased candidate's validation and settle the
+  `VERUS_PROOF_FILE` pass-through question. CodeRabbit's review of `0e9ed925`
+  asked the plan to attribute the status-23 contract to `4f241c37`, to record
+  validation for the current candidate rather than the earlier one, and to
+  export `CARGO_INCREMENTAL=0` in the reproduction block. The Progress entries
+  now do all three. Its trivial findings removed a redundant `shutil.copyfile`
+  that was immediately overwritten and switched a `parametrize` tuple to a
+  list. The remaining nitpick proposed trimming `VERUS_PROOF_FILE`; a path may
+  legitimately end in a space, so the documented pass-through is kept and a new
+  contract test pins it.
+
 ## Plan of work
 
 ### M1 — Pin and demonstrate compatibility
@@ -616,6 +653,7 @@ and does not delete it.
 
 ```bash
 set -euo pipefail
+export CARGO_INCREMENTAL=0
 : "${RUSTC_WRAPPER:?managed compiler wrapper required}"
 : "${RUSTDOC:?managed rustdoc wrapper required}"
 test "$RUSTC_WRAPPER" = "$(command -v build-limits-rustc)"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shlex
-import shutil
 import sys
 from pathlib import Path
 
@@ -70,7 +69,6 @@ def test_verus_rejects_a_false_union_membership_claim(tmp_path: Path) -> None:
     original = "left.intersect(right).contains(value)"
     assert contents.count(original) == 5
     mutated = contents.replace(original, "left.union(right).contains(value)", 1)
-    shutil.copyfile(VERUS_PROOF, mutant)
     mutant.write_text(mutated, encoding="utf-8")
 
     result = _run_make(
