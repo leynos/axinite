@@ -218,6 +218,18 @@ including database-backed settings, are discarded until the process restarts.
 If a reload fails, Axinite keeps serving the previous configuration; check the
 daemon log for the reported error before restarting.
 
+Library embedders that assemble these runtime components themselves must pass
+the same snapshot rather than letting each component capture the process
+environment. `GatewayChannel::new_from_context(config, env_context)` resolves
+the gateway's feature-flag overlay from the snapshot, and
+`RestartTool::from_context(env)` supplies the `AXINITE_IN_DOCKER` and
+`AXINITE_DISABLE_RESTART` values the restart tool uses.
+`ExtensionRegistry::new_with_catalog(catalog_entries, relay_url)` and
+`builtin_entries_with_relay(relay_url)` take the snapshot's relay URL the same
+way. The
+[0.19.0 migration notes](../migrations/0.19.0.md#configuration-environment-snapshots)
+list the full set of context-aware entry points.
+
 ### Reliability metrics
 
 Building with the optional `metrics` feature emits counters for startup

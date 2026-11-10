@@ -187,7 +187,7 @@ different responsibilities and should be understood separately.
 The SIGHUP path in `src/startup/unix_runtime.rs` and `src/reload/` owns:
 
 - loading updated configuration;
-- injecting secrets into the config overlay;
+- injecting secrets into the reload cycle's `EnvContext` snapshot;
 - deciding whether the bind address changed;
 - deciding whether a restart is needed; and
 - updating channel secrets after a successful reload.

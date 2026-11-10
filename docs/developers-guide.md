@@ -2492,6 +2492,21 @@ surfaces failures without the `metrics` feature. Config-load and reload cycles
 run inside fieldless spans (`startup.config_load` and `reload.cycle`,
 respectively) that carry no sensitive fields.
 
+Tests assert these counters through `src/testing/metrics.rs`, which is compiled
+only with the `metrics` feature, so both the test and its assertions are gated
+on that feature. `record()` installs an in-process recorder once per process
+and returns a `RecordingGuard`. While the guard is alive, counters incremented
+on that thread are captured and increments from other threads are ignored,
+which isolates a test from unrelated telemetry call sites reached by other
+tests in the same process. The guard is exclusive: a second `record()` blocks
+until the first guard is dropped, and acquiring a guard clears the captured
+counters. `counter(name, outcome)` returns the value recorded since the guard
+was acquired, or `0` when the counter was not emitted. The capture is
+thread-scoped, so a test that moves the production path onto a multi-thread
+runtime must acquire the guard on the thread that performs the work; the
+repository's `#[tokio::test]` tests use the current-thread runtime and satisfy
+that requirement by default.
+
 ### In-process repair claim tracking
 
 `RepairClaims` (in `src/agent/self_repair/repair_claim.rs`) maintains a
