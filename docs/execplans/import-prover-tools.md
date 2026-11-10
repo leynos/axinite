@@ -373,6 +373,32 @@ adoption programme complete.
       tracks the upstream cause. Because `main` is not branch-protected, this
       externally caused job is recorded rather than treated as candidate
       validation.
+- [x] (2026-11-10) Rebase onto `d88f7b5a`, which adds the `interrogate`
+      generated-`target/` excludes and the tracked-Python-under-`target/` check,
+      and then onto `2609af28`, whose PR #740 resolves RUSTSEC-2026-0459 by
+      pinning `libsqlite3-sys` 0.39.1. The earlier candidate `5a1dc58d` failed
+      `Run Tests` only because `Dependency Audit` inherited that advisory from
+      `main`'s lockfile. The rebased candidate `0996f555` supersedes `0e9ed925`
+      for merge purposes. The full sequence passed on its exact tree: `make
+      check-fmt` (172 files unchanged), `make lint` (including `make
+      interrogate` at 1,645 of 1,645 definitions, 100.0%), `make typecheck`,
+      `make test` (4,444 passed, 12 skipped), `make test-workflow-contracts`
+      (2,010 passed, 11 skipped), `make markdownlint` (zero issues), `make
+      nixie` (all diagrams), `git diff --check` (clean), `make formal-pr` (Kani
+      0 of 37 failed, one harness verified; Verus 4 verified, 0 errors), and
+      `make test-prover-tools` (2 Kani and 6 Verus tests passed). `make audit`
+      reported zero vulnerabilities across 21 manifests. Logs are under
+      `/tmp/*-axinite-import-prover-tools-rv4.out`. Hosted `Formal Verification`
+      run
+      [42901791351](https://github.com/leynos/axinite/actions/runs/42901791351)
+      passed both proof jobs (`Kani Smoke Proof` 21:55:14–21:55:50 UTC, `Verus
+      Proofs` 22:08:02–22:08:53 UTC), and the required `gh run rerun` repeat
+      (attempt 2) passed them again (`Verus Proofs` 22:15:40–22:16:37 UTC,
+      `Kani Smoke Proof` 22:20:39–22:21:21 UTC). `Code Style (fmt + clippy)`,
+      `Run Tests`, `Regression test enforcement`, `Dependency Audit`,
+      `Coverage Ratchet`, `Frontend`, and `Release package validation` were
+      green on that commit. The documentation-only evidence commit recording
+      these results re-ran the affected Markdown gates on its exact tree.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
