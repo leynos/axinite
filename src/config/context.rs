@@ -11,15 +11,15 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
+use self::env_lookup::{contains_env_key, lookup_map_value};
+
 use self::base_dir::resolve_base_dir_snapshot;
-use crate::config::{Config, ConfigError, INJECTED_VARS, runtime_support};
+use crate::config::INJECTED_VARS;
 use crate::config::database::autodetect_libsql_backend;
-use crate::llm::config::LlmConfig;
-use crate::settings::Settings;
 use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers, DotenvRefreshInputs};
 
-
 mod base_dir;
+mod env_lookup;
 
 mod restart;
 
@@ -44,18 +44,6 @@ pub struct EnvContext {
     base_dir: PathBuf,
     ambient_source: bool,
     explicit_env_overrides: HashMap<String, String>,
-}
-
-/// Inputs used to re-resolve an LLM configuration after credential injection.
-pub struct LlmResolutionContext<'a> {
-    /// Environment snapshot containing the effective configuration values.
-    pub env_context: &'a EnvContext,
-    /// Optional settings store used to resolve provider settings.
-    pub settings_store: Option<&'a (dyn crate::db::SettingsStore + Sync)>,
-    /// User whose stored settings should be loaded.
-    pub user_id: &'a str,
-    /// Optional TOML overlay applied to stored settings.
-    pub toml_path: Option<&'a std::path::Path>,
 }
 
 impl Default for EnvContext {
@@ -331,87 +319,6 @@ impl EnvContext {
     /// Resolve the effective Axinite base directory from the snapshot.
     pub fn axinite_base_dir(&self) -> PathBuf {
         self.base_dir.clone()
-    }
-}
-
-impl Config {
-    /// Re-resolve only the LLM config after credential injection.
-    ///
-    /// Called by `AppBuilder::init_secrets()` after injecting API keys into
-    /// the env overlay. Only rebuilds `self.llm` — all other config fields
-    /// are unaffected, preserving values from the initial config load (or
-    /// from `Config::for_testing()` in test mode).
-    pub async fn re_resolve_llm(
-        &mut self,
-        store: Option<&(dyn crate::db::SettingsStore + Sync)>,
-        user_id: &str,
-        toml_path: Option<&std::path::Path>,
-    ) -> Result<(), ConfigError> {
-        EnvContext::refresh_dotenv_layers();
-        let env_context = EnvContext::capture_ambient();
-        self.re_resolve_llm_with_context(LlmResolutionContext {
-            env_context: &env_context,
-            settings_store: store,
-            user_id,
-            toml_path,
-        })
-        .await
-    }
-
-    /// Re-resolve only the LLM config from an explicit environment snapshot.
-    pub async fn re_resolve_llm_with_context(
-        &mut self,
-        context: LlmResolutionContext<'_>,
-    ) -> Result<(), ConfigError> {
-        let LlmResolutionContext {
-            env_context,
-            settings_store,
-            user_id,
-            toml_path,
-        } = context;
-        let settings = if let Some(store) = settings_store {
-            let mut settings = match store
-                .get_all_settings(crate::db::UserId::from(user_id))
-                .await
-            {
-                Ok(map) => Settings::from_db_map(&map),
-                Err(_) => Settings::default(),
-            };
-            runtime_support::apply_toml_overlay(&mut settings, toml_path)?;
-            settings
-        } else {
-            Settings::default()
-        };
-        self.llm = LlmConfig::resolve_from(env_context, &settings)?;
-        Ok(())
-    }
-}
-
-fn lookup_map_value<'a>(map: &'a HashMap<String, String>, key: &str) -> Option<&'a String> {
-    map.get(key).or_else(|| {
-        #[cfg(windows)]
-        {
-            map.iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case(key))
-                .map(|(_, value)| value)
-        }
-        #[cfg(not(windows))]
-        {
-            None
-        }
-    })
-}
-
-fn contains_env_key(keys: &HashSet<String>, key: &str) -> bool {
-    keys.contains(key) || {
-        #[cfg(windows)]
-        {
-            keys.iter().any(|name| name.eq_ignore_ascii_case(key))
-        }
-        #[cfg(not(windows))]
-        {
-            false
-        }
     }
 }
 

@@ -116,7 +116,8 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
 
     EnvContext::refresh_dotenv_layers();
     let env_context = crate::bootstrap::capture_config_env_context();
-    let settings = match Settings::load_from(&env_context.axinite_base_dir().join("settings.json")) {
+    let settings = match Settings::load_from(&env_context.axinite_base_dir().join("settings.json"))
+    {
         Ok(settings) => settings,
         Err(error) => {
             eprintln!("Warning: {error}; continuing with default settings");

@@ -354,8 +354,8 @@ Kani and Verus are possible follow-ups; this ADR does not add them.
   those APIs from returning. Configuration code sees dotenv values; direct
   process reads and child processes do not. CWD-file values can no longer
   substitute into the separate bootstrap file. Spawn sites pass required
-  credentials through their explicit environment seams. The dependency scan
-  and remaining `set_var` hits are recorded in
+  credentials through their explicit environment seams. The dependency scan and
+  remaining `set_var` hits are recorded in
   [Rust boundary verification and unsafe inventory](../rust-boundary-verification.md).
 - `EnvContext::capture_ambient` now applies the libSQL autodetection, so a
   developer whose `~/.axinite/axinite.db` exists and who sets no

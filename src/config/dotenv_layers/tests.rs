@@ -142,6 +142,8 @@ fn passwd_database_home_is_used_when_home_variables_are_absent() {
     let home = dir.path().join("passwd-home");
     ambient_fs::create_dir_all(&cwd).expect_valid("create project directory");
     ambient_fs::create_dir_all(&home).expect_valid("create fallback home directory");
+    ambient_fs::write(cwd.join(".env"), b"")
+        .expect_valid("write empty isolated current-directory dotenv file");
 
     let layers = DotenvLayers::load(&cwd, &HashMap::new(), Some(&home));
 
@@ -151,6 +153,8 @@ fn passwd_database_home_is_used_when_home_variables_are_absent() {
 #[test]
 fn loading_again_after_bootstrap_write_refreshes_the_file_layer() {
     let dir = tempdir().expect_valid("create refresh test directory");
+    ambient_fs::write(dir.path().join(".env"), b"")
+        .expect_valid("write empty isolated current-directory dotenv file");
     let base_dir = dir.path().join("axinite");
     ambient_fs::create_dir_all(&base_dir).expect_valid("create bootstrap directory");
     let process = HashMap::from([(
@@ -182,6 +186,7 @@ fn loading_again_after_bootstrap_write_refreshes_the_file_layer() {
     let after = EnvContext::from_dotenv_layers(process, HashMap::new(), &after_layers);
 
     assert!(!Arc::ptr_eq(&before_layers, &after_layers));
+    assert!(Arc::ptr_eq(&after_layers, &store.snapshot()));
     assert_eq!(before.get("AXINITE_TEST_ONBOARDING_REFRESH"), None);
     assert_eq!(
         after.get("AXINITE_TEST_ONBOARDING_REFRESH"),

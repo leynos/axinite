@@ -66,7 +66,11 @@ fn test_migrate_bootstrap_json_to_env() {
 
 #[test]
 fn dotenv_layers_migrate_bootstrap_json_to_env() {
-    let dir = tempdir().expect_valid("create temp dir for load_axinite_env migration");
+    let dir = tempdir().expect_valid("create temp dir for dotenv migration");
+    let cwd = dir.path().join("project");
+    ambient_fs::create_dir_all(&cwd).expect_valid("create isolated project directory");
+    ambient_fs::write(cwd.join(".env"), b"")
+        .expect_valid("write empty isolated current-directory dotenv file");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
         "database_url": "postgres://localhost/axinite_public_boundary"
@@ -81,7 +85,7 @@ fn dotenv_layers_migrate_bootstrap_json_to_env() {
         String::from("AXINITE_BASE_DIR"),
         dir.path().to_string_lossy().into_owned(),
     )]);
-    let layers = DotenvLayers::load(dir.path(), &process, None);
+    let layers = DotenvLayers::load(&cwd, &process, None);
 
     let env_path = dir.path().join(".env");
     assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary");

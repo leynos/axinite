@@ -9,16 +9,17 @@ use super::external_checks::check_binary;
 use super::subsystem_checks::{
     check_embeddings_with_context, check_routines_config_with_context, check_secrets,
 };
-use crate::config::EnvContext;
+use crate::config::{EnvContext, dotenv_layers::DotenvLayers};
 use crate::settings::Settings;
+use std::collections::HashMap;
 
 /// Verify that the database and workspace-search checks report the auto-detected libSQL backend.
 #[tokio::test]
 async fn database_and_search_checks_use_auto_detected_libsql_backend() {
-    let db_file = tempfile::NamedTempFile::new().expect("create libSQL marker file");
-    let context =
-        crate::bootstrap::with_libsql_backend_autodetection(EnvContext::default(), db_file.path())
-            .with_env("LIBSQL_PATH", db_file.path().to_string_lossy());
+    let dir = tempfile::tempdir().expect("create libSQL base directory");
+    ambient_fs::write(dir.path().join("axinite.db"), "").expect("write libSQL marker file");
+    let layers = DotenvLayers::from_contents(None, None, dir.path());
+    let context = EnvContext::from_dotenv_layers(HashMap::new(), HashMap::new(), &layers);
 
     match check_database_with_context(&context).await {
         CheckResult::Pass(message) => assert!(message.contains("libSQL database exists")),

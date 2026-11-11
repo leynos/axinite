@@ -239,6 +239,7 @@ pub(crate) fn autodetect_libsql_backend(env_vars: &mut HashMap<String, String>, 
 }
 
 /// Name of the backend `ctx` selects, defaulting to `postgres`.
+#[cfg(test)]
 pub(crate) fn backend_name_from(ctx: &EnvContext) -> String {
     ctx.get_owned(DATABASE_BACKEND_ENV)
         .unwrap_or_else(|| "postgres".to_string())

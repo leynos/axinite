@@ -12,9 +12,15 @@ async fn config_load_uses_the_onboarding_environment_snapshot() -> anyhow::Resul
     let database_path = base_dir.path().join("onboarded.db");
     let env_context = EnvContext::for_testing(
         HashMap::from([
-            ("AXINITE_BASE_DIR".to_string(), base_dir.path().display().to_string()),
+            (
+                "AXINITE_BASE_DIR".to_string(),
+                base_dir.path().display().to_string(),
+            ),
             ("DATABASE_BACKEND".to_string(), "libsql".to_string()),
-            ("LIBSQL_PATH".to_string(), database_path.display().to_string()),
+            (
+                "LIBSQL_PATH".to_string(),
+                database_path.display().to_string(),
+            ),
         ]),
         HashMap::new(),
     );

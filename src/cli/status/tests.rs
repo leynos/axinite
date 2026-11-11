@@ -1,15 +1,16 @@
 //! Unit tests for status command settings loading.
 
 use super::{db_backend_name, load_settings_from};
-use crate::config::EnvContext;
+use crate::config::{EnvContext, dotenv_layers::DotenvLayers};
+use std::collections::HashMap;
 
 #[test]
 fn db_backend_name_uses_the_resolved_libsql_backend() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db_path = dir.path().join("axinite.db");
     ambient_fs::write(&db_path, "").expect("write libSQL marker");
-    let context =
-        crate::bootstrap::with_libsql_backend_autodetection(EnvContext::default(), &db_path);
+    let layers = DotenvLayers::from_contents(None, None, dir.path());
+    let context = EnvContext::from_dotenv_layers(HashMap::new(), HashMap::new(), &layers);
 
     assert_eq!(db_backend_name(&context), "libsql");
 }

@@ -13,7 +13,8 @@ ______________________________________________________________________
 axinite onboard [--skip-auth] [--channels-only] [--provider-only] [--quick]
 ```
 
-Explicit invocation. Parses `.env` files into `EnvContext`, runs the wizard, exits.
+Explicit invocation. Parses `.env` files into `EnvContext`, runs the wizard,
+exits.
 
 ```text
 axinite          (first run, no database configured)
@@ -49,13 +50,14 @@ ______________________________________________________________________
    f. ensure_authenticated() → validate session (NEAR AI only)
    g. ... rest of agent startup
 ```
-**Critical ordering:** `.env` files are parsed before the runtime starts.
-The resulting immutable layers are merged into `EnvContext`; their values are
-not exported to the process environment or child processes. Configuration
-reload refreshes the files and replaces the layer snapshot, so onboarding
-writes become visible to the next config load. The root is resolved from the
-process environment and the current-directory `.env` before the bootstrap file
-is selected; the bootstrap file cannot relocate itself.
+
+**Critical ordering:** `.env` files are parsed before the runtime starts. The
+resulting immutable layers are merged into `EnvContext`; their values are not
+exported to the process environment or child processes. Configuration reload
+refreshes the files and replaces the layer snapshot, so onboarding writes
+become visible to the next config load. The root is resolved from the process
+environment and the current-directory `.env` before the bootstrap file is
+selected; the bootstrap file cannot relocate itself.
 
 **Environment access:** startup threads an `EnvContext` through composition.
 Constructors such as `SetupWizard::with_env_context` and

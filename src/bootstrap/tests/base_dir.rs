@@ -65,7 +65,10 @@ fn dotenv_layers_fill_missing_context_entries_below_process_values() -> std::io:
         "DATABASE_BACKEND=libsql\nLIBSQL_PATH=/saved/axinite.db\n",
     )?;
     let process = HashMap::from([
-        (String::from("AXINITE_BASE_DIR"), base_dir.display().to_string()),
+        (
+            String::from("AXINITE_BASE_DIR"),
+            base_dir.display().to_string(),
+        ),
         (String::from("DATABASE_BACKEND"), String::from("postgres")),
     ]);
     let layers = DotenvLayers::load(&cwd, &process, None);
