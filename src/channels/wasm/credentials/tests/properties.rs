@@ -15,7 +15,7 @@ proptest! {
     /// Only channel-prefixed placeholders are injected, persistent secrets
     /// take precedence over environment values, the reported count matches the
     /// injected placeholder set, and a placeholder declared by several mapping
-    /// keys is injected once.
+    /// keys is injected once from either source.
     #[test]
     fn prop_credential_injection_respects_prefix_and_precedence(
         channel_suffix in 0u8..3,
@@ -45,6 +45,12 @@ proptest! {
             let overlap_secret_name = format!("{channel_name}_overlap");
             let overlap_placeholder = overlap_secret_name.to_uppercase();
 
+            // A second guaranteed overlap declared only in the snapshot: no
+            // store row names this secret, so the environment fallback must
+            // inject the shared placeholder once for two mapping keys.
+            let env_overlap_secret_name = format!("{channel_name}_env_overlap");
+            let env_overlap_placeholder = env_overlap_secret_name.to_uppercase();
+
             let mut mappings: Vec<(String, String)> = mapping_specs
                 .iter()
                 .map(|(id, prefixed)| {
@@ -58,6 +64,14 @@ proptest! {
             mappings.push((
                 format!("{channel_name}_overlap_alias"),
                 overlap_secret_name.clone(),
+            ));
+            mappings.push((
+                env_overlap_secret_name.clone(),
+                env_overlap_secret_name.clone(),
+            ));
+            mappings.push((
+                format!("{channel_name}_env_overlap_alias"),
+                env_overlap_secret_name.clone(),
             ));
             mappings.sort();
             mappings.dedup();
@@ -104,6 +118,8 @@ proptest! {
             }
             env = env.with_env(overlap_placeholder.as_str(), "env-overlap");
             expected_env.insert(overlap_placeholder, "env-overlap".to_string());
+            env = env.with_env(env_overlap_placeholder.as_str(), "env-only-overlap");
+            expected_env.insert(env_overlap_placeholder, "env-only-overlap".to_string());
 
             let count = inject_channel_credentials_from_context(
                 &channel,

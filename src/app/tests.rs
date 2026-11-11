@@ -260,3 +260,108 @@ async fn build_all_waits_for_workspace_bootstrap(
     );
     Ok(())
 }
+
+/// `init_secrets` must resolve stored LLM credentials from the snapshot alone.
+///
+/// The builder is given backend handles and a master key directly, so the
+/// secrets store is created without any database phase or ambient state. A
+/// stored Anthropic key then has to reach both the builder's environment
+/// snapshot and its re-resolved LLM config; a key already present in the
+/// snapshot must win over the stored value. `build_components_with_context`
+/// returns this same snapshot, whose survival is asserted separately by
+/// `build_components_returns_without_activating_side_effects`.
+#[cfg(feature = "libsql")]
+#[tokio::test]
+async fn init_secrets_injects_store_credentials_into_the_snapshot() -> anyhow::Result<()> {
+    use secrecy::{ExposeSecret, SecretString};
+
+    use crate::secrets::{
+        CreateSecretParams, LibSqlSecretsStore, NativeSecretsStore, SecretsCrypto,
+    };
+
+    const MASTER_KEY: &str = "builder-test-master-key-0123456789abcdef";
+    const STORED_KEY: &str = "store-anthropic-key";
+
+    let temp_dir = tempfile::tempdir()?;
+    let db_path = temp_dir.path().join("builder-secrets.db");
+    let skills_dir = temp_dir.path().join("skills");
+    let installed_skills_dir = temp_dir.path().join("installed_skills");
+    let cases: [(&str, Option<&str>, &str); 2] = [
+        ("store only", None, STORED_KEY),
+        (
+            "snapshot wins",
+            Some("snapshot-anthropic-key"),
+            "snapshot-anthropic-key",
+        ),
+    ];
+
+    for (label, snapshot_key, expected) in cases {
+        let mut config = Config::for_testing(
+            db_path.clone(),
+            skills_dir.clone(),
+            installed_skills_dir.clone(),
+        )
+        .await?;
+        config.secrets.master_key = Some(SecretString::from(MASTER_KEY));
+
+        // Take the handles from the production connection path rather than
+        // assembling them by hand, so the builder sees the same backend shape
+        // that startup provides.
+        let (_, handles) = crate::db::connect_with_handles(&config.database).await?;
+        let shared_db = handles
+            .libsql_db
+            .clone()
+            .context("libsql connection must expose a shared database")?;
+        let crypto = Arc::new(SecretsCrypto::new(SecretString::from(MASTER_KEY))?);
+        let store = LibSqlSecretsStore::new(shared_db, crypto);
+        NativeSecretsStore::create(
+            &store,
+            "default",
+            CreateSecretParams::new("llm_anthropic_api_key", STORED_KEY),
+        )
+        .await?;
+
+        let mut env = EnvContext::default().with_env("LLM_BACKEND", "anthropic");
+        if let Some(key) = snapshot_key {
+            env = env.with_env("ANTHROPIC_API_KEY", key);
+        }
+
+        let mut builder = AppBuilder::new_with_context(
+            AppBuilderParams {
+                config,
+                flags: AppBuilderFlags::default(),
+                toml_path: None,
+                session: Arc::new(SessionManager::new(SessionConfig::default())),
+                log_broadcaster: Arc::new(LogBroadcaster::new()),
+            },
+            env,
+        );
+        builder.handles = Some(handles);
+
+        builder.init_secrets().await?;
+
+        assert!(
+            builder.secrets_store.is_some(),
+            "case {label}: a master key and backend handle must create a store"
+        );
+        assert_eq!(
+            builder.env_context.get("ANTHROPIC_API_KEY"),
+            Some(expected),
+            "case {label}: snapshot credential"
+        );
+        let api_key = builder
+            .config
+            .llm
+            .provider
+            .as_ref()
+            .and_then(|provider| provider.api_key.as_ref())
+            .map(ExposeSecret::expose_secret);
+        assert_eq!(
+            api_key,
+            Some(expected),
+            "case {label}: LLM config must re-resolve from the snapshot"
+        );
+    }
+
+    Ok(())
+}
