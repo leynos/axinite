@@ -409,6 +409,23 @@ adoption programme complete.
       selects one. The inline finding on the reproduction block was valid: the
       block set `pipefail` without `errexit`, so a failed gate could be masked
       by a later success. It now runs `set -e -o pipefail`.
+- [x] (2026-11-11) Review repair for the `9596e952` review. The inline finding
+      and both `Testing` pre-merge rows asked the property's flag generator to
+      cover an empty argument and both `--proof-file` spellings among other
+      arguments. The strategy now draws arbitrary text including the empty
+      string, a bare `--proof-file`, and `--proof-file=<path>`, keeping the
+      `max_size=6` list bound; a named contract also fixes both selector forms
+      after leading arguments, with a quoted empty argument at its own
+      position, so that coverage is deterministic as well as sampled. The full
+      ten-gate sequence passed on the exact tree: `make check-fmt` (172 files
+      unchanged), `make lint` (including `make interrogate` at 1,648 of 1,648
+      definitions, 100.0%), `make typecheck`, `make test` (4,444 passed, 12
+      skipped), `make test-workflow-contracts` (2,012 passed, 11 skipped),
+      `make markdownlint` (zero issues), `make nixie` (all diagrams),
+      `git diff --check` (clean), `make formal-pr` (Kani 0 of 37 failed, one
+      harness verified; Verus 4 verified, 0 errors), and
+      `make test-prover-tools` (2 Kani and 6 Verus tests passed). Logs are
+      under `/tmp/*-axinite-import-prover-tools-rv6.out`.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
