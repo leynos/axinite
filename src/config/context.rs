@@ -7,17 +7,24 @@
 //! need deterministic precedence or isolated tests.
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
 
-use self::env_lookup::{contains_env_key, lookup_map_value};
+#[cfg(test)]
+use self::ambient::collect_utf8_env_vars;
+use self::ambient::{
+    ProcessEnvSnapshot, ambient_value_from_layers, capture_ambient_inputs, dotenv_layers_snapshot,
+    merge_refreshed_secrets,
+};
+use self::env_lookup::{
+    contains_env_key, insert_env_value, lookup_map_value, merge_env_layer, normalize_env_key,
+};
 
 use self::base_dir::resolve_base_dir_snapshot;
 use crate::config::INJECTED_VARS;
 use crate::config::database::autodetect_libsql_backend;
 use crate::config::dotenv_layers::{DOTENV_LAYERS, DotenvLayers, DotenvRefreshInputs};
 
+mod ambient;
 mod base_dir;
 mod env_lookup;
 
@@ -25,21 +32,13 @@ mod restart;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
-#[derive(Debug)]
-struct ProcessEnvSnapshot {
-    env_vars: HashMap<String, String>,
-    non_unicode_values: HashSet<String>,
-    home_dir_fallback: Option<PathBuf>,
-}
-
-static PROCESS_ENV_SNAPSHOT: OnceLock<ProcessEnvSnapshot> = OnceLock::new();
-
 /// Snapshot of environment-backed configuration inputs.
 #[derive(Clone, Debug)]
 pub struct EnvContext {
     env_vars: HashMap<String, String>,
     non_unicode_values: HashSet<String>,
     secrets: HashMap<String, String>,
+    explicit_secrets: HashMap<String, String>,
     home_dir_fallback: Option<PathBuf>,
     base_dir: PathBuf,
     ambient_source: bool,
@@ -81,6 +80,7 @@ impl EnvContext {
             env_vars,
             non_unicode_values,
             secrets: HashMap::new(),
+            explicit_secrets: HashMap::new(),
             home_dir_fallback,
             base_dir,
             ambient_source: false,
@@ -119,12 +119,12 @@ impl EnvContext {
         }
 
         Self::refresh_dotenv_layers();
-        let (process, mut secrets) = capture_ambient_inputs(true);
-        secrets.extend(self.secrets.clone());
+        let (process, secrets) = capture_ambient_inputs(true);
+        let secrets = merge_refreshed_secrets(secrets, &self.explicit_secrets);
         let layers = dotenv_layers_snapshot();
         let mut refreshed = Self::from_dotenv_layers_with_non_unicode(process, secrets, &layers);
         for (key, value) in &self.explicit_env_overrides {
-            refreshed.env_vars.insert(key.clone(), value.clone());
+            insert_env_value(&mut refreshed.env_vars, key, value.clone());
             refreshed.non_unicode_values.remove(key);
             if key == AXINITE_BASE_DIR_ENV {
                 refreshed.base_dir = resolve_base_dir_snapshot(
@@ -150,7 +150,9 @@ impl EnvContext {
             non_unicode_values: HashSet::new(),
             home_dir_fallback: None,
         };
-        Self::from_dotenv_layers_with_non_unicode(&process, secrets, layers)
+        let mut context = Self::from_dotenv_layers_with_non_unicode(&process, secrets, layers);
+        context.explicit_secrets.clone_from(&context.secrets);
+        context
     }
 
     fn from_dotenv_layers_with_non_unicode(
@@ -158,9 +160,10 @@ impl EnvContext {
         secrets: HashMap<String, String>,
         layers: &DotenvLayers,
     ) -> Self {
-        let mut env_vars = layers.bootstrap_values().clone();
-        env_vars.extend(layers.cwd_values().clone());
-        env_vars.extend(process.env_vars.clone());
+        let mut env_vars = HashMap::new();
+        merge_env_layer(&mut env_vars, layers.bootstrap_values());
+        merge_env_layer(&mut env_vars, layers.cwd_values());
+        merge_env_layer(&mut env_vars, &process.env_vars);
 
         let base_dir = layers.base_dir().map(PathBuf::from).unwrap_or_else(|| {
             resolve_base_dir_snapshot(&env_vars, process.home_dir_fallback.as_deref())
@@ -171,6 +174,7 @@ impl EnvContext {
             env_vars,
             non_unicode_values: process.non_unicode_values.clone(),
             secrets,
+            explicit_secrets: HashMap::new(),
             home_dir_fallback: process.home_dir_fallback.clone(),
             base_dir,
             ambient_source: true,
@@ -188,6 +192,7 @@ impl EnvContext {
             env_vars,
             non_unicode_values: HashSet::new(),
             secrets,
+            explicit_secrets: HashMap::new(),
             home_dir_fallback: None,
             base_dir,
             ambient_source: false,
@@ -277,9 +282,9 @@ impl EnvContext {
 
     /// Add or replace an env var in the snapshot.
     pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        let key = key.into();
+        let key = normalize_env_key(&key.into());
         let value = value.into();
-        self.env_vars.insert(key.clone(), value.clone());
+        insert_env_value(&mut self.env_vars, &key, value.clone());
         self.non_unicode_values.remove(&key);
         if self.ambient_source {
             self.explicit_env_overrides.insert(key.clone(), value);
@@ -293,22 +298,30 @@ impl EnvContext {
 
     /// Add or replace an injected secret in the snapshot.
     pub fn with_secret(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.secrets.insert(key.into(), value.into());
+        let key = key.into();
+        let value = value.into();
+        self.secrets.insert(key.clone(), value.clone());
+        self.explicit_secrets.insert(key, value);
         self
     }
 
     /// Insert one secret overlay value without mutating global state.
     pub fn inject_secret(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        self.secrets.insert(key.into(), value.into());
+        let key = key.into();
+        let value = value.into();
+        self.secrets.insert(key.clone(), value.clone());
+        self.explicit_secrets.insert(key, value);
     }
 
     /// Remove one injected secret without changing process-global state.
     pub fn remove_secret(&mut self, key: &str) {
         self.secrets.remove(key);
+        self.explicit_secrets.remove(key);
     }
 
     /// Merge multiple secret overlay values without mutating global state.
     pub fn merge_secrets(&mut self, secrets: HashMap<String, String>) {
+        self.explicit_secrets.extend(secrets.clone());
         self.secrets.extend(secrets);
     }
 
@@ -320,71 +333,6 @@ impl EnvContext {
     pub fn axinite_base_dir(&self) -> PathBuf {
         self.base_dir.clone()
     }
-}
-
-fn capture_ambient_inputs(
-    include_secrets: bool,
-) -> (&'static ProcessEnvSnapshot, HashMap<String, String>) {
-    let process = PROCESS_ENV_SNAPSHOT.get_or_init(|| {
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "sole sanctioned ambient environment boundary; all other code reads via EnvContext"
-        )]
-        let (env_vars, non_unicode_values) = collect_utf8_env_vars(std::env::vars_os());
-        ProcessEnvSnapshot {
-            env_vars,
-            non_unicode_values,
-            home_dir_fallback: dirs::home_dir(),
-        }
-    });
-    let secrets = if include_secrets {
-        INJECTED_VARS
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    } else {
-        HashMap::new()
-    };
-    (process, secrets)
-}
-
-fn ambient_value_from_layers(
-    key: &str,
-    process: &HashMap<String, String>,
-    layers: &DotenvLayers,
-    secrets: &HashMap<String, String>,
-) -> Option<String> {
-    lookup_map_value(process, key)
-        .or_else(|| lookup_map_value(layers.cwd_values(), key))
-        .or_else(|| lookup_map_value(layers.bootstrap_values(), key))
-        .filter(|value| !value.is_empty())
-        .or_else(|| lookup_map_value(secrets, key).filter(|value| !value.is_empty()))
-        .cloned()
-}
-
-fn dotenv_layers_snapshot() -> Arc<DotenvLayers> {
-    DOTENV_LAYERS.snapshot()
-}
-
-fn collect_utf8_env_vars(
-    vars: impl IntoIterator<Item = (OsString, OsString)>,
-) -> (HashMap<String, String>, HashSet<String>) {
-    let mut env_vars = HashMap::new();
-    let mut non_unicode_values = HashSet::new();
-    for (key, value) in vars {
-        let Ok(key) = key.into_string() else {
-            continue;
-        };
-        match value.into_string() {
-            Ok(value) => {
-                env_vars.insert(key, value);
-            }
-            Err(_) => {
-                non_unicode_values.insert(key);
-            }
-        }
-    }
-    (env_vars, non_unicode_values)
 }
 
 #[cfg(test)]

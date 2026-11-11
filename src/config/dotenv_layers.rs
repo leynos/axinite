@@ -25,15 +25,26 @@ pub(crate) struct DotenvRefreshInputs<'a> {
 }
 
 /// Publishes immutable dotenv snapshots while readers retain stable versions.
+///
+/// Once a valid snapshot exists, a failed read or parse does not replace it.
+/// The parser still retains entries before the first error for initial loads.
 pub(crate) struct DotenvLayerStore {
-    layers: RwLock<Arc<DotenvLayers>>,
+    layers: RwLock<PublishedDotenvLayers>,
+}
+
+struct PublishedDotenvLayers {
+    layers: Arc<DotenvLayers>,
+    has_valid_snapshot: bool,
 }
 
 impl DotenvLayerStore {
     /// Start with an empty snapshot.
     pub(crate) fn empty() -> Self {
         Self {
-            layers: RwLock::new(Arc::new(DotenvLayers::empty())),
+            layers: RwLock::new(PublishedDotenvLayers {
+                layers: Arc::new(DotenvLayers::empty()),
+                has_valid_snapshot: false,
+            }),
         }
     }
 
@@ -53,7 +64,16 @@ impl DotenvLayerStore {
             .layers
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *published = Arc::clone(&layers);
+        if layers.has_load_errors && published.has_valid_snapshot {
+            tracing::warn!(
+                "Rejected dotenv refresh after a file error; retaining the last valid snapshot"
+            );
+            return Arc::clone(&published.layers);
+        }
+        if !layers.has_load_errors {
+            published.has_valid_snapshot = true;
+        }
+        published.layers = Arc::clone(&layers);
         layers
     }
 
@@ -62,6 +82,7 @@ impl DotenvLayerStore {
         self.layers
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .layers
             .clone()
     }
 }
@@ -73,6 +94,13 @@ pub(crate) struct DotenvLayers {
     bootstrap: HashMap<String, String>,
     base_dir: PathBuf,
     bootstrap_path: PathBuf,
+    has_load_errors: bool,
+}
+
+#[derive(Default)]
+struct ParsedEnvFile {
+    values: HashMap<String, String>,
+    has_load_errors: bool,
 }
 
 impl DotenvLayers {
@@ -99,9 +127,9 @@ impl DotenvLayers {
     ) -> Self {
         let cwd_path = find_ancestor_env_file(start_dir);
         let cwd = cwd_path.as_deref().map(read_env_file).unwrap_or_default();
-        let base_dir = cached_base_dir
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| resolve_base_dir(start_dir, process, &cwd, home_dir_fallback));
+        let base_dir = cached_base_dir.map(Path::to_path_buf).unwrap_or_else(|| {
+            resolve_base_dir(start_dir, process, &cwd.values, home_dir_fallback)
+        });
         let bootstrap_path = base_dir.join(".env");
 
         if !path_exists(&bootstrap_path) {
@@ -109,11 +137,13 @@ impl DotenvLayers {
         }
 
         let bootstrap = read_env_file(&bootstrap_path);
+        let has_load_errors = cwd.has_load_errors || bootstrap.has_load_errors;
         Self {
-            cwd,
-            bootstrap,
+            cwd: cwd.values,
+            bootstrap: bootstrap.values,
             base_dir,
             bootstrap_path,
+            has_load_errors,
         }
     }
 
@@ -128,13 +158,16 @@ impl DotenvLayers {
         base_dir: &Path,
     ) -> Self {
         let bootstrap_path = base_dir.join(".env");
+        let cwd = cwd
+            .map(|bytes| parse_bytes(bytes, "in-memory current-directory .env"))
+            .unwrap_or_default();
+        let bootstrap = bootstrap
+            .map(|bytes| parse_bytes(bytes, "in-memory bootstrap .env"))
+            .unwrap_or_default();
         Self {
-            cwd: cwd
-                .map(|bytes| parse_bytes(bytes, "in-memory current-directory .env"))
-                .unwrap_or_default(),
-            bootstrap: bootstrap
-                .map(|bytes| parse_bytes(bytes, "in-memory bootstrap .env"))
-                .unwrap_or_default(),
+            has_load_errors: cwd.has_load_errors || bootstrap.has_load_errors,
+            cwd: cwd.values,
+            bootstrap: bootstrap.values,
             base_dir: base_dir.to_path_buf(),
             bootstrap_path,
         }
@@ -190,25 +223,31 @@ fn path_exists(path: &Path) -> bool {
     }
 }
 
-fn read_env_file(path: &Path) -> HashMap<String, String> {
+fn read_env_file(path: &Path) -> ParsedEnvFile {
     match ambient_fs::read(path) {
         Ok(bytes) => parse_bytes(&bytes, &path.display().to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ParsedEnvFile::default(),
         Err(error) => {
             tracing::warn!(path = %path.display(), %error, "Failed to read dotenv file");
-            HashMap::new()
+            ParsedEnvFile {
+                has_load_errors: true,
+                ..ParsedEnvFile::default()
+            }
         }
     }
 }
 
-fn parse_bytes(bytes: &[u8], source: &str) -> HashMap<String, String> {
+fn parse_bytes(bytes: &[u8], source: &str) -> ParsedEnvFile {
     let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
-    let mut values = HashMap::new();
+    let mut parsed = ParsedEnvFile::default();
 
     for item in dotenvy::from_read_iter(Cursor::new(bytes)) {
         match item {
             Ok((key, value)) => {
-                values.entry(key).or_insert(value);
+                parsed
+                    .values
+                    .entry(canonical_env_key(&key))
+                    .or_insert(value);
             }
             Err(error) => {
                 let (error_kind, error_index) = match &error {
@@ -223,12 +262,24 @@ fn parse_bytes(bytes: &[u8], source: &str) -> HashMap<String, String> {
                     error_index = ?error_index,
                     "Stopped parsing dotenv file after an error"
                 );
+                parsed.has_load_errors = true;
                 break;
             }
         }
     }
 
-    values
+    parsed
+}
+
+fn canonical_env_key(key: &str) -> String {
+    #[cfg(windows)]
+    {
+        key.to_ascii_uppercase()
+    }
+    #[cfg(not(windows))]
+    {
+        key.to_string()
+    }
 }
 
 fn resolve_base_dir(
@@ -274,10 +325,25 @@ fn effective_non_empty_value<'a>(
     cwd: &'a HashMap<String, String>,
     key: &str,
 ) -> Option<&'a String> {
-    process
-        .get(key)
+    lookup_env_value(process, key)
         .filter(|value| !value.is_empty())
-        .or_else(|| cwd.get(key).filter(|value| !value.is_empty()))
+        .or_else(|| lookup_env_value(cwd, key).filter(|value| !value.is_empty()))
+}
+
+fn lookup_env_value<'a>(map: &'a HashMap<String, String>, key: &str) -> Option<&'a String> {
+    let value = map.get(key);
+    #[cfg(windows)]
+    {
+        value.or_else(|| {
+            map.iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(key))
+                .map(|(_, value)| value)
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        value
+    }
 }
 
 #[cfg(test)]

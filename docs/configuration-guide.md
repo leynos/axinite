@@ -42,7 +42,9 @@ environment, so set `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE` and
 `AWS_ENDPOINT_URL` there when needed. Ambient config constructors reread the
 files; hot reload replaces the parsed layer snapshot so files written during
 onboarding are visible on the next config load. The base directory itself is
-cached after its first access.
+cached after its first access. After a valid snapshot exists, a file read or
+parse error during refresh keeps that snapshot in place; the parser retains
+entries that precede the first parse error.
 
 `dotenvy` keeps within-file quoting, multiline values, `export`, and
 substitution. Substitution in the bootstrap file no longer sees names defined

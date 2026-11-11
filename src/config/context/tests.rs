@@ -1,8 +1,8 @@
 //! Unit tests for `EnvContext` environment and secret lookup precedence.
 
-use super::{EnvContext, ambient_value_from_layers};
+use super::{EnvContext, ambient_value_from_layers, merge_refreshed_secrets};
 use crate::config::dotenv_layers::DotenvLayers;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -128,6 +128,71 @@ fn ambient_single_key_lookup_preserves_case_insensitive_layer_precedence() {
     assert_eq!(
         ambient_value_from_layers("SECRET_ONLY", &process, &layers, &secrets),
         Some(String::from("secret"))
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn context_merge_keeps_process_precedence_for_case_variant_keys() {
+    let layers = DotenvLayers::from_contents(
+        Some(b"OPENAI_API_KEY=dotenv-value\n"),
+        Some(b"openai_api_key=bootstrap-value\n"),
+        Path::new("C:/axinite"),
+    );
+    let process = HashMap::from([(
+        String::from("openai_api_key"),
+        String::from("process-value"),
+    )]);
+    let context = EnvContext::from_dotenv_layers(process, HashMap::new(), &layers);
+
+    assert_eq!(context.get("OPENAI_API_KEY"), Some("process-value"));
+}
+
+#[test]
+fn secret_refresh_uses_current_inherited_values_and_preserves_explicit_secrets() {
+    let layers = DotenvLayers::from_contents(None, None, Path::new("/tmp/axinite"));
+    let process = super::ProcessEnvSnapshot {
+        env_vars: HashMap::new(),
+        non_unicode_values: HashSet::new(),
+        home_dir_fallback: None,
+    };
+    let captured = EnvContext::from_dotenv_layers_with_non_unicode(
+        &process,
+        HashMap::from([(
+            String::from("ANTHROPIC_OAUTH_TOKEN"),
+            String::from("old-global-token"),
+        )]),
+        &layers,
+    )
+    .with_secret("EXPLICIT_SECRET", "attached");
+    assert_eq!(
+        captured.get("ANTHROPIC_OAUTH_TOKEN"),
+        Some("old-global-token")
+    );
+    let current_inherited = HashMap::from([
+        (
+            String::from("ANTHROPIC_OAUTH_TOKEN"),
+            String::from("new-global-token"),
+        ),
+        (
+            String::from("GLOBAL_SECRET"),
+            String::from("new-global-value"),
+        ),
+    ]);
+
+    let refreshed = merge_refreshed_secrets(current_inherited, &captured.explicit_secrets);
+
+    assert_eq!(
+        refreshed.get("ANTHROPIC_OAUTH_TOKEN").map(String::as_str),
+        Some("new-global-token")
+    );
+    assert_eq!(
+        refreshed.get("GLOBAL_SECRET").map(String::as_str),
+        Some("new-global-value")
+    );
+    assert_eq!(
+        refreshed.get("EXPLICIT_SECRET").map(String::as_str),
+        Some("attached")
     );
 }
 

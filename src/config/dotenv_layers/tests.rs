@@ -261,6 +261,52 @@ fn substitution_semantics_in_clean_process() {
 }
 
 #[test]
+fn malformed_refresh_keeps_the_last_valid_webhook_secret() {
+    let dir = tempdir().expect_valid("create malformed dotenv refresh directory");
+    let cwd = dir.path().join("project");
+    let base_dir = dir.path().join("axinite");
+    ambient_fs::create_dir_all(&cwd).expect_valid("create isolated project directory");
+    ambient_fs::create_dir_all(&base_dir).expect_valid("create isolated bootstrap directory");
+    ambient_fs::write(cwd.join(".env"), b"")
+        .expect_valid("write empty isolated current-directory dotenv file");
+    let bootstrap_env = base_dir.join(".env");
+    ambient_fs::write(&bootstrap_env, b"HTTP_WEBHOOK_SECRET=last-valid-secret\n")
+        .expect_valid("write valid webhook secret");
+
+    let store = DotenvLayerStore::empty();
+    let process = HashMap::new();
+    let inputs = || DotenvRefreshInputs {
+        start_dir: &cwd,
+        process: &process,
+        cached_base_dir: Some(&base_dir),
+        home_dir_fallback: None,
+    };
+    let valid_layers = store.refresh(inputs());
+    let valid_context =
+        EnvContext::from_dotenv_layers(HashMap::new(), HashMap::new(), &valid_layers);
+    assert_eq!(
+        valid_context.get("HTTP_WEBHOOK_SECRET"),
+        Some("last-valid-secret")
+    );
+
+    ambient_fs::write(
+        &bootstrap_env,
+        b"BROKEN=\"unterminated\nHTTP_WEBHOOK_SECRET=malformed-secret\n",
+    )
+    .expect_valid("write malformed dotenv reload");
+    let rejected_layers = store.refresh(inputs());
+    let rejected_context =
+        EnvContext::from_dotenv_layers(HashMap::new(), HashMap::new(), &rejected_layers);
+
+    assert!(Arc::ptr_eq(&valid_layers, &rejected_layers));
+    assert!(Arc::ptr_eq(&rejected_layers, &store.snapshot()));
+    assert_eq!(
+        rejected_context.get("HTTP_WEBHOOK_SECRET"),
+        Some("last-valid-secret")
+    );
+}
+
+#[test]
 #[traced_test]
 fn parser_keeps_entries_before_the_first_error_and_strips_a_bom() {
     let dir = tempdir().expect_valid("create parser error directory");
