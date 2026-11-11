@@ -3155,7 +3155,9 @@ sequence:
 4. Update channel secrets
 
 The manager is created via `create_hot_reload_manager()` which wires together
-the default implementations based on available stores.
+the default implementations based on available stores. Prefer
+`create_hot_reload_manager_from_context()` when the caller already holds the
+startup snapshot; the plain factory captures the ambient environment itself.
 
 The manager starts each reload from the `EnvContext` captured during startup,
 then applies secrets supplied by its injector. It does not reread process
@@ -3165,6 +3167,21 @@ only the HTTP webhook settings: it restarts or stops the listener when the bind
 address or `channels.http` presence changes, and pushes a rotated
 `HTTP_WEBHOOK_SECRET` to live channels. Other resolved fields, including
 database-backed settings, are discarded until the process restarts.
+
+Two wiring rules follow from that boundary:
+
+- **Environment values outrank injected secrets.** The injector writes into the
+  snapshot's secret overlay, and `EnvContext::get` prefers environment values
+  over that overlay. A non-empty `HTTP_WEBHOOK_SECRET` captured at startup
+  therefore keeps winning over a rotated value from the secrets store; the
+  rotated value takes effect only when the environment does not set the
+  variable.
+- **The listener controller must exist at startup.** The factory wraps the
+  `WebhookServer` handle created during startup in a
+  `WebhookListenerController` and passes it to the manager. A manager built
+  without that handle has no controller, so a reload can neither restart nor
+  stop the listener. Create the webhook server during startup and hand it to
+  the factory rather than constructing one later.
 
 ### Webhook server lifecycle / listener-based API
 

@@ -58,6 +58,34 @@ async fn features_handler_uses_its_environment_snapshot() {
     assert_eq!(values.get("route_memory"), Some(&false));
 }
 
+/// The production constructor and a state rebuild must both carry the snapshot
+/// overlay. `TestGatewayBuilder` computes the overlay itself, so only this path
+/// proves that `GatewayChannel::new_from_context` populates it and that
+/// `rebuild_state` preserves it.
+#[tokio::test]
+async fn production_constructor_and_state_rebuild_preserve_the_snapshot_overlay() {
+    let channel = crate::channels::web::GatewayChannel::new_from_context(
+        crate::config::GatewayConfig {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+            auth_token: Some("test-token".to_string()),
+            user_id: "test-user".to_string(),
+        },
+        crate::config::EnvContext::default().with_env("FEATURE_FLAG_ROUTE_MEMORY", "false"),
+    )
+    // Every `with_*` method rebuilds the state; the overlay must survive.
+    .with_registry_entries(Vec::new());
+
+    let response = get_features(channel.state().clone()).await;
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect_valid("read feature response");
+    let values: std::collections::BTreeMap<String, bool> =
+        serde_json::from_slice(&body).expect_valid("decode feature response");
+
+    assert_eq!(values.get("route_memory"), Some(&false));
+}
+
 #[tokio::test]
 async fn apply_flag_override_fails_without_writing_when_hydration_fails() {
     use crate::testing::null_db::CapturingStore;

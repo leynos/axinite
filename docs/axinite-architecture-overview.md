@@ -173,6 +173,16 @@ settings directory is as injectable as the environment values. This boundary is
 what lets reload tests exercise the full cycle without mutating the test
 process environment.
 
+Two consequences of that boundary are worth stating explicitly. First, the
+injector writes into the snapshot's secret overlay, and `EnvContext::get`
+prefers environment values over that overlay, so a non-empty
+`HTTP_WEBHOOK_SECRET` captured at startup keeps winning over a rotated value
+from the secrets store. Second, listener control is wired at startup:
+`create_hot_reload_manager_from_context` wraps the `WebhookServer` handle
+created during startup in a `WebhookListenerController`, so a manager built
+without that handle has no controller and cannot restart or stop the listener
+on reload.
+
 ### 3.2 AppBuilder phases
 
 `AppBuilder` is the mechanical centre of the system. It exists to keep startup

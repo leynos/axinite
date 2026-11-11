@@ -17,6 +17,11 @@ fn env_value() -> impl Strategy<Value = String> {
     "[A-Za-z0-9_.-]{0,16}"
 }
 
+/// A file-only key that the generator cannot produce, so it is guaranteed to be
+/// absent from the snapshot. It is assigned twice in every case, which makes
+/// first-declaration-wins observable instead of masked by snapshot precedence.
+const FILE_ONLY_KEY: &str = "AXINITE_TEST_FILE_ONLY_REPEATED_KEY";
+
 /// One merge scenario with deliberate key overlap between the snapshot and the
 /// file, plus repeated file assignments and file-only keys.
 #[derive(Debug)]
@@ -28,20 +33,31 @@ struct MergeCase {
 
 /// Generate a scenario whose file always re-assigns every snapshot key, so the
 /// snapshot-wins rule is exercised rather than left to accidental collisions.
-/// The first shared key is also assigned again later in the file, so the
-/// first-declaration-wins rule is exercised too.
+/// The first shared key is also assigned again later in the file, and a key
+/// absent from the snapshot is assigned twice with distinct values, so both
+/// precedence rules are exercised deliberately.
 fn merge_case() -> impl Strategy<Value = MergeCase> {
-    prop::collection::vec(env_key(), 0..6).prop_flat_map(|keys| {
+    prop::collection::vec(env_key(), 1..6).prop_flat_map(|keys| {
         let count = keys.len();
         (
             prop::collection::vec(env_value(), count..=count),
             prop::collection::vec(env_value(), count..=count),
-            prop::collection::vec(env_value(), 0..3),
+            prop::collection::vec(env_value(), 1..3),
             prop::collection::vec((env_key(), env_value()), 0..3),
             prop::collection::vec((env_key(), env_value()), 0..3),
+            env_value(),
+            "[A-Za-z0-9]{1,8}",
         )
             .prop_map(
-                move |(snapshot_values, file_values, repeat_values, file_only, secrets)| {
+                move |(
+                    snapshot_values,
+                    file_values,
+                    repeat_values,
+                    file_only,
+                    secrets,
+                    first_only_value,
+                    suffix,
+                )| {
                     let snapshot: Vec<(String, String)> =
                         keys.iter().cloned().zip(snapshot_values).collect();
                     let mut file: Vec<(String, String)> =
@@ -54,6 +70,13 @@ fn merge_case() -> impl Strategy<Value = MergeCase> {
                         );
                     }
                     file.extend(file_only);
+                    // The suffix is non-empty, so the second assignment always
+                    // differs from the first, even when the first is empty.
+                    file.push((FILE_ONLY_KEY.to_string(), first_only_value.clone()));
+                    file.push((
+                        FILE_ONLY_KEY.to_string(),
+                        format!("{first_only_value}-{suffix}"),
+                    ));
                     MergeCase {
                         snapshot,
                         file,
@@ -84,11 +107,12 @@ proptest! {
 
     /// The snapshot wins over the file, and where the snapshot has no value
     /// the first declaration in the file wins, matching dotenv precedence.
-    /// Every case re-assigns the snapshot keys in the file and repeats one
-    /// file key, so both rules are exercised deliberately. Raw environment
-    /// values and the secret overlay are both compared with a reference merge,
-    /// so an empty override, a repeated assignment, or a secret clobbered by
-    /// the file is detected.
+    /// Every case re-assigns the snapshot keys in the file, repeats one shared
+    /// key, and assigns a snapshot-absent key twice with distinct values, so
+    /// both rules are exercised deliberately. Raw environment values and the
+    /// secret overlay are both compared with a reference merge, so an empty
+    /// override, a repeated assignment, or a secret clobbered by the file is
+    /// detected.
     #[test]
     fn prop_merge_prefers_snapshot_then_first_file_value(case in merge_case()) {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
