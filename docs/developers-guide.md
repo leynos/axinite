@@ -3175,7 +3175,8 @@ Two wiring rules follow from that boundary:
   over that overlay. A non-empty `HTTP_WEBHOOK_SECRET` captured at startup
   therefore keeps winning over a rotated value from the secrets store; the
   rotated value takes effect only when the environment does not set the
-  variable.
+  variable or sets it to an empty value, because `EnvContext::get` treats an
+  empty string as unset.
 - **The listener controller must exist at startup.** The factory wraps the
   `WebhookServer` handle created during startup in a
   `WebhookListenerController` and passes it to the manager. A manager built
