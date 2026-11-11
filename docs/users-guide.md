@@ -317,8 +317,9 @@ setup:
 - **Unreadable file** — for example when the file exists but the daemon's user
   lacks read permission. Startup fails and reports
   `failed to read settings file <path>: <reason>`.
-- **Malformed file** — when the file is not valid JSON. Startup fails and
-  reports `failed to parse settings file <path>: <reason>`.
+- **Malformed file** — when the file is not valid JSON, or when it is valid
+  JSON whose known fields have the wrong type. Startup fails and reports
+  `failed to parse settings file <path>: <reason>`.
 
 A reported settings error is fatal rather than silently replaced by defaults,
 so a corrupted file cannot quietly discard a configured database or provider.
@@ -331,7 +332,10 @@ log names the offending path. A database-backed deployment reloads from the
 settings table and `config.toml` and does not inspect `settings.json`.
 
 The `settings.json` schema is tolerant of unknown keys and of keys omitted by
-older releases; missing fields take their defaults.
+older releases; missing fields take their defaults. A known field whose value
+has the wrong type is a schema error, not a tolerated unknown key: it is
+reported like a syntax error and fails configuration loading, so correct the
+invalid value rather than removing the file.
 
 ### Settings loading for library consumers
 

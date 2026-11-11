@@ -134,11 +134,20 @@ before channels and background services start.
    startup merges `.env` into that updated copy. A key entered during a
    `--no-db` first run therefore reaches configuration resolution even though
    the secrets store is unavailable.
-5. `Config::from_context(...)` builds the initial configuration from that
-   snapshot, optional TOML, and defaults. The config layer never rereads
-   process variables while resolving sub-configs, so tests and internal callers
-   get deterministic resolution from the same inputs the runtime uses. The
-   database is not yet required at this point.
+5. Startup loads the initial configuration in two explicit steps.
+   `load_settings_from_context(env)` reads `settings.json` from the snapshot's
+   base directory, surfacing an unreadable or unparsable file as an error, and
+   a missing file as defaults. Then
+   `Config::from_context_with_optional_toml(env, &settings, toml_path)`
+   resolves the configuration from that snapshot, those settings, the optional
+   `--config` path, and defaults; `None` still applies the default
+   `~/.axinite/config.toml` overlay. `Config::from_context(env, settings)` is
+   the lower-level form that takes already-resolved settings and reads neither
+   `settings.json` nor a TOML file, though the LLM resolver still loads the
+   provider registry and the secrets resolver may probe the OS keychain. The
+   config layer never rereads process variables while resolving sub-configs, so
+   tests and internal callers get deterministic resolution from the same inputs
+   the runtime uses. The database is not yet required at this point.
 6. `AppBuilder::new_with_context(params, env_context)` and
    `build_components_with_context()` execute the mechanical initialization
    phases in a fixed order, returning
