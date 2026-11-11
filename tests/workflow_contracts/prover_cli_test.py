@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -18,6 +19,9 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
 from _makefile_test_support import shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -316,6 +320,31 @@ def test_verus_proof_query_passes_a_padded_path_through_unchanged() -> None:
         "--proof-file",
         " /proofs/main.rs ",
     ]
+
+
+@given(
+    flags=st.lists(st.text(min_size=1), max_size=6),
+    default=st.text(min_size=1).filter(lambda value: value.strip()),
+)
+def test_verus_proof_query_round_trips_quoted_flags(
+    flags: list[str],
+    default: str,
+) -> None:
+    """Preserve every literal argument and its order through quoting."""
+    cli = _load_cli()
+    rendered = " ".join(shlex.quote(flag) for flag in flags)
+
+    arguments = cli._proof_arguments(
+        {"VERUS_FLAGS": rendered, "VERUS_PROOF_FILE": default}
+    )
+
+    selects_proof = any(
+        flag == "--proof-file" or flag.startswith("--proof-file=") for flag in flags
+    )
+    if selects_proof:
+        assert arguments == flags
+    else:
+        assert arguments == ["--proof-file", default, *flags]
 
 
 def test_verus_proof_query_keeps_an_explicit_proof_selection() -> None:

@@ -399,6 +399,16 @@ adoption programme complete.
       `Coverage Ratchet`, `Frontend`, and `Release package validation` were
       green on that commit. The documentation-only evidence commit recording
       these results re-ran the affected Markdown gates on its exact tree.
+- [x] (2026-11-11) Review repair for the `7385fa7c` review. The
+      `Testing (Property / Proof)` pre-merge row asked for a generated test of
+      Verus argument forwarding, so
+      `tests/workflow_contracts/prover_cli_test.py` now carries a Hypothesis
+      property that quotes arbitrary flag lists, parses them back through
+      `_proof_arguments`, and asserts that every literal argument and its order
+      survive while the default proof file is inserted only when no flag
+      selects one. The inline finding on the reproduction block was valid: the
+      block set `pipefail` without `errexit`, so a failed gate could be masked
+      by a later success. It now runs `set -e -o pipefail`.
 
 M4 validation note: the first full workflow-contract run found that the new
 workflow lacked the repository-required per-pull-request concurrency group and
@@ -1048,11 +1058,12 @@ external assumptions exercised by these repository integration tests.
 
 ## Concrete validation and recovery
 
-Run commands from the repository root, one gate at a time, with `pipefail` and
-logs under `/tmp`. During implementation the relevant sequence is:
+Run commands from the repository root, one gate at a time, with `errexit` and
+`pipefail` so the block stops at the first failed gate, and logs under `/tmp`.
+During implementation the relevant sequence is:
 
 ```bash
-set -o pipefail
+set -e -o pipefail
 make test-workflow-contracts 2>&1 | tee /tmp/prover-contracts-axinite.out
 make install-kani 2>&1 | tee /tmp/prover-install-kani-axinite.out
 make install-verus 2>&1 | tee /tmp/prover-install-verus-axinite.out
