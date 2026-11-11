@@ -40,16 +40,32 @@ fn test_channel(name: &str, secret_name: &str) -> Arc<WasmChannel> {
 /// Build a channel whose HTTP capability declares the supplied credential
 /// mappings.
 fn test_channel_with_mappings(name: &str, secret_names: &[String]) -> Arc<WasmChannel> {
+    let mappings: Vec<(String, String)> = secret_names
+        .iter()
+        .map(|secret_name| (secret_name.clone(), secret_name.clone()))
+        .collect();
+    test_channel_with_credential_mappings(name, &mappings)
+}
+
+/// Build a channel whose credential mappings use explicit `(key, secret_name)`
+/// pairs.
+///
+/// Distinct keys may name the same secret, so a channel can declare a repeated
+/// placeholder while keeping a valid capability map.
+fn test_channel_with_credential_mappings(
+    name: &str,
+    mappings: &[(String, String)],
+) -> Arc<WasmChannel> {
     let runtime = Arc::new(
         WasmChannelRuntime::new(WasmChannelRuntimeConfig::for_testing()).expect("test runtime"),
     );
     let prepared = Arc::new(PreparedChannelModule::for_testing(name, "test channel"));
-    let http = secret_names
+    let http = mappings
         .iter()
-        .fold(HttpCapability::default(), |http, secret_name| {
+        .fold(HttpCapability::default(), |http, (key, secret_name)| {
             http.with_credential(
-                secret_name,
-                CredentialMapping::bearer(secret_name, "example.com"),
+                key.clone(),
+                CredentialMapping::bearer(secret_name.clone(), "example.com"),
             )
         });
     let capabilities = ChannelCapabilities::for_channel(name)

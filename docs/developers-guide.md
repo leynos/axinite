@@ -2086,17 +2086,22 @@ The intended call pattern is:
 3. Build config through `Config::from_context(...)` or
    `Config::from_context_with_toml(...)`.
 
-This keeps config resolution deterministic because the policy layer reads from
-an explicit snapshot instead of touching ambient process state while it
-resolves individual sub-configs.
+This keeps environment-backed resolution deterministic because the policy layer
+reads from an explicit snapshot instead of touching ambient process state while
+it resolves individual sub-configs. The provider registry and the OS keychain
+are the remaining fixed side inputs, described below.
 
 Each loader has a snapshot-taking form and an ambient form. Prefer the
 snapshot-taking form in tests, pure setup code, and any flow that already owns
 a stable input snapshot; use the ambient form only when the caller genuinely
 wants it to do the capture work.
 
-- `Config::from_context(ctx, settings)` resolves the settings it is given and
-  reads no files.
+- `Config::from_context(ctx, settings)` resolves the supplied settings and
+  takes every environment input from `ctx`. It reads neither `settings.json`
+  nor a TOML overlay, but resolution is not free of side inputs: the LLM
+  resolver loads the provider registry (compiled-in defaults plus
+  `~/.axinite/providers.json` when present), and the secrets resolver probes
+  the OS keychain when `SECRETS_MASTER_KEY` is absent from the snapshot.
   `Config::from_context_with_optional_toml(ctx, settings, toml_path)` adds the
   TOML overlay: `Some(path)` merges that file and treats a missing explicit
   file as an error, while `None` merges `<base_dir>/config.toml` when it

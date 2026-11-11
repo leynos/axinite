@@ -23,12 +23,32 @@
 //! - In-flight jobs are paused during restart and resumed by the entrypoint
 //! - Future: Implement graceful shutdown with CancellationToken for proper resource cleanup
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::EnvContext;
 use crate::context::JobContext;
 #[allow(unused_imports)]
 use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
+
+/// Action performed by the delayed restart task once its delay elapses.
+///
+/// Production terminates the process with exit code 0. Tests substitute a
+/// recording implementation so the delayed decision is observable end to end
+/// without ending the test process.
+trait RestartExit: Send + Sync {
+    /// Terminate the process, or record that termination was requested.
+    fn exit(&self);
+}
+
+/// Production restart action: terminate the process with a clean exit code.
+struct ProcessExit;
+
+impl RestartExit for ProcessExit {
+    fn exit(&self) {
+        std::process::exit(0);
+    }
+}
 
 /// Tool for triggering a graceful process restart via exit code 0.
 ///
@@ -38,6 +58,7 @@ use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput}
 /// interface to prevent unauthorized restarts.
 pub struct RestartTool {
     env: EnvContext,
+    exit: Arc<dyn RestartExit>,
 }
 
 impl RestartTool {
@@ -48,7 +69,15 @@ impl RestartTool {
 
     /// Construct the restart adapter from an explicit environment snapshot.
     pub fn from_context(env: EnvContext) -> Self {
-        Self { env }
+        Self::with_exit(env, Arc::new(ProcessExit))
+    }
+
+    /// Construct the restart adapter with an explicit snapshot and exit action.
+    ///
+    /// The exit action is the seam that lets a test observe whether the
+    /// delayed task would terminate the process.
+    fn with_exit(env: EnvContext, exit: Arc<dyn RestartExit>) -> Self {
+        Self { env, exit }
     }
 }
 
@@ -164,12 +193,13 @@ impl NativeTool for RestartTool {
             delay,
             restart_disabled
         );
+        let exit = Arc::clone(&self.exit);
         tokio::spawn(async move {
             tracing::info!("[RestartTool] Sleeping for {} seconds before exit", delay);
             tokio::time::sleep(Duration::from_secs(delay)).await;
             if !restart_disabled {
                 tracing::warn!("[RestartTool] Calling std::process::exit(0) NOW");
-                std::process::exit(0);
+                exit.exit();
             } else {
                 tracing::info!(
                     "[RestartTool] Exit disabled (AXINITE_DISABLE_RESTART set), skipping std::process::exit(0)"
@@ -195,5 +225,7 @@ impl NativeTool for RestartTool {
     // This allows the tool to execute in autonomous jobs created from approved commands.
 }
 
+#[cfg(test)]
+mod exit_tests;
 #[cfg(test)]
 mod tests;

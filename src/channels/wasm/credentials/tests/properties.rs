@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use proptest::prelude::*;
 
-use super::{in_memory_store, test_channel_with_mappings};
+use super::{in_memory_store, test_channel_with_credential_mappings};
 use crate::channels::wasm::credentials::inject_channel_credentials_from_context;
 use crate::config::EnvContext;
 use crate::secrets::{CreateSecretParams, NativeSecretsStore, SecretsStore};
@@ -13,8 +13,9 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     /// Only channel-prefixed placeholders are injected, persistent secrets
-    /// take precedence over environment values, and the reported count
-    /// matches the injected placeholder set.
+    /// take precedence over environment values, the reported count matches the
+    /// injected placeholder set, and a placeholder declared by several mapping
+    /// keys is injected once.
     #[test]
     fn prop_credential_injection_respects_prefix_and_precedence(
         channel_suffix in 0u8..3,
@@ -44,15 +45,24 @@ proptest! {
             let overlap_secret_name = format!("{channel_name}_overlap");
             let overlap_placeholder = overlap_secret_name.to_uppercase();
 
-            let mut mapping_names: Vec<String> = mapping_specs
+            let mut mappings: Vec<(String, String)> = mapping_specs
                 .iter()
-                .map(|(id, prefixed)| secret_name(*id, *prefixed))
+                .map(|(id, prefixed)| {
+                    let name = secret_name(*id, *prefixed);
+                    (name.clone(), name)
+                })
                 .collect();
-            mapping_names.push(overlap_secret_name.clone());
-            mapping_names.sort();
-            mapping_names.dedup();
+            mappings.push((overlap_secret_name.clone(), overlap_secret_name.clone()));
+            // A second mapping key that names the same secret, so the channel
+            // declares a repeated placeholder alongside its other mappings.
+            mappings.push((
+                format!("{channel_name}_overlap_alias"),
+                overlap_secret_name.clone(),
+            ));
+            mappings.sort();
+            mappings.dedup();
 
-            let channel = test_channel_with_mappings(&channel_name, &mapping_names);
+            let channel = test_channel_with_credential_mappings(&channel_name, &mappings);
             let store = in_memory_store();
             let mut expected_store = HashMap::new();
             for (index, (id, prefixed, persistent)) in secret_specs.iter().enumerate() {

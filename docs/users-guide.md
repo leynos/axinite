@@ -254,6 +254,31 @@ that previously called `load_axinite_env` and then read
 and read the value from the returned `EnvContext`, or pass that snapshot to the
 consumer that needs the backend.
 
+Library configuration loaders no longer read `.env` files. `Config::from_env()`,
+`Config::from_env_with_toml()`, `Config::from_db()`, and
+`Config::from_db_with_toml()` used to call `dotenvy::dotenv()` and
+`bootstrap::load_axinite_env()` themselves; they now capture only the process
+environment through `bootstrap::capture_config_env_context()`. The binary still
+loads `./.env` and `~/.axinite/.env` at its synchronous startup boundary,
+before the Tokio runtime starts, so normal deployments are unaffected. An
+embedder that relied on the loaders to read those files should merge them into
+a snapshot first:
+
+1. Start from an `EnvContext` that already holds the real process environment,
+   so a real environment variable still outranks either file.
+2. Load `./.env` into that snapshot without overwriting existing keys, then
+   apply `bootstrap::merge_axinite_env_into_context(&ctx)`, which adds
+   `~/.axinite/.env` values only for keys the snapshot does not already hold.
+   This preserves the startup order: process environment first, project `.env`
+   next, Axinite `.env` last.
+3. Pass the result to `Config::from_env_from_context(...)` or
+   `Config::from_db_from_context(...)`.
+
+Within config resolution the snapshot still outranks the TOML file, which
+outranks database settings and defaults. Loading `.env` files without mutating
+the process environment is tracked in
+[issue #468](https://github.com/leynos/axinite/issues/468).
+
 ### Reliability metrics
 
 Building with the optional `metrics` feature emits counters for startup
