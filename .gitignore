@@ -60,3 +60,8 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# Local formal verification tool installations and archive caches
+.verus/
+.cache/kani/
+.cache/z3/
