@@ -244,6 +244,16 @@ snapshot to the API under test. The `test_env_context()`,
 `test_env_context_with(&[(key, value)])`, and `test_config_from_context(&ctx)`
 helpers cover the common cases without touching the process environment.
 
+`bootstrap::load_axinite_env` no longer writes an auto-detected
+`DATABASE_BACKEND=libsql` into the process environment. It still loads the
+Axinite `.env` file, but the backend choice is applied to the snapshot by
+`bootstrap::capture_config_env_context`, which sets `DATABASE_BACKEND=libsql`
+when the variable is absent and the default libSQL database file exists. Code
+that previously called `load_axinite_env` and then read
+`std::env::var("DATABASE_BACKEND")` should call `capture_config_env_context()`
+and read the value from the returned `EnvContext`, or pass that snapshot to the
+consumer that needs the backend.
+
 ### Reliability metrics
 
 Building with the optional `metrics` feature emits counters for startup

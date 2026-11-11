@@ -310,3 +310,34 @@ async fn test_restart_tool_requires_docker_environment() {
     let result = tool.execute(serde_json::json!({}), &ctx).await;
     assert!(matches!(result, Err(ToolError::ExecutionFailed(_))));
 }
+
+/// The delayed restart decision must come from the supplied snapshot.
+///
+/// A disabling value suppresses `std::process::exit(0)`; an absent or
+/// non-disabling value permits it. This is the decision the background task
+/// makes after the delay, so a regression that reads the ambient environment
+/// or ignores the snapshot fails here without terminating the test process.
+#[test]
+fn restart_exit_suppression_reads_the_snapshot() {
+    let cases: [(&str, Option<&str>, bool); 7] = [
+        ("absent", None, false),
+        ("1", Some("1"), true),
+        ("true", Some("true"), true),
+        ("TRUE", Some("TRUE"), true),
+        ("0", Some("0"), false),
+        ("false", Some("false"), false),
+        ("empty", Some(""), false),
+    ];
+
+    for (label, value, expected) in cases {
+        let env = match value {
+            Some(value) => EnvContext::default().with_env("AXINITE_DISABLE_RESTART", value),
+            None => EnvContext::default(),
+        };
+        assert_eq!(
+            restart_exit_suppressed(&env),
+            expected,
+            "case {label} should report suppressed={expected}"
+        );
+    }
+}

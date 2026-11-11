@@ -37,10 +37,18 @@ proptest! {
                 }
             };
 
+            // A guaranteed overlap: the same placeholder is present in both the
+            // store and the snapshot with distinct values, so store precedence
+            // is exercised in every case rather than only when the random
+            // generators happen to collide.
+            let overlap_secret_name = format!("{channel_name}_overlap");
+            let overlap_placeholder = overlap_secret_name.to_uppercase();
+
             let mut mapping_names: Vec<String> = mapping_specs
                 .iter()
                 .map(|(id, prefixed)| secret_name(*id, *prefixed))
                 .collect();
+            mapping_names.push(overlap_secret_name.clone());
             mapping_names.sort();
             mapping_names.dedup();
 
@@ -64,20 +72,28 @@ proptest! {
                     expected_store.insert(name.to_uppercase(), value);
                 }
             }
+            NativeSecretsStore::create(
+                store.as_ref(),
+                "default",
+                CreateSecretParams::new(&overlap_secret_name, "store-overlap"),
+            )
+            .await
+            .expect("overlap secret should be created");
+            expected_store.insert(overlap_placeholder.clone(), "store-overlap".to_string());
 
             let mut env = EnvContext::default();
             let mut expected_env = HashMap::new();
             for (index, (id, prefixed)) in mapping_specs.iter().enumerate() {
                 let placeholder = secret_name(*id, *prefixed).to_uppercase();
-                if !placeholder.starts_with(&prefix)
-                    || expected_store.contains_key(&placeholder)
-                {
+                if !placeholder.starts_with(&prefix) {
                     continue;
                 }
                 let value = format!("env-{index}");
                 env = env.with_env(placeholder.as_str(), value.as_str());
                 expected_env.insert(placeholder, value);
             }
+            env = env.with_env(overlap_placeholder.as_str(), "env-overlap");
+            expected_env.insert(overlap_placeholder, "env-overlap".to_string());
 
             let count = inject_channel_credentials_from_context(
                 &channel,

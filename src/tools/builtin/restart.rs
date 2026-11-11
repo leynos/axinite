@@ -58,6 +58,18 @@ impl Default for RestartTool {
     }
 }
 
+/// Whether the delayed restart must skip `std::process::exit(0)`.
+///
+/// `AXINITE_DISABLE_RESTART` suppresses the exit when it is `1` or `true`
+/// (case-insensitive), so tests can observe the restart response without
+/// terminating the process. Any other value, or an absent variable, permits
+/// the exit. The decision is read from the supplied snapshot, never from the
+/// ambient environment.
+fn restart_exit_suppressed(env: &EnvContext) -> bool {
+    env.get("AXINITE_DISABLE_RESTART")
+        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+}
+
 impl NativeTool for RestartTool {
     fn name(&self) -> &str {
         "restart"
@@ -145,10 +157,7 @@ impl NativeTool for RestartTool {
         //   to properly drain Axum, close DB connections, and checkpoint jobs.
         // Check if restart is disabled (e.g., in tests). This allows tests to verify
         // parameter parsing and output without actually terminating the process.
-        let restart_disabled = self
-            .env
-            .get("AXINITE_DISABLE_RESTART")
-            .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+        let restart_disabled = restart_exit_suppressed(&self.env);
 
         tracing::info!(
             "[RestartTool::execute] Spawning background task to exit in {} seconds (disabled={})",

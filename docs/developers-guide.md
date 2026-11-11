@@ -2090,15 +2090,32 @@ This keeps config resolution deterministic because the policy layer reads from
 an explicit snapshot instead of touching ambient process state while it
 resolves individual sub-configs.
 
-Use the older ambient entrypoints only when the caller genuinely wants them to
-do the capture work:
+Each loader has a snapshot-taking form and an ambient form. Prefer the
+snapshot-taking form in tests, pure setup code, and any flow that already owns
+a stable input snapshot; use the ambient form only when the caller genuinely
+wants it to do the capture work.
 
-- `Config::from_env*` captures process env and bootstrap overlays for
-  early startup paths.
-- `Config::from_db*` combines DB-backed settings with an ambient env
-  snapshot.
-- `Config::from_context*` should be preferred in tests, pure setup code,
-  and any flow that already owns a stable input snapshot.
+- `Config::from_context(ctx, settings)` resolves the settings it is given and
+  reads no files.
+  `Config::from_context_with_optional_toml(ctx, settings, toml_path)` adds the
+  TOML overlay: `Some(path)` merges that file and treats a missing explicit
+  file as an error, while `None` merges `<base_dir>/config.toml` when it
+  exists, where `base_dir` comes from the snapshot. The `None` case is what
+  keeps startup consistent with the reload path, which also applies the default
+  overlay.
+- `Config::from_env_from_context(ctx)` is the snapshot-taking form of
+  `Config::from_env()`. It loads `settings.json` from `ctx.axinite_base_dir()`,
+  propagates an unreadable or malformed file as `ConfigError`, applies the
+  default `config.toml` overlay, and resolves the result from `ctx`. Use it at
+  reload boundaries that already own a current snapshot.
+- `Config::from_db_from_context(store, user_id, ctx)` and
+  `Config::from_db_from_context_with_toml(store, user_id, ctx, toml_path)` are
+  the snapshot-taking forms of `Config::from_db*`. They read the settings table
+  for `user_id`, fall back to `Settings::default()` with a warning when that
+  read fails, merge the TOML overlay as above, and resolve from `ctx`.
+- The ambient `Config::from_env*` and `Config::from_db*` forms capture process
+  env and bootstrap overlays themselves and are intended for early startup
+  paths that own the capture.
 
 For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps tests
