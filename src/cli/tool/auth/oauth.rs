@@ -189,6 +189,8 @@ fn resolve_oauth_client_credentials(
 mod tests {
     //! Unit tests for OAuth client credential resolution precedence.
 
+    use rstest::rstest;
+
     use super::resolve_oauth_client_credentials;
     use crate::config::EnvContext;
     use crate::tools::wasm::{AuthCapabilitySchema, OAuthConfigSchema};
@@ -215,74 +217,114 @@ mod tests {
         }
     }
 
-    /// Inline capability values outrank the snapshot and the bundled app.
-    #[test]
-    fn inline_credentials_take_precedence_over_snapshot_and_builtin() {
-        let ctx = EnvContext::default()
-            .with_env(CLIENT_ID_ENV, "snapshot-id")
-            .with_env(CLIENT_SECRET_ENV, "snapshot-secret");
-
-        let (client_id, client_secret) = resolve_oauth_client_credentials(
-            &auth("google_oauth_token"),
-            &oauth_config(Some("inline-id"), Some("inline-secret")),
-            &ctx,
-        )
-        .expect("inline credentials must resolve");
-
-        assert_eq!(client_id, "inline-id");
-        assert_eq!(client_secret.as_deref(), Some("inline-secret"));
+    /// Credentials supplied by each precedence layer.
+    #[derive(Clone, Copy, Default)]
+    struct Layer {
+        env_id: Option<&'static str>,
+        env_secret: Option<&'static str>,
+        overlay_id: Option<&'static str>,
+        overlay_secret: Option<&'static str>,
     }
 
-    /// A provider without bundled credentials resolves from the snapshot.
-    #[test]
-    fn snapshot_environment_supplies_missing_credentials() {
-        let ctx = EnvContext::default()
-            .with_env(CLIENT_ID_ENV, "snapshot-id")
-            .with_env(CLIENT_SECRET_ENV, "snapshot-secret");
-
-        let (client_id, client_secret) = resolve_oauth_client_credentials(
-            &auth("custom_oauth_token"),
-            &oauth_config(None, None),
-            &ctx,
-        )
-        .expect("snapshot credentials must resolve");
-
-        assert_eq!(client_id, "snapshot-id");
-        assert_eq!(client_secret.as_deref(), Some("snapshot-secret"));
+    impl Layer {
+        /// Build the snapshot that carries this layer's values.
+        fn context(self) -> EnvContext {
+            let mut ctx = EnvContext::default();
+            let layers = [
+                (self.env_id, self.env_secret, false),
+                (self.overlay_id, self.overlay_secret, true),
+            ];
+            for (id, secret, overlay) in layers {
+                for (name, value) in [(CLIENT_ID_ENV, id), (CLIENT_SECRET_ENV, secret)] {
+                    let Some(value) = value else { continue };
+                    ctx = if overlay {
+                        ctx.with_secret(name, value)
+                    } else {
+                        ctx.with_env(name, value)
+                    };
+                }
+            }
+            ctx
+        }
     }
 
-    /// The injected secret overlay is consulted when the environment is empty.
-    #[test]
-    fn injected_secret_overlay_supplies_credentials_when_environment_is_absent() {
-        let ctx = EnvContext::default()
-            .with_secret(CLIENT_ID_ENV, "overlay-id")
-            .with_secret(CLIENT_SECRET_ENV, "overlay-secret");
-
-        let (client_id, client_secret) = resolve_oauth_client_credentials(
-            &auth("custom_oauth_token"),
-            &oauth_config(None, None),
-            &ctx,
-        )
-        .expect("overlay credentials must resolve");
-
-        assert_eq!(client_id, "overlay-id");
-        assert_eq!(client_secret.as_deref(), Some("overlay-secret"));
+    /// One credential-resolution scenario.
+    struct Scenario {
+        secret_name: &'static str,
+        layer: Layer,
+        inline_id: Option<&'static str>,
+        inline_secret: Option<&'static str>,
+        /// `None` means the bundled app must supply non-empty credentials.
+        expected: Option<(&'static str, &'static str)>,
     }
 
-    /// The bundled Google app is the last resort for its secret name.
-    #[test]
-    fn builtin_credentials_are_used_when_nothing_else_is_configured() {
-        let ctx = EnvContext::default();
+    /// Resolve credentials that must fail, returning the error message.
+    fn resolve_error(secret_name: &str, config: OAuthConfigSchema, ctx: &EnvContext) -> String {
+        resolve_oauth_client_credentials(&auth(secret_name), &config, ctx)
+            .expect_err("resolution must fail")
+            .to_string()
+    }
 
-        let (client_id, client_secret) = resolve_oauth_client_credentials(
-            &auth("google_oauth_token"),
-            &oauth_config(None, None),
-            &ctx,
-        )
-        .expect("bundled credentials must resolve");
+    /// Credential sources resolve in precedence order, highest layer first.
+    #[rstest]
+    #[case::inline_outranks_snapshot_and_builtin(Scenario {
+        secret_name: "google_oauth_token",
+        layer: Layer {
+            env_id: Some("snapshot-id"),
+            env_secret: Some("snapshot-secret"),
+            overlay_id: Some("overlay-id"),
+            overlay_secret: Some("overlay-secret"),
+        },
+        inline_id: Some("inline-id"),
+        inline_secret: Some("inline-secret"),
+        expected: Some(("inline-id", "inline-secret")),
+    })]
+    #[case::snapshot_supplies_missing_credentials(Scenario {
+        secret_name: "custom_oauth_token",
+        layer: Layer {
+            env_id: Some("snapshot-id"),
+            env_secret: Some("snapshot-secret"),
+            ..Layer::default()
+        },
+        inline_id: None,
+        inline_secret: None,
+        expected: Some(("snapshot-id", "snapshot-secret")),
+    })]
+    #[case::overlay_supplies_credentials_when_environment_is_absent(Scenario {
+        secret_name: "custom_oauth_token",
+        layer: Layer {
+            overlay_id: Some("overlay-id"),
+            overlay_secret: Some("overlay-secret"),
+            ..Layer::default()
+        },
+        inline_id: None,
+        inline_secret: None,
+        expected: Some(("overlay-id", "overlay-secret")),
+    })]
+    #[case::builtin_used_when_nothing_else_is_configured(Scenario {
+        secret_name: "google_oauth_token",
+        layer: Layer::default(),
+        inline_id: None,
+        inline_secret: None,
+        expected: None,
+    })]
+    fn credentials_resolve_by_precedence(#[case] scenario: Scenario) {
+        let ctx = scenario.layer.context();
+        let config = oauth_config(scenario.inline_id, scenario.inline_secret);
+        let (client_id, client_secret) =
+            resolve_oauth_client_credentials(&auth(scenario.secret_name), &config, &ctx)
+                .expect("credentials must resolve");
 
-        assert!(!client_id.is_empty());
-        assert!(client_secret.is_some_and(|secret| !secret.is_empty()));
+        match scenario.expected {
+            Some((expected_id, expected_secret)) => {
+                assert_eq!(client_id, expected_id);
+                assert_eq!(client_secret.as_deref(), Some(expected_secret));
+            }
+            None => {
+                assert!(!client_id.is_empty());
+                assert!(client_secret.is_some_and(|secret| !secret.is_empty()));
+            }
+        }
     }
 
     /// A missing client ID names the environment variable to set.
@@ -290,14 +332,8 @@ mod tests {
     fn missing_credentials_report_the_configured_environment_variable() {
         let ctx = EnvContext::default();
 
-        let error = resolve_oauth_client_credentials(
-            &auth("custom_oauth_token"),
-            &oauth_config(None, None),
-            &ctx,
-        )
-        .expect_err("a missing client_id must fail");
+        let message = resolve_error("custom_oauth_token", oauth_config(None, None), &ctx);
 
-        let message = error.to_string();
         assert!(
             message.contains(CLIENT_ID_ENV),
             "the error must name the environment variable: {message}"
@@ -346,16 +382,11 @@ mod tests {
         }
 
         let ctx = EnvContext::default();
-        let error = resolve_oauth_client_credentials(
-            &auth("custom_oauth_token"),
-            &oauth_config(None, None),
-            &ctx,
-        )
-        .expect_err("an empty snapshot must not yield ambient credentials");
+        let message = resolve_error("custom_oauth_token", oauth_config(None, None), &ctx);
 
         assert!(
-            error.to_string().contains(CLIENT_ID_ENV),
-            "the ambient value must not be used: {error}"
+            message.contains(CLIENT_ID_ENV) && !message.contains("ambient-"),
+            "the ambient value must not be used: {message}"
         );
         Ok(())
     }
