@@ -237,6 +237,13 @@ way. The
 [0.19.0 migration notes](migrations/0.19.0.md#configuration-environment-snapshots)
 list the full set of context-aware entry points.
 
+The test helper `testing::test_utils::EnvVarsGuard` is removed. Tests that
+previously used it to set process environment variables should build an
+`EnvContext` with `EnvContext::default().with_env(key, value)` and pass that
+snapshot to the API under test. The `test_env_context()`,
+`test_env_context_with(&[(key, value)])`, and `test_config_from_context(&ctx)`
+helpers cover the common cases without touching the process environment.
+
 ### Reliability metrics
 
 Building with the optional `metrics` feature emits counters for startup

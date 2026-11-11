@@ -2248,9 +2248,19 @@ returns the wizard's updated snapshot with `.env` merged on top. A key entered
 during a `--no-db` first run therefore survives into configuration resolution
 even though the secrets store is unavailable.
 `phase_load_config_and_tracing_from` loads configuration from the resulting
-snapshot with `Config::from_context` rather than rereading process state, and
+snapshot rather than rereading process state, and
 `phase_onboard_and_load_config` composes the two phases so the binary and its
 tests exercise the same hand-off.
+
+Inside that phase, `load_initial_config_from` performs two explicit steps
+rather than one call. First, `load_settings_from_context(env)` reads
+`settings.json` from `env.axinite_base_dir()` and surfaces an unreadable or
+malformed file as `ConfigError`; a missing file yields `Settings::default()`.
+Second, `Config::from_context_with_optional_toml(env, &settings, toml_path)`
+resolves the configuration from that snapshot, those settings, and the
+`--config` path. The path is optional, and `None` still applies the default
+`~/.axinite/config.toml` overlay, so omitting `--config` does not drop settings
+that exist only there. The reload path applies the same default overlay.
 
 `AppBuilder::new_with_context(params, env_context)` accepts that snapshot and
 `build_components_with_context()` returns the updated snapshot alongside the
@@ -3773,6 +3783,20 @@ async_main()
        │         └─ dispatch_local_async_command()
        └─ dispatch_agent_commands()
 ```
+
+#### `Report<W>` output streaming
+
+The read-only CLI commands (`doctor`, `status`, and their siblings) render
+through `cli::report::Report<W>` instead of printing directly. `Report::new`
+wraps an injected `std::io::Write`, and every `part` or `line` call flushes
+immediately, so a slow later probe cannot hold back a diagnostic that has
+already been produced. The `out!` and `outln!` macros forward to those methods.
+
+Injection is what makes the commands testable: a command renders into a
+`Report<Vec<u8>>`, and `into_string()` (test builds only) returns the exact
+text it produced from a supplied environment snapshot. Production passes a lock
+on standard output. A new command should take the same shape rather than
+writing to standard output directly.
 
 ### Phase sequence
 

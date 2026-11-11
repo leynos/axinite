@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::config::EnvContext;
 use crate::testing::credentials::TEST_BEARER_TOKEN;
 use crate::worker::api::{
     COMPLETE_ROUTE, CREDENTIALS_ROUTE, CompletionReport, CredentialResponse, EVENT_ROUTE,
@@ -98,6 +99,49 @@ async fn worker_http_client_report_status_posts_status_payload() -> anyhow::Resu
     assert_eq!(
         state.auth_headers.lock().await.as_slice(),
         &[format!("Bearer {TEST_BEARER_TOKEN}")]
+    );
+
+    handle.abort();
+    let _ = handle.await;
+    Ok(())
+}
+
+/// The snapshot token, not the ambient environment, must reach the wire.
+///
+/// `from_context` resolves `AXINITE_WORKER_TOKEN` from the supplied snapshot.
+/// Construction succeeding only proves the value was read; this test proves
+/// the resolved value is the one attached to an outgoing request.
+#[tokio::test]
+async fn worker_http_client_from_context_sends_the_snapshot_token() -> anyhow::Result<()> {
+    async fn handler(
+        State(state): State<Arc<ClientMethodTestState>>,
+        Path(_job_id): Path<Uuid>,
+        headers: HeaderMap,
+        Json(update): Json<StatusUpdate>,
+    ) -> StatusCode {
+        record_auth(&headers, &state).await;
+        state.status_updates.lock().await.push(update);
+        StatusCode::OK
+    }
+
+    let state = Arc::new(ClientMethodTestState::default());
+    let (base_url, handle) = spawn_test_server(
+        Router::new()
+            .route(STATUS_ROUTE, post(handler))
+            .with_state(Arc::clone(&state)),
+    )
+    .await?;
+
+    let env = EnvContext::default().with_env("AXINITE_WORKER_TOKEN", "snapshot-token");
+    let client = WorkerHttpClient::from_context(base_url, Uuid::nil(), &env)?;
+
+    let update = StatusUpdate::new(WorkerState::InProgress, None, 1);
+    client.report_status(&update).await?;
+
+    assert_eq!(
+        state.auth_headers.lock().await.as_slice(),
+        &["Bearer snapshot-token".to_string()],
+        "the request must carry the token resolved from the snapshot"
     );
 
     handle.abort();
