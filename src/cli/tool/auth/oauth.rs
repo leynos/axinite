@@ -184,3 +184,179 @@ fn resolve_oauth_client_credentials(
 
     Ok((client_id, client_secret))
 }
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for OAuth client credential resolution precedence.
+
+    use super::resolve_oauth_client_credentials;
+    use crate::config::EnvContext;
+    use crate::tools::wasm::{AuthCapabilitySchema, OAuthConfigSchema};
+
+    const CLIENT_ID_ENV: &str = "AXINITE_TEST_OAUTH_CLIENT_ID";
+    const CLIENT_SECRET_ENV: &str = "AXINITE_TEST_OAUTH_CLIENT_SECRET";
+
+    fn oauth_config(client_id: Option<&str>, client_secret: Option<&str>) -> OAuthConfigSchema {
+        OAuthConfigSchema {
+            authorization_url: "https://example.test/authorize".to_string(),
+            token_url: "https://example.test/token".to_string(),
+            client_id: client_id.map(str::to_string),
+            client_id_env: Some(CLIENT_ID_ENV.to_string()),
+            client_secret: client_secret.map(str::to_string),
+            client_secret_env: Some(CLIENT_SECRET_ENV.to_string()),
+            ..OAuthConfigSchema::default()
+        }
+    }
+
+    fn auth(secret_name: &str) -> AuthCapabilitySchema {
+        AuthCapabilitySchema {
+            secret_name: secret_name.to_string(),
+            ..AuthCapabilitySchema::default()
+        }
+    }
+
+    /// Inline capability values outrank the snapshot and the bundled app.
+    #[test]
+    fn inline_credentials_take_precedence_over_snapshot_and_builtin() {
+        let ctx = EnvContext::default()
+            .with_env(CLIENT_ID_ENV, "snapshot-id")
+            .with_env(CLIENT_SECRET_ENV, "snapshot-secret");
+
+        let (client_id, client_secret) = resolve_oauth_client_credentials(
+            &auth("google_oauth_token"),
+            &oauth_config(Some("inline-id"), Some("inline-secret")),
+            &ctx,
+        )
+        .expect("inline credentials must resolve");
+
+        assert_eq!(client_id, "inline-id");
+        assert_eq!(client_secret.as_deref(), Some("inline-secret"));
+    }
+
+    /// A provider without bundled credentials resolves from the snapshot.
+    #[test]
+    fn snapshot_environment_supplies_missing_credentials() {
+        let ctx = EnvContext::default()
+            .with_env(CLIENT_ID_ENV, "snapshot-id")
+            .with_env(CLIENT_SECRET_ENV, "snapshot-secret");
+
+        let (client_id, client_secret) = resolve_oauth_client_credentials(
+            &auth("custom_oauth_token"),
+            &oauth_config(None, None),
+            &ctx,
+        )
+        .expect("snapshot credentials must resolve");
+
+        assert_eq!(client_id, "snapshot-id");
+        assert_eq!(client_secret.as_deref(), Some("snapshot-secret"));
+    }
+
+    /// The injected secret overlay is consulted when the environment is empty.
+    #[test]
+    fn injected_secret_overlay_supplies_credentials_when_environment_is_absent() {
+        let ctx = EnvContext::default()
+            .with_secret(CLIENT_ID_ENV, "overlay-id")
+            .with_secret(CLIENT_SECRET_ENV, "overlay-secret");
+
+        let (client_id, client_secret) = resolve_oauth_client_credentials(
+            &auth("custom_oauth_token"),
+            &oauth_config(None, None),
+            &ctx,
+        )
+        .expect("overlay credentials must resolve");
+
+        assert_eq!(client_id, "overlay-id");
+        assert_eq!(client_secret.as_deref(), Some("overlay-secret"));
+    }
+
+    /// The bundled Google app is the last resort for its secret name.
+    #[test]
+    fn builtin_credentials_are_used_when_nothing_else_is_configured() {
+        let ctx = EnvContext::default();
+
+        let (client_id, client_secret) = resolve_oauth_client_credentials(
+            &auth("google_oauth_token"),
+            &oauth_config(None, None),
+            &ctx,
+        )
+        .expect("bundled credentials must resolve");
+
+        assert!(!client_id.is_empty());
+        assert!(client_secret.is_some_and(|secret| !secret.is_empty()));
+    }
+
+    /// A missing client ID names the environment variable to set.
+    #[test]
+    fn missing_credentials_report_the_configured_environment_variable() {
+        let ctx = EnvContext::default();
+
+        let error = resolve_oauth_client_credentials(
+            &auth("custom_oauth_token"),
+            &oauth_config(None, None),
+            &ctx,
+        )
+        .expect_err("a missing client_id must fail");
+
+        let message = error.to_string();
+        assert!(
+            message.contains(CLIENT_ID_ENV),
+            "the error must name the environment variable: {message}"
+        );
+    }
+
+    /// Resolution must not fall back to the ambient process environment.
+    ///
+    /// The snapshot is empty, so a credential resolved here could only have
+    /// come from the real process environment. To make the two sources
+    /// distinguishable, the assertion runs in a child process whose ambient
+    /// environment defines the credential variables: an ambient fallback
+    /// resolves them and fails, while the snapshot-driven path ignores them.
+    /// The variables are set on the child process only, so the parent never
+    /// mutates its own environment.
+    #[test]
+    fn snapshot_credentials_ignore_the_ambient_environment() -> anyhow::Result<()> {
+        const CHILD_MARKER: &str = "AXINITE_OAUTH_CREDENTIALS_AMBIENT_CHILD";
+
+        if EnvContext::capture_ambient()
+            .get_owned(CHILD_MARKER)
+            .is_none()
+        {
+            let output = std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "cli::tool::auth::oauth::tests::snapshot_credentials_ignore_the_ambient_environment",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(CHILD_MARKER, "1")
+                .env(CLIENT_ID_ENV, "ambient-id")
+                .env(CLIENT_SECRET_ENV, "ambient-secret")
+                .output()?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success(),
+                "child failed: {}\n{stdout}",
+                output.status
+            );
+            assert!(
+                stdout.contains("1 passed"),
+                "child did not run the test: {stdout}"
+            );
+            return Ok(());
+        }
+
+        let ctx = EnvContext::default();
+        let error = resolve_oauth_client_credentials(
+            &auth("custom_oauth_token"),
+            &oauth_config(None, None),
+            &ctx,
+        )
+        .expect_err("an empty snapshot must not yield ambient credentials");
+
+        assert!(
+            error.to_string().contains(CLIENT_ID_ENV),
+            "the ambient value must not be used: {error}"
+        );
+        Ok(())
+    }
+}

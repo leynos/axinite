@@ -213,10 +213,17 @@ the service unit and restart the daemon rather than signalling it.
 
 Reload applies only the HTTP webhook settings: it restarts or stops the
 listener when the bind address or `channels.http` presence changes, and pushes
-a rotated `HTTP_WEBHOOK_SECRET` to live channels. Other resolved fields,
+a rotated `HTTP_WEBHOOK_SECRET` to live channels. Reload can only drive the
+listener controller that startup created, so enabling an HTTP listener that
+startup did not start takes a restart. A non-empty `HTTP_WEBHOOK_SECRET` in the
+startup environment outranks the injected secret, so remove that override and
+restart before relying on store-backed rotation. Other resolved fields,
 including database-backed settings, are discarded until the process restarts.
-If a reload fails, Axinite keeps serving the previous configuration; check the
-daemon log for the reported error before restarting.
+If an error aborts a reload, Axinite keeps serving the previous configuration;
+check the daemon log for the reported error before restarting. A database
+settings read failure does not abort the cycle:
+`Config::from_db_from_context_with_toml` substitutes `Settings::default()`, so
+the reload can complete with default HTTP settings.
 
 Library embedders that assemble these runtime components themselves must pass
 the same snapshot rather than letting each component capture the process
@@ -227,7 +234,7 @@ the gateway's feature-flag overlay from the snapshot, and
 `ExtensionRegistry::new_with_catalog(catalog_entries, relay_url)` and
 `builtin_entries_with_relay(relay_url)` take the snapshot's relay URL the same
 way. The
-[0.19.0 migration notes](../migrations/0.19.0.md#configuration-environment-snapshots)
+[0.19.0 migration notes](migrations/0.19.0.md#configuration-environment-snapshots)
 list the full set of context-aware entry points.
 
 ### Reliability metrics
@@ -288,8 +295,11 @@ older releases; missing fields take their defaults.
 
 Code that embeds Axinite, including its tests, can load settings through the
 same API the daemon uses. `Settings::load()` reads `settings.json` from the
-base directory, and `Settings::load_from(path)` reads a specific file. Both
-return `Result<Settings, SettingsError>`:
+ambient base directory, while `Settings::load_from(path)` reads a specific
+file. Snapshot-based callers should pass
+`ctx.axinite_base_dir().join("settings.json")` to `Settings::load_from` so they
+read the same file as the rest of their configuration. Both return
+`Result<Settings, SettingsError>`:
 
 - A missing file yields `Settings::default()`, matching first-run behaviour.
 - A file that exists but cannot be read yields `SettingsError::Read`.
