@@ -322,8 +322,17 @@ def test_verus_proof_query_passes_a_padded_path_through_unchanged() -> None:
     ]
 
 
+def _verus_flag() -> st.SearchStrategy[str]:
+    """Generate a flag, including the empty argument and both selector forms."""
+    return st.one_of(
+        st.text(),
+        st.just("--proof-file"),
+        st.builds(lambda path: f"--proof-file={path}", st.text()),
+    )
+
+
 @given(
-    flags=st.lists(st.text(min_size=1), max_size=6),
+    flags=st.lists(_verus_flag(), max_size=6),
     default=st.text(min_size=1).filter(lambda value: value.strip()),
 )
 def test_verus_proof_query_round_trips_quoted_flags(
@@ -345,6 +354,31 @@ def test_verus_proof_query_round_trips_quoted_flags(
         assert arguments == flags
     else:
         assert arguments == ["--proof-file", default, *flags]
+
+
+def test_verus_proof_query_forwards_selectors_and_empty_arguments_in_place() -> None:
+    """Keep empty arguments and both selector forms at their own positions."""
+    cli = _load_cli()
+
+    assert cli._proof_arguments(
+        {
+            "VERUS_FLAGS": "--verify-root /root '' --proof-file /proofs/other.rs --trace",
+            "VERUS_PROOF_FILE": "/unused",
+        }
+    ) == [
+        "--verify-root",
+        "/root",
+        "",
+        "--proof-file",
+        "/proofs/other.rs",
+        "--trace",
+    ]
+    assert cli._proof_arguments(
+        {
+            "VERUS_FLAGS": "--trace '' --proof-file=/proofs/other.rs --verify-root /root",
+            "VERUS_PROOF_FILE": "/unused",
+        }
+    ) == ["--trace", "", "--proof-file=/proofs/other.rs", "--verify-root", "/root"]
 
 
 def test_verus_proof_query_keeps_an_explicit_proof_selection() -> None:
