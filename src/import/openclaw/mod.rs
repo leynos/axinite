@@ -9,6 +9,7 @@ pub mod settings;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::config::EnvContext;
 use crate::db::{Database, SettingKey, UserId};
 use crate::import::{ImportError, ImportOptions, ImportStats};
 use crate::secrets::SecretsStore;
@@ -41,15 +42,30 @@ impl OpenClawImporter {
     }
 
     /// Detect if an OpenClaw installation exists at the default location (~/.openclaw).
-    pub fn detect() -> Option<PathBuf> {
-        if let Ok(home) = std::env::var("HOME") {
-            let openclaw_dir = PathBuf::from(home).join(".openclaw");
-            let config_file = openclaw_dir.join("openclaw.json");
-            if config_file.exists() {
-                return Some(openclaw_dir);
-            }
+    ///
+    /// Returns `Ok(None)` when no installation is present. Filesystem errors
+    /// are propagated so a permission or I/O failure is not reported as
+    /// "not installed".
+    pub fn detect() -> std::io::Result<Option<PathBuf>> {
+        Self::detect_from(&EnvContext::capture_ambient())
+    }
+
+    /// Detect an OpenClaw installation using the supplied environment snapshot.
+    ///
+    /// Returns `Ok(None)` when the snapshot has no `HOME` or the OpenClaw
+    /// configuration file is absent. An [`std::io::Error`] is returned when
+    /// the candidate path cannot be queried, so callers can distinguish a
+    /// missing installation from an unreadable one.
+    pub fn detect_from(env_context: &EnvContext) -> std::io::Result<Option<PathBuf>> {
+        let Some(home) = env_context.get("HOME") else {
+            return Ok(None);
+        };
+        let openclaw_dir = PathBuf::from(home).join(".openclaw");
+        let config_file = openclaw_dir.join("openclaw.json");
+        if config_file.try_exists()? {
+            return Ok(Some(openclaw_dir));
         }
-        None
+        Ok(None)
     }
 
     /// Persist settings to the database (Group 1: idempotent via upsert).
@@ -223,5 +239,59 @@ impl OpenClawImporter {
         }
 
         Ok(stats)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for environment-injected OpenClaw installation detection.
+
+    use super::OpenClawImporter;
+    use crate::config::EnvContext;
+
+    #[test]
+    fn detect_from_uses_the_supplied_home_directory() {
+        let home = tempfile::tempdir().expect("temporary home directory should be created");
+        let openclaw_dir = home.path().join(".openclaw");
+        ambient_fs::create_dir_all(&openclaw_dir).expect("OpenClaw directory should be created");
+        ambient_fs::write(openclaw_dir.join("openclaw.json"), "{}")
+            .expect("OpenClaw config should be created");
+        let home_path = home
+            .path()
+            .to_str()
+            .expect("temporary path should be UTF-8");
+        let env_context = EnvContext::default().with_env("HOME", home_path);
+
+        assert_eq!(
+            OpenClawImporter::detect_from(&env_context).expect("detection should succeed"),
+            Some(openclaw_dir)
+        );
+    }
+
+    #[test]
+    fn detect_from_reports_missing_home_as_absent() {
+        let env_context = EnvContext::default();
+
+        assert_eq!(
+            OpenClawImporter::detect_from(&env_context).expect("detection should succeed"),
+            None
+        );
+    }
+
+    #[test]
+    fn detect_from_propagates_filesystem_errors() {
+        let home = tempfile::tempdir().expect("temporary home directory should be created");
+        let not_a_directory = home.path().join("home-file");
+        ambient_fs::write(&not_a_directory, "not a directory")
+            .expect("home file should be created");
+        let home_path = not_a_directory
+            .to_str()
+            .expect("temporary path should be UTF-8");
+        let env_context = EnvContext::default().with_env("HOME", home_path);
+
+        let error = OpenClawImporter::detect_from(&env_context)
+            .expect_err("an unreadable candidate path must not be reported as absent");
+
+        assert_ne!(error.kind(), std::io::ErrorKind::NotFound, "{error}");
     }
 }

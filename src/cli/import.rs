@@ -6,6 +6,8 @@ use std::sync::Arc;
 use clap::Subcommand;
 
 #[cfg(feature = "import")]
+use crate::config::EnvContext;
+#[cfg(feature = "import")]
 use crate::import::ImportOptions;
 #[cfg(feature = "import")]
 use crate::import::openclaw::OpenClawImporter;
@@ -40,36 +42,66 @@ pub async fn run_import_command(
     cmd: &ImportCommand,
     config: &crate::config::Config,
 ) -> anyhow::Result<()> {
+    run_import_command_from_context(cmd, config, &EnvContext::capture_ambient()).await
+}
+
+/// Run an import command against an explicit environment snapshot.
+///
+/// This is the testable seam for [`run_import_command`]: path detection,
+/// `HOME` fallback, and master-key lookup all read the supplied snapshot
+/// rather than the ambient process environment.
+#[cfg(feature = "import")]
+pub async fn run_import_command_from_context(
+    cmd: &ImportCommand,
+    config: &crate::config::Config,
+    env_context: &EnvContext,
+) -> anyhow::Result<()> {
     match cmd {
         ImportCommand::Openclaw {
             path,
             dry_run,
             re_embed,
             user_id,
-        } => run_import_openclaw(config, path.clone(), *dry_run, *re_embed, user_id.clone()).await,
+        } => {
+            run_import_openclaw(
+                config,
+                OpenClawImportRequest {
+                    path: path.clone(),
+                    dry_run: *dry_run,
+                    re_embed: *re_embed,
+                    user_id: user_id.clone(),
+                    env_context,
+                },
+            )
+            .await
+        }
     }
+}
+
+/// Inputs for one OpenClaw import run.
+#[cfg(feature = "import")]
+struct OpenClawImportRequest<'a> {
+    path: Option<PathBuf>,
+    dry_run: bool,
+    re_embed: bool,
+    user_id: Option<String>,
+    env_context: &'a EnvContext,
 }
 
 /// Run the OpenClaw import.
 #[cfg(feature = "import")]
 async fn run_import_openclaw(
     config: &crate::config::Config,
-    openclaw_path: Option<PathBuf>,
-    dry_run: bool,
-    re_embed: bool,
-    user_id: Option<String>,
+    request: OpenClawImportRequest<'_>,
 ) -> anyhow::Result<()> {
-    use secrecy::SecretString;
-
-    // Determine OpenClaw path
-    let openclaw_path = if let Some(path) = openclaw_path {
-        path
-    } else if let Some(path) = OpenClawImporter::detect() {
-        path
-    } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".openclaw")
-    };
+    let OpenClawImportRequest {
+        path,
+        dry_run,
+        re_embed,
+        user_id,
+        env_context,
+    } = request;
+    let openclaw_path = resolve_openclaw_path(path, env_context)?;
 
     let user_id = user_id.unwrap_or_else(|| "default".to_string());
 
@@ -87,27 +119,7 @@ async fn run_import_openclaw(
         .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
 
     // Initialize secrets store with master key from env or keychain
-    let secrets_crypto = if let Ok(master_key_hex) = std::env::var("SECRETS_MASTER_KEY") {
-        Arc::new(
-            crate::secrets::SecretsCrypto::new(SecretString::from(master_key_hex))
-                .map_err(|e| anyhow::anyhow!("Failed to initialize secrets: {}", e))?,
-        )
-    } else {
-        match crate::secrets::keychain::get_master_key().await {
-            Ok(key_bytes) => {
-                let key_hex: String = key_bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                Arc::new(
-                    crate::secrets::SecretsCrypto::new(SecretString::from(key_hex))
-                        .map_err(|e| anyhow::anyhow!("Failed to initialize secrets: {}", e))?,
-                )
-            }
-            Err(_) => {
-                return Err(anyhow::anyhow!(
-                    "No secrets master key found. Set SECRETS_MASTER_KEY env var or run 'axinite onboard' first."
-                ));
-            }
-        }
-    };
+    let secrets_crypto = load_import_secrets_crypto(env_context).await?;
 
     let secrets: Arc<dyn crate::secrets::SecretsStore> = Arc::new(
         crate::secrets::InMemorySecretsStore::new(secrets_crypto.clone()),
@@ -153,6 +165,51 @@ async fn run_import_openclaw(
     Ok(())
 }
 
+/// Resolve the OpenClaw directory to import from.
+///
+/// An explicit `--path` wins. Otherwise the supplied snapshot is used to
+/// detect an installation, falling back to `$HOME/.openclaw`. Detection
+/// errors are propagated rather than silently treated as "not installed".
+#[cfg(feature = "import")]
+fn resolve_openclaw_path(
+    path: Option<PathBuf>,
+    env_context: &EnvContext,
+) -> anyhow::Result<PathBuf> {
+    if let Some(path) = path {
+        return Ok(path);
+    }
+    if let Some(detected) = OpenClawImporter::detect_from(env_context)
+        .map_err(|e| anyhow::anyhow!("Failed to detect OpenClaw installation: {e}"))?
+    {
+        return Ok(detected);
+    }
+    Ok(PathBuf::from(env_context.get("HOME").unwrap_or(".")).join(".openclaw"))
+}
+
+#[cfg(feature = "import")]
+/// Load the secrets master key from the environment snapshot or the OS
+/// keychain and return the initialized crypto helper.
+async fn load_import_secrets_crypto(
+    env_context: &EnvContext,
+) -> anyhow::Result<Arc<crate::secrets::SecretsCrypto>> {
+    use secrecy::SecretString;
+
+    let key_hex = match env_context.get_owned("SECRETS_MASTER_KEY") {
+        Some(key) => key,
+        None => crate::secrets::keychain::get_master_key()
+            .await
+            .map(|bytes| bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "No secrets master key found. Set SECRETS_MASTER_KEY env var or run 'axinite onboard' first."
+                )
+            })?,
+    };
+    let crypto = crate::secrets::SecretsCrypto::new(SecretString::from(key_hex))
+        .map_err(|e| anyhow::anyhow!("Failed to initialize secrets: {}", e))?;
+    Ok(Arc::new(crypto))
+}
+
 #[cfg(not(feature = "import"))]
 pub async fn run_import_command(
     _cmd: &ImportCommand,
@@ -160,3 +217,6 @@ pub async fn run_import_command(
 ) -> anyhow::Result<()> {
     anyhow::bail!("Import feature not enabled. Compile with --features import")
 }
+
+#[cfg(all(test, feature = "import"))]
+mod tests;

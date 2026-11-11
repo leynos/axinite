@@ -26,9 +26,10 @@ That design is doing three practical jobs:
    behaviour.
 
 The webhook server is intentionally narrower than the broader hot-reload path in
-`src/main.rs`. The server owns *how* a listener starts, stops, or rebinds. The
-caller in `main.rs` still owns *when* a restart is attempted and *why*
-configuration changes should trigger one.
+`src/startup/unix_runtime.rs` and `src/reload/`. The server owns *how* a
+listener starts, stops, or rebinds. The SIGHUP handler and the reload manager
+still own *when* a restart is attempted and *why* configuration changes should
+trigger one.
 
 ## 2. Current architecture
 
@@ -48,8 +49,8 @@ This means webhook ingress is shared across:
 - the built-in HTTP channel; and
 - WASM channels that contribute webhook routes at runtime.
 
-The main runtime wires this in `src/main.rs` by collecting route fragments,
-building a single `WebhookServer`, and then storing it behind
+The startup pipeline wires this in `src/startup/channels.rs` by collecting
+route fragments, building a single `WebhookServer`, and then storing it behind
 `Arc<tokio::sync::Mutex<_>>` so the SIGHUP reload path can restart it later.
 
 ## 3. Route composition model
@@ -172,8 +173,8 @@ first start and should still expect async startup and
 
 ## 7. Relationship to hot reload
 
-The webhook server and the SIGHUP handler in `src/main.rs` have different
-responsibilities and should be understood separately.
+The webhook server and the SIGHUP handler in `src/startup/unix_runtime.rs` have
+different responsibilities and should be understood separately.
 
 `WebhookServer` owns:
 
@@ -183,10 +184,10 @@ responsibilities and should be understood separately.
 - rollback on bind failure; and
 - reporting the current address.
 
-The SIGHUP path in `src/main.rs` owns:
+The SIGHUP path in `src/startup/unix_runtime.rs` and `src/reload/` owns:
 
 - loading updated configuration;
-- injecting secrets into the config overlay;
+- injecting secrets into the reload cycle's `EnvContext` snapshot;
 - deciding whether the bind address changed;
 - deciding whether a restart is needed; and
 - updating channel secrets after a successful reload.
@@ -201,7 +202,7 @@ That distinction matters when debugging incidents:
 - if the question is “does the listener rollback on bind failure?”, the answer
   lives in `WebhookServer`; but
 - if the question is “why did the runtime try to restart at all?”, the answer
-  lives in `main.rs`.
+  lives in `src/startup/unix_runtime.rs` and `src/reload/`.
 
 ## 8. Current trade-offs
 
@@ -245,7 +246,8 @@ surface before the old listener is torn down.
 ## 10. References
 
 - `src/channels/webhook_server.rs`
-- `src/main.rs`
+- `src/startup/channels.rs`
+- `src/startup/unix_runtime.rs`
 - `src/channels/mod.rs`
 - `docs/axinite-architecture-overview.md`
 - `src/NETWORK_SECURITY.md`

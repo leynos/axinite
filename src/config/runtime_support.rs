@@ -9,12 +9,21 @@ use super::{ClaudeCodeConfig, EnvContext, INJECTED_VARS};
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
-pub(crate) fn merged_settings_with_toml(
+/// Merge an optional TOML overlay, using `default_path` when none is explicit.
+///
+/// An explicit path must exist; a missing default path is silently skipped.
+/// Snapshot-based callers pass a default derived from [`EnvContext`] so the
+/// overlay follows the same base directory as the rest of the snapshot.
+pub(crate) fn merged_settings_with_toml_or_default(
     base: &Settings,
     toml_path: Option<&std::path::Path>,
+    default_path: &std::path::Path,
 ) -> Result<Settings, ConfigError> {
     let mut merged = base.clone();
-    apply_toml_overlay(&mut merged, toml_path)?;
+    match toml_path {
+        Some(path) => apply_toml_overlay_at(&mut merged, path, false)?,
+        None => apply_toml_overlay_at(&mut merged, default_path, true)?,
+    }
     Ok(merged)
 }
 
@@ -150,7 +159,14 @@ pub async fn inject_llm_keys_from_secrets(
     let injected = collect_llm_key_injections(
         secrets,
         user_id,
-        |env_var| matches!(std::env::var(env_var), Ok(val) if !val.is_empty()),
+        |env_var| {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "FIXME: legacy ambient secret-presence check; migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+            )]
+            let value = std::env::var(env_var);
+            matches!(value, Ok(val) if !val.is_empty())
+        },
     )
     .await?;
     merge_injected_vars(injected);
@@ -207,6 +223,15 @@ pub async fn inject_llm_keys_into_context(
         collect_llm_key_injections(secrets, user_id, |env_var| ctx.get(env_var).is_some()).await?;
     ctx.merge_secrets(injected);
     Ok(())
+}
+
+/// Merge a startup snapshot's secrets into the legacy ambient lookup overlay.
+///
+/// This compatibility bridge keeps callers of ambient configuration helpers
+/// working while they migrate to `EnvContext`. New code should use the
+/// snapshot directly.
+pub fn merge_context_secrets_into_legacy_overlay(ctx: &EnvContext) {
+    merge_injected_vars(ctx.secret_values());
 }
 
 /// Load tokens from OS credential stores (no DB required).

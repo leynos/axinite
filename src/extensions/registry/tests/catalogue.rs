@@ -39,7 +39,7 @@ async fn test_new_with_catalogue() {
         },
     ];
 
-    let registry = ExtensionRegistry::new_with_catalog(catalog_entries);
+    let registry = ExtensionRegistry::new_with_catalog(catalog_entries, None);
 
     // Should find the new telegram entry
     let results = registry.search("telegram").await;
@@ -75,7 +75,7 @@ async fn test_new_with_catalogue_dedup_same_kind() {
         version: None,
     }];
 
-    let registry = ExtensionRegistry::new_with_catalog(catalog_entries);
+    let registry = ExtensionRegistry::new_with_catalog(catalog_entries, None);
 
     let entry = registry.get("slack-mcp").await;
     assert!(entry.is_some());
@@ -119,7 +119,7 @@ async fn test_get_with_kind_resolves_collision() {
         },
     ];
 
-    let registry = ExtensionRegistry::new_with_catalog(catalog_entries);
+    let registry = ExtensionRegistry::new_with_catalog(catalog_entries, None);
 
     // Without kind hint, get() returns the first match (WasmTool)
     let entry = registry.get("telegram").await;
@@ -217,3 +217,38 @@ async fn test_get_with_kind_discovery_cache() {
 
 // Channel tests (telegram, slack, discord, whatsapp) require the embedded catalogue
 // to be loaded via new_with_catalog(). See test_new_with_catalogue for catalogue coverage.
+
+#[tokio::test]
+async fn relay_entry_is_seeded_from_the_supplied_url() {
+    let registry = ExtensionRegistry::new_with_catalog(
+        Vec::new(),
+        Some("http://relay.example.com".to_string()),
+    );
+
+    let entries = registry.all_entries().await;
+    let relays: Vec<_> = entries
+        .iter()
+        .filter(|e| e.kind == ExtensionKind::ChannelRelay)
+        .collect();
+    assert_eq!(relays.len(), 1, "exactly one channel-relay entry expected");
+    assert_eq!(relays[0].name, crate::channels::relay::DEFAULT_RELAY_NAME);
+    match &relays[0].source {
+        ExtensionSource::ChannelRelay { relay_url } => {
+            assert_eq!(relay_url, "http://relay.example.com");
+        }
+        other => panic!("expected ChannelRelay source, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn relay_entry_is_absent_without_a_relay_url() {
+    let registry = ExtensionRegistry::new_with_catalog(Vec::new(), None);
+
+    let entries = registry.all_entries().await;
+    assert!(
+        !entries
+            .iter()
+            .any(|e| e.kind == ExtensionKind::ChannelRelay),
+        "no channel-relay entry may appear when the snapshot has no relay URL"
+    );
+}

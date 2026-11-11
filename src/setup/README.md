@@ -19,13 +19,14 @@ Explicit invocation. Loads `.env` files, runs the wizard, exits.
 axinite          (first run, no database configured)
 ```
 
-Auto-detection via `check_onboard_needed()` in `main.rs`. Skips onboarding when
-`ONBOARD_COMPLETED` env var is set (written to `~/.axinite/.env` by the
-wizard). Otherwise triggers when no database is configured:
+Auto-detection via `check_onboard_needed(&EnvContext)` in `startup/phases.rs`,
+which reads only the startup snapshot. Skips onboarding when
+`ONBOARD_COMPLETED` is set in that snapshot (written to `~/.axinite/.env` by
+the wizard). Otherwise triggers when no database is configured:
 
-- `DATABASE_URL` env var is set
-- `LIBSQL_PATH` env var is set
-- `~/.axinite/axinite.db` exists on disk
+- `DATABASE_URL` is set in the snapshot
+- `LIBSQL_PATH` is set in the snapshot
+- `axinite.db` exists under the snapshot's base directory
 
 Auto-triggered onboarding uses **quick mode** by default.
 
@@ -36,20 +37,39 @@ ______________________________________________________________________
 ## Startup Sequence (main.rs)
 
 ```text
-1. Parse CLI args
-2. If Command::Onboard  → load .env, run wizard, exit
-3. If Command::Run or no command:
-   a. Load .env files (dotenvy::dotenv() then load_axinite_env())
-   b. check_onboard_needed() → run wizard if needed
-   c. Config::from_env()     → build config from env vars
+1. Load .env files (dotenvy::dotenv() then load_axinite_env())
+2. Capture EnvContext     → snapshot env vars and injected secrets
+3. Start the Tokio runtime and parse CLI args
+4. If Command::Onboard  → run wizard, exit
+5. If Command::Run or no command:
+   a. Acquire the PID lock in the snapshot's base directory
+   b. check_onboard_needed(&snapshot) → run the wizard if needed; the startup
+      continues from the snapshot the wizard returns, so onboarding credentials
+      reach configuration loading
+   c. Config::from_context_with_optional_toml(&ctx, ...) → build config
    d. Create SessionManager  → load session token
    e. ensure_authenticated() → validate session (NEAR AI only)
    f. ... rest of agent startup
 ```
 
-**Critical ordering:** `.env` files must be loaded (step 3a) before
-`Config::from_env()` (step 3c) because bootstrap vars like `DATABASE_BACKEND`
-live in `~/.axinite/.env`.
+**Critical ordering:** `.env` files must be loaded (step 1) before the
+`EnvContext` snapshot is captured (step 2) because bootstrap vars like
+`DATABASE_BACKEND` live in `~/.axinite/.env`.
+
+The snapshot is also captured before onboarding runs. The wizard records any
+API key it collects in its own `EnvContext`, and startup merges `.env` into
+that snapshot, so a key entered during first-run onboarding is available when
+configuration is resolved afterwards. Configuration resolution and SIGHUP
+reload do not re-read process environment variables or `.env` files after the
+initial capture; tracing initialization still reads ambient `RUST_LOG`.
+
+**Environment access:** startup captures the ambient environment once and
+threads the resulting `EnvContext` through composition. Constructors such as
+`SetupWizard::with_env_context` and `with_config_and_env_context` accept an
+explicit snapshot, and setup lookups (`default_libsql_path_in`,
+`upsert_bootstrap_vars_to`, `compute_axinite_base_dir_from`) derive paths from
+that snapshot rather than re-reading the process environment. Tests build an
+`EnvContext` directly and never mutate the process environment.
 
 ______________________________________________________________________
 

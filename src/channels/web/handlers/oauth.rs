@@ -143,14 +143,22 @@ pub async fn oauth_callback_handler(
     let html = oauth_defaults::landing_html(&flow.display_name, success);
     axum::response::Html(html).into_response()
 }
-
+/// Exchange an authorization code for tokens, optionally validate the access
+/// token, and persist the result in the secrets store.
+///
+/// The exchange goes through `AXINITE_OAUTH_EXCHANGE_URL` when set, otherwise
+/// it calls the provider token endpoint directly.
 async fn complete_gateway_oauth_flow(
     flow: &crate::cli::oauth_defaults::PendingOAuthFlow,
     code: &str,
 ) -> Result<(), String> {
     use crate::cli::oauth_defaults;
 
-    let exchange_proxy_url = std::env::var("AXINITE_OAUTH_EXCHANGE_URL").ok();
+    let exchange_proxy_url = {
+        #[expect(clippy::disallowed_methods, reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333")]
+        std::env::var("AXINITE_OAUTH_EXCHANGE_URL")
+    }
+    .ok();
     let token_response = if let Some(ref proxy_url) = exchange_proxy_url {
         let gateway_token = flow.gateway_token.as_deref().unwrap_or_default();
         oauth_defaults::exchange_via_proxy(

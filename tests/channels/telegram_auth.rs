@@ -27,7 +27,13 @@ macro_rules! require_telegram_wasm {
                 "{}. Build with: cd channels-src/telegram && cargo build --target wasm32-wasip2 --release",
                 msg
             );
-            if std::env::var("CI").is_ok() {
+            if {
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "FIXME: migrate to EnvContext, see https://github.com/leynos/axinite/issues/333"
+                )]
+                std::env::var("CI")
+            }.is_ok() {
                 panic!("{}", msg);
             }
             eprintln!("Skipping test: {}", msg);

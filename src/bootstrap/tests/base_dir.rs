@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::testing::test_utils::EnvVarsGuard;
+use crate::config::EnvContext;
 
 use super::super::*;
 
@@ -14,48 +14,56 @@ fn test_axinite_env_path() {
 
 #[test]
 fn test_axinite_base_dir_default() {
-    let mut env_guard = EnvVarsGuard::new(&["AXINITE_BASE_DIR"]);
-    env_guard.remove("AXINITE_BASE_DIR");
-
-    let path = compute_axinite_base_dir();
+    let path = compute_axinite_base_dir_from(&EnvContext::default());
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     assert_eq!(path, home.join(".axinite"));
 }
 
 #[test]
 fn test_axinite_base_dir_env_override() {
-    let mut env_guard = EnvVarsGuard::new(&["AXINITE_BASE_DIR"]);
-    env_guard.set("AXINITE_BASE_DIR", "/custom/axinite/path");
-
-    let path = compute_axinite_base_dir();
+    let ctx = EnvContext::default().with_env("AXINITE_BASE_DIR", "/custom/axinite/path");
+    let path = compute_axinite_base_dir_from(&ctx);
     assert_eq!(path, PathBuf::from("/custom/axinite/path"));
 }
 
 #[test]
 fn test_compute_base_dir_env_path_join() {
-    let mut env_guard = EnvVarsGuard::new(&["AXINITE_BASE_DIR"]);
-    env_guard.set("AXINITE_BASE_DIR", "/my/custom/dir");
-
-    let base_path = compute_axinite_base_dir();
+    let ctx = EnvContext::default().with_env("AXINITE_BASE_DIR", "/my/custom/dir");
+    let base_path = compute_axinite_base_dir_from(&ctx);
     let env_path = base_path.join(".env");
     assert_eq!(env_path, PathBuf::from("/my/custom/dir/.env"));
 }
 
 #[test]
 fn test_axinite_base_dir_empty_env() {
-    let mut env_guard = EnvVarsGuard::new(&["AXINITE_BASE_DIR"]);
-    env_guard.set("AXINITE_BASE_DIR", "");
-
-    let path = compute_axinite_base_dir();
+    let ctx = EnvContext::default().with_env("AXINITE_BASE_DIR", "");
+    let path = compute_axinite_base_dir_from(&ctx);
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     assert_eq!(path, home.join(".axinite"));
 }
 
 #[test]
 fn test_axinite_base_dir_special_chars() {
-    let mut env_guard = EnvVarsGuard::new(&["AXINITE_BASE_DIR"]);
-    env_guard.set("AXINITE_BASE_DIR", "/tmp/test_with-special.chars");
-
-    let path = compute_axinite_base_dir();
+    let ctx = EnvContext::default().with_env("AXINITE_BASE_DIR", "/tmp/test_with-special.chars");
+    let path = compute_axinite_base_dir_from(&ctx);
     assert_eq!(path, PathBuf::from("/tmp/test_with-special.chars"));
+}
+
+#[test]
+fn saved_axinite_env_values_fill_missing_context_entries() -> std::io::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let env_path = dir.path().join(".env");
+    ambient_fs::write(
+        &env_path,
+        "DATABASE_BACKEND=libsql\nLIBSQL_PATH=/saved/axinite.db\n",
+    )?;
+    let ctx = EnvContext::default()
+        .with_env("AXINITE_BASE_DIR", dir.path().display().to_string())
+        .with_env("DATABASE_BACKEND", "postgres");
+
+    let merged = merge_axinite_env_into_context(&ctx)?;
+
+    assert_eq!(merged.get("DATABASE_BACKEND"), Some("postgres"));
+    assert_eq!(merged.get("LIBSQL_PATH"), Some("/saved/axinite.db"));
+    Ok(())
 }

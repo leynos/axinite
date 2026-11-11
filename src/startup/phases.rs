@@ -1,37 +1,91 @@
 //! Coordinated startup phases for the host binary.
 
+use std::future::Future;
 use std::sync::Arc;
 
 use axinite::{
     app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
-    channels::{ChannelManager, web::log_layer::LogBroadcaster},
+    channels::ChannelManager,
     cli::Cli,
-    config::Config,
+    config::{Config, EnvContext},
     hooks::bootstrap_hooks,
-    llm::create_session_manager,
 };
 
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 use axinite::setup::{SetupConfig, SetupWizard};
 
 use crate::startup::channels::{
-    ChannelSetup, GatewayContext, GatewaySetup, setup_channels, setup_gateway_channel,
+    ChannelSetup, ChannelSetupRequest, GatewayContext, GatewaySetup, setup_channels,
+    setup_gateway_channel,
 };
-use crate::startup::{boot, context::*, run};
+use crate::startup::{boot, context::*, orchestrator::setup_orchestrator_context, run};
+
+pub(crate) use crate::startup::config_load::phase_load_config_and_tracing_from;
+
+/// Runs first-run onboarding for a startup environment snapshot.
+///
+/// Production uses [`InteractiveOnboarding`], which drives the setup wizard.
+/// Tests substitute a scripted implementation so the phase can be driven
+/// without a terminal.
+pub(crate) trait OnboardingRunner {
+    /// Run onboarding for `env_context` and return the snapshot that startup
+    /// must use afterwards.
+    fn run(
+        &self,
+        env_context: &EnvContext,
+    ) -> impl Future<Output = anyhow::Result<EnvContext>> + Send;
+}
+
+/// Runs the interactive setup wizard when the snapshot shows onboarding is
+/// still required.
+pub(crate) struct InteractiveOnboarding;
+
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+impl OnboardingRunner for InteractiveOnboarding {
+    async fn run(&self, env_context: &EnvContext) -> anyhow::Result<EnvContext> {
+        let Some(reason) = axinite::setup::check_onboard_needed(env_context) else {
+            return Ok(env_context.clone());
+        };
+
+        println!("Onboarding needed: {reason}");
+        println!();
+        let mut wizard = SetupWizard::with_config_and_env_context(
+            SetupConfig {
+                quick: true,
+                ..Default::default()
+            },
+            env_context.clone(),
+        );
+        wizard.run().await?;
+        onboarding_snapshot(&wizard)
+    }
+}
+
+#[cfg(not(any(feature = "postgres", feature = "libsql")))]
+impl OnboardingRunner for InteractiveOnboarding {
+    async fn run(&self, env_context: &EnvContext) -> anyhow::Result<EnvContext> {
+        Ok(env_context.clone())
+    }
+}
 
 /// Acquires the optional PID lock and runs first-run onboarding when requested.
 ///
-/// Returns `None` when no PID lock is configured, `Some(lock)` otherwise.
-pub(crate) async fn phase_pid_and_onboard(
+/// The PID lock lives in the snapshot's base directory, and the returned
+/// environment snapshot includes bootstrap values persisted by successful
+/// onboarding.
+pub(crate) async fn phase_pid_and_onboard<O: OnboardingRunner>(
     cli: &Cli,
-) -> anyhow::Result<Option<axinite::bootstrap::PidLock>> {
-    let pid_lock = match axinite::bootstrap::PidLock::acquire() {
+    env_context: &EnvContext,
+    onboarding: &O,
+) -> anyhow::Result<(Option<axinite::bootstrap::PidLock>, EnvContext)> {
+    let base_dir = env_context.axinite_base_dir();
+    let pid_lock = match axinite::bootstrap::PidLock::acquire_in(&base_dir) {
         Ok(lock) => Some(lock),
         Err(axinite::bootstrap::PidLockError::AlreadyRunning { pid }) => anyhow::bail!(
             "Another Axinite instance is already running (PID {}). \
              If this is incorrect, remove the stale PID file: {}",
             pid,
-            axinite::bootstrap::pid_lock_path().display()
+            base_dir.join("axinite.pid").display()
         ),
         Err(e) => {
             eprintln!("Warning: Could not acquire PID lock: {e}");
@@ -40,35 +94,29 @@ pub(crate) async fn phase_pid_and_onboard(
         }
     };
 
-    run_first_run_onboarding_if_needed(cli).await?;
+    let env_context = if cli.no_onboard {
+        env_context.clone()
+    } else {
+        onboarding.run(env_context).await?
+    };
 
-    Ok(pid_lock)
+    Ok((pid_lock, env_context))
 }
 
-/// Loads configuration from environment and TOML, creates the LLM session
-/// manager, and initializes structured tracing.
-pub(crate) async fn phase_load_config_and_tracing(
+/// Runs onboarding and then loads configuration from the snapshot it returns.
+///
+/// The binary entry point uses this so the hand-off between the two phases is
+/// exercised by tests: configuration loading must consume the post-onboarding
+/// snapshot, never the one captured before onboarding.
+pub(crate) async fn phase_onboard_and_load_config<O: OnboardingRunner>(
     cli: &Cli,
-) -> anyhow::Result<LoadedConfigContext> {
-    let toml_path = cli.config.clone();
-    let config = load_initial_config(toml_path.as_deref()).await?;
-
-    let session = create_session_manager(config.llm.session.clone()).await;
-    let log_broadcaster = Arc::new(LogBroadcaster::new());
-    let log_level_handle =
-        axinite::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
-
-    tracing::debug!("Starting Axinite...");
-    tracing::debug!("Loaded configuration for agent: {}", config.agent.name);
-    tracing::debug!("LLM backend: {}", config.llm.backend);
-
-    Ok(LoadedConfigContext {
-        config,
-        toml_path,
-        session,
-        log_broadcaster,
-        log_level_handle,
-    })
+    env_context: &EnvContext,
+    onboarding: &O,
+) -> anyhow::Result<(Option<axinite::bootstrap::PidLock>, LoadedConfigContext)> {
+    let (pid_lock, onboarding_context) =
+        phase_pid_and_onboard(cli, env_context, onboarding).await?;
+    let loaded = phase_load_config_and_tracing_from(cli, &onboarding_context).await?;
+    Ok((pid_lock, loaded))
 }
 
 /// Constructs all application components and runtime side-effects via
@@ -77,28 +125,45 @@ pub(crate) async fn phase_build_components(
     cli: &Cli,
     loaded: LoadedConfigContext,
 ) -> anyhow::Result<BuiltComponentsContext> {
+    let LoadedConfigContext {
+        config,
+        env_context,
+        toml_path,
+        session,
+        log_broadcaster,
+        log_level_handle,
+        workspace_import_dir,
+    } = loaded;
     let flags = AppBuilderFlags {
         no_db: cli.no_db,
-        workspace_import_dir: std::env::var("WORKSPACE_IMPORT_DIR")
-            .ok()
-            .map(std::path::PathBuf::from),
+        workspace_import_dir,
     };
-    let (components, side_effects) = AppBuilder::new(AppBuilderParams {
-        config: loaded.config,
-        flags,
-        toml_path: loaded.toml_path,
-        session: loaded.session,
-        log_broadcaster: Arc::clone(&loaded.log_broadcaster),
-    })
-    .build_components()
+    let (components, side_effects, env_context) = AppBuilder::new_with_context(
+        AppBuilderParams {
+            config,
+            flags,
+            toml_path,
+            session,
+            log_broadcaster: Arc::clone(&log_broadcaster),
+        },
+        env_context,
+    )
+    .build_components_with_context()
     .await?;
 
     Ok(BuiltComponentsContext {
         components,
+        env_context,
         side_effects,
-        log_broadcaster: loaded.log_broadcaster,
-        log_level_handle: loaded.log_level_handle,
+        log_broadcaster,
+        log_level_handle,
     })
+}
+
+/// Install the compatibility overlay for legacy environment readers at the
+/// production composition boundary after component construction.
+pub(crate) fn install_legacy_env_overlay(built: &BuiltComponentsContext) {
+    axinite::config::merge_context_secrets_into_legacy_overlay(&built.env_context);
 }
 
 /// Starts the managed tunnel (if configured) and sets up the orchestrator
@@ -116,11 +181,12 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
         job_event_tx,
         prompt_queue,
         docker_status,
-    } = setup_orchestrator_context(&config, &components).await;
+    } = setup_orchestrator_context(&config, &components, &built.env_context).await;
 
     AgentRunContext {
         core: CoreAgentContext {
             config,
+            env_context: built.env_context,
             components,
             side_effects: built.side_effects,
             active_tunnel,
@@ -213,12 +279,13 @@ pub(crate) async fn phase_init_channels_and_hooks(
         wasm_channel_runtime_state,
         #[cfg(unix)]
         http_channel_state,
-    } = setup_channels(
+    } = setup_channels(ChannelSetupRequest {
         cli,
-        &agent_ctx.core.config,
-        &agent_ctx.core.components,
-        channels.as_ref(),
-    )
+        config: &agent_ctx.core.config,
+        components: &agent_ctx.core.components,
+        env_context: &agent_ctx.core.env_context,
+        channels: channels.as_ref(),
+    })
     .await?;
 
     bootstrap_and_log_hooks(
@@ -258,6 +325,7 @@ pub(crate) async fn phase_setup_gateway(ctx: &mut GatewayPhaseContext) {
         &ctx.core.config,
         &ctx.core.components,
         &mut GatewayContext {
+            env_context: &ctx.core.env_context,
             container_job_manager: &ctx.core.container_job_manager,
             session_manager: &ctx.session_manager,
             log_broadcaster: &ctx.core.log_broadcaster,
@@ -302,67 +370,17 @@ pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<
     run::run_agent(ctx).await
 }
 
+/// Merge bootstrap values persisted by onboarding into the wizard's snapshot.
+///
+/// The wizard's own snapshot carries credentials entered during onboarding
+/// (for example an API key stored while the database is unavailable), so
+/// `.env` is merged on top of that rather than on the snapshot captured before
+/// onboarding. Startup resolves configuration from the returned snapshot.
 #[cfg(any(feature = "postgres", feature = "libsql"))]
-/// Runs first-run onboarding when the required database feature is enabled.
-async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
-    if !cli.no_onboard
-        && let Some(reason) = axinite::setup::check_onboard_needed()
-    {
-        println!("Onboarding needed: {reason}");
-        println!();
-        let mut wizard = SetupWizard::with_config(SetupConfig {
-            quick: true,
-            ..Default::default()
-        });
-        wizard.run().await?;
-    }
-    Ok(())
-}
-
-#[cfg(not(any(feature = "postgres", feature = "libsql")))]
-/// No-op onboarding stub used when neither database feature is compiled in.
-async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
-    let _ = cli;
-    Ok(())
-}
-
-/// Loads resolved `Config` from environment variables and an optional TOML file
-/// path.
-async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Result<Config> {
-    match Config::from_env_with_toml(toml_path).await {
-        Ok(c) => Ok(c),
-        Err(axinite::error::ConfigError::MissingRequired { key, hint }) => {
-            anyhow::bail!(
-                "Configuration error: Missing required setting '{}'. {}. \
-                 Run 'axinite onboard' to configure, or set the required environment variables.",
-                key,
-                hint
-            );
-        }
-        Err(e) => Err(e.into()),
-    }
-}
-
-/// Initializes the container job manager, job-event sender, prompt queue, and
-/// Docker status.
-async fn setup_orchestrator_context(
-    config: &Config,
-    components: &AppComponents,
-) -> OrchestratorContext {
-    let orch = axinite::orchestrator::setup_orchestrator(
-        config,
-        &components.llm,
-        &components.tools,
-        components.db.as_ref(),
-        components.secrets_store.as_ref(),
-    )
-    .await;
-    OrchestratorContext {
-        container_job_manager: orch.container_job_manager,
-        job_event_tx: orch.job_event_tx,
-        prompt_queue: orch.prompt_queue,
-        docker_status: orch.docker_status,
-    }
+fn onboarding_snapshot(wizard: &SetupWizard) -> anyhow::Result<EnvContext> {
+    Ok(axinite::bootstrap::merge_axinite_env_into_context(
+        wizard.env_context(),
+    )?)
 }
 
 #[cfg(test)]

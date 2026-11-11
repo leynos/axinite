@@ -12,6 +12,7 @@ fn make_recorder(stub: Arc<StubLlm>) -> std::io::Result<RecordingLlm> {
     ))
 }
 
+/// Verify that the recorder captures user input before the first model response.
 #[tokio::test]
 async fn captures_user_input_before_first_response() {
     let stub = Arc::new(StubLlm::new("hello back"));
@@ -37,6 +38,7 @@ async fn captures_user_input_before_first_response() {
     );
 }
 
+/// Verify that the recorder captures a text response verbatim.
 #[tokio::test]
 async fn captures_text_response_correctly() {
     let stub = Arc::new(StubLlm::new("test response"));
@@ -163,12 +165,69 @@ async fn request_hint_extraction() {
 }
 
 #[test]
-fn from_env_returns_none_when_unset() {
-    // SAFETY: This test is single-threaded and no other thread reads this var.
-    unsafe { std::env::remove_var("AXINITE_RECORD_TRACE") };
+fn from_context_returns_none_when_unset() {
     let stub = Arc::new(StubLlm::new("response"));
-    let result = RecordingLlm::from_env(stub);
+    let result = RecordingLlm::from_context(stub, &crate::config::EnvContext::default());
     assert!(result.is_none());
+}
+
+#[test]
+fn from_context_returns_none_when_enabling_value_is_empty() {
+    let stub = Arc::new(StubLlm::new("response"));
+    let ctx = crate::config::EnvContext::default().with_env("AXINITE_RECORD_TRACE", "");
+    let result = RecordingLlm::from_context(stub, &ctx);
+    assert!(result.is_none());
+}
+
+/// Verify that an explicit snapshot enables recording and that the trace
+/// written to disk carries the snapshot's model name and captured steps.
+#[tokio::test]
+async fn from_context_records_a_trace_from_snapshot_settings() {
+    let dir = tempfile::tempdir().expect("failed to create temp dir");
+    let output_path = dir.path().join("snapshot_trace.json");
+    let ctx = crate::config::EnvContext::default()
+        .with_env("AXINITE_RECORD_TRACE", "1")
+        .with_env("AXINITE_TRACE_OUTPUT", output_path.display().to_string())
+        .with_env("AXINITE_TRACE_MODEL_NAME", "snapshot-model");
+
+    let stub = Arc::new(StubLlm::new("snapshot response"));
+    let recorder = RecordingLlm::from_context(stub, &ctx).expect("recording should be enabled");
+
+    assert_eq!(recorder.output_path, output_path);
+    assert_eq!(recorder.model_name, "snapshot-model");
+
+    recorder
+        .complete(CompletionRequest::new(vec![ChatMessage::user("hello")]))
+        .await
+        .unwrap();
+    recorder.flush().await.unwrap();
+
+    let json = ambient_fs::read_to_string(&output_path).expect("trace file should exist");
+    let trace: TraceFile = serde_json::from_str(&json).expect("trace should be valid JSON");
+    assert_eq!(trace.model_name, "snapshot-model");
+    assert_eq!(trace.steps.len(), 2);
+    assert!(
+        matches!(&trace.steps[1].response, TraceResponse::Text { content, .. } if content == "snapshot response")
+    );
+}
+
+/// Verify the documented defaults when the snapshot omits the optional trace
+/// settings.
+#[test]
+fn from_context_defaults_trace_path_and_model_name() {
+    let stub = Arc::new(StubLlm::new("response"));
+    let ctx = crate::config::EnvContext::default().with_env("AXINITE_RECORD_TRACE", "1");
+
+    let recorder = RecordingLlm::from_context(stub, &ctx).expect("recording should be enabled");
+
+    let file_name = recorder
+        .output_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("default trace path should have a file name");
+    assert!(file_name.starts_with("trace_"), "got {file_name}");
+    assert!(file_name.ends_with(".json"), "got {file_name}");
+    assert_eq!(recorder.model_name, "recorded-stub-model");
 }
 
 #[tokio::test]

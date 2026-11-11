@@ -1005,6 +1005,7 @@ dependencies = [
  "wasmparser 0.220.1",
  "wasmtime",
  "wasmtime-wasi",
+ "wat",
  "zbus",
  "zip",
 ]

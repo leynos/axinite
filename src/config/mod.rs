@@ -36,7 +36,8 @@ use crate::settings::Settings;
 pub use self::agent::AgentConfig;
 pub use self::builder::BuilderModeConfig;
 pub use self::channels::{ChannelsConfig, CliConfig, GatewayConfig, HttpConfig, SignalConfig};
-pub use self::context::EnvContext;
+pub use self::context::{EnvContext, LlmResolutionContext};
+pub(crate) use self::database::default_libsql_path_in;
 pub use self::database::{DatabaseBackend, DatabaseConfig, SslMode, default_libsql_path};
 pub use self::embeddings::EmbeddingsConfig;
 pub use self::heartbeat::HeartbeatConfig;
@@ -46,7 +47,8 @@ pub use self::relay::RelayConfig;
 pub use self::routines::RoutineConfig;
 pub use self::runtime_support::{
     inject_llm_keys_from_secrets, inject_llm_keys_into_context, inject_os_credentials,
-    inject_os_credentials_into_context, inject_single_var, remove_single_var,
+    inject_os_credentials_into_context, inject_single_var,
+    merge_context_secrets_into_legacy_overlay, remove_single_var,
 };
 pub use self::safety::SafetyConfig;
 pub use self::sandbox::{ClaudeCodeConfig, SandboxModeConfig};
@@ -168,9 +170,32 @@ impl Config {
         user_id: &str,
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let _ = dotenvy::dotenv();
-        crate::bootstrap::load_axinite_env();
+        Self::from_db_from_context_with_toml(
+            store,
+            user_id,
+            &crate::bootstrap::capture_config_env_context(),
+            toml_path,
+        )
+        .await
+    }
 
+    /// Load database settings using an explicit environment snapshot.
+    pub async fn from_db_from_context(
+        store: &(dyn crate::db::SettingsStore + Sync),
+        user_id: &str,
+        ctx: &EnvContext,
+    ) -> Result<Self, ConfigError> {
+        Self::from_db_from_context_with_toml(store, user_id, ctx, None).await
+    }
+
+    /// Load database settings and an optional TOML overlay using an explicit
+    /// environment snapshot.
+    pub async fn from_db_from_context_with_toml(
+        store: &(dyn crate::db::SettingsStore + Sync),
+        user_id: &str,
+        ctx: &EnvContext,
+        toml_path: Option<&std::path::Path>,
+    ) -> Result<Self, ConfigError> {
         // Load all settings from DB into a Settings struct
         let db_settings = match store
             .get_all_settings(crate::db::UserId::from(user_id))
@@ -183,9 +208,13 @@ impl Config {
             }
         };
 
-        let ctx = EnvContext::capture_ambient();
-        let merged = runtime_support::merged_settings_with_toml(&db_settings, toml_path)?;
-        Self::from_context(&ctx, &merged).await
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged = runtime_support::merged_settings_with_toml_or_default(
+            &db_settings,
+            toml_path,
+            &default_toml,
+        )?;
+        Self::from_context(ctx, &merged).await
     }
 
     /// Load configuration from environment variables only (no database).
@@ -194,22 +223,42 @@ impl Config {
     /// and by CLI commands that don't have DB access.
     /// Falls back to legacy `settings.json` on disk if present.
     ///
-    /// Loads both `./.env` (standard, higher priority) and `~/.axinite/.env`
-    /// (lower priority) via dotenvy, which never overwrites existing vars.
+    /// The binary loads `./.env` and `~/.axinite/.env` at its synchronous
+    /// startup boundary. Library callers that need a separate environment
+    /// source should use [`Self::from_context`] with an explicit [`EnvContext`].
     pub async fn from_env() -> Result<Self, ConfigError> {
         Self::from_env_with_toml(None).await
     }
 
     /// Load from env with an optional TOML config file overlay.
+    ///
+    /// The snapshot is captured before any settings are read so the legacy
+    /// `settings.json` and the default `config.toml` overlay both resolve
+    /// against the same base directory as the rest of the configuration.
+    /// A caller-supplied `toml_path` is used unchanged.
     pub async fn from_env_with_toml(
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
-        let _ = dotenvy::dotenv();
-        crate::bootstrap::load_axinite_env();
-        let settings = Settings::load();
-        let ctx = EnvContext::capture_ambient();
-        let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;
+        let ctx = crate::bootstrap::capture_config_env_context();
+        let settings = Settings::load_from(&ctx.axinite_base_dir().join("settings.json"))?;
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged = runtime_support::merged_settings_with_toml_or_default(
+            &settings,
+            toml_path,
+            &default_toml,
+        )?;
         Self::from_context(&ctx, &merged).await
+    }
+
+    /// Build config from saved settings and an explicit environment snapshot.
+    ///
+    /// Use this at reload boundaries that already own a current [`EnvContext`].
+    pub async fn from_env_from_context(ctx: &EnvContext) -> Result<Self, ConfigError> {
+        let settings = Settings::load_from(&ctx.axinite_base_dir().join("settings.json"))?;
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged =
+            runtime_support::merged_settings_with_toml_or_default(&settings, None, &default_toml)?;
+        Self::from_context(ctx, &merged).await
     }
 
     /// Build config from an explicit environment snapshot and settings.
@@ -288,37 +337,27 @@ impl Config {
         settings: &Settings,
         toml_path: &std::path::Path,
     ) -> Result<Self, ConfigError> {
-        let merged = runtime_support::merged_settings_with_toml(settings, Some(toml_path))?;
-        Self::from_context(ctx, &merged).await
+        Self::from_context_with_optional_toml(ctx, settings, Some(toml_path)).await
     }
 
-    /// Re-resolve only the LLM config after credential injection.
+    /// Build config from an explicit context with an optional TOML overlay.
     ///
-    /// Called by `AppBuilder::init_secrets()` after injecting API keys into
-    /// the env overlay. Only rebuilds `self.llm` — all other config fields
-    /// are unaffected, preserving values from the initial config load (or
-    /// from `Config::for_testing()` in test mode).
-    pub async fn re_resolve_llm(
-        &mut self,
-        store: Option<&(dyn crate::db::SettingsStore + Sync)>,
-        user_id: &str,
+    /// `Some(path)` merges that file (a missing explicit file is an error).
+    /// `None` merges `<base_dir>/config.toml` when it exists, where `base_dir`
+    /// comes from the snapshot. This keeps startup configuration consistent
+    /// with the reload path, which also applies the default overlay.
+    pub async fn from_context_with_optional_toml(
+        ctx: &EnvContext,
+        settings: &Settings,
         toml_path: Option<&std::path::Path>,
-    ) -> Result<(), ConfigError> {
-        let settings = if let Some(store) = store {
-            let mut s = match store
-                .get_all_settings(crate::db::UserId::from(user_id))
-                .await
-            {
-                Ok(map) => Settings::from_db_map(&map),
-                Err(_) => Settings::default(),
-            };
-            runtime_support::apply_toml_overlay(&mut s, toml_path)?;
-            s
-        } else {
-            Settings::default()
-        };
-        self.llm = LlmConfig::resolve(&settings)?;
-        Ok(())
+    ) -> Result<Self, ConfigError> {
+        let default_toml = ctx.axinite_base_dir().join("config.toml");
+        let merged = runtime_support::merged_settings_with_toml_or_default(
+            settings,
+            toml_path,
+            &default_toml,
+        )?;
+        Self::from_context(ctx, &merged).await
     }
 
     /// Re-resolve just the LLM portion of config from an explicit snapshot.

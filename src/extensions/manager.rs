@@ -252,11 +252,11 @@ impl ExtensionManager {
         config: ExtensionManagerConfig,
         shared_state: LiveWasmChannelSharedState,
     ) -> Self {
-        let registry = if config.catalog_entries.is_empty() {
-            ExtensionRegistry::new()
-        } else {
-            ExtensionRegistry::new_with_catalog(config.catalog_entries)
-        };
+        // Seed the builtins from the startup snapshot, never from ambient
+        // configuration; the snapshot relay URL decides whether a
+        // channel-relay entry exists at all.
+        let relay_url = config.relay_config.as_ref().map(|relay| relay.url.clone());
+        let registry = ExtensionRegistry::new_with_catalog(config.catalog_entries, relay_url);
         Self {
             registry,
             discovery: config.discovery,

@@ -1,68 +1,22 @@
 //! Unit tests for startup phase configuration and context loading.
 
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::Arc;
 
-use axinite::cli::Cli;
+use axinite::{channels::web::log_layer::LogBroadcaster, cli::Cli};
 use tokio::sync::OnceCell;
 
 use super::*;
 
-static PHASES_ENV_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 static LOADED_CONTEXT: OnceCell<LoadedConfigContextSnapshot> = OnceCell::const_new();
 
 struct LoadedConfigContextSnapshot {
     config: Config,
+    env_context: axinite::config::EnvContext,
     toml_path: Option<std::path::PathBuf>,
     session: Arc<axinite::llm::session::SessionManager>,
     log_broadcaster: Arc<LogBroadcaster>,
     log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
-}
-
-struct EnvVarsGuard {
-    _lock: std::sync::MutexGuard<'static, ()>,
-    originals: HashMap<&'static str, Option<String>>,
-}
-
-impl EnvVarsGuard {
-    fn new(keys: &[&'static str]) -> Self {
-        // Recover from poisoning: the guard only snapshots and restores
-        // environment variables, so the protected state stays coherent.
-        let lock = PHASES_ENV_MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let originals = keys
-            .iter()
-            .map(|key| (*key, std::env::var(key).ok()))
-            .collect();
-        Self {
-            _lock: lock,
-            originals,
-        }
-    }
-
-    fn set(&mut self, key: &'static str, value: &str) {
-        self.originals
-            .entry(key)
-            .or_insert_with(|| std::env::var(key).ok());
-        // SAFETY: EnvVarsGuard holds PHASES_ENV_MUTEX for its entire lifetime.
-        unsafe { std::env::set_var(key, value) };
-    }
-}
-
-impl Drop for EnvVarsGuard {
-    fn drop(&mut self) {
-        for (key, value) in &self.originals {
-            // SAFETY: EnvVarsGuard holds PHASES_ENV_MUTEX for its entire lifetime.
-            unsafe {
-                if let Some(value) = value {
-                    std::env::set_var(key, value);
-                } else {
-                    std::env::remove_var(key);
-                }
-            }
-        }
-    }
+    _database_dir: tempfile::TempDir,
 }
 
 fn cli_no_db() -> Cli {
@@ -76,34 +30,42 @@ fn cli_no_db() -> Cli {
     }
 }
 
-fn phase_env_guard() -> EnvVarsGuard {
-    let mut guard = EnvVarsGuard::new(&["DATABASE_BACKEND", "DATABASE_URL", "LIBSQL_PATH"]);
-    guard.set("DATABASE_BACKEND", "libsql");
-    guard.set("LIBSQL_PATH", "/tmp/axinite-phase-smoke.db");
-    guard
+fn phase_context(libsql_path: &std::path::Path) -> axinite::config::EnvContext {
+    axinite::config::EnvContext::default()
+        .with_env("DATABASE_BACKEND", "libsql")
+        .with_env("LIBSQL_PATH", libsql_path.display().to_string())
 }
 
+/// Return a test config context built once from a temporary libSQL-backed
+/// configuration and cached for later calls, cloning its resolved handles on
+/// each call.
 async fn loaded_context() -> anyhow::Result<LoadedConfigContext> {
     let snapshot = LOADED_CONTEXT
         .get_or_try_init(|| async {
-            let _env_guard = phase_env_guard();
-            let loaded = phase_load_config_and_tracing(&cli_no_db()).await?;
+            let database_dir = tempfile::tempdir()?;
+            let database_path = database_dir.path().join("axinite-phase-smoke.db");
+            let env = phase_context(&database_path);
+            let loaded = phase_load_config_and_tracing_from(&cli_no_db(), &env).await?;
             anyhow::Ok(LoadedConfigContextSnapshot {
                 config: loaded.config,
+                env_context: loaded.env_context,
                 toml_path: loaded.toml_path,
                 session: loaded.session,
                 log_broadcaster: loaded.log_broadcaster,
                 log_level_handle: loaded.log_level_handle,
+                _database_dir: database_dir,
             })
         })
         .await?;
 
     Ok(LoadedConfigContext {
         config: snapshot.config.clone(),
+        env_context: snapshot.env_context.clone(),
         toml_path: snapshot.toml_path.clone(),
         session: Arc::clone(&snapshot.session),
         log_broadcaster: Arc::clone(&snapshot.log_broadcaster),
         log_level_handle: Arc::clone(&snapshot.log_level_handle),
+        workspace_import_dir: None,
     })
 }
 
@@ -122,4 +84,93 @@ async fn build_components_smoke() {
         .await
         .expect("build ok");
     let _ = built.components.tools;
+}
+
+/// Onboarding must hand startup a snapshot that already carries values entered
+/// during the wizard, so startup does not fall back to the pre-onboarding one.
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+#[tokio::test]
+async fn onboarding_snapshot_preserves_the_wizard_snapshot() {
+    use axinite::config::EnvContext;
+    use axinite::setup::{SetupConfig, SetupWizard};
+
+    const KEY_VAR: &str = "AXINITE_TEST_HANDOFF_SECRET";
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let wizard = SetupWizard::with_config_and_env_context(
+        SetupConfig::default(),
+        EnvContext::default()
+            .with_env("AXINITE_BASE_DIR", dir.path().display().to_string())
+            .with_secret(KEY_VAR, "wizard-entered-value"),
+    );
+
+    let handoff = onboarding_snapshot(&wizard).expect("handoff should merge");
+
+    assert_eq!(
+        handoff.get(KEY_VAR),
+        Some("wizard-entered-value"),
+        "startup receives the wizard's snapshot, not the one captured before \
+         onboarding"
+    );
+}
+
+/// Scripted onboarding that returns a snapshot carrying the provider
+/// credential the wizard would have collected interactively.
+struct ScriptedOnboarding;
+
+impl OnboardingRunner for ScriptedOnboarding {
+    async fn run(&self, env_context: &EnvContext) -> anyhow::Result<EnvContext> {
+        Ok(env_context
+            .clone()
+            .with_secret("NEARAI_API_KEY", "entered-during-onboarding"))
+    }
+}
+
+fn onboarding_input(dir: &std::path::Path, db_path: &std::path::Path) -> EnvContext {
+    EnvContext::default()
+        .with_env("AXINITE_BASE_DIR", dir.display().to_string())
+        .with_env("DATABASE_BACKEND", "libsql")
+        .with_env("LIBSQL_PATH", db_path.display().to_string())
+}
+
+/// The production onboarding-to-configuration coordinator must continue from
+/// the snapshot onboarding produced, and the configuration it loads must carry
+/// the credential entered during onboarding. The coordinator is the same
+/// function the binary entry point calls, so a regression that passed the
+/// pre-onboarding snapshot would fail this test.
+#[tokio::test]
+async fn onboarding_credential_reaches_startup_configuration() -> anyhow::Result<()> {
+    use secrecy::ExposeSecret;
+
+    let dir = tempfile::tempdir()?;
+    let db_dir = tempfile::tempdir()?;
+    let input = onboarding_input(dir.path(), &db_dir.path().join("phase.db"));
+
+    let (_pid_lock, loaded) =
+        phase_onboard_and_load_config(&cli_no_db(), &input, &ScriptedOnboarding).await?;
+
+    assert_eq!(
+        loaded.env_context.get("NEARAI_API_KEY"),
+        Some("entered-during-onboarding"),
+        "startup must continue from the post-onboarding snapshot"
+    );
+    assert_eq!(
+        loaded
+            .config
+            .llm
+            .nearai
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret()),
+        Some("entered-during-onboarding"),
+        "the onboarding credential must reach the startup configuration"
+    );
+
+    let stale = phase_load_config_and_tracing_from(&cli_no_db(), &input).await?;
+    assert!(
+        stale.config.llm.nearai.api_key.is_none(),
+        "the pre-onboarding snapshot must not supply a provider credential, \
+         so this assertion would fail if startup reused it"
+    );
+    Ok(())
 }

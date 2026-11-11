@@ -235,11 +235,6 @@ fn resolve_wasm_owner_ids(
 }
 
 impl ChannelsConfig {
-    // Backwards-compatible ambient entrypoint retained for existing callers.
-    pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        Self::resolve_from(&EnvContext::capture_ambient(), settings)
-    }
-
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         Ok(Self {
             cli: CliConfig {

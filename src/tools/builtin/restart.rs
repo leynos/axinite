@@ -23,11 +23,32 @@
 //! - In-flight jobs are paused during restart and resumed by the entrypoint
 //! - Future: Implement graceful shutdown with CancellationToken for proper resource cleanup
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use crate::config::EnvContext;
 use crate::context::JobContext;
 #[allow(unused_imports)]
 use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
+
+/// Action performed by the delayed restart task once its delay elapses.
+///
+/// Production terminates the process with exit code 0. Tests substitute a
+/// recording implementation so the delayed decision is observable end to end
+/// without ending the test process.
+trait RestartExit: Send + Sync {
+    /// Terminate the process, or record that termination was requested.
+    fn exit(&self);
+}
+
+/// Production restart action: terminate the process with a clean exit code.
+struct ProcessExit;
+
+impl RestartExit for ProcessExit {
+    fn exit(&self) {
+        std::process::exit(0);
+    }
+}
 
 /// Tool for triggering a graceful process restart via exit code 0.
 ///
@@ -35,7 +56,48 @@ use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput}
 /// (exit code 0). User approval happens at the command level (via the web modal confirmation),
 /// not at tool execution level. The `/restart` command is only callable via the web gateway
 /// interface to prevent unauthorized restarts.
-pub struct RestartTool;
+pub struct RestartTool {
+    env: EnvContext,
+    exit: Arc<dyn RestartExit>,
+}
+
+impl RestartTool {
+    /// Construct the restart adapter from the process environment at startup.
+    pub fn new() -> Self {
+        Self::from_context(EnvContext::capture_ambient())
+    }
+
+    /// Construct the restart adapter from an explicit environment snapshot.
+    pub fn from_context(env: EnvContext) -> Self {
+        Self::with_exit(env, Arc::new(ProcessExit))
+    }
+
+    /// Construct the restart adapter with an explicit snapshot and exit action.
+    ///
+    /// The exit action is the seam that lets a test observe whether the
+    /// delayed task would terminate the process.
+    fn with_exit(env: EnvContext, exit: Arc<dyn RestartExit>) -> Self {
+        Self { env, exit }
+    }
+}
+
+impl Default for RestartTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Whether the delayed restart must skip `std::process::exit(0)`.
+///
+/// `AXINITE_DISABLE_RESTART` suppresses the exit when it is `1` or `true`
+/// (case-insensitive), so tests can observe the restart response without
+/// terminating the process. Any other value, or an absent variable, permits
+/// the exit. The decision is read from the supplied snapshot, never from the
+/// ambient environment.
+fn restart_exit_suppressed(env: &EnvContext) -> bool {
+    env.get("AXINITE_DISABLE_RESTART")
+        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+}
 
 impl NativeTool for RestartTool {
     fn name(&self) -> &str {
@@ -61,6 +123,12 @@ impl NativeTool for RestartTool {
         })
     }
 
+    /// Execute the restart tool: require a Docker environment, clamp
+    /// `delay_secs` to 1-30, and spawn a background exit after the delay.
+    ///
+    /// The process exits cleanly with code 0 unless `AXINITE_DISABLE_RESTART`
+    /// is set, in which case the exit is skipped. Returns a message describing
+    /// the pending restart.
     async fn execute(
         &self,
         params: serde_json::Value,
@@ -72,9 +140,10 @@ impl NativeTool for RestartTool {
         // Check if running inside a Docker container via AXINITE_IN_DOCKER env var.
         // The Docker entrypoint sets this to "true". For local development, it's unset or "false".
         // The entrypoint restart loop only works inside a Docker container (axinite-worker).
-        let in_docker = std::env::var("AXINITE_IN_DOCKER")
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
+        let in_docker = self
+            .env
+            .get("AXINITE_IN_DOCKER")
+            .is_some_and(|value| value.eq_ignore_ascii_case("true"));
 
         tracing::debug!("[RestartTool::execute] AXINITE_IN_DOCKER={}", in_docker);
 
@@ -117,24 +186,20 @@ impl NativeTool for RestartTool {
         //   to properly drain Axum, close DB connections, and checkpoint jobs.
         // Check if restart is disabled (e.g., in tests). This allows tests to verify
         // parameter parsing and output without actually terminating the process.
-        let restart_disabled = std::env::var("AXINITE_DISABLE_RESTART")
-            .map(|v| {
-                let v = v.to_lowercase();
-                v == "1" || v == "true"
-            })
-            .unwrap_or(false);
+        let restart_disabled = restart_exit_suppressed(&self.env);
 
         tracing::info!(
             "[RestartTool::execute] Spawning background task to exit in {} seconds (disabled={})",
             delay,
             restart_disabled
         );
+        let exit = Arc::clone(&self.exit);
         tokio::spawn(async move {
             tracing::info!("[RestartTool] Sleeping for {} seconds before exit", delay);
             tokio::time::sleep(Duration::from_secs(delay)).await;
             if !restart_disabled {
                 tracing::warn!("[RestartTool] Calling std::process::exit(0) NOW");
-                std::process::exit(0);
+                exit.exit();
             } else {
                 tracing::info!(
                     "[RestartTool] Exit disabled (AXINITE_DISABLE_RESTART set), skipping std::process::exit(0)"
@@ -160,5 +225,7 @@ impl NativeTool for RestartTool {
     // This allows the tool to execute in autonomous jobs created from approved commands.
 }
 
+#[cfg(test)]
+mod exit_tests;
 #[cfg(test)]
 mod tests;

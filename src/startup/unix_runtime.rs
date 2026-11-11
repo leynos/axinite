@@ -3,10 +3,14 @@
 use std::sync::Arc;
 
 use axinite::{
-    app::AppComponents,
     channels::{ChannelSecretUpdater, HttpChannelState, WebhookServer},
+    config::EnvContext,
+    db::SettingsStore,
+    reload::HotReloadManagerFactoryContext,
     secrets::SecretsStore,
 };
+
+use crate::startup::RuntimeManagementContext;
 
 /// Configures Unix-only runtime-management hooks such as SIGHUP-triggered
 /// hot reload.
@@ -15,60 +19,64 @@ use axinite::{
 /// listeners can exit cleanly during teardown.
 #[cfg(unix)]
 pub(crate) fn setup_runtime_management_unix(
-    components: &AppComponents,
-    webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
-    http_channel_state: &Option<Arc<HttpChannelState>>,
+    context: &RuntimeManagementContext<'_>,
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
 ) {
-    let sighup_settings_store: Option<Arc<dyn axinite::db::SettingsStore>> = components
-        .db
-        .as_ref()
-        .map(|db| Arc::clone(db) as Arc<dyn axinite::db::SettingsStore>);
-
-    let ReloadManagerArgs {
-        settings_store,
-        webhook_server,
-        secrets_store,
-        secret_updaters,
-    } = build_reload_manager_args(
-        sighup_settings_store,
-        webhook_server.clone(),
-        components.secrets_store.clone(),
-        http_channel_state.clone(),
-    );
-
-    setup_sighup_reload(
-        settings_store,
-        &webhook_server,
-        secrets_store,
-        &secret_updaters,
-        shutdown_tx,
-    );
+    setup_sighup_reload(build_reload_manager_args(context, shutdown_tx));
 }
 
 fn build_reload_manager_args(
-    settings_store: Option<Arc<dyn axinite::db::SettingsStore>>,
+    context: &RuntimeManagementContext<'_>,
+    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
+) -> ReloadManagerArgs {
+    let settings_store: Option<Arc<dyn SettingsStore>> = context
+        .components
+        .db
+        .as_ref()
+        .map(|db| Arc::clone(db) as Arc<dyn SettingsStore>);
+    build_reload_manager_args_from_inputs(ReloadManagerInputs {
+        env_context: context.env_context.clone(),
+        settings_store,
+        webhook_server: context.webhook_server.clone(),
+        secrets_store: context.components.secrets_store.clone(),
+        http_channel_state: context.http_channel_state.clone(),
+        shutdown_tx: shutdown_tx.clone(),
+    })
+}
+
+struct ReloadManagerInputs {
+    env_context: EnvContext,
+    settings_store: Option<Arc<dyn SettingsStore>>,
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     http_channel_state: Option<Arc<HttpChannelState>>,
-) -> ReloadManagerArgs {
+    shutdown_tx: tokio::sync::broadcast::Sender<()>,
+}
+
+/// Convert reload wiring inputs into reload manager arguments, promoting an
+/// HTTP channel state into a channel secret updater when present.
+fn build_reload_manager_args_from_inputs(inputs: ReloadManagerInputs) -> ReloadManagerArgs {
     let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
-    if let Some(state) = http_channel_state {
+    if let Some(state) = inputs.http_channel_state {
         secret_updaters.push(state as Arc<dyn ChannelSecretUpdater>);
     }
     ReloadManagerArgs {
-        settings_store,
-        webhook_server,
-        secrets_store,
+        env_context: inputs.env_context,
+        settings_store: inputs.settings_store,
+        webhook_server: inputs.webhook_server,
+        secrets_store: inputs.secrets_store,
         secret_updaters,
+        shutdown_tx: inputs.shutdown_tx,
     }
 }
 
 struct ReloadManagerArgs {
-    settings_store: Option<Arc<dyn axinite::db::SettingsStore>>,
+    env_context: EnvContext,
+    settings_store: Option<Arc<dyn SettingsStore>>,
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
+    shutdown_tx: tokio::sync::broadcast::Sender<()>,
 }
 
 /// Creates the Unix SIGHUP hot-reload handler and registers any channel secret
@@ -76,20 +84,17 @@ struct ReloadManagerArgs {
 ///
 /// The spawned handler listens until the shared shutdown broadcast fires.
 #[cfg(unix)]
-fn setup_sighup_reload(
-    sighup_settings_store: Option<Arc<dyn axinite::db::SettingsStore>>,
-    webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
-    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    secret_updaters: &[Arc<dyn ChannelSecretUpdater>],
-    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
-) {
-    let reload_manager = Arc::new(axinite::reload::create_hot_reload_manager(
-        sighup_settings_store.clone(),
-        webhook_server.clone(),
-        secrets_store,
-        secret_updaters.to_vec(),
+fn setup_sighup_reload(args: ReloadManagerArgs) {
+    let reload_manager = Arc::new(axinite::reload::create_hot_reload_manager_from_context(
+        HotReloadManagerFactoryContext {
+            env_context: args.env_context,
+            settings_store: args.settings_store,
+            webhook_server: args.webhook_server,
+            secrets_store: args.secrets_store,
+            secret_updaters: args.secret_updaters,
+        },
     ));
-    spawn_sighup_handler(reload_manager, shutdown_tx);
+    spawn_sighup_handler(reload_manager, &args.shutdown_tx);
 }
 
 /// Spawns a Tokio task that listens for `SIGHUP` and triggers a hot-reload.
@@ -129,174 +134,4 @@ pub(crate) fn spawn_sighup_handler(
 }
 
 #[cfg(test)]
-mod tests {
-    //! Unit tests for Unix runtime webhook server wiring.
-
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use axinite::{
-        channels::{HttpChannel, HttpChannelState, WebhookServer, WebhookServerConfig},
-        config::HttpConfig,
-        db::{NativeSettingsStore, SettingKey, SettingsStore, UserId},
-        history::SettingRow,
-        secrets::{InMemorySecretsStore, SecretsCrypto, SecretsStore},
-    };
-    use rstest::rstest;
-    use secrecy::SecretString;
-
-    use super::{ReloadManagerArgs, build_reload_manager_args};
-
-    struct DummySettingsStore;
-
-    impl NativeSettingsStore for DummySettingsStore {
-        async fn list_deployment_flags(
-            &self,
-            _deployment_id: &str,
-        ) -> Result<Vec<(String, bool)>, axinite::error::DatabaseError> {
-            Ok(Vec::new())
-        }
-
-        async fn set_deployment_flag(
-            &self,
-            _deployment_id: &str,
-            _flag_name: &str,
-            _enabled: bool,
-        ) -> Result<(), axinite::error::DatabaseError> {
-            Ok(())
-        }
-
-        async fn get_setting(
-            &self,
-            _user_id: UserId,
-            _key: SettingKey,
-        ) -> Result<Option<serde_json::Value>, axinite::error::DatabaseError> {
-            Ok(None)
-        }
-
-        async fn get_setting_full(
-            &self,
-            _user_id: UserId,
-            _key: SettingKey,
-        ) -> Result<Option<SettingRow>, axinite::error::DatabaseError> {
-            Ok(None)
-        }
-
-        async fn set_setting(
-            &self,
-            _user_id: UserId,
-            _key: SettingKey,
-            _value: &serde_json::Value,
-        ) -> Result<(), axinite::error::DatabaseError> {
-            Ok(())
-        }
-
-        async fn delete_setting(
-            &self,
-            _user_id: UserId,
-            _key: SettingKey,
-        ) -> Result<bool, axinite::error::DatabaseError> {
-            Ok(false)
-        }
-
-        async fn list_settings(
-            &self,
-            _user_id: UserId,
-        ) -> Result<Vec<SettingRow>, axinite::error::DatabaseError> {
-            Ok(vec![])
-        }
-
-        async fn get_all_settings(
-            &self,
-            _user_id: UserId,
-        ) -> Result<HashMap<String, serde_json::Value>, axinite::error::DatabaseError> {
-            Ok(HashMap::new())
-        }
-
-        async fn set_all_settings(
-            &self,
-            _user_id: UserId,
-            _settings: &HashMap<String, serde_json::Value>,
-        ) -> Result<(), axinite::error::DatabaseError> {
-            Ok(())
-        }
-
-        async fn has_settings(
-            &self,
-            _user_id: UserId,
-        ) -> Result<bool, axinite::error::DatabaseError> {
-            Ok(false)
-        }
-    }
-
-    fn test_http_channel_state() -> Arc<HttpChannelState> {
-        HttpChannel::new(HttpConfig {
-            host: "127.0.0.1".to_string(),
-            port: 0,
-            webhook_secret: Some(SecretString::from("secret".to_string())),
-            user_id: "http".to_string(),
-        })
-        .shared_state()
-    }
-
-    fn test_settings_store() -> Arc<dyn SettingsStore> {
-        Arc::new(DummySettingsStore)
-    }
-
-    fn test_secrets_store() -> anyhow::Result<Arc<dyn SecretsStore + Send + Sync>> {
-        let crypto = Arc::new(SecretsCrypto::new(SecretString::from(
-            "0123456789abcdef0123456789abcdef".to_string(),
-        ))?);
-        Ok(Arc::new(InMemorySecretsStore::new(crypto)))
-    }
-
-    #[rstest]
-    #[case(false, false, false, false, 0)]
-    #[case(true, false, false, false, 0)]
-    #[case(false, true, false, false, 0)]
-    #[case(false, false, true, false, 0)]
-    #[case(false, false, false, true, 1)]
-    #[case(true, true, true, true, 1)]
-    #[case(true, false, true, true, 1)]
-    #[case(true, true, false, true, 1)]
-    fn build_reload_manager_args_handles_option_permutations(
-        #[case] has_settings_store: bool,
-        #[case] has_webhook_server: bool,
-        #[case] has_secrets_store: bool,
-        #[case] has_http_channel_state: bool,
-        #[case] expected_updaters: usize,
-    ) -> anyhow::Result<()> {
-        let settings_store = has_settings_store.then(test_settings_store);
-        let webhook_server = has_webhook_server.then(|| {
-            Arc::new(tokio::sync::Mutex::new(WebhookServer::new(
-                WebhookServerConfig {
-                    addr: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
-                },
-            )))
-        });
-        let secrets_store = if has_secrets_store {
-            Some(test_secrets_store()?)
-        } else {
-            None
-        };
-        let http_channel_state = has_http_channel_state.then(test_http_channel_state);
-
-        let ReloadManagerArgs {
-            settings_store: settings_store_out,
-            webhook_server: webhook_server_out,
-            secrets_store: secrets_store_out,
-            secret_updaters,
-        } = build_reload_manager_args(
-            settings_store,
-            webhook_server,
-            secrets_store,
-            http_channel_state,
-        );
-
-        assert_eq!(settings_store_out.is_some(), has_settings_store);
-        assert_eq!(webhook_server_out.is_some(), has_webhook_server);
-        assert_eq!(secrets_store_out.is_some(), has_secrets_store);
-        assert_eq!(secret_updaters.len(), expected_updaters);
-        Ok(())
-    }
-}
+mod tests;

@@ -133,15 +133,11 @@ fn slack_relay_entry(relay_url: String) -> RegistryEntry {
     }
 }
 
-/// Well-known extensions that ship with axinite.
-///
-/// If `relay_url` is provided, a channel-relay Slack entry is included in the list.
-/// Pass `None` when the relay is not configured.
-pub fn builtin_entries() -> Vec<RegistryEntry> {
-    builtin_entries_with_relay(std::env::var("CHANNEL_RELAY_URL").ok())
-}
-
 /// Well-known extensions, with an optional relay URL for the channel-relay entry.
+///
+/// If `relay_url` is `Some`, a channel-relay Slack entry is included in the
+/// list. Pass the startup snapshot's relay URL, or `None` when the relay is
+/// not configured — this function never reads the process environment.
 pub fn builtin_entries_with_relay(relay_url: Option<String>) -> Vec<RegistryEntry> {
     let mut entries: Vec<RegistryEntry> = MCP_SERVERS.iter().map(McpEntrySpec::to_entry).collect();
 
