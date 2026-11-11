@@ -305,10 +305,17 @@ read the same file as the rest of their configuration. Both return
 - A file that exists but cannot be read yields `SettingsError::Read`.
 - A file that exists but is not valid JSON yields `SettingsError::Parse`.
 
-Callers must propagate `SettingsError::Read` and `SettingsError::Parse` instead
-of substituting defaults. Only a genuinely absent file yields defaults;
-treating an unreadable or malformed file as absent would silently discard the
-operator's configuration.
+Configuration loading must propagate `SettingsError::Read` and
+`SettingsError::Parse` instead of substituting defaults. Only a genuinely
+absent file yields defaults; treating an unreadable or malformed file as absent
+would silently discard the operator's configuration.
+
+Diagnostic commands are the deliberate exception. `axinite doctor` and
+`axinite status` must still report on a deployment whose settings file is
+broken, so they print a warning and continue with `Settings::default()` rather
+than aborting. That fallback is confined to diagnostics: it is not the
+behaviour of configuration loading, and it must not be presented as equivalent
+to a missing file.
 
 ## HTML-to-Markdown conversion for HTTP responses
 
