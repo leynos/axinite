@@ -7,8 +7,8 @@
 //! - [`EnvKey`] makes environment-variable names explicit at call sites.
 //! - `*_from(...)` helpers read from an explicit [`EnvContext`] snapshot for
 //!   deterministic config construction.
-//! - Ambient `*_env(...)` wrappers capture `EnvContext`, which combines the
-//!   process environment, parsed dotenv layers, and injected secrets.
+//! - Ambient `*_env(...)` wrappers use `EnvContext`'s single-key lookup across
+//!   process, parsed dotenv, and injected-secret layers.
 //! - Shared parsing cores keep error formatting and boolean semantics
 //!   consistent across both resolution paths.
 //!
@@ -77,7 +77,7 @@ pub(crate) fn optional_env_from(
     Ok(ctx.get_owned(key.as_str()))
 }
 pub(crate) fn optional_env(key: EnvKey) -> Result<Option<String>, ConfigError> {
-    optional_env_from(&EnvContext::capture_ambient(), key)
+    Ok(EnvContext::get_ambient_owned(key.as_str()))
 }
 
 pub(crate) fn parse_optional_env_from<T>(

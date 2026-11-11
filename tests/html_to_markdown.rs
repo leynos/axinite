@@ -194,6 +194,7 @@ fn convert_test_pages_to_markdown() {
     let entries =
         std::fs::read_dir(&test_pages).expect("test-pages directory not found or not readable");
 
+    let verbose = axinite::config::EnvContext::capture_process().contains_key("HTML_TO_MD_VERBOSE");
     let mut converted = 0u32;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -251,7 +252,7 @@ fn convert_test_pages_to_markdown() {
             }
         }
 
-        if axinite::config::EnvContext::capture_process().contains_key("HTML_TO_MD_VERBOSE") {
+        if verbose {
             println!("--- {} ---\n{}\n", dir_name, markdown);
         }
         converted += 1;

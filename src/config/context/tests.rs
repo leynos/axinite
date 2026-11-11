@@ -99,6 +99,38 @@ fn ambient_single_key_lookup_preserves_layer_precedence_and_empty_fallback() {
     );
 }
 
+#[cfg(windows)]
+#[test]
+fn ambient_single_key_lookup_preserves_case_insensitive_layer_precedence() {
+    let layers = DotenvLayers::from_contents(
+        Some(b"provider_key=cwd\ncwd_key=cwd\n"),
+        Some(b"provider_key=bootstrap\ncwd_key=bootstrap\nbootstrap_only=bootstrap\n"),
+        Path::new("C:/axinite"),
+    );
+    let process = HashMap::from([(String::from("PrOvIdEr_KeY"), String::from("process"))]);
+    let secrets = HashMap::from([
+        (String::from("provider_key"), String::from("secret")),
+        (String::from("secret_only"), String::from("secret")),
+    ]);
+
+    assert_eq!(
+        ambient_value_from_layers("PROVIDER_KEY", &process, &layers, &secrets),
+        Some(String::from("process"))
+    );
+    assert_eq!(
+        ambient_value_from_layers("CWD_KEY", &process, &layers, &secrets),
+        Some(String::from("cwd"))
+    );
+    assert_eq!(
+        ambient_value_from_layers("BOOTSTRAP_ONLY", &process, &layers, &secrets),
+        Some(String::from("bootstrap"))
+    );
+    assert_eq!(
+        ambient_value_from_layers("SECRET_ONLY", &process, &layers, &secrets),
+        Some(String::from("secret"))
+    );
+}
+
 #[test]
 fn non_empty_env_presence_excludes_secret_fallback() {
     let layers = DotenvLayers::from_contents(

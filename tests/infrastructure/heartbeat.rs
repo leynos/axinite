@@ -9,73 +9,23 @@
 
 #![cfg(feature = "postgres")]
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use axinite::{
     agent::HeartbeatRunner,
     config::{Config, EnvContext},
     history::Store,
-    llm::{create_llm_provider, create_session_manager},
+    llm::{SessionManager, create_llm_provider},
     workspace::Workspace,
 };
+use secrecy::SecretString;
 
 #[tokio::test]
 #[ignore] // Requires running database and LLM credentials
 async fn test_heartbeat_end_to_end() {
-    // This ignored integration test uses only values exported by its caller.
-    let process_env = EnvContext::capture_process();
-    let env_vars = [
-        "AXINITE_BASE_DIR",
-        "HOME",
-        "DATABASE_BACKEND",
-        "DATABASE_URL",
-        "DATABASE_SSLMODE",
-        "DATABASE_POOL_SIZE",
-        "LIBSQL_PATH",
-        "LIBSQL_URL",
-        "LIBSQL_AUTH_TOKEN",
-        "LLM_BACKEND",
-        "LLM_MODEL",
-        "LLM_API_KEY",
-        "LLM_BASE_URL",
-        "LLM_EXTRA_HEADERS",
-        "LLM_REQUEST_TIMEOUT_SECS",
-        "NEARAI_API_KEY",
-        "NEARAI_AUTH_URL",
-        "NEARAI_BASE_URL",
-        "NEARAI_MODEL",
-        "NEARAI_CHEAP_MODEL",
-        "NEARAI_FALLBACK_MODEL",
-        "NEARAI_MAX_RETRIES",
-        "NEARAI_SESSION_PATH",
-        "NEARAI_SESSION_TOKEN",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_OAUTH_TOKEN",
-        "ANTHROPIC_BASE_URL",
-        "OPENAI_API_KEY",
-        "OPENAI_BASE_URL",
-        "OPENAI_MODEL",
-        "OLLAMA_BASE_URL",
-        "OLLAMA_MODEL",
-        "HEARTBEAT_ENABLED",
-        "HEARTBEAT_INTERVAL_SECS",
-        "HEARTBEAT_NOTIFY_CHANNEL",
-        "HEARTBEAT_NOTIFY_USER",
-        "HEARTBEAT_QUIET_START",
-        "HEARTBEAT_QUIET_END",
-        "HEARTBEAT_TIMEZONE",
-    ]
-    .into_iter()
-    .filter(|&key| process_env.contains_key(key))
-    .map(|key| {
-        (
-            key.to_string(),
-            process_env.get(key).unwrap_or_default().to_string(),
-        )
-    })
-    .collect::<HashMap<_, _>>();
-    let env_context = EnvContext::for_testing(env_vars, HashMap::new());
+    // This ignored integration test uses only process variables exported by
+    // its caller.
+    let env_context = EnvContext::capture_process();
     let settings = axinite::settings::Settings::default();
     let _ = tracing_subscriber::fmt()
         .with_env_filter("axinite=debug")
@@ -139,7 +89,10 @@ async fn test_heartbeat_end_to_end() {
     }
 
     // 5. Create LLM provider
-    let session = create_session_manager(config.llm.session.clone()).await;
+    let session = Arc::new(SessionManager::new_async(config.llm.session.clone()).await);
+    if let Some(token) = env_context.get_owned("NEARAI_SESSION_TOKEN") {
+        session.set_token(SecretString::from(token)).await;
+    }
     let llm = create_llm_provider(&config.llm, session)
         .await
         .expect("Failed to create LLM provider");

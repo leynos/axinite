@@ -127,7 +127,8 @@ impl Agent {
             tracing::warn!("[commands::restart] Restart rejected: not in Docker environment");
             return Ok(SubmissionResult::error(
                 "Restart is not available in this environment. \
-                 The AXINITE_IN_DOCKER environment variable must be set to 'true' for Docker deployments."
+                 AXINITE_IN_DOCKER must be set to 'true' in the real process environment; \
+                 a .env file does not enable restart."
                     .to_string(),
             ));
         }

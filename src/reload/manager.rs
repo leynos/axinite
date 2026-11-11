@@ -86,10 +86,10 @@ impl HotReloadManager {
     /// channel secrets are cleared. Errors are logged and returned early; the
     /// reload path never panics.
     ///
-    /// Each cycle starts from the environment snapshot captured at startup,
-    /// then applies any injected secrets. Changes to process variables or
-    /// `.env` files after startup are not reread; restart the process to apply
-    /// environment-backed settings such as `HTTP_HOST` and `HTTP_PORT`.
+    /// Each cycle rereads the current-directory and bootstrap `.env` files,
+    /// reuses process variables captured at startup, then applies injected
+    /// secrets. Restart the process to apply changed process variables such as
+    /// `HTTP_HOST` and `HTTP_PORT`.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         let _reload_guard = self.reload_lock.lock().await;
 
