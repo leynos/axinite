@@ -79,13 +79,11 @@ PROBE_COMMANDS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-#: The installer version the Whitaker step pins, and the shared-actions
-#: revision it pins the action at. The revision is shared-actions #651
-#: (5a99aed7), where install-whitaker defaults to whitaker-installer 0.2.11, and
-#: the action refuses an installer below 0.2.9. This is the revision that
-#: concordat QG-002 approval 5a99aed7 covers.
-WHITAKER_INSTALLER_VERSION = "0.2.11"
-WHITAKER_ACTION_SHA = "5a99aed78ce68dcebd3052b75c31e6f173162b1e"
+#: The shape of the installer version the Whitaker step pins. The action
+#: refuses an installer below 0.2.9, so a version outside this shape fails
+#: there anyway. Which revision and version are acceptable is concordat's
+#: QG-002 rule; this contract checks that the pins are explicit and agree.
+WHITAKER_VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
 
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
@@ -278,14 +276,14 @@ def test_shared_action_references_are_pinned_to_a_commit() -> None:
     assert references > 0, "the estate should still consume shared actions"
 
 
-def test_whitaker_pins_the_approved_version_and_revision_and_probes_it() -> None:
-    """Hold the Whitaker values, and make the probe check the installed version.
+def test_whitaker_pins_a_version_and_revision_and_probes_it() -> None:
+    """Hold the Whitaker pins' shape, and make the probe check the version.
 
     Scenario: the step is repinned or its version input edited without the
-    probe following. Invariant: the action is pinned at the approved revision,
-    the `installer-version` input is the approved version, and the probe
-    compares the installed version marker the action writes with that same
-    version, so a wrong input or a stale restored binary fails the job.
+    probe following. Invariant: the action is pinned at a full commit SHA, the
+    `installer-version` input is an explicit version, and the probe compares
+    the installed version marker the action writes with that same version, so
+    a wrong input or a stale restored binary fails the job.
     """
     (job, step), *rest = [
         (job, step)
@@ -295,19 +293,33 @@ def test_whitaker_pins_the_approved_version_and_revision_and_probes_it() -> None
     ]
     assert not rest, "expected exactly one Install Whitaker step"
     uses = str(step.get("uses", ""))
-    assert uses.endswith(f"@{WHITAKER_ACTION_SHA}"), (
-        f"{job} must pin install-whitaker at {WHITAKER_ACTION_SHA}, got {uses!r}"
+    action, _, ref = uses.partition("@")
+    assert action.endswith("/install-whitaker") and SHA_RE.fullmatch(ref), (
+        f"{job} must pin install-whitaker at a full commit SHA, got {uses!r}"
     )
     inputs = step.get("with")
     assert isinstance(inputs, dict), f"{job} Install Whitaker must declare inputs"
-    assert inputs.get("installer-version") == WHITAKER_INSTALLER_VERSION, (
-        f"{job} must pin installer-version {WHITAKER_INSTALLER_VERSION}"
+    version = str(inputs.get("installer-version", ""))
+    assert WHITAKER_VERSION_RE.fullmatch(version), (
+        f"{job} must pin an explicit installer-version, got {version!r}"
     )
     names = [str(candidate.get("name", "")) for candidate in job.steps]
     probe = step_text(job.steps[names.index("Probe Whitaker")])
-    assert f'test "${{installed}}" = "{WHITAKER_INSTALLER_VERSION}"' in probe, (
+    assert f'test "${{installed}}" = "{version}"' in probe, (
         "the probe must compare the installed installer with the pinned version"
     )
+
+
+def _pinned_whitaker_version() -> str:
+    """Return the `installer-version` the Install Whitaker step passes."""
+    versions = [
+        str(step["with"]["installer-version"])
+        for job in ALL_JOBS
+        for step in job.steps
+        if step.get("name") == "Install Whitaker"
+    ]
+    assert len(versions) == 1, "expected exactly one Install Whitaker step"
+    return versions[0]
 
 
 def _probe_script() -> str:
@@ -362,10 +374,10 @@ def _run_probe(tmp_path: Path, marker: str | None) -> subprocess.CompletedProces
 @pytest.mark.parametrize(
     ("marker", "should_pass"),
     [
-        pytest.param("0.2.11\n", True, id="the-pinned-version-passes"),
-        pytest.param("0.2.11 cargo-binstall\n", True, id="extra-fields-are-ignored"),
-        pytest.param("0.2.8\n", False, id="an-older-installer-fails"),
-        pytest.param("0.2.111\n", False, id="a-longer-version-fails"),
+        pytest.param("{pinned}\n", True, id="the-pinned-version-passes"),
+        pytest.param("{pinned} cargo-binstall\n", True, id="extra-fields-are-ignored"),
+        pytest.param("0.0.1\n", False, id="an-older-installer-fails"),
+        pytest.param("{pinned}1\n", False, id="a-longer-version-fails"),
         pytest.param(None, False, id="a-missing-marker-fails"),
     ],
 )
@@ -378,6 +390,7 @@ def test_the_probe_reads_the_installed_version_from_the_marker(
     marker. Invariant: a wrong, longer or missing marker fails the step, so the
     job cannot pass on a stale installer.
     """
-    result = _run_probe(tmp_path, marker)
+    pinned = _pinned_whitaker_version()
+    result = _run_probe(tmp_path, marker and marker.format(pinned=pinned))
 
     assert (result.returncode == 0) is should_pass, result
