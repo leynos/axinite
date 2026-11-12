@@ -11,7 +11,7 @@ Proposed. Implementation requires explicit approval of the
 
 ## Context and problem statement
 
-[RFC 0004](../rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md)
+[RFC 0004](../rfcs/rfc-0004-tokenized-delegated-authorized-endpoint-requests.md)
 requires extension setup to distinguish credentials from confidential endpoint
 configuration. Existing setup stores every value as a secret; the existing
 cryptographic API authenticates ciphertext without binding it to its database

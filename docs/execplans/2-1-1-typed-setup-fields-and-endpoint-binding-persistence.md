@@ -23,11 +23,19 @@ grants transport authority nor proves that a remote service is reachable.
 
 ## Conformance basis
 
-The inspected baseline is commit `9290dbc191d928cab6182904582491fc35dfb33e`.
-Governing sources are:
+The original inspection baseline was commit
+`9290dbc191d928cab6182904582491fc35dfb33e`. On 2026-11-12 this branch was
+rebased onto `origin/main` at `7e1c20528e2b76dd6b7acc126ac4c0de7276680b`,
+including [PR #492](https://github.com/leynos/axinite/pull/492), merged as
+`725715f81190b64cbef0de5092bd5e07c95cd09e`. Its
+[completed tooling plan](import-prover-tools.md) and the current Makefile,
+`scripts/prover_cli.py`, and `.github/workflows/formal-verification.yml` are
+the shared proof-tooling baseline. Runtime reconnaissance below describes the
+original inspection; recheck affected symbols before implementation. Governing
+sources are:
 
 - [Roadmap 2.1](../roadmap.md#21-delegated-endpoint-requests).
-- [RFC 0004](../rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md).
+- [RFC 0004](../rfcs/rfc-0004-tokenized-delegated-authorized-endpoint-requests.md).
 - [Architecture overview](../axinite-architecture-overview.md).
 - [Proposed ADR 0015](../adrs/adr-0015-confidential-endpoint-setup.md).
 
@@ -330,9 +338,22 @@ After approval, add failing `rstest` cases for C1/C3, then implement schema
 normalization and a pure operation planner with all callers coherent. Add
 property tests before proof engineering; they pressure-test the specification.
 Create `verus/endpoint_setup.rs` with the model and substantive proofs P1–P3.
-Pin Verus and the `rust-prover-tools` runner using `tools/verus/VERSION`,
-`tools/verus/SHA256SUMS`, and `tools/rust-prover-tools/REF`; add a `make verus`
-target and a CI lane for the selected proof. No successful skip or placeholder
+Reuse the shared tooling from PR #492 rather than importing it again. The
+Makefile pins `rust-prover-tools` to `592558f7183b554fc749696246984c5d7300d029`;
+`tools/verus/VERSION` and `tools/verus/SHA256SUMS` pin Verus
+`0.2026.10.04.426d8b0`, and `tools/kani/VERSION` pins Kani `0.67.0`. Z3
+`4.16.0` is installed through the same runner. Do not introduce a second runner,
+`tools/rust-prover-tools/REF`, or replacement install targets.
+
+Extend the existing `verus-proofs` job in
+`.github/workflows/formal-verification.yml` to run the endpoint proof
+explicitly as well as the existing tooling smoke proof. Preserve its read-only
+permissions, pinned actions, and bounded execution. `make verus` without an
+explicit proof selection currently verifies `verus/tooling_smoke/main.rs`; that
+success cannot discharge P1–P3. Run
+`make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs` for endpoint acceptance.
+Keep the existing Kani smoke lane and `make formal-pr` tooling checks; this
+plan introduces no endpoint Kani harness. No successful skip or placeholder
 proof target is acceptable as milestone evidence.
 
 Acceptance A1: invalid inputs produce no operations, both kinds route
@@ -340,9 +361,10 @@ correctly, required/optional/auth cases have witnesses, and Verus reports zero
 verification errors with the intended theorem count recorded. Deliberately
 misroute an endpoint or omit a scope component in a disposable patch and show
 proof/test rejection, then restore and verify. Check exact production-to-model
-mapping and no trusted shortcuts. Run all ordinary gates and `make verus`.
-Commit a coherent domain-only plateau with no new setup behaviour advertised.
-If extraction needs an unrelated architecture rewrite, stop for a deviation.
+mapping and no trusted shortcuts. Run all ordinary gates and
+`make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`. Commit a coherent
+domain-only plateau with no new setup behaviour advertised. If extraction needs
+an unrelated architecture rewrite, stop for a deviation.
 
 ### M2 — validate, encrypt, and persist through both adapters
 
@@ -363,8 +385,9 @@ not ready; upgrading a manifest kind requires replacement or clear. Test
 removed/reintroduced declarations and explicit uninstall cleanup. Concurrent
 replace/clear tests agree with a legal commit order. Inspect raw rows and
 captured logs for sentinel hostname/path/query leakage. Run ordinary gates,
-`make verus`, and `make test-matrix NEXTEST_PROFILE=ci`. Commit the internal
-service plateau; no transport capability is added.
+`make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`, and
+`make test-matrix NEXTEST_PROFILE=ci`. Commit the internal service plateau; no
+transport capability is added.
 
 ### M3 — integrate setup, web contracts, and both interfaces atomically
 
@@ -383,9 +406,9 @@ blocks readiness even with OAuth; approved auto-resolved intermediate
 credentials keep working; optional corrupt fields block readiness;
 endpoint-only replacement preserves OAuth. Secret-only channel/tool regression
 suites pass. Complete the UI work below in this same milestone before running
-ordinary gates and `make verus`. Commit the API, both clients, generated
-assets, and fixtures together; no committed plateau may break either bundled
-client.
+ordinary gates and `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`.
+Commit the API, both clients, generated assets, and fixtures together; no
+committed plateau may break either bundled client.
 
 #### M3 interface work
 
@@ -398,7 +421,8 @@ one secret and two endpoints; do not ship a non-working JMAP extension.
 The M3 UI acceptance includes correct controls, replace/clear, and safe error
 recovery in both interfaces. Run `make frontend-check`, `make frontend-test`,
 `make frontend-build`, and `make frontend-verify` sequentially, then ordinary
-gates and `make verus`. A build failure does not justify hand-editing output.
+gates and `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`. A build
+failure does not justify hand-editing output.
 
 ### M4 — demonstrate end-to-end behaviour and recovery
 
@@ -417,8 +441,9 @@ persistent storage, not intercepted mock responses. From `tests/e2e`, run
 `pytest scenarios/test_endpoint_setup.py -v`, with both interface variants
 parameterized by fixtures. Extend fixtures to restart the same host/database
 and to launch independent authenticated host contexts for scope tests; do not
-invent multi-user identity headers. Run ordinary gates and `make verus`, then
-commit the system-level proof of behaviour. Record exact commands and results.
+invent multi-user identity headers. Run ordinary gates and
+`make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`, then commit the
+system-level proof of behaviour. Record exact commands and results.
 
 ### M5 — reconcile documentation and completion evidence
 
@@ -428,10 +453,11 @@ limits, partial-save recovery, and credential separation. Update
 refinement maintenance, and re-use of the service by future endpoint kinds.
 Update `docs/axinite-architecture-overview.md`, `src/tools/README.md`,
 `src/db/CLAUDE.md`, `src/channels/web/CLAUDE.md`, and the accepted ADR with
-actual ownership and proof-influenced invariants. Update the formal methods
-document's old wrapper-script advice to the pinned runner actually adopted.
-Check `FEATURE_PARITY.md` and update any affected status/notes in this branch;
-never imply delegated requests already work. Add a precise entry if needed.
+actual ownership and proof-influenced invariants. Extend the formal methods
+document with endpoint proof obligations and their production relationship;
+preserve PR #492's shared runner and tooling-scope documentation. Check
+`FEATURE_PARITY.md` and update any affected status/notes in this branch; never
+imply delegated requests already work. Add a precise entry if needed.
 
 Acceptance A5: run the final ordinary, proof, backend-matrix, frontend, and E2E
 gates on the final implementation candidate. Check conformance R1–R5 and record
@@ -537,21 +563,26 @@ record its passing result. Proposed focused invocations, once targets exist:
 cargo nextest run --workspace -E 'test(endpoint_setup)'
 cargo nextest run --workspace --no-default-features \
   --features libsql-test-helpers -E 'test(endpoint_setup)'
-prover-tools verus install --repo-root .
-prover-tools verus run --repo-root . --proof-file verus/endpoint_setup.rs
+make install-verus
+make install-z3
+make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs
 ```
 
-Introduce Makefile aliases for repeatable feature and proof checks rather than
-maintaining shell wrappers. At each major milestone run the repository
-aggregate sequentially, never with `-j`; current `make all` runs
-`make check-fmt`, `make lint`, `make test`, and `make spelling`. Run formatting
-before those gates. The gate runner uses `set -o pipefail` and `tee`,
-preserving the command status. For example:
+Introduce a focused feature-test alias if useful, but reuse the existing proof
+Make targets and `scripts/prover_cli.py`. The wrapper sets
+`CARGO_INCREMENTAL=0` and supplies `VERUS_Z3_PATH`; direct unpinned runner
+commands are not the project proof gate. Installers require network access and
+the pinned Z3 binary requires glibc 2.39 or newer. A loader or admission
+failure is an infrastructure blocker, not a proof result. At each major
+milestone run the repository aggregate sequentially, never with `-j`; current
+`make all` runs `make check-fmt`, `make lint`, `make test`, and
+`make spelling`. Run formatting before those gates. The gate runner uses
+`set -o pipefail` and `tee`, preserving the command status. For example:
 
 ```bash
 set -o pipefail
 make all 2>&1 | tee /tmp/all-axinite-2-1-1.out
-make verus 2>&1 | tee /tmp/verus-axinite-2-1-1.out
+make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs 2>&1 | tee /tmp/verus-axinite-2-1-1.out
 make test-matrix NEXTEST_PROFILE=ci 2>&1 | tee /tmp/matrix-axinite-2-1-1.out
 make markdownlint 2>&1 | tee /tmp/markdownlint-axinite-2-1-1.out
 make nixie 2>&1 | tee /tmp/nixie-axinite-2-1-1.out
@@ -562,10 +593,12 @@ Execute these as separate sequential commands and stop on failure; the block is
 a command inventory, not permission to continue after a failed command. Run
 `make audit` for manifest, lockfile, or proof supply-chain changes. Run Rustdoc
 tests explicitly (`cargo test --doc` and the libSQL-only equivalent) when
-adding API examples because nextest does not run doctests. New Verus
-infrastructure must preserve non-zero exits and verify pinned checksums; test
-its negative paths. A successful proof run must report actual verified
-obligations, never zero selected proofs.
+adding API examples because nextest does not run doctests. The existing
+`make test-prover-tools` target exercises real Kani/Verus tools and deliberate
+negative controls. Run it and `make test-workflow-contracts` when extending
+proof selection or CI, preserving checksum and non-zero exit contracts. A
+successful proof run must report actual verified obligations, never zero
+selected proofs.
 
 Delegate full candidate gates to `scrutineer`; no other agent runs competing
 full gates. Respect shared Cargo cache and compiler admission. Do not override
@@ -616,11 +649,14 @@ WAL pages/backups. Preserve key availability for restore and rollback; key
 rotation is not introduced here. Metadata identifiers remain visible, so they
 must be manifest-defined opaque names, not copied hostnames.
 
-Verus tooling is new here and may expose representation constraints. M1 settles
-the refinement boundary before storage and UI work. Compiler posture is unknown
-at the baseline (no root toolchain file was found); inspect CI, wrapper flags,
-and the Rust router's canary before making borrow-sensitive API workarounds.
-The plan does not rely on a particular borrow checker.
+Shared Verus/Kani tooling is now available, but endpoint proof representation
+may still expose constraints. M1 settles the refinement boundary before storage
+and UI work. The refreshed target pins `nightly-2026-10-16` in
+`rust-toolchain.toml` and configures the development build standard in
+`.cargo/config.toml`. Use `make check-build-tools` and the documented installer
+when required; do not bypass the build standard. Borrow-checker posture remains
+unverified: inspect wrapper flags and use the Rust router's canary before
+borrow-sensitive API workarounds. The plan assumes no particular borrow checker.
 
 ## Idempotence and recovery
 
@@ -634,6 +670,10 @@ user bindings. After uncertain save completion, reload status and retry
 explicit operations; never imply that an error proves no commit occurred.
 
 ## Progress
+
+- [x] 2026-11-12: Rebased onto the PR target and reconciled the contents
+  conflict, preserving both plans and moving the endpoint ADR to 0015 under
+  `docs/adrs/`. Updated M1 and proof gates to reuse merged PR #492 tooling.
 
 - [x] 2026-10-20: Inspected baseline, RFC, roadmap, and module boundaries.
 - [x] 2026-10-20: Renamed the branch and completed Wyvern reconnaissance.
@@ -659,9 +699,19 @@ The current Solid setup text input also needs correct secret/password typing.
 `save_setup_secrets` can purge OAuth tokens after activation, so endpoint-only
 updates cannot reuse that flow unchanged. Existing secret encryption has no
 associated-data scope binding. `make all` includes spelling beyond the three
-Rust gates described in some guidance. No existing Verus proof tree was found.
+Rust gates described in some guidance. At the original inspection no Verus
+proof tree was found. PR #492 now provides `verus/tooling_smoke/main.rs`, the
+standalone Kani smoke crate, shared Make targets, runner integration tests, and
+formal-verification CI. These establish tooling contracts, not endpoint or
+runtime correctness.
 
 ## Decision log
+
+2026-11-12: Reuse the shared Verus/Kani runner, pins, Make targets, integration
+tests, and existing CI jobs from PR #492. Endpoint proof selection must be
+explicit; a smoke proof success is not evidence for P1–P3. The scope and
+approval boundary are unchanged. Preserve upstream ADR 0014 and assign this
+proposal ADR 0015 in the new `docs/adrs/` layout.
 
 2026-10-20: Choose a dedicated encrypted endpoint store with scope-bound
 authentication; reuse crypto mechanics without assigning credential semantics
@@ -714,5 +764,5 @@ Primary references consulted through Firecrawl on 2026-10-20:
 - [Verus guide](https://verus-lang.github.io/verus/guide/) defines the
   spec/proof/exec separation and scope of executable correctness claims.
 - [rust-prover-tools](https://github.com/leynos/rust-prover-tools) supplies
-  the pinned install/run workflow; choose and record actual release checksums
-  during M1 rather than copying an unverified example pin.
+  the shared install/run workflow now imported by PR #492. Reuse the checked-in
+  pins and checksums; do not copy an example pin or install a second runner.
