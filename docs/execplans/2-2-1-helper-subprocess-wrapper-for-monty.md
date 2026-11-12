@@ -229,10 +229,10 @@ plan must be explicitly approved before implementation begins.
   likelihood medium. The supervisor/RAII owner retains both child and permit
   through actual wait/reap, including when the parent future is dropped.
 - **Build and proof-tool availability.** Severity medium; likelihood medium.
-  The repository documentation describes a Verus workflow, but this checkout
-  does not yet contain its scripts or pinned tool bundle. M1 must settle
-  reproducible `rust-prover-tools` pin/install/run commands and keep proof
-  setup separate from ordinary Cargo gates.
+  PR #492 supplies the shared pinned Kani, Verus, and Z3 tooling. M1 must
+  verify host compatibility and the production/proof compilation bridge;
+  installation infrastructure is no longer missing. The pinned Z3 archive
+  requires glibc 2.39 or newer. Keep proofs outside ordinary Cargo gates.
 
 ## Progress
 
@@ -243,6 +243,8 @@ plan must be explicitly approved before implementation begins.
 - [x] (2026-10-20 19:25Z) Reconciled the approval contract, caller-attenuated
   broker context, tool identity pinning, process cleanup, and proof-refinement
   gate with runtime evidence.
+- [x] (2026-11-12) Rebased onto the fetched PR target and reconciled the
+  shared prover infrastructure merged in PR #492.
 - [ ] Obtain explicit approval of this plan. No implementation has started.
 - [ ] M1: verify Monty and approval-flow feasibility; update this plan with
   evidence and final protocol/limits before coding.
@@ -284,12 +286,14 @@ plan must be explicitly approved before implementation begins.
   review. Impact: use the verified projection in production or establish a
   deterministic artefact/refinement bridge; otherwise stop at M1 for a design
   decision.
-- Observation: the formal verification design document describes a pinned
-  Verus installation and `make verus`, but this checkout lacks those scripts
-  and tool files. Evidence: `docs/formal-verification-methods-in-axinite.md`
-  versus absent `scripts/run-verus.sh`, `scripts/install-verus.sh`, and
-  `tools/verus/`. Impact: M1 must specify the minimal pinned runner before the
-  planned proof milestone can be accepted.
+- Observation (updated 2026-11-12): shared prover tooling is now implemented
+  by [PR #492](https://github.com/leynos/axinite/pull/492), merged as
+  `725715f81190b64cbef0de5092bd5e07c95cd09e` on 2026-11-11. Evidence:
+  `Makefile`, `scripts/prover_cli.py`, `tools/kani/VERSION`,
+  `tools/verus/VERSION`, `tools/verus/SHA256SUMS`, and
+  `.github/workflows/formal-verification.yml`. Impact: reuse these interfaces
+  in M1/M3 instead of adding a second installer or pin registry. The smoke
+  fixtures prove tooling contracts, not Monty or Axinite runtime properties.
 - Observation: upstream Monty has both direct execution (`MontyRun::new` and
   `run`) and resumable execution (`start`, callback progress, and resume
   methods); its host integration must enforce its own suspension limits.
@@ -341,6 +345,12 @@ plan must be explicitly approved before implementation begins.
   2026-10-20, plan author.
 
 ## Outcomes & retrospective
+
+The 2026-11-12 rebase replayed both plan commits unchanged onto
+`7e1c20528e2b76dd6b7acc126ac4c0de7276680b` without conflicts. The shared proof
+infrastructure from PR #492 removes the installer/bootstrap work from this
+plan. Monty implementation and its substantive production-linked proof remain
+unstarted and approval-gated.
 
 Draft only. No implementation outcome exists yet. At each plateau record the
 observable result, remaining limitations, gate transcripts, deviations, and
@@ -406,9 +416,11 @@ Rust follow-ons.
 
 ## Conformance basis
 
-- **Baseline:** repository revision
-  `9290dbc191d928cab6182904582491fc35dfb33e`; all local references below were
-  inspected against this revision.
+- **Baseline:** initial runtime reconnaissance used repository revision
+  `9290dbc191d928cab6182904582491fc35dfb33e`. The plan is now rebased onto
+  `7e1c20528e2b76dd6b7acc126ac4c0de7276680b`; shared prover tooling and build
+  conventions were rechecked there. M1 must revalidate runtime seams before
+  implementation.
 - **Roadmap:** `docs/roadmap.md`, phase 2 objective and task 2.2.1. No separate
   Terms of Reference is present for this task.
 - **Design:** proposed RFC 0005, dated 2026-03-11; especially `Summary`,
@@ -419,7 +431,9 @@ Rust follow-ons.
   shape; `docs/tool-calling-architecture.md`, existing mediated tool path.
 - **Testing and verification standards:** `AGENTS.md`; the six required Rust
   testing references listed above;
-  `docs/formal-verification-methods-in-axinite.md`.
+  `docs/formal-verification-methods-in-axinite.md`; shared prover tooling from
+  [PR #492](https://github.com/leynos/axinite/pull/492), as documented in
+  `docs/developers-guide.md` and selected by `Makefile`.
 - **Design elements:** `EP-DE-1` parent/child separation; `EP-DE-2` immutable
   per-run capability projection; `EP-DE-3` caller-policy and approval
   preservation; `EP-DE-4` bounded JSON protocol and child lifecycle; `EP-DE-5`
@@ -516,7 +530,8 @@ approval rather than claim the shipped code is formally proved.
   executable kernel production uses, proposed at `verus/monty_capabilities.rs`,
   plus `proptest` properties at `src/tools/monty/capabilities/tests.rs`. A
   shared protocol crate owns the serializable request/response types, not
-  interpreter code. Command: `make verus-monty-capabilities` and
+  interpreter code. Command:
+  `make verus VERUS_PROOF_FILE=verus/monty_capabilities.rs` and
   `cargo nextest run -p axinite --lib monty::capabilities::tests`. Evidence:
   Verus establishes output exactness and subset properties for all admitted
   inputs; the test checks production entries retain their pinned identity and
@@ -674,13 +689,16 @@ Add parent modules `src/tools/monty/runner.rs` (supervisor),
 `src/tools/monty/broker.rs`, `src/tools/monty/capabilities.rs`, and
 `src/tools/monty/exec_code.rs`. Put the pure projection kernel in a crate
 usable by both production and Verus without importing Monty. Implement its
-proof in `verus/monty_capabilities.rs`. In M3 add the repository-standard
-pinned verifier artefacts `tools/rust-prover-tools/REF`, `tools/verus/VERSION`,
-and `tools/verus/SHA256SUMS`, plus a Make target that invokes
-`rust-prover-tools` to install/run Verus. Do not add bespoke shell wrappers. M1
-records the supported tool reference and official install invocation. If
-production cannot use the verified kernel and no rigorous deterministic
-refinement bridge exists, block the proof design.
+proof in `verus/monty_capabilities.rs`. Reuse PR #492's existing `make verus`
+with `VERUS_PROOF_FILE` selecting that entrypoint. Do not introduce
+`tools/rust-prover-tools/REF`, another installer, or a parallel wrapper:
+`PROVER_TOOLS_SOURCE` in `Makefile` already pins the shared runner and
+`scripts/prover_cli.py` forwards settings as literal arguments. In M3 extend
+`.github/workflows/formal-verification.yml` to run the Monty proof explicitly
+alongside the existing tooling smoke proof, preserving both checks. Update
+workflow contracts for that selection. If production cannot use the verified
+kernel and no rigorous deterministic refinement bridge exists, block the proof
+design.
 
 ### Stage D — parent broker and public `exec_code`
 
@@ -753,8 +771,9 @@ and `EP-DE-1..5`.
 version, and licence; call graph shows preflight/result scanning; immutable
 `BrokerContext` and tool identities reach invocation; helper packaging and
 Linux resource enforcement are viable; production projection uses the proof
-kernel or a reviewed deterministic refinement bridge. Record prover version and
-official install invocation for M3.
+kernel or a reviewed deterministic refinement bridge. Confirm the inherited
+prover pins, host compatibility, and Make commands for M3; do not rebuild the
+shared tooling.
 
 **Conformance check:** RFC scope still fits 2.2.1; all side effects remain
 parent-owned; no unapproved public interface or dependency; no new trust
@@ -877,10 +896,12 @@ commands selected in M1; no platform skip may substitute for the Linux
 acceptance run. Feature-sensitive caller changes additionally require
 `make test-matrix`; new public Rustdoc examples require `cargo test --doc`.
 
-Borrow-checker posture is currently `unknown`: this checkout has no local Rust
-toolchain pin and its Cargo config contains no explicit Polonius flag. M1
-records the actual compiler/wrapper flags before any ownership workaround. Use
-the shared Cargo cache and existing compiler admission; never bypass the
+The rebased checkout pins `nightly-2026-10-16` in `rust-toolchain.toml` and
+uses the development build standard documented in `docs/developers-guide.md`.
+Borrow-checker posture remains `unknown` until M1 checks the dated compiler
+with the Rust router's canary; do not infer it from the nightly label. Preserve
+`make check-build-tools`, the compiler wrappers, and the pinned build flags.
+Use the shared Cargo cache and existing compiler admission; never bypass the
 wrappers or build in `/tmp`. Follow `AGENTS.md` if storage or admission fails.
 
 All commands run from the repository root. During M1, use CodeGraph for
@@ -904,27 +925,50 @@ repository shell wrapper so `tee` does not hide a failing command. Run the
 project's pinned formal command as a separate check:
 
 ```bash
-make verus-monty-capabilities 2>&1 | tee /tmp/verus-axinite-monty.out
+make verus VERUS_PROOF_FILE=verus/monty_capabilities.rs 2>&1 | tee /tmp/verus-axinite-monty.out
 ```
 
-M1 specifies the tool pins; M3 adds `make verus-monty-capabilities` and
-`make install-verus` using the pinned `prover-tools` runner. The corresponding
-runner operations are:
+The shared tooling already exists. For first-time installation and baseline
+verification, run these existing targets sequentially:
 
 ```bash
-prover-tools verus install --repo-root .
-prover-tools verus run --repo-root . --proof-file verus/monty_capabilities.rs
+make install-kani
+make kani-check
+make install-verus
+make install-z3
+make formal-pr
+make test-prover-tools
 ```
 
-The Make targets must resolve the pinned runner from
-`tools/rust-prover-tools/REF`, preserve its exit status, and verify download
-checksums from `tools/verus/SHA256SUMS`. Proof acceptance requires a non-zero
-verified-obligation count and zero errors; `FORMAL-SKIP` is not acceptance.
-These are future commands, not claims that this checkout already has proofs. If
-runtime dependencies change, run `make audit` after normal gates. For changed
-Markdown, run `git diff --check`, `make markdownlint`, and `make spelling`; run
-`make nixie` if diagrams change. Keep test feature files next to the relevant
-tool tests and follow `docs/rstest-bdd-users-guide.md` for runner conventions.
+At this rebase, `PROVER_TOOLS_SOURCE` pins `rust-prover-tools` to
+`592558f7183b554fc749696246984c5d7300d029`; `tools/kani/VERSION` pins Kani
+`0.67.0`; `tools/verus/VERSION` pins Verus `0.2026.10.04.426d8b0`, with its
+checksums in `tools/verus/SHA256SUMS`. Z3 is pinned to `4.16.0`. Read those
+files and the Makefile when executing the plan rather than creating duplicate
+pins. `scripts/prover_cli.py` preserves command failures and forces
+`CARGO_INCREMENTAL=0` for prover child commands. Its checked-in configuration
+is the authoritative runner interface.
+
+Default `make verus` selects `verus/tooling_smoke/main.rs`; default Kani runs
+`tests/verification/kani-smoke`. Thus a passing `make formal-pr` alone cannot
+accept M3: the explicit Monty proof command above must verify a non-zero number
+of substantive obligations with zero errors. `FORMAL-SKIP` is not acceptance.
+M3 also runs the shared smoke proofs and tooling tests to retain their
+negative-control coverage. Existing formal CI runs on pull requests, main
+pushes, a weekly schedule, and manual dispatch, outside `make all`.
+
+Kani remains available through `make kani` and `make kani-full`, with
+`KANI_PROOF_DIR` selecting a dedicated harness crate. This plan does not add
+Kani obligations merely because the tool is available: Verus covers the
+unbounded selection kernel, while the specified property and integration tests
+cover the remaining contracts. Any later bounded Kani harness must state its
+bounds and acceptance evidence in this plan before implementation.
+
+If runtime dependencies change, run `make audit` after normal gates. For
+changed Markdown, run `git diff --check`, `make markdownlint`, and
+`make spelling`; run `make nixie` if diagrams change. Keep test feature files
+next to the relevant tool tests and follow `docs/rstest-bdd-users-guide.md` for
+runner conventions.
 
 ## Validation and acceptance
 
@@ -995,7 +1039,7 @@ findings:
 - parent-side process adapter, capability projection, broker and `exec_code`
   tool in the existing tools ownership area;
 - focused unit, property, BDD and real-process test modules;
-- `verus/monty_capabilities.rs` plus pinned install/run tooling;
+- `verus/monty_capabilities.rs` plus selection in the existing proof workflow;
 - RFC/design, developer, user, roadmap, feature parity if applicable, and
   contents documentation updates.
 
@@ -1179,3 +1223,8 @@ during planning; Wyvern used targeted reads and shared code through context pack
 Revision 2026-10-20: reconciled all six expert lenses, fixed verification
 commands and examples, and made invocation, protocol, limits, and proof
 representation decisions explicit. These remain proposals awaiting approval.
+
+Revision 2026-11-12: rebased onto the remote PR target and incorporated merged
+PR #492. Reuse shared Kani/Verus/Z3 pins, Make targets, runner contracts, and
+formal CI; retain the substantive Monty proof milestone and its production
+bridge. Updated build-toolchain context without authorizing implementation.
