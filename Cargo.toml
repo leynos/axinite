@@ -275,6 +275,7 @@ docker = ["dep:bollard"]
 # the workspace lint table lands, replace this table with `[lints] workspace =
 # true`; never mix the two (Cargo rejects overrides next to `workspace = true`).
 [lints.rust]
+missing_docs = "deny"
 unsafe_code = "forbid"
 
 [[test]]
@@ -288,9 +289,6 @@ required-features = ["test-helpers"]
 [[test]]
 name = "html_to_markdown"
 required-features = ["html-to-markdown"]
-
-[lints.rust]
-missing_docs = "deny"
 
 [profile.dev]
 incremental = false
