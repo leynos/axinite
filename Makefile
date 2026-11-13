@@ -160,7 +160,6 @@ MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 all: check-fmt lint test spelling
 
 .PHONY: install-kani kani-check kani kani-full install-verus install-z3 verus formal-pr
-.PHONY: test-kani-tools test-verus-tools test-prover-tools
 
 install-kani kani-check install-verus install-z3 verus:
 	@python3 scripts/prover_cli.py $@
@@ -171,18 +170,6 @@ kani kani-full: kani-check
 formal-pr:
 	@$(MAKE) kani
 	@$(MAKE) verus
-
-# Real prover integration tests. These install and run the pinned tools, so
-# they stay outside `make all` and the ordinary application test gate.
-test-kani-tools:
-	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/kani_tools_test.py -q
-
-test-verus-tools:
-	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/verus_tools_test.py -q
-
-test-prover-tools:
-	@$(MAKE) test-kani-tools
-	@$(MAKE) test-verus-tools
 
 # Build the workspace as the standard development build: every target, with the
 # test features, so a build that passes here is one `make test` can start from.

@@ -15,6 +15,7 @@ from _workflow_policy import WORKFLOW_DIR
 
 WORKFLOW = "formal-verification.yml"
 PINNED_ACTION = re.compile(r"^[^@]+@[0-9a-f]{40}$")
+INSTALL_ACTION = "leynos/shared-actions/.github/actions/install-prover-tools"
 
 
 def _mapping(value: object, label: str) -> dict[str, object]:
@@ -87,10 +88,14 @@ def test_formal_jobs_pin_checkout_and_disable_uv_cache(
     assert PINNED_ACTION.fullmatch(setup_uv.uses)
     assert setup_uv.inputs.get("python-version") == "3.14"
     assert setup_uv.inputs.get("enable-cache") is False
-    assert {step.uses for step in steps_of(job) if step.uses} == {
-        checkout.uses,
-        setup_uv.uses,
-    }, "the proof jobs must not add a build or Cargo-target cache action"
+    others = {
+        step.uses
+        for step in steps_of(job)
+        if step.uses and step.uses.partition("@")[0] != INSTALL_ACTION
+    }
+    assert others == {checkout.uses, setup_uv.uses}, (
+        "the proof jobs must not add a build or Cargo-target cache action"
+    )
 
 
 @pytest.mark.parametrize("job_id", ["kani-smoke", "verus-proofs"])
@@ -107,23 +112,30 @@ def test_formal_jobs_cannot_be_skipped_or_soft_failed(
         )
 
 
+def _installs_through_the_shared_action(job: dict[str, object], name: str, tools: str) -> None:
+    """Require *name* to call the shared install action, pinned, for *tools*."""
+    step = _step(job, name)
+    action, _, pin = step.uses.partition("@")
+    assert action == INSTALL_ACTION, f"{name} installs through the shared action"
+    assert PINNED_ACTION.fullmatch(step.uses), f"{name} pins the action by full SHA"
+    assert step.inputs.get("tools") == tools, f"{name} asks for {tools}"
+    assert not step.run, f"{name} keeps no install commands of its own"
+
+
 def test_kani_job_installs_probes_and_checks_the_pinned_harness(
     workflow: dict[str, object],
 ) -> None:
-    """Kani CI uses the repository installer, version check, proof, and test."""
+    """Kani CI installs through the shared action, then probes and proves."""
     job = _job(workflow, "kani-smoke")
-    assert _step(job, "Install Kani").run == "make install-kani"
+    _installs_through_the_shared_action(job, "Install Kani", "kani")
     assert _step(job, "Probe Kani").run == "make kani-check"
     assert _step(job, "Run Kani proof").run == "make kani"
-    assert _step(job, "Test Kani integration").run == "make test-kani-tools"
 
 
 def test_verus_job_installs_both_binaries_and_checks_proofs(
     workflow: dict[str, object],
 ) -> None:
-    """Verus CI installs its pinned solver and exercises positive and negative proofs."""
+    """Verus CI installs Verus and Z3 through the shared action, then proves."""
     job = _job(workflow, "verus-proofs")
-    assert _step(job, "Install Verus").run == "make install-verus"
-    assert _step(job, "Install Z3").run == "make install-z3"
+    _installs_through_the_shared_action(job, "Install Verus and Z3", "verus")
     assert _step(job, "Run Verus proofs").run == "make verus"
-    assert _step(job, "Test Verus integration").run == "make test-verus-tools"

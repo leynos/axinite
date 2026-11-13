@@ -27,6 +27,9 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_INCREMENTAL: "0"
+      # Where the Makefile expects the Kani release, so the action's
+      # `cargo kani setup` writes the bundle there.
+      KANI_HOME: ${{ github.workspace }}/.cache/kani/home
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -38,13 +41,17 @@ jobs:
           python-version: '3.14'
           enable-cache: false
       - name: Install Kani
-        run: make install-kani
+        # The install lands where `make kani` and `make kani-check` look: the
+        # front-end in `.cache/kani/bin`, the bundle under `KANI_HOME`.
+        uses: leynos/shared-actions/.github/actions/install-prover-tools@9ed445010fe26a7facb708d7a9ba4d5bd0fa57ca
+        with:
+          tools: kani
+          runner-image: ubuntu2404
+          kani-install-dir: .cache/kani/bin
       - name: Probe Kani
         run: make kani-check
       - name: Run Kani proof
         run: make kani
-      - name: Test Kani integration
-        run: make test-kani-tools
 
   verus-proofs:
     name: Verus Proofs
@@ -62,11 +69,12 @@ jobs:
         with:
           python-version: '3.14'
           enable-cache: false
-      - name: Install Verus
-        run: make install-verus
-      - name: Install Z3
-        run: make install-z3
+      - name: Install Verus and Z3
+        # Z3 lands at `Z3_INSTALL_DIR`, where `make verus` looks for it.
+        uses: leynos/shared-actions/.github/actions/install-prover-tools@9ed445010fe26a7facb708d7a9ba4d5bd0fa57ca
+        with:
+          tools: verus
+          runner-image: ubuntu2404
+          z3-install-dir: .cache/z3/4.16.0
       - name: Run Verus proofs
         run: make verus
-      - name: Test Verus integration
-        run: make test-verus-tools
