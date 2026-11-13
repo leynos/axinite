@@ -234,40 +234,49 @@ def test_the_workflow_follows_each_rule(
 
 
 def _drop_timeout(document: Workflow) -> None:
+    """Remove the Miri job's timeout bound."""
     del _job(document, "miri")["timeout-minutes"]
 
 
 def _move_to_paid_runner(document: Workflow) -> None:
+    """Move the contract job onto a paid runner."""
     _job(document, "contract")["runs-on"] = "ubicloud-standard-4"
 
 
 def _persist_credentials(document: Workflow) -> None:
+    """Let the contract job's checkout persist its credentials."""
     _steps(document, "contract")[0]["with"]["persist-credentials"] = True
 
 
 def _install_miri_everywhere(document: Workflow) -> None:
+    """Install the Miri component in the contract job as well."""
     _steps(document, "contract").append({"run": "rustup component add miri"})
 
 
 def _stop_installing_miri(document: Workflow) -> None:
+    """Stop the Miri job installing the component it needs."""
     for step in _steps(document, "miri"):
         step["run"] = str(step.get("run", "")).replace("--component miri", "")
 
 
 def _skip_the_contract(document: Workflow) -> None:
+    """Point the contract job at a target that checks nothing."""
     for step in _steps(document, "contract"):
         step["run"] = str(step.get("run", "")).replace("boundary-contract", "help")
 
 
 def _unconditional_cancellation(document: Workflow) -> None:
+    """Cancel in-progress runs for every trigger."""
     document["concurrency"]["cancel-in-progress"] = True
 
 
 def _widen_permissions(document: Workflow) -> None:
+    """Grant the workflow write access to repository contents."""
     document["permissions"] = {"contents": "write"}
 
 
 def _drop_build_standard_path(document: Workflow) -> None:
+    """Drop the toolchain pin from the pull-request trigger paths."""
     triggers = document.get(True, document.get("on", {}))
     triggers["pull_request"]["paths"].remove("rust-toolchain.toml")
 

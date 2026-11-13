@@ -46,6 +46,7 @@ def test_read_reports_permission_errors_with_the_path(
     original_read_text = Path.read_text
 
     def deny_read(path: Path, *args: typ.Any, **kwargs: typ.Any) -> str:
+        """Refuse to read the unreadable path and delegate everything else."""
         if path == unreadable:
             raise PermissionError(errno.EACCES, "permission denied", str(path))
         return original_read_text(path, *args, **kwargs)
@@ -72,6 +73,7 @@ def test_directory_walk_errors_fail_with_the_path(
         *,
         onerror: Callable[[OSError], None],
     ) -> Iterator[tuple[str, list[str], list[str]]]:
+        """Report the blocked directory through `onerror` and walk nothing."""
         assert root == tmp_path
         error = PermissionError(errno.EACCES, "permission denied", str(blocked))
         onerror(error)

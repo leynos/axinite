@@ -38,6 +38,7 @@ class RecordedCompiler:
     """
 
     def __init__(self) -> None:
+        """Start with an empty record of compiles."""
         self.calls: list[tuple[int, bool]] = []
 
     def __call__(self, site: probes.ProbeSite) -> probes.CompileResult:
@@ -129,6 +130,7 @@ def test_a_compiler_that_accepts_unsafe_is_reported(tmp_path: Path) -> None:
     site = _site(tmp_path, SAFE)
 
     def lenient(_: probes.ProbeSite) -> probes.CompileResult:
+        """Accept every probe, as a compiler without the lint would."""
         return 0, "finished checking"
 
     problems = probes.run_probes(site, lenient, tmp_path / "logs")
@@ -141,6 +143,7 @@ def test_an_unrelated_compile_error_is_not_a_rejection(tmp_path: Path) -> None:
     site = _site(tmp_path, SAFE)
 
     def broken(_: probes.ProbeSite) -> probes.CompileResult:
+        """Fail every compile with an error unrelated to the unsafe lint."""
         return 101, "error[E0425]: cannot find value `x` in this scope"
 
     problems = probes.run_probes(site, broken, tmp_path / "logs")
@@ -152,6 +155,7 @@ def test_a_probe_that_cannot_fail_is_reported(tmp_path: Path) -> None:
     site = _site(tmp_path, SAFE)
 
     def always_rejecting(compile_site: probes.ProbeSite) -> probes.CompileResult:
+        """Reject any source carrying a probe, policy or not."""
         sources = "\n".join(
             path.read_text(encoding="utf-8")
             for path in files.rust_sources(compile_site.crate_dir)
@@ -171,6 +175,7 @@ def test_a_rejection_that_omits_a_form_is_reported(tmp_path: Path) -> None:
     omitted = inventory.PROBE_DIAGNOSTICS[inventory.PROBES[1]][0]
 
     def partial(compile_site: probes.ProbeSite) -> probes.CompileResult:
+        """Drop one probe's diagnostic from the compiler output."""
         code, output = recorded(compile_site)
         return code, output.replace(omitted, "an unrelated message")
 
@@ -187,6 +192,7 @@ def test_no_mangle_probe_accepts_supported_diagnostic_wording(
     nightly, stable = inventory.PROBE_DIAGNOSTICS[inventory.PROBES[-1]]
 
     def stable_wording(compile_site: probes.ProbeSite) -> probes.CompileResult:
+        """Rewrite the nightly diagnostic into the stable wording."""
         code, output = recorded(compile_site)
         return code, output.replace(f"error: {nightly}", f"error: {stable}")
 
@@ -199,6 +205,7 @@ def test_a_probe_that_fails_for_another_reason_is_reported(tmp_path: Path) -> No
     compiles: list[None] = []
 
     def unrelated(_: probes.ProbeSite) -> probes.CompileResult:
+        """Compile the baseline, then fail the probe on an unrelated error."""
         compiles.append(None)
         if len(compiles) == 1:
             return 0, "finished checking"
@@ -214,6 +221,7 @@ def test_a_missing_baseline_is_reported_before_any_probe(tmp_path: Path) -> None
     seen: list[probes.ProbeSite] = []
 
     def failing(compile_site: probes.ProbeSite) -> probes.CompileResult:
+        """Fail the baseline compile and record that it was attempted."""
         seen.append(compile_site)
         return 1, "error: could not compile"
 
