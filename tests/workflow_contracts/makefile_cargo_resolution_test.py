@@ -155,7 +155,6 @@ def test_check_fmt_resolves_cargo_override(
     expected_commands = [
         f"{quoted_command} fmt --all -- --check",
         f"{quoted_command} fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
-        f"{quoted_command} fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all -- --check",
         f"{quoted_command} fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all -- --check",
     ]
     assert emitted_commands == expected_commands, (
@@ -244,6 +243,5 @@ def test_check_fmt_shell_quotes_generated_cargo_paths(
     assert emitted_commands == [
         f"{quoted_cargo} fmt --all -- --check",
         f"{quoted_cargo} fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
-        f"{quoted_cargo} fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all -- --check",
         f"{quoted_cargo} fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all -- --check",
     ], f"CARGO={cargo_override!r} emitted unexpected commands: {emitted_commands!r}"

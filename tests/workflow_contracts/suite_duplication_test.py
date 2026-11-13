@@ -35,7 +35,6 @@ import typing as typ
 import pytest
 from _suite_reader import PAID_EVENTS, duplicates_in, suite_runs_for
 from _suite_targets import (
-    CRANELIFT_PROBE_RECIPE,
     DEFAULT_PROFILE,
     GITHUB_TOOL_MANIFEST,
     GITHUB_TOOL_RECIPE,
@@ -70,13 +69,11 @@ def test_the_scan_finds_the_suite_at_all(
         )
 
 
-def test_make_test_is_the_ci_suites_and_one_standalone_probe() -> None:
-    """`make test` covers CI suites plus the standalone probe exactly once.
+def test_make_test_is_the_ci_suites() -> None:
+    """`make test` covers the CI suites exactly once.
 
     A developer runs one target; CI runs the suites on different lanes and
-    different triggers. The probe stays outside `test-workspace`, so the CI
-    matrix does not run it once per feature leg, but the local aggregate still
-    runs its LLVM control.
+    different triggers.
     """
     makefile = read_makefile()
     prerequisites, recipe = make_rule_in(makefile, "test")
@@ -84,11 +81,7 @@ def test_make_test_is_the_ci_suites_and_one_standalone_probe() -> None:
         "test-workspace",
         "test-github-tool",
         "test-libsql-transport",
-        "test-cranelift-probe",
-    }, (
-        f"`make test` builds {prerequisites}; expected the three CI suites plus "
-        "the standalone probe, kept outside the workspace matrix"
-    )
+    }, f"`make test` builds {prerequisites}; expected the three CI suites"
     assert not recipe, (
         f"`make test` has grown a recipe of its own ({recipe}), so it runs "
         "work outside its named suite targets"
@@ -111,8 +104,7 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
     and it pins the order the WASM build has to come in, because the metadata
     and schema tests load the artefact it produces: a recipe that ran the
     suite first would test the previous build on a warm tree and fail
-    outright on a clean checkout. The standalone Cranelift probe is a sibling
-    target of the workspace suite so the CI feature matrix does not repeat it.
+    outright on a clean checkout.
     """
     makefile = read_makefile()
     _, workspace = make_rule_in(makefile, "test-workspace")
@@ -128,10 +120,6 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
         f"`make test-github-tool` runs {tool}, not {(GITHUB_TOOL_RECIPE,)}; "
         "the scope and the empty feature set this module gives it both come "
         "from that one command"
-    )
-    _, probe = make_rule_in(makefile, "test-cranelift-probe")
-    assert probe == (CRANELIFT_PROBE_RECIPE,), (
-        f"`make test-cranelift-probe` runs {probe}, not {(CRANELIFT_PROBE_RECIPE,)}"
     )
     _, transport = make_rule_in(makefile, "test-libsql-transport")
     assert transport == (
