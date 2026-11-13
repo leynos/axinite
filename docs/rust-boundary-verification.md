@@ -38,10 +38,11 @@ blocks (in `tools-src/github` and `tools-src/web-search`). The historical
 counts do not include the unsafe code in the later-added test-only ABI
 round-trip harnesses. Static checks prove that no handwritten `unsafe` token
 exists in a boundary crate outside `src/bindings.rs` and its explicitly
-declared 32-bit test modules under `src/bindings/`, and that each inventoried
-safe crate forbids it in its lint table and crate roots. Compiler probes append
-four unsafe forms to selected safe and boundary crates and require the compiler
-to reject them.
+declared 32-bit test modules under `src/bindings/`, and that every inventoried
+safe crate forbids it in its lint table. Each first-party safe crate also
+carries the crate-root attribute; the vendored `crates/hyper-rustls` is held to
+the manifest lint alone. Compiler probes append four unsafe forms to selected
+safe and boundary crates and require the compiler to reject them.
 
 The historical site totals above do not include the later path-patched crate
 `crates/pg-embed-setup-unpriv`. It contains platform FFI and process-control
