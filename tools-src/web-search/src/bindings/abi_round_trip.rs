@@ -163,3 +163,48 @@ fn a_long_multibyte_query_crosses_the_abi_intact() {
         Some("'query' exceeds maximum length of 2000 characters")
     );
 }
+
+/// Require the shim's result to equal the guest function's own result.
+///
+/// Every input here fails validation before the guest reaches a host import,
+/// which is `unreachable` on a non-WebAssembly target. The comparison is
+/// therefore against the same validation the shim lifts its strings into,
+/// reached without the ABI.
+fn assert_matches_the_guest(params: &str, context: Option<&str>) {
+    let (output, error) = execute(params, context);
+    let guest = crate::execute_inner(params);
+    assert_eq!(output, guest.as_ref().ok().cloned(), "outputs differ");
+    assert_eq!(error, guest.err(), "errors differ");
+}
+
+#[test]
+fn parameter_strings_of_every_length_class_cross_the_abi() {
+    let units = ["a", "é", "€", "🦀"];
+    // Lengths either side of the allocator's small and medium size classes.
+    for unit in units {
+        for repeat in [0usize, 1, 2, 7, 8, 9, 15, 16, 17, 255, 256, 1000] {
+            // An empty query fails validation before any host import, so the
+            // whole parameter string is lifted and dropped without a trap.
+            let padding = unit.repeat(repeat);
+            let params = format!("{padding}{}", r#"{"query": ""}"#);
+            assert_matches_the_guest(&params, None);
+        }
+    }
+    // A query of every content class above the byte limit fails validation
+    // after the shim has lifted the whole string, exercising arbitrary UTF-8.
+    for unit in units {
+        let query = unit.repeat(2001);
+        let params = format!(r#"{{"query": "{query}"}}"#);
+        assert_matches_the_guest(&params, None);
+    }
+}
+
+#[test]
+fn every_optional_context_state_crosses_the_abi() {
+    let long = "é".repeat(1000);
+    let contexts = [None, Some(""), Some("j"), Some("🦀"), Some(long.as_str())];
+    for context in contexts {
+        assert_matches_the_guest("", context);
+        assert_matches_the_guest(r#"{"query": ""}"#, context);
+    }
+}
