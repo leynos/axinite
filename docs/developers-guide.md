@@ -5011,10 +5011,18 @@ keeps the failure pointing at the calling test while the query stays reusable.
 ### Shared integration assertions
 
 `tests/support/assertions.rs` follows the same split. Pure queries such as
-`first_tool_not_used`, `first_forbidden_tool_used`, `failed_tools`,
-`matching_tool_results`, and `tool_order_violation` return the offending value;
-the `assert_*` wrappers are `#[track_caller]` and build the failure message.
-Prefer adding a query plus wrapper pair over duplicating assertion bodies.
+`first_tool_not_used`, `first_forbidden_tool_used`, `failed_tools` and
+`matching_tool_results` return the offending value. `tool_order_violation`
+returns an optional diagnostic message: `Some` describing the first ordering
+violation, `None` when the order holds. The `assert_*` wrappers are
+`#[track_caller]` and build the failure message. Prefer adding a query plus
+wrapper pair over duplicating assertion bodies.
+
+`src/agent/dispatcher/tests/auth.rs` uses the same shape for detection results.
+`is_auth_detected` is the private query, checking that a result is `Some` and
+that its name and instructions match the expectation; `assert_auth_detected` is
+the `#[track_caller]` wrapper that panics with both the expected and actual
+values when the query fails.
 
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
 [actions/runner-images#13518]: https://github.com/actions/runner-images/issues/13518

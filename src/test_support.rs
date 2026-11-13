@@ -10,7 +10,10 @@
 //!   helpers that deliberately have no error channel;
 //! - [`assert_json_round_trip`] and [`assert_json_round_trip_with`], which
 //!   assert that a value survives a JSON serialize/deserialize cycle without
-//!   field loss.
+//!   field loss. Both are `#[track_caller]` and panic at the calling test
+//!   location when either direction fails. [`assert_json_round_trip`] compares
+//!   whole values through `PartialEq`; [`assert_json_round_trip_with`] checks
+//!   only what its comparison closure checks.
 
 use crate::llm::ToolDefinition;
 use serde::Serialize;

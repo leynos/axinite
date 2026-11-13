@@ -219,3 +219,46 @@ fn test_secret_error_display() {
         "Secret access denied for tool"
     );
 }
+
+mod prop_tests {
+    //! Property tests over generated [`CredentialLocation`] values.
+
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Arbitrary string-bearing fragment, including empty strings and
+    /// characters that must survive JSON escaping.
+    fn arb_fragment() -> impl Strategy<Value = String> {
+        "[ -~]{0,24}"
+    }
+
+    /// Arbitrary [`CredentialLocation`] covering every variant and both
+    /// `prefix` shapes of [`CredentialLocation::Header`].
+    fn arb_credential_location() -> impl Strategy<Value = CredentialLocation> {
+        prop_oneof![
+            Just(CredentialLocation::AuthorizationBearer),
+            arb_fragment().prop_map(|username| CredentialLocation::AuthorizationBasic { username }),
+            (arb_fragment(), prop::option::of(arb_fragment()))
+                .prop_map(|(name, prefix)| CredentialLocation::Header { name, prefix }),
+            arb_fragment().prop_map(|name| CredentialLocation::QueryParam { name }),
+            arb_fragment().prop_map(|placeholder| CredentialLocation::UrlPath { placeholder }),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 64,
+            max_shrink_iters: 64,
+            ..ProptestConfig::default()
+        })]
+
+        /// Every generated credential location survives a JSON round trip
+        /// without field loss across all of its variants.
+        #[test]
+        fn credential_location_round_trips_through_json(
+            location in arb_credential_location(),
+        ) {
+            assert_json_round_trip(&location);
+        }
+    }
+}
