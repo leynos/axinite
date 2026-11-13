@@ -117,7 +117,6 @@ def test_test_target_uses_expected_nextest_command(
             (
                 "fmt --all",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all",
-                "fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all",
                 "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all",
             ),
         ),
@@ -126,7 +125,6 @@ def test_test_target_uses_expected_nextest_command(
             (
                 "fmt --all -- --check",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
-                "fmt --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all -- --check",
                 "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all -- --check",
             ),
         ),
@@ -146,7 +144,6 @@ def test_test_target_uses_expected_nextest_command(
                     "--features test-helpers,embedded-postgres"
                 ),
                 "check --manifest-path tools-src/github/Cargo.toml --tests",
-                "check --manifest-path tests/probes/cranelift-unwind/Cargo.toml --all-targets",
             ),
         ),
         (
@@ -167,10 +164,6 @@ def test_test_target_uses_expected_nextest_command(
                 (
                     "clippy --manifest-path tools-src/github/Cargo.toml --tests "
                     "-- -D warnings"
-                ),
-                (
-                    "clippy --manifest-path tests/probes/cranelift-unwind/Cargo.toml "
-                    "--all-targets -- -D warnings"
                 ),
             ),
         ),
@@ -209,12 +202,7 @@ def test_test_target_uses_expected_nextest_command(
                     "--no-default-features "
                     "--features rustls-native-certs,tokio-runtime,http1 --doc"
                 ),
-                "test --manifest-path tests/probes/cranelift-unwind/Cargo.toml",
             ),
-        ),
-        (
-            "test-cranelift-probe",
-            ("test --manifest-path tests/probes/cranelift-unwind/Cargo.toml",),
         ),
         (
             "test-cargo",
@@ -264,7 +252,6 @@ def test_test_target_uses_expected_nextest_command(
         "lint-clippy",
         "lint-libsql-transport",
         "test",
-        "test-cranelift-probe",
         "test-cargo",
         "test-matrix",
         "test-matrix-cargo",

@@ -26,9 +26,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
 #: its default-feature tests remain part of the workspace suite.
 WORKSPACE = "workspace"
 GITHUB_TOOL_MANIFEST = "tools-src/github/Cargo.toml"
-CRANELIFT_PROBE_MANIFEST = "tests/probes/cranelift-unwind/Cargo.toml"
 GITHUB_TOOL_SCOPE = f"crate:{GITHUB_TOOL_MANIFEST}"
-CRANELIFT_PROBE_SCOPE = f"crate:{CRANELIFT_PROBE_MANIFEST}"
 LIBSQL_TRANSPORT_SCOPE = "crate:crates/hyper-rustls/Cargo.toml"
 #: What each Make target runs, and whether the features it runs under come
 #: from the step's `TEST_FEATURES`. A workflow step says `make test-workspace`
@@ -40,12 +38,10 @@ MAKE_TARGETS: dict[str, tuple[tuple[str, bool], ...]] = {
         (WORKSPACE, True),
         (GITHUB_TOOL_SCOPE, False),
         (LIBSQL_TRANSPORT_SCOPE, False),
-        (CRANELIFT_PROBE_SCOPE, False),
     ),
     "test-workspace": ((WORKSPACE, True),),
     "test-github-tool": ((GITHUB_TOOL_SCOPE, False),),
     "test-libsql-transport": ((LIBSQL_TRANSPORT_SCOPE, False),),
-    "test-cranelift-probe": ((CRANELIFT_PROBE_SCOPE, False),),
 }
 #: The build `test-workspace` has to perform before its suite. The metadata
 #: and schema tests load the artefact it produces, so a recipe that runs the
@@ -61,9 +57,6 @@ WORKSPACE_RECIPE = (
 #: satisfy any check that merely refused a `--manifest-path` line.
 WORKSPACE_RECIPE_LINES: tuple[str, ...] = (WASM_PREREQUISITE, WORKSPACE_RECIPE)
 GITHUB_TOOL_RECIPE = "$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)"
-CRANELIFT_PROBE_RECIPE = (
-    "$(CARGO_COMMAND) test --manifest-path $(CRANELIFT_PROBE_MANIFEST)"
-)
 #: The variable a workflow step uses to hand feature flags to a Make target.
 #: The flags arrive as one shell word, `TEST_FEATURES="--features x"`, so the
 #: selection is inside a token rather than beside it.

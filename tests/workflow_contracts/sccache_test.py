@@ -103,7 +103,7 @@ COMPILING_COMMANDS: tuple[re.Pattern[str], ...] = tuple(
         # not a build; a `(?!-)` guard on it would instead exempt
         # `test-workspace`, which compiles the whole workspace.
         r"\bmake\s+(?:test-workspace|test-github-tool|"
-        r"test-cranelift-probe|test|lint-whitaker)\b(?!-)",
+        r"test|lint-whitaker)\b(?!-)",
         r"\./scripts/build-wasm-extensions\.sh",
     )
 )
