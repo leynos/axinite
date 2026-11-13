@@ -1,8 +1,16 @@
-//! Shared test fixtures and builders for complex tool definitions.
+//! Shared test fixtures, builders and assertion helpers.
 //!
-//! This module provides canonical complex tool definition builders that are
-//! reused across both orchestrator and worker test suites to ensure consistency
-//! and reduce duplication.
+//! The module provides:
+//!
+//! - canonical complex tool definition builders,
+//!   [`complex_tool_definition_parameters`] and
+//!   [`build_complex_tool_definition`], reused across the orchestrator and
+//!   worker test suites so both exercise the same parameter schema;
+//! - [`ExpectValid`], a named `#[track_caller]` panic boundary for test-only
+//!   helpers that deliberately have no error channel;
+//! - [`assert_json_round_trip`] and [`assert_json_round_trip_with`], which
+//!   assert that a value survives a JSON serialize/deserialize cycle without
+//!   field loss.
 
 use crate::llm::ToolDefinition;
 use serde::Serialize;
@@ -85,6 +93,10 @@ where
 /// A closure is used (rather than comparing re-serialized JSON) so that the
 /// comparison covers the deserialized fields themselves, and a field that
 /// fails to deserialize cannot hide behind an identical default encoding.
+///
+/// The guarantee is only as strong as the closure: `is_same` must compare
+/// every field whose deserialized value matters. A field it omits can be
+/// replaced by a default without the assertion noticing.
 #[track_caller]
 pub(crate) fn assert_json_round_trip_with<T>(value: &T, is_same: impl FnOnce(&T, &T) -> bool)
 where

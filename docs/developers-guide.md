@@ -4993,9 +4993,12 @@ where
 whole-value equality. `assert_json_round_trip_with` takes the comparison
 closure for types that deliberately do not implement `PartialEq`; comparing the
 deserialized fields (rather than re-serialized JSON) means a field that fails
-to deserialize cannot hide behind an identical default encoding. Both are
-`#[track_caller]`. Callers that also pin the wire format should keep their own
-assertion on the serialized string.
+to deserialize cannot hide behind an identical default encoding. That guarantee
+is only as strong as the closure: it must compare every field whose
+deserialized value matters, because a field it omits can be replaced by a
+default without the assertion noticing. Both are `#[track_caller]`. Callers
+that also pin the wire format should keep their own assertion on the serialized
+string.
 
 ### Dispatcher status assertions
 
