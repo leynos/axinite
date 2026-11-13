@@ -19,28 +19,30 @@ use serde::Deserialize;
 use tokio::net::TcpListener;
 
 /// Start an axum server on a random port, returning the base URL.
-async fn start_server(app: Router) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+async fn start_server(app: Router) -> std::io::Result<String> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        match axum::serve(listener, app).await {
+            Ok(()) => {}
+            Err(err) => panic!("test relay server failed: {err}"),
+        }
     });
-    format!("http://{}", addr)
+    Ok(format!("http://{}", addr))
 }
 
-fn test_client(base_url: &str) -> RelayClient {
+fn test_client(base_url: &str) -> Result<RelayClient, RelayError> {
     RelayClient::new(
         base_url.to_string(),
         SecretString::from("test-api-key".to_string()),
         5,
     )
-    .expect("client build")
 }
 
 // ── SSE stream mock ─────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_sse_stream_receives_events() {
+async fn test_sse_stream_receives_events() -> anyhow::Result<()> {
     let app = Router::new().route(
         "/stream",
         get(
@@ -80,10 +82,10 @@ async fn test_sse_stream_receives_events() {
         ),
     );
 
-    let base_url = start_server(app).await;
-    let client = test_client(&base_url);
+    let base_url = start_server(app).await?;
+    let client = test_client(&base_url)?;
 
-    let (mut event_stream, handle) = client.connect_stream("test-token", 30).await.unwrap();
+    let (mut event_stream, handle) = client.connect_stream("test-token", 30).await?;
 
     use futures::StreamExt;
     let first = event_stream.next().await.expect("first event");
@@ -96,26 +98,28 @@ async fn test_sse_stream_receives_events() {
     assert_eq!(second.text(), "dm text");
 
     handle.abort();
+    Ok(())
 }
 
 // ── Token renewal flow ──────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_token_expired_returns_error() {
+async fn test_token_expired_returns_error() -> anyhow::Result<()> {
     let app = Router::new().route("/stream", get(|| async { StatusCode::UNAUTHORIZED }));
 
-    let base_url = start_server(app).await;
-    let client = test_client(&base_url);
+    let base_url = start_server(app).await?;
+    let client = test_client(&base_url)?;
 
     match client.connect_stream("expired-token", 30).await {
         Err(RelayError::TokenExpired) => {} // expected
         Err(other) => panic!("expected TokenExpired, got: {other}"),
         Ok(_) => panic!("expected error, got Ok"),
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_token_renewal() {
+async fn test_token_renewal() -> anyhow::Result<()> {
     let call_count = std::sync::Arc::new(AtomicUsize::new(0));
     let call_count_clone = call_count.clone();
 
@@ -134,12 +138,13 @@ async fn test_token_renewal() {
         }),
     );
 
-    let base_url = start_server(app).await;
-    let client = test_client(&base_url);
+    let base_url = start_server(app).await?;
+    let client = test_client(&base_url)?;
 
-    let new_token = client.renew_token("inst-1", "user-1").await.unwrap();
+    let new_token = client.renew_token("inst-1", "user-1").await?;
     assert_eq!(new_token, "renewed-token-123");
     assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    Ok(())
 }
 
 // ── Proxy call ──────────────────────────────────────────────────────────
@@ -150,7 +155,7 @@ struct ProxyQuery {
 }
 
 #[tokio::test]
-async fn test_proxy_provider_sends_correct_payload() {
+async fn test_proxy_provider_sends_correct_payload() -> anyhow::Result<()> {
     let app = Router::new().route(
         "/proxy/slack/chat.postMessage",
         post(
@@ -163,8 +168,8 @@ async fn test_proxy_provider_sends_correct_payload() {
         ),
     );
 
-    let base_url = start_server(app).await;
-    let client = test_client(&base_url);
+    let base_url = start_server(app).await?;
+    let client = test_client(&base_url)?;
 
     let body = serde_json::json!({
         "channel": "C456",
@@ -172,15 +177,15 @@ async fn test_proxy_provider_sends_correct_payload() {
     });
     let resp = client
         .proxy_provider("slack", "T123", "chat.postMessage", body, None)
-        .await
-        .unwrap();
+        .await?;
     assert_eq!(resp["ok"], true);
+    Ok(())
 }
 
 // ── List connections ────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_list_connections() {
+async fn test_list_connections() -> anyhow::Result<()> {
     let app = Router::new().route(
         "/connections",
         get(|| async {
@@ -191,19 +196,20 @@ async fn test_list_connections() {
         }),
     );
 
-    let base_url = start_server(app).await;
-    let client = test_client(&base_url);
+    let base_url = start_server(app).await?;
+    let client = test_client(&base_url)?;
 
-    let conns = client.list_connections("inst-1").await.unwrap();
+    let conns = client.list_connections("inst-1").await?;
     assert_eq!(conns.len(), 2);
     assert!(conns[0].connected);
     assert!(!conns[1].connected);
+    Ok(())
 }
 
 // ── API key header ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_api_key_sent_in_header() {
+async fn test_api_key_sent_in_header() -> anyhow::Result<()> {
     let app = Router::new().route(
         "/connections",
         get(|headers: axum::http::HeaderMap| async move {
@@ -216,9 +222,10 @@ async fn test_api_key_sent_in_header() {
         }),
     );
 
-    let base_url = start_server(app).await;
-    let client = test_client(&base_url);
-    let _ = client.list_connections("inst-1").await.unwrap();
+    let base_url = start_server(app).await?;
+    let client = test_client(&base_url)?;
+    let _ = client.list_connections("inst-1").await?;
+    Ok(())
 }
 
 // ── Client builder error propagation ────────────────────────────────────
@@ -238,7 +245,7 @@ fn test_relay_client_new_succeeds() {
 /// Verify that multi-byte UTF-8 characters split across SSE chunks are
 /// not corrupted (no U+FFFD replacement characters).
 #[tokio::test]
-async fn test_sse_stream_preserves_multibyte_utf8_across_chunks() {
+async fn test_sse_stream_preserves_multibyte_utf8_across_chunks() -> anyhow::Result<()> {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     let sent = std::sync::Arc::new(AtomicBool::new(false));
@@ -265,7 +272,7 @@ async fn test_sse_stream_preserves_multibyte_utf8_across_chunks() {
                 let crab_pos = bytes
                     .windows(4)
                     .position(|w| w == [0xF0, 0x9F, 0xA6, 0x80])
-                    .unwrap();
+                    .expect("payload contains the crab emoji");
                 let split_at = crab_pos + 2;
 
                 let chunk1 = bytes[..split_at].to_vec();
@@ -281,15 +288,15 @@ async fn test_sse_stream_preserves_multibyte_utf8_across_chunks() {
                 axum::response::Response::builder()
                     .header("content-type", "text/event-stream")
                     .body(axum::body::Body::from_stream(stream::iter(events)))
-                    .unwrap()
+                    .expect("response builds")
             }
         }),
     );
 
-    let base_url = start_server(app).await;
-    let client = test_client(&base_url);
+    let base_url = start_server(app).await?;
+    let client = test_client(&base_url)?;
 
-    let (mut event_stream, handle) = client.connect_stream("tok", 30).await.unwrap();
+    let (mut event_stream, handle) = client.connect_stream("tok", 30).await?;
 
     use futures::StreamExt;
     let event = event_stream.next().await.expect("should get event");
@@ -301,23 +308,25 @@ async fn test_sse_stream_preserves_multibyte_utf8_across_chunks() {
     assert!(sent.load(Ordering::SeqCst));
 
     handle.abort();
+    Ok(())
 }
 
 // ── Channel event field validation ──────────────────────────────────────
 
 #[test]
-fn test_channel_event_missing_fields_detected() {
+fn test_channel_event_missing_fields_detected() -> anyhow::Result<()> {
     use axinite::channels::relay::client::ChannelEvent;
 
     // Event with empty sender_id should be detectable
     let json = r#"{"event_type": "message", "provider_scope": "T1", "channel_id": "C1", "sender_id": "", "content": "test"}"#;
-    let event: ChannelEvent = serde_json::from_str(json).unwrap();
+    let event: ChannelEvent = serde_json::from_str(json)?;
     assert!(event.sender_id.is_empty());
 
     // Event with all fields present
     let json = r#"{"event_type": "message", "provider_scope": "T1", "channel_id": "C1", "sender_id": "U1", "content": "test"}"#;
-    let event: ChannelEvent = serde_json::from_str(json).unwrap();
+    let event: ChannelEvent = serde_json::from_str(json)?;
     assert!(!event.sender_id.is_empty());
     assert!(!event.channel_id.is_empty());
     assert!(!event.provider_scope.is_empty());
+    Ok(())
 }

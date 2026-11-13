@@ -1,11 +1,24 @@
-//! Shared test fixtures and builders for complex tool definitions.
+//! Shared test fixtures, builders and assertion helpers.
 //!
-//! This module provides canonical complex tool definition builders that are
-//! reused across both orchestrator and worker test suites to ensure consistency
-//! and reduce duplication.
+//! The module provides:
+//!
+//! - canonical complex tool definition builders,
+//!   [`complex_tool_definition_parameters`] and
+//!   [`build_complex_tool_definition`], reused across the orchestrator and
+//!   worker test suites so both exercise the same parameter schema;
+//! - [`ExpectValid`], a named `#[track_caller]` panic boundary for test-only
+//!   helpers that deliberately have no error channel;
+//! - [`assert_json_round_trip`] and [`assert_json_round_trip_with`], which
+//!   assert that a value survives a JSON serialize/deserialize cycle without
+//!   field loss. Both are `#[track_caller]` and panic at the calling test
+//!   location when either direction fails. [`assert_json_round_trip`] compares
+//!   whole values through `PartialEq`; [`assert_json_round_trip_with`] checks
+//!   only what its comparison closure checks.
 
 use crate::llm::ToolDefinition;
-use std::fmt::Display;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use std::fmt::{Debug, Display};
 
 /// A named panic boundary for test-only helpers without an error channel.
 ///
@@ -41,6 +54,63 @@ impl<T> ExpectValid for Option<T> {
             None => panic!("{message}"),
         }
     }
+}
+
+/// Serializes `value` to JSON, deserializes it back and returns the copy.
+///
+/// Panics at the calling test location if either direction fails.
+#[track_caller]
+fn json_round_trip<T>(value: &T) -> (String, T)
+where
+    T: Serialize + DeserializeOwned,
+{
+    let json = match serde_json::to_string(value) {
+        Ok(json) => json,
+        Err(error) => panic!("serialize round-trip value: {error}"),
+    };
+    match serde_json::from_str::<T>(&json) {
+        Ok(back) => (json, back),
+        Err(error) => panic!("deserialize round-trip value from {json}: {error}"),
+    }
+}
+
+/// Asserts that `value` survives a JSON serialize/deserialize cycle unchanged.
+///
+/// Use this for types that derive `PartialEq`. Callers that also pin the wire
+/// format should keep their own assertion on the serialized string.
+#[track_caller]
+pub(crate) fn assert_json_round_trip<T>(value: &T)
+where
+    T: Serialize + DeserializeOwned + PartialEq + Debug,
+{
+    let (json, back) = json_round_trip(value);
+    assert_eq!(
+        &back, value,
+        "value must round-trip without field loss (json: {json})"
+    );
+}
+
+/// Like [`assert_json_round_trip`], but compares with `is_same` instead of
+/// `PartialEq`, for types that deliberately do not implement equality.
+///
+/// A closure is used (rather than comparing re-serialized JSON) so that the
+/// comparison covers the deserialized fields themselves, and a field that
+/// fails to deserialize cannot hide behind an identical default encoding.
+///
+/// The guarantee is only as strong as the closure: `is_same` must compare
+/// every field whose deserialized value matters. A field it omits can be
+/// replaced by a default without the assertion noticing.
+#[track_caller]
+pub(crate) fn assert_json_round_trip_with<T>(value: &T, is_same: impl FnOnce(&T, &T) -> bool)
+where
+    T: Serialize + DeserializeOwned + Debug,
+{
+    let (json, back) = json_round_trip(value);
+    assert!(
+        is_same(value, &back),
+        "value must round-trip without field loss (json: {json}); original: {value:?}, \
+         deserialized: {back:?}"
+    );
 }
 
 /// Returns the canonical complex parameters JSON schema used for fidelity testing.

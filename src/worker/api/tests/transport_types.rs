@@ -1,10 +1,7 @@
-//! Transport type serialisation fidelity tests.
+//! Transport type serialization fidelity tests.
 
-use crate::test_support::ExpectValid;
+use crate::test_support::{ExpectValid, assert_json_round_trip};
 use rstest::rstest;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use std::fmt::Debug;
 
 use crate::worker::api::{
     COMPLETE_ROUTE, CREDENTIALS_ROUTE, EVENT_ROUTE, JOB_ROUTE, PROMPT_ROUTE,
@@ -15,19 +12,6 @@ use crate::worker::api::{
 use super::fixtures::{
     sample_catalog_response, sample_execution_request, sample_execution_response,
 };
-
-/// Serialise `value` to JSON and immediately deserialise it back, asserting that the round-trip produces an equal value without field loss.
-fn assert_round_trips<T>(value: T)
-where
-    T: Serialize + DeserializeOwned + Debug + PartialEq,
-{
-    let serialized = serde_json::to_string(&value).expect_valid("serialise");
-    let deserialized: T = serde_json::from_str(&serialized).expect_valid("deserialise");
-    assert_eq!(
-        deserialized, value,
-        "value must round-trip without field loss"
-    );
-}
 
 const fn const_str_eq(left: &str, right: &str) -> bool {
     let left = left.as_bytes();
@@ -119,28 +103,28 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
 fn remote_tool_catalog_response_round_trip_without_field_loss(
     sample_catalog_response: RemoteToolCatalogResponse,
 ) {
-    assert_round_trips(sample_catalog_response);
+    assert_json_round_trip(&sample_catalog_response);
 }
 
 #[rstest]
 fn remote_tool_execution_request_round_trip_without_field_loss(
     sample_execution_request: RemoteToolExecutionRequest,
 ) {
-    assert_round_trips(sample_execution_request);
+    assert_json_round_trip(&sample_execution_request);
 }
 
 #[rstest]
 fn remote_tool_execution_response_round_trip_without_field_loss(
     sample_execution_response: RemoteToolExecutionResponse,
 ) {
-    assert_round_trips(sample_execution_response);
+    assert_json_round_trip(&sample_execution_response);
 }
 
 #[test]
 fn terminal_result_round_trip_preserves_all_fields() {
     let result = TerminalResult::success("completed", Some(11));
 
-    assert_round_trips(result);
+    assert_json_round_trip(&result);
 }
 
 #[test]

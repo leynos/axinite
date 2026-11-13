@@ -27,23 +27,35 @@ pub fn assert_response_matches(response: &str, pattern: &str) {
     );
 }
 
+/// Return the first `expected` tool name that does not appear in `started`.
+pub fn first_tool_not_used<'a>(started: &[String], expected: &[&'a str]) -> Option<&'a str> {
+    expected
+        .iter()
+        .copied()
+        .find(|tool| !started.iter().any(|s| s == tool))
+}
+
+/// Return the first `forbidden` tool name that does appear in `started`.
+pub fn first_forbidden_tool_used<'a>(started: &[String], forbidden: &[&'a str]) -> Option<&'a str> {
+    forbidden
+        .iter()
+        .copied()
+        .find(|tool| started.iter().any(|s| s == tool))
+}
+
 /// Assert that all `expected` tool names appear in `started`.
+#[track_caller]
 pub fn assert_tools_used(started: &[String], expected: &[&str]) {
-    for tool in expected {
-        assert!(
-            started.iter().any(|s| s == tool),
-            "tools_used: \"{tool}\" not called, got: {started:?}"
-        );
+    if let Some(tool) = first_tool_not_used(started, expected) {
+        panic!("tools_used: \"{tool}\" not called, got: {started:?}");
     }
 }
 
 /// Assert that none of the `forbidden` tool names appear in `started`.
+#[track_caller]
 pub fn assert_tools_not_used(started: &[String], forbidden: &[&str]) {
-    for tool in forbidden {
-        assert!(
-            !started.iter().any(|s| s == tool),
-            "tools_not_used: \"{tool}\" was called, got: {started:?}"
-        );
+    if let Some(tool) = first_forbidden_tool_used(started, forbidden) {
+        panic!("tools_not_used: \"{tool}\" was called, got: {started:?}");
     }
 }
 
@@ -56,13 +68,19 @@ pub fn assert_max_tool_calls(started: &[String], max: usize) {
     );
 }
 
-/// Assert ALL completed tools succeeded. Panics listing failed tools.
-pub fn assert_all_tools_succeeded(completed: &[(String, bool)]) {
-    let failed: Vec<&str> = completed
+/// Return the names of completed tools that reported failure.
+pub fn failed_tools(completed: &[(String, bool)]) -> Vec<&str> {
+    completed
         .iter()
         .filter(|(_, success)| !*success)
         .map(|(name, _)| name.as_str())
-        .collect();
+        .collect()
+}
+
+/// Assert ALL completed tools succeeded. Panics listing failed tools.
+#[track_caller]
+pub fn assert_all_tools_succeeded(completed: &[(String, bool)]) {
+    let failed = failed_tools(completed);
     assert!(
         failed.is_empty(),
         "Expected all tools to succeed, but these failed: {failed:?}. All: {completed:?}"
@@ -83,6 +101,7 @@ pub fn assert_all_tools_succeeded(completed: &[(String, bool)]) {
 /// - `expected_substrings` contains a blank or whitespace-only entry,
 /// - there are no results for `tool_name`, or
 /// - none of the matching results contain any of the expected substrings.
+#[track_caller]
 pub fn assert_tool_result_contains(
     results: &[(String, String)],
     tool_name: &str,
@@ -99,27 +118,43 @@ pub fn assert_tool_result_contains(
         "expected_substrings entries must be non-empty when asserting tool results for '{tool_name}'"
     );
 
-    let lower_expected: Vec<String> = expected_substrings
-        .iter()
-        .map(|substring| substring.to_lowercase())
-        .collect();
-    let matched: Vec<_> = results
-        .iter()
-        .filter(|(name, _)| name == tool_name)
-        .collect();
+    let matched = matching_tool_results(results, tool_name).unwrap_or_default();
     assert!(
         !matched.is_empty(),
         "Expected at least one result for tool '{tool_name}'"
     );
     assert!(
-        matched.iter().any(|(_, preview)| {
-            let lower_preview = preview.to_lowercase();
-            lower_expected
-                .iter()
-                .any(|substring| lower_preview.contains(substring))
-        }),
+        any_preview_contains(&matched, expected_substrings),
         "No result for '{tool_name}' contained any of {expected_substrings:?}: {matched:?}"
     );
+}
+
+/// Look up the `(tool_name, preview)` entries recorded for `tool_name`.
+///
+/// Returns `None` when the tool produced no results at all.
+pub fn matching_tool_results<'a>(
+    results: &'a [(String, String)],
+    tool_name: &str,
+) -> Option<Vec<&'a (String, String)>> {
+    let matched: Vec<_> = results
+        .iter()
+        .filter(|(name, _)| name == tool_name)
+        .collect();
+    (!matched.is_empty()).then_some(matched)
+}
+
+/// Report whether any preview contains any of `substrings`, ignoring case.
+pub fn any_preview_contains(matched: &[&(String, String)], substrings: &[&str]) -> bool {
+    let lower_substrings: Vec<String> = substrings
+        .iter()
+        .map(|substring| substring.to_lowercase())
+        .collect();
+    matched.iter().any(|(_, preview)| {
+        let lower_preview = preview.to_lowercase();
+        lower_substrings
+            .iter()
+            .any(|substring| lower_preview.contains(substring))
+    })
 }
 
 /// Assert the response does NOT contain any of `forbidden` (case-insensitive).
@@ -139,23 +174,31 @@ pub fn assert_response_not_contains(response: &str, forbidden: &[&str]) {
 /// For example, `assert_tool_order(started, &["write_file", "read_file"])`
 /// passes if `write_file` appears before `read_file`, even with other tools
 /// in between.
+#[track_caller]
 pub fn assert_tool_order(started: &[String], expected: &[&str]) {
+    if let Some(violation) = tool_order_violation(started, expected) {
+        panic!("{violation}");
+    }
+}
+
+/// Describe the first way `started` violates the `expected` relative order.
+///
+/// Returns `None` when every expected tool appears in order.
+pub fn tool_order_violation(started: &[String], expected: &[&str]) -> Option<String> {
     let mut search_from = 0;
     for tool in expected {
-        let pos = started[search_from..]
-            .iter()
-            .position(|s| s == tool)
-            .map(|p| p + search_from);
-        match pos {
-            Some(idx) => search_from = idx + 1,
+        let found = started[search_from..].iter().position(|s| s == tool);
+        match found {
+            Some(offset) => search_from += offset + 1,
             None => {
-                panic!(
+                return Some(format!(
                     "assert_tool_order: \"{tool}\" not found after position {search_from} \
                      in: {started:?}. Expected order: {expected:?}"
-                );
+                ));
             }
         }
     }
+    None
 }
 
 /// Verify all expectations from a `TraceExpects` against actual data.

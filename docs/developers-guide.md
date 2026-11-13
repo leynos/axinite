@@ -4917,6 +4917,64 @@ the other owned children and returns a failure. SIGINT and SIGTERM stop the
 owned children cleanly. See the stub runtime section of
 `docs/solidjs-frontend.md` for its ports and lifecycle.
 
+## 40. Test assertion helpers
+
+The test sweep in PR `#463` centralized repeated assertion bodies and split
+pure queries from their caller-reporting wrappers. Use these helpers instead of
+hand-rolling the same checks.
+
+### JSON round trips
+
+`src/test_support.rs` provides two shared helpers:
+
+```rust
+pub(crate) fn assert_json_round_trip<T>(value: &T)
+where
+    T: Serialize + DeserializeOwned + PartialEq + Debug;
+
+pub(crate) fn assert_json_round_trip_with<T>(
+    value: &T,
+    is_same: impl FnOnce(&T, &T) -> bool,
+)
+where
+    T: Serialize + DeserializeOwned + Debug;
+```
+
+`assert_json_round_trip` serializes `value`, deserializes it again and asserts
+whole-value equality. `assert_json_round_trip_with` takes the comparison
+closure for types that deliberately do not implement `PartialEq`; comparing the
+deserialized fields (rather than re-serialized JSON) means a field that fails
+to deserialize cannot hide behind an identical default encoding. That guarantee
+is only as strong as the closure: it must compare every field whose
+deserialized value matters, because a field it omits can be replaced by a
+default without the assertion noticing. Both are `#[track_caller]`. Callers
+that also pin the wire format should keep their own assertion on the serialized
+string.
+
+### Dispatcher status assertions
+
+`src/agent/dispatcher/tests/pipeline/status_asserts.rs` holds the pure
+`has_status` query plus four `#[track_caller]` wrappers over it:
+`assert_thinking_status`, `assert_tool_started_status`,
+`assert_tool_result_status`, and `assert_tool_completed_status`. The wrapper
+keeps the failure pointing at the calling test while the query stays reusable.
+
+### Shared integration assertions
+
+`tests/support/assertions.rs` follows the same split. Pure queries such as
+`first_tool_not_used`, `first_forbidden_tool_used`, `failed_tools` and
+`matching_tool_results` return the offending value. `tool_order_violation`
+returns an optional diagnostic message: `Some` describing the first ordering
+violation, `None` when the order holds. The `assert_*` wrappers are
+`#[track_caller]` and build the failure message. Prefer adding a query plus
+wrapper pair over duplicating assertion bodies.
+
+`src/agent/dispatcher/tests/auth.rs` uses the same shape for detection results.
+`is_auth_detected` is the private query, checking that a result is `Some` and
+that its name and instructions match the expectation; `assert_auth_detected` is
+the `#[track_caller]` wrapper that panics with both the expected and actual
+values when the query fails.
+
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
 [actions/runner-images#13518]: https://github.com/actions/runner-images/issues/13518
 [actions/runner-images#13045]: https://github.com/actions/runner-images/issues/13045
