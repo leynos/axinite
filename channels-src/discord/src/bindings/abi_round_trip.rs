@@ -20,7 +20,8 @@ use core::mem::size_of;
 use core::{ptr, slice};
 
 use super::exports::near::agent::channel::{
-    __post_return_on_broadcast, _export_on_broadcast_cabi, _export_on_status_cabi,
+    __post_return_on_broadcast, _export_on_broadcast_cabi, _export_on_status_cabi, AgentResponse,
+    Guest,
 };
 use crate::DiscordChannel;
 
@@ -156,5 +157,52 @@ fn an_empty_status_message_crosses_the_abi() {
             metadata_ptr,
             metadata_len,
         );
+    }
+}
+
+/// Require the shim's result to equal the guest function's own result.
+///
+/// `on_broadcast` refuses every request before it reaches a host import, which
+/// is `unreachable` on a non-WebAssembly target. The comparison therefore
+/// exercises the lifting of arbitrary arguments against the same refusal the
+/// guest returns when reached without the ABI.
+fn assert_matches_the_guest(user_id: &str, content: &str, thread_id: Option<&str>) {
+    let expected = <DiscordChannel as Guest>::on_broadcast(
+        user_id.to_string(),
+        AgentResponse {
+            message_id: "message-id".to_string(),
+            content: content.to_string(),
+            thread_id: thread_id.map(str::to_owned),
+            metadata_json: "{}".to_string(),
+            attachments: Vec::new(),
+        },
+    );
+    assert_eq!(
+        broadcast(user_id, content, thread_id),
+        expected,
+        "results differ"
+    );
+}
+
+#[test]
+fn strings_of_every_length_class_cross_the_abi() {
+    let units = ["a", "é", "€", "🦀"];
+    // Lengths either side of the allocator's small and medium size classes.
+    for unit in units {
+        for repeat in [0usize, 1, 2, 7, 8, 9, 15, 16, 17, 255, 256, 1000] {
+            let text = unit.repeat(repeat);
+            assert_matches_the_guest(&text, &text, Some(&text));
+            assert_matches_the_guest(&text, &text, None);
+        }
+    }
+}
+
+#[test]
+fn every_thread_state_crosses_the_abi() {
+    let long = "é".repeat(1000);
+    let states = [None, Some(""), Some("t"), Some("🦀"), Some(long.as_str())];
+    for thread_id in states {
+        assert_matches_the_guest("user", "content", thread_id);
+        assert_matches_the_guest("", "", thread_id);
     }
 }
