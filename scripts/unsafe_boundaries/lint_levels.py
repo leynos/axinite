@@ -33,8 +33,9 @@ def effective_unsafe_level(
     -------
     tuple
         The level (`None` when the manifest sets none) and any structural
-        problems: inheriting from a missing table, or mixing inheritance with
-        local overrides, which Cargo rejects and the policy forbids.
+        problems: inheriting from a missing or malformed table, or mixing
+        inheritance with local overrides, which Cargo rejects and the policy
+        forbids.
     """
     lints = manifest.get("lints", {})
     if not isinstance(lints, dict):
@@ -49,11 +50,34 @@ def effective_unsafe_level(
 def _inherited_level(
     lints: dict[str, typ.Any], workspace_manifest: dict[str, typ.Any] | None
 ) -> tuple[str | None, list[str]]:
-    """Resolve `[lints] workspace = true` against the workspace lint table."""
+    """Resolve `[lints] workspace = true` against the workspace lint table.
+
+    Each level of the inherited table is checked before it is read: a malformed
+    root manifest is a structural problem the contract reports by name, not an
+    `AttributeError` that stops the checker.
+    """
     problems = []
     if set(lints) - {"workspace"}:
         problems.append("`[lints] workspace = true` is mixed with local lint overrides")
     if workspace_manifest is None:
         return None, [*problems, "`workspace = true` outside a workspace member"]
-    rust = workspace_manifest.get("workspace", {}).get("lints", {}).get("rust", {})
+    workspace, problem = _table(workspace_manifest, "workspace", "`[workspace]`")
+    if problem is not None:
+        return None, [*problems, problem]
+    inherited, problem = _table(workspace, "lints", "workspace `[lints]`")
+    if problem is not None:
+        return None, [*problems, problem]
+    rust, problem = _table(inherited, "rust", "workspace `[lints.rust]`")
+    if problem is not None:
+        return None, [*problems, problem]
     return _level_of(rust.get("unsafe_code")), problems
+
+
+def _table(
+    parent: dict[str, typ.Any], key: str, label: str
+) -> tuple[dict[str, typ.Any], str | None]:
+    """Return one nested table, or a problem naming it when it is not a table."""
+    value = parent.get(key, {})
+    if isinstance(value, dict):
+        return value, None
+    return {}, f"{label} is not a table"

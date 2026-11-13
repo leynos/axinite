@@ -80,8 +80,10 @@ Static half (no compiler):
 
 - Every `Cargo.toml` is inventoried or exempt, and the root workspace's
   `members` and `exclude` match the inventory.
-- Each safe crate resolves `unsafe_code` to `forbid` and carries
-  `#![forbid(unsafe_code)]` in its library, binary and build-script roots.
+- Each safe crate resolves `unsafe_code` to `forbid`. Each first-party safe
+  crate also carries `#![forbid(unsafe_code)]` in its library, binary and
+  build-script roots; the vendored `crates/hyper-rustls` keeps its upstream
+  sources and is held to the manifest lint only.
 - Each boundary crate resolves `unsafe_code` to `deny` in a lint table of its
   own, never by `workspace = true`.
 - Each boundary crate declares `mod bindings;` behind exactly one

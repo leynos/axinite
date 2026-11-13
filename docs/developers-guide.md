@@ -5027,8 +5027,11 @@ records the inventory and what Miri covers.
 1. Add the crate and its entry to `INVENTORY` in
    `scripts/unsafe_boundaries/inventory.py`, choosing `SAFE` unless it hosts an
    ABI that has no safe form. A boundary entry also needs the table row in
-   `docs/adrs/adr-0015-audited-unsafe-boundaries.md` and a new ADR if the
-   boundary is not a WebAssembly component.
+   `docs/adrs/adr-0015-audited-unsafe-boundaries.md`. The contract accepts only
+   the `wit-bindgen` component layout, so a boundary that is not a WebAssembly
+   component also needs a new ADR and an extension of
+   `scripts/unsafe_boundaries/` to check that layout, with a fault case in
+   `_unsafe_boundary_faults.py` proving the new check fails when it is broken.
 2. Give it the lint table and crate-root attribute for its role.
 3. For a root-workspace member, add it to `[workspace] members`. For a
    standalone root, give it its own `[workspace]` table and add it to `exclude`

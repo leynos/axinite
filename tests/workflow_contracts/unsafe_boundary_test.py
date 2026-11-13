@@ -20,6 +20,7 @@ from __future__ import annotations
 import functools
 import shutil
 import sys
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ sys.path.insert(0, str(REPOSITORY / "scripts"))
 
 from unsafe_boundaries import files, inventory  # noqa: E402
 from unsafe_boundaries import static_checks as checks  # noqa: E402
+from unsafe_boundaries.lint_levels import effective_unsafe_level  # noqa: E402
 
 from _unsafe_boundary_faults import FAULTS, WEB_SEARCH, Fault, append  # noqa: E402
 
@@ -106,6 +108,37 @@ def test_every_inventoried_boundary_is_a_wasm_component() -> None:
 def test_every_exemption_carries_a_reason() -> None:
     """An exemption without a reason is an unreviewed exception."""
     assert all(reason.strip() for reason in inventory.EXEMPT.values())
+
+
+@pytest.mark.parametrize(
+    ("workspace_manifest", "expected"),
+    [
+        pytest.param(
+            {"workspace": "invalid"},
+            "`[workspace]` is not a table",
+            id="workspace-not-a-table",
+        ),
+        pytest.param(
+            {"workspace": {"lints": "invalid"}},
+            "workspace `[lints]` is not a table",
+            id="lints-not-a-table",
+        ),
+        pytest.param(
+            {"workspace": {"lints": {"rust": "invalid"}}},
+            "workspace `[lints.rust]` is not a table",
+            id="rust-lints-not-a-table",
+        ),
+    ],
+)
+def test_a_malformed_inherited_lint_table_is_reported(
+    workspace_manifest: dict[str, typ.Any], expected: str
+) -> None:
+    """A malformed workspace lint table is a finding, not an exception."""
+    level, problems = effective_unsafe_level(
+        {"lints": {"workspace": True}}, workspace_manifest
+    )
+    assert level is None
+    assert any(expected in problem for problem in problems), problems
 
 
 @pytest.mark.parametrize("fault", FAULTS, ids=[fault.name for fault in FAULTS])

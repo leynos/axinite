@@ -61,6 +61,17 @@ def _remove_dir(relative: str) -> Callable[[Path], None]:
     return lambda root: shutil.rmtree(root / relative)
 
 
+def _all(*actions: Callable[[Path], None]) -> Callable[[Path], None]:
+    """Return a fault that applies several edits to one copy."""
+
+    def apply(root: Path) -> None:
+        """Apply each edit to the same copy, in order."""
+        for action in actions:
+            action(root)
+
+    return apply
+
+
 def _lint_table(level: str) -> str:
     """Return the lint table a first-party crate declares at one unsafe level."""
     return f'[lints.rust]\nmissing_docs = "deny"\nunsafe_code = "{level}"'
@@ -143,6 +154,30 @@ FAULTS: tuple[Fault, ...] = (
             "[lints]\nworkspace = true",
         ),
         "must forbid",
+    ),
+    Fault(
+        "inherited-lints-table-is-not-a-table",
+        _all(
+            _edit("Cargo.toml", "[workspace]\n", '[workspace]\nlints = "invalid"\n'),
+            _edit(
+                "crates/ambient-fs/Cargo.toml",
+                FORBID,
+                "[lints]\nworkspace = true",
+            ),
+        ),
+        "workspace `[lints]` is not a table",
+    ),
+    Fault(
+        "inherited-rust-lints-table-is-not-a-table",
+        _all(
+            _add("Cargo.toml", '[workspace.lints]\nrust = "invalid"'),
+            _edit(
+                "crates/ambient-fs/Cargo.toml",
+                FORBID,
+                "[lints]\nworkspace = true",
+            ),
+        ),
+        "workspace `[lints.rust]` is not a table",
     ),
     # A boundary crate stops denying, or inherits instead of declaring.
     Fault(

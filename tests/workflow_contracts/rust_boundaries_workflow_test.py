@@ -34,6 +34,24 @@ BUILD_STANDARD_PATHS = {
     "scripts/install-build-tools.sh",
 }
 
+#: The proof inputs. A pull request that changes one of these, and nothing the
+#: workflow still filters on, must run both proof jobs.
+PROOF_INPUT_PATHS: tuple[str, ...] = (
+    "**/Cargo.toml",
+    "Cargo.lock",
+    "crates/ambient-fs/**",
+    "channels-src/**",
+    "tools-src/**",
+    "wit/**",
+    "scripts/check_unsafe_boundaries.py",
+    "scripts/unsafe_boundaries/**",
+    "tests/workflow_contracts/*unsafe_boundary*",
+    "docs/adrs/adr-0015-audited-unsafe-boundaries.md",
+    "docs/rust-boundary-verification.md",
+    "Makefile",
+    ".github/workflows/rust-boundaries.yml",
+)
+
 Workflow = dict[str, typ.Any]
 
 
@@ -192,6 +210,16 @@ def trigger_violations(document: Workflow) -> list[str]:
     return problems
 
 
+def _missing_paths(document: Workflow, required: typ.Iterable[str]) -> list[str]:
+    """Report required pull-request trigger paths the workflow omits."""
+    triggers = document.get(True, document.get("on", {}))
+    paths = set(triggers.get("pull_request", {}).get("paths", []))
+    return [
+        f"pull_request path filter must include {path}"
+        for path in sorted(set(required) - paths)
+    ]
+
+
 def build_standard_path_violations(document: Workflow) -> list[str]:
     """Report build-standard inputs missing from the pull-request path filter.
 
@@ -206,12 +234,28 @@ def build_standard_path_violations(document: Workflow) -> list[str]:
         Missing pull-request path entries, or an empty list when all build
         standard inputs trigger the proof workflow.
     """
-    triggers = document.get(True, document.get("on", {}))
-    paths = set(triggers.get("pull_request", {}).get("paths", []))
-    return [
-        f"pull_request path filter must include {path}"
-        for path in sorted(BUILD_STANDARD_PATHS - paths)
-    ]
+    return _missing_paths(document, BUILD_STANDARD_PATHS)
+
+
+def proof_input_path_violations(document: Workflow) -> list[str]:
+    """Report proof inputs missing from the pull-request path filter.
+
+    Removing any proof input would let a later pull request that changes only
+    that input skip both proof jobs. The whole set is therefore required, not
+    merely the paths the current filters happen to include.
+
+    Parameters
+    ----------
+    document : Workflow
+        Parsed GitHub Actions workflow document.
+
+    Returns
+    -------
+    list[str]
+        Missing pull-request path entries, or an empty list when every proof
+        input triggers the proof workflow.
+    """
+    return _missing_paths(document, PROOF_INPUT_PATHS)
 
 
 JUDGES = {
@@ -221,6 +265,7 @@ JUDGES = {
     "commands": command_violations,
     "triggers": trigger_violations,
     "build-standard-paths": build_standard_path_violations,
+    "proof-input-paths": proof_input_path_violations,
 }
 
 
@@ -281,6 +326,17 @@ def _drop_build_standard_path(document: Workflow) -> None:
     triggers["pull_request"]["paths"].remove("rust-toolchain.toml")
 
 
+def _drop_proof_input_path(path: str) -> typ.Callable[[Workflow], None]:
+    """Return a mutation that stops one proof input triggering the workflow."""
+
+    def mutate(document: Workflow) -> None:
+        """Remove the one proof input from the pull-request trigger paths."""
+        triggers = document.get(True, document.get("on", {}))
+        triggers["pull_request"]["paths"].remove(path)
+
+    return mutate
+
+
 MUTATIONS: tuple[tuple[str, str, typ.Callable[[Workflow], None]], ...] = (
     ("hosted", "miri-loses-its-timeout", _drop_timeout),
     ("hosted", "contract-moves-to-a-paid-runner", _move_to_paid_runner),
@@ -294,6 +350,14 @@ MUTATIONS: tuple[tuple[str, str, typ.Callable[[Workflow], None]], ...] = (
         "build-standard-paths",
         "toolchain-pin-no-longer-triggers-proof-jobs",
         _drop_build_standard_path,
+    ),
+    *(
+        (
+            "proof-input-paths",
+            f"{path}-no-longer-triggers-proof-jobs",
+            _drop_proof_input_path(path),
+        )
+        for path in PROOF_INPUT_PATHS
     ),
 )
 
