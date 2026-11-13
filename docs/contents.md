@@ -123,6 +123,8 @@
     work to reduce build times and related tooling overhead.
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Typed setup fields and endpoint binding persistence](execplans/2-1-1-typed-setup-fields-and-endpoint-binding-persistence.md)
+    plans roadmap 2.1.1; implementation awaits explicit approval.
   - [Import Kani and Verus support from Netsuke](execplans/import-prover-tools.md)
     records the completed import of pinned Kani and Verus Make targets,
     integration tests, the read-only formal-verification workflow, and their
@@ -272,3 +274,5 @@
   moves short jobs off the hosted pool only when it makes them wait.
 - [ADR 0014: Apply Oxlint plug-ins to the front end](adrs/adr-0014-front-end-oxlint-plugins.md)
   records the pinned Unicorn and `ai-deslop` rules and their conflict policy.
+- [ADR 0015: Confidential endpoint setup](adrs/adr-0015-confidential-endpoint-setup.md)
+  proposes the scope, encryption, and failure semantics for roadmap 2.1.1.
