@@ -61,8 +61,16 @@ def _remove_dir(relative: str) -> Callable[[Path], None]:
     return lambda root: shutil.rmtree(root / relative)
 
 
-FORBID = '[lints.rust]\nunsafe_code = "forbid"'
-DENY = '[lints.rust]\nunsafe_code = "deny"'
+def _lint_table(level: str) -> str:
+    """Return the lint table a first-party crate declares at one unsafe level."""
+    return f'[lints.rust]\nmissing_docs = "deny"\nunsafe_code = "{level}"'
+
+
+FORBID = _lint_table("forbid")
+DENY = _lint_table("deny")
+WARN = _lint_table("warn")
+ALLOW = _lint_table("allow")
+BARE_FORBID = '[lints.rust]\nunsafe_code = "forbid"'
 ROOT_ATTRIBUTE = "#![forbid(unsafe_code)]"
 EXPECT = '#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]'
 
@@ -70,7 +78,7 @@ FAULTS: tuple[Fault, ...] = (
     # A safe crate stops forbidding unsafe code.
     Fault(
         "root-forbid-weakened-to-warn",
-        _edit("Cargo.toml", FORBID, '[lints.rust]\nunsafe_code = "warn"'),
+        _edit("Cargo.toml", FORBID, WARN),
         "must forbid",
     ),
     Fault(
@@ -83,12 +91,12 @@ FAULTS: tuple[Fault, ...] = (
     ),
     Fault(
         "hyper-rustls-forbid-removed",
-        _edit("crates/hyper-rustls/Cargo.toml", FORBID, ""),
+        _edit("crates/hyper-rustls/Cargo.toml", BARE_FORBID, ""),
         "must forbid",
     ),
     Fault(
         "fuzz-forbid-weakened",
-        _edit("fuzz/Cargo.toml", FORBID, '[lints.rust]\nunsafe_code = "allow"'),
+        _edit("fuzz/Cargo.toml", BARE_FORBID, '[lints.rust]\nunsafe_code = "allow"'),
         "must forbid",
     ),
     Fault(
@@ -144,7 +152,7 @@ FAULTS: tuple[Fault, ...] = (
     ),
     Fault(
         "boundary-allow-instead-of-deny",
-        _edit(f"{DISCORD}/Cargo.toml", DENY, '[lints.rust]\nunsafe_code = "allow"'),
+        _edit(f"{DISCORD}/Cargo.toml", DENY, ALLOW),
         "must deny",
     ),
     Fault(

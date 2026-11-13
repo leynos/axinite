@@ -94,6 +94,7 @@ INVENTORY: tuple[Crate, ...] = (
     Crate("crates/ambient-fs", Role.SAFE),
     Crate("crates/hyper-rustls", Role.SAFE, vendored=True),
     Crate("fuzz", Role.SAFE, standalone=True),
+Crate("tests/verification/kani-smoke", Role.SAFE, standalone=True),
     *(Crate(path, Role.BOUNDARY, standalone=True) for path in WASM_BOUNDARIES),
 )
 
@@ -107,11 +108,6 @@ EXEMPT: dict[str, str] = {
         "vendored dependency patch of tools-src/telegram; it declares "
         "`#![deny(unsafe_code)]` upstream and is built inside that boundary "
         "crate's closure"
-    ),
-    "crates/pg-embed-setup-unpriv": (
-        "path-patched standalone crate with platform FFI and process-control "
-        "unsafe code maintained in its own upstream project; outside this "
-        "component-ABI contract"
     ),
 }
 
@@ -127,17 +123,25 @@ PROBED_CRATES: tuple[str, ...] = (
 #: Deliberate unsafe constructs, each mapped to accepted diagnostic wording
 #: from supported rustc versions. All are appended to a target together, so
 #: one compile checks every form and one diagnostic alternative must appear.
+#: Each probe documents its own public item: the manifests deny `missing_docs`,
+#: and an undocumented probe would fail the control run for the wrong reason.
 PROBE_DIAGNOSTICS: dict[str, tuple[str, ...]] = {
-    "pub fn unsafe_block_probe() { unsafe {} }": (
-        "usage of an `unsafe` block",
-    ),
-    "pub unsafe fn unsafe_function_probe() {}": (
-        "declaration of an `unsafe` function",
-    ),
-    "unsafe trait Probe {} unsafe impl Probe for () {}": (
-        "implementation of an `unsafe` trait",
-    ),
-    '#[unsafe(no_mangle)] pub extern "C" fn unsafe_attribute_probe() {}': (
+    (
+        "/// Probe an unnecessary `unsafe` block.\n"
+        "pub fn unsafe_block_probe() { unsafe {} }"
+    ): ("usage of an `unsafe` block",),
+    (
+        "/// Probe an `unsafe` function declaration.\n"
+        "pub unsafe fn unsafe_function_probe() {}"
+    ): ("declaration of an `unsafe` function",),
+    (
+        "/// Probe an `unsafe` trait implementation.\n"
+        "unsafe trait Probe {} unsafe impl Probe for () {}"
+    ): ("implementation of an `unsafe` trait",),
+    (
+        "/// Probe an `unsafe` ABI attribute.\n"
+        '#[unsafe(no_mangle)] pub extern "C" fn unsafe_attribute_probe() {}'
+    ): (
         "usage of the unsafe `no_mangle` attribute",
         "declaration of a `no_mangle` function",
     ),

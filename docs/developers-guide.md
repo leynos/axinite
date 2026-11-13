@@ -4980,20 +4980,20 @@ values when the query fails.
 The unsafe-boundary contract forbids handwritten unsafe Rust in the root
 workspace, the `fuzz` crate and designated safe crates. It confines generated
 WebAssembly component ABI glue to reviewed `bindings` modules in fourteen
-boundary crates. The path-patched `crates/pg-embed-setup-unpriv` is explicitly
-outside this contract and contains platform FFI and process-control unsafe code.
-[ADR 0015](adrs/adr-0015-audited-unsafe-boundaries.md) records the decision,
-and
+boundary crates. `pg-embed-setup-unpriv` is consumed as a published dependency,
+so its platform FFI and process-control unsafe code is trusted dependency code
+rather than in-tree boundary code.
+[ADR 0015](adrs/adr-0015-audited-unsafe-boundaries.md) records the decision, and
 [Rust boundary verification and unsafe inventory](rust-boundary-verification.md)
 records the inventory and what Miri covers.
 
 ### The rule
 
-- The root crate, `crates/ambient-fs`, the vendored `crates/hyper-rustls` and
-  the `fuzz` crate set `[lints.rust] unsafe_code = "forbid"` in their
-  manifests, which covers every target Cargo builds, now and in future. The
-  library, binary and build-script roots of first-party crates also carry
-  `#![forbid(unsafe_code)]`.
+- The root crate, `crates/ambient-fs`, the vendored `crates/hyper-rustls`, the
+  `fuzz` crate and the standalone probe and verification crates under `tests/`
+  set `[lints.rust] unsafe_code = "forbid"` in their manifests, which covers
+  every target Cargo builds, now and in future. The library, binary and
+  build-script roots of first-party crates also carry `#![forbid(unsafe_code)]`.
 - Each crate under `channels-src/` and `tools-src/` is a boundary crate. It sets
   `unsafe_code = "deny"` in its own `[lints.rust]` table and holds all
   generated bindings in `src/bindings.rs`, declared in `src/lib.rs` as:

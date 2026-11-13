@@ -494,7 +494,8 @@ it through the pinned `rust-prover-tools` CLI. `make install-kani` installs the
 verified release bundle, and `make kani-check` checks the selected version. The
 standalone package at `tests/verification/kani-smoke/` has its own manifest and
 lockfile, which keeps it out of the root workspace's Cargo graph and the
-ordinary application build. Cargo still discovers the repository's
+ordinary application build. It forbids unsafe code, as the unsafe-boundary
+inventory requires of every safe crate. Cargo still discovers the repository's
 `.cargo/config.toml` from the ancestor directories, so this isolates the
 package graph rather than the compiler settings. The wrapper forces
 `CARGO_INCREMENTAL=0` for every prover child process.

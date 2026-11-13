@@ -46,7 +46,9 @@ to reject them.
 The historical site totals above do not include the later path-patched crate
 `crates/pg-embed-setup-unpriv`. It contains platform FFI and process-control
 unsafe code, is maintained as a separate upstream project, and is explicitly
-exempt from this component-ABI contract.
+exempt from this component-ABI contract. The `tests/verification/kani-smoke`
+crate is inventoried as safe and standalone; it forbids unsafe code and is not
+part of the historical production-site totals.
 
 The word `unsafe` also appears in `src/tools/builder/templates/sources.rs`,
 inside string literals that are templates for generated tool source. That is
@@ -55,7 +57,10 @@ text, not code the compiler sees, and the lexer behind the contract ignores it.
 ## Dependencies that carry unsafe code on the repository's behalf
 
 Removing the in-tree sites moved their obligations to dependencies. They are
-trusted, not verified, here.
+trusted, not verified, here. `pg-embed-setup-unpriv` joined them when it moved
+from a path patch to the published `0.7.0` crate: its platform FFI and
+process-control unsafe code is now trusted dependency code rather than an
+in-tree boundary.
 
 Table 2. Trusted dependencies that replaced in-tree unsafe code.
 

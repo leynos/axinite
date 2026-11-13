@@ -150,10 +150,9 @@ the guest logic and declares `mod bindings;` behind one reasoned
 `wit_bindgen::generate!` and `export!` invocations, which expand to the
 canonical-ABI glue the host calls by symbol name. The crate denies, rather than
 forbids, `unsafe_code` in its own `[lints.rust]` table. The root workspace and
-inventoried safe crates forbid unsafe code. The path-patched
-`crates/pg-embed-setup-unpriv` is explicitly exempt and contains platform FFI
-and process-control unsafe code. `scripts/check_unsafe_boundaries.py` enforces
-the audited allow-list.
+every inventoried safe crate forbid unsafe code; the standalone
+`tests/verification/kani-smoke` crate is inventoried alongside them.
+`scripts/check_unsafe_boundaries.py` enforces the audited allow-list.
 
 ## Generated and unusual paths
 

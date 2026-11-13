@@ -8,9 +8,11 @@ unsafe code is permitted only in generated WebAssembly component binding glue
 and in the declared 32-bit test-only ABI round-trip modules under each
 component crate's `src/bindings/` directory. These fourteen standalone
 component crates deny, rather than forbid, unsafe code; their ABI test modules
-must not use ABI export attributes or override `unsafe_code`. The path-patched
-`crates/pg-embed-setup-unpriv` is explicitly exempt; it contains platform FFI
-and process-control unsafe code maintained in its upstream project. A
+must not use ABI export attributes or override `unsafe_code`. The standalone
+probe and verification crates under `tests/` forbid it alongside the root
+workspace and `fuzz`. `pg-embed-setup-unpriv` is consumed as a published
+dependency rather than a path patch, so its platform FFI and process-control
+unsafe code is trusted dependency code instead of an in-tree boundary. A
 repository contract enforces the allow-list, and an isolated Miri workflow
 interprets the host-runnable paths around the component boundaries.
 
@@ -206,6 +208,7 @@ lint. Therefore:
 | `crates/ambient-fs`             | root       | safe     | nowhere                 |
 | `crates/hyper-rustls`           | root       | safe     | nowhere (vendored fork) |
 | `fuzz`                          | standalone | safe     | nowhere                 |
+| `tests/verification/kani-smoke` | standalone | safe     | nowhere                 |
 | `channels-src/discord`          | standalone | boundary | `src/bindings.rs`       |
 | `channels-src/slack`            | standalone | boundary | `src/bindings.rs`       |
 | `channels-src/telegram`         | standalone | boundary | `src/bindings.rs`       |
@@ -229,15 +232,12 @@ and any 32-bit test-only ABI round-trip module declared there. The contract
 permits unsafe code in those test modules, but rejects ABI export attributes and
 `unsafe_code` lint overrides in them.
 
-Three manifests are exempt, with their reasons in the script:
+Two manifests are exempt, with their reasons in the script:
 `tests/workflow_contracts/fixtures/nextest_boundary` (a byte-exact fixture only
 the workflow contracts compile) and
 `tools-src/telegram/patches/grammers-crypto` (a vendored dependency patch that
 already declares `#![deny(unsafe_code)]` and is built inside a boundary crate's
-closure), and `crates/pg-embed-setup-unpriv` (a path-patched standalone crate
-with platform FFI and process-control unsafe code maintained in its own
-[upstream project](https://github.com/leynos/pg-embed-setup-unpriv); that code
-is outside this component-ABI contract).
+closure).
 
 ### The component boundary module
 

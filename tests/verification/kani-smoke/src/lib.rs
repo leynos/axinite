@@ -1,5 +1,7 @@
 //! A small bounded capability-projection property for Kani tooling checks.
 
+#![forbid(unsafe_code)]
+
 const FOUR_ENTRY_MASK: u8 = 0b0000_1111;
 
 /// Retain requested capability entries that are also permitted.
