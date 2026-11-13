@@ -6,9 +6,10 @@ Axinite now has pinned local Kani and Verus tooling, a standalone Kani smoke
 package, a Verus set-intersection model, negative-control tests, and a separate
 GitHub Actions workflow. Run `make install-kani`, `make kani`,
 `make install-verus`, `make install-z3`, or `make verus` explicitly;
-`make formal-pr` runs the selected positive proofs and `make test-prover-tools`
-checks their failure boundaries. `make all` remains independent of prover
-installation.
+`make formal-pr` runs the selected positive proofs. CI installs the provers
+through the shared `install-prover-tools` action instead of these targets, and
+the tool's own tests (in rust-prover-tools) cover ordered multi-file runs and
+exit-status preservation. `make all` remains independent of prover installation.
 
 These examples establish that the selected tools and runners work. The Kani
 proof checks an exact four-entry projection over an 8-bit mask; the Verus
@@ -842,11 +843,10 @@ That gives the repository:
 
 The current `verus/tooling_smoke/main.rs` proves set-intersection membership,
 both subset directions, and empty/non-empty witnesses. These are mathematical
-model properties and are not connected to a production Axinite function.
-`make test-verus-tools` requires the positive model to verify and a deliberate
-false union-membership claim to fail. It also checks ordered multi-file runs,
+model properties and are not connected to a production Axinite function. The
+positive model must verify in the `Verus Proofs` job. Ordered multi-file runs,
 preflight rejection of a missing path, and preservation of the prover's exit
-status when output readers close.
+status when output readers close are covered by rust-prover-tools' own tests.
 
 To supply several entry points, pass repeated proof-file flags in
 `VERUS_FLAGS`. The explicit list replaces the default `VERUS_PROOF_FILE`:
@@ -947,7 +947,6 @@ targets. The core proof commands are:
 ```make
 .PHONY: install-kani kani-check kani kani-full
 .PHONY: install-verus install-z3 verus formal-pr
-.PHONY: test-kani-tools test-verus-tools test-prover-tools
 
 install-kani kani-check install-verus install-z3 verus:
 	python3 scripts/prover_cli.py $@
@@ -958,21 +957,9 @@ kani kani-full: kani-check
 formal-pr:
 	$(MAKE) kani
 	$(MAKE) verus
-
-test-kani-tools:
-	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/kani_tools_test.py -q
-
-test-verus-tools:
-	uv run --python '>=3.12' --with 'pytest>=8' pytest tests/verification/verus_tools_test.py -q
-
-test-prover-tools:
-	$(MAKE) test-kani-tools
-	$(MAKE) test-verus-tools
 ```
 
-`make all` does not depend on these optional tools. `make test-prover-tools`
-also exercises positive and negative Kani/Verus process behaviour without being
-part of the ordinary application test gate.
+`make all` does not depend on these optional tools.
 
 ## Current formal-verification CI
 
