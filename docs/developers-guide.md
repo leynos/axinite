@@ -1637,14 +1637,14 @@ decision now rests on the measurement below.
   `error: asm! and global_asm! sym operands are not yet supported`. So no
   workspace test ran, and the unwinding question is untested until that
   compiles.
-- **Repository tests that need unwinding or use `catch_unwind` as a helper.**
+- **Repository tests that need unwinding.**
   `test_select_active_skills_returns_empty_when_registry_lock_is_poisoned`
   (`src/agent/dispatcher/tests/skills.rs`, which panics in a spawned thread to
-  poison a lock), the `catch_unwind` helpers in
-  `tests/support_unit_tests/assertions_tests.rs`, and
-  `test_cosine_similarity_different_lengths_does_not_panic`
-  (`src/workspace/search_cosine_tests.rs`). The helper uses can become
-  `#[should_panic]` tests; the poisoned-lock test is a genuine unwinding case.
+  poison a lock) is a genuine unwinding case. The former `catch_unwind`
+  assertion helpers in `tests/support_unit_tests/assertions_tests.rs` and
+  `src/workspace/search_cosine_tests.rs` now use
+  `#[should_panic(expected = "…")]` or a plain assertion, so they no longer
+  depend on unwinding.
 - **Tracking.** Issue #461 revisits this in six months (April 2027), as well
   as on the triggers below.
 - **Revisit when** `wasmtime` compiles under the pinned nightly's Cranelift and

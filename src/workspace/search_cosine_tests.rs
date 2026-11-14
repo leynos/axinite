@@ -38,13 +38,9 @@ fn test_cosine_similarity_cases(
 /// returns the expected fallback value.
 #[test]
 fn test_cosine_similarity_different_lengths_does_not_panic() {
-    let result = std::panic::catch_unwind(|| cosine_similarity(&[1.0, 2.0, 3.0], &[1.0, 2.0]));
-    assert!(
-        result.is_ok(),
-        "cosine_similarity must not panic on length-mismatched vectors"
-    );
+    // A panic here fails the test by itself, so no unwind probe is needed.
     assert_eq!(
-        result.expect("already asserted Ok"),
+        cosine_similarity(&[1.0, 2.0, 3.0], &[1.0, 2.0]),
         0.0,
         "cosine_similarity must return 0.0 for length-mismatched vectors"
     );
