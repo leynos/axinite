@@ -8,20 +8,32 @@
 //! checks pointer provenance, the ownership transfer of lowered strings and
 //! lists, and that every allocation is freed exactly once.
 //!
+//! Two guests are exercised. [`DiscordChannel`] is the shipped implementation,
+//! and its round trips check the logic the host will actually reach. The
+//! import-free [`RecordingChannel`] returns what it received instead: the
+//! shipped channel refuses every broadcast with a constant, so its result
+//! cannot show whether `user_id`, `content` or `thread_id` survived the ABI.
+//! The recording guest echoes them, and records what `on_status` lifted.
+//!
 //! Only paths that make no host import are exercised, because on a
 //! non-WebAssembly target every import is `unreachable`. The generator lays
 //! the return area out for WebAssembly's 4-byte pointers, so `make miri` runs
-//! these tests for a 32-bit target (`MIRI_ABI_TARGET`, `i686-unknown-linux-gnu`)
-//! and with Stacked Borrows off; the Makefile explains both. A `string` is a
-//! pointer word followed by a length word in the return area decoded here,
-//! and a `result<_, string>` is a discriminant word followed by that pair.
+//! these tests for a 32-bit target (`MIRI_ABI_TARGET`, `i686-unknown-linux-gnu`).
+//! They also run with Stacked Borrows off: `wit-bindgen` lowers a string from
+//! the `as_ptr()` of a boxed slice it then forgets, which both of Miri's
+//! aliasing models reject, as `docs/rust-boundary-verification.md` records
+//! under "Findings in the generated glue". Allocation, bounds, alignment,
+//! initialization and leak checks stay on. A `string` is a pointer word
+//! followed by a length word in the return area decoded here, and a
+//! `result<_, string>` is a discriminant word followed by that pair.
 
 use core::mem::size_of;
 use core::{ptr, slice};
+use std::sync::Mutex;
 
 use super::exports::near::agent::channel::{
     __post_return_on_broadcast, _export_on_broadcast_cabi, _export_on_status_cabi, AgentResponse,
-    Guest,
+    ChannelConfig, Guest, IncomingHttpRequest, OutgoingHttpResponse, StatusType, StatusUpdate,
 };
 use crate::DiscordChannel;
 
@@ -68,8 +80,23 @@ unsafe fn read_string(area: *const u8, word: usize) -> String {
     }
 }
 
-/// Call `on_broadcast` through the ABI and return its error text, if any.
-fn broadcast(user_id: &str, content: &str, thread_id: Option<&str>) -> Result<(), String> {
+/// The `agent-response` the fixed arguments of [`broadcast_as`] describe.
+fn agent_response(content: &str, thread_id: Option<&str>) -> AgentResponse {
+    AgentResponse {
+        message_id: "message-id".to_string(),
+        content: content.to_string(),
+        thread_id: thread_id.map(str::to_owned),
+        metadata_json: "{}".to_string(),
+        attachments: Vec::new(),
+    }
+}
+
+/// Call `on_broadcast` through the ABI as guest `G` and return its error text.
+fn broadcast_as<G: Guest>(
+    user_id: &str,
+    content: &str,
+    thread_id: Option<&str>,
+) -> Result<(), String> {
     let (user_ptr, user_len) = lower(user_id);
     let (message_ptr, message_len) = lower("message-id");
     let (content_ptr, content_len) = lower(content);
@@ -87,7 +114,7 @@ fn broadcast(user_id: &str, content: &str, thread_id: Option<&str>) -> Result<()
     // returns a live return area that is decoded before, and released by,
     // `__post_return`.
     unsafe {
-        let area = _export_on_broadcast_cabi::<DiscordChannel>(
+        let area = _export_on_broadcast_cabi::<G>(
             user_ptr,
             user_len,
             message_ptr,
@@ -107,10 +134,164 @@ fn broadcast(user_id: &str, content: &str, thread_id: Option<&str>) -> Result<()
             1 => Err(read_string(area, 1)),
             other => panic!("invalid result discriminant {other}"),
         };
-        __post_return_on_broadcast::<DiscordChannel>(area);
+        __post_return_on_broadcast::<G>(area);
         result
     }
 }
+
+/// Call `on_broadcast` through the ABI as the shipped channel.
+fn broadcast(user_id: &str, content: &str, thread_id: Option<&str>) -> Result<(), String> {
+    broadcast_as::<DiscordChannel>(user_id, content, thread_id)
+}
+
+/// An import-free stand-in for the channel guest that echoes what it received.
+///
+/// The shipped channel refuses every broadcast with a constant error, so its
+/// result cannot show whether the arguments were lifted correctly. This guest
+/// has no host import either, which keeps it runnable on a non-WebAssembly
+/// target, and it returns the lifted values so every field is observable.
+struct RecordingChannel;
+
+impl Guest for RecordingChannel {
+    fn on_start(config_json: String) -> Result<ChannelConfig, String> {
+        Err(config_json)
+    }
+
+    fn on_http_request(req: IncomingHttpRequest) -> OutgoingHttpResponse {
+        OutgoingHttpResponse {
+            status: 200,
+            headers_json: req.headers_json,
+            body: req.body,
+        }
+    }
+
+    fn on_poll() {}
+
+    fn on_respond(response: AgentResponse) -> Result<(), String> {
+        Err(echo_agent_response(&response))
+    }
+
+    fn on_status(update: StatusUpdate) {
+        STATUS_RECORDINGS.lock().expect("status recordings").push((
+            status_index(update.status),
+            update.message,
+            update.metadata_json,
+        ));
+    }
+
+    fn on_broadcast(user_id: String, response: AgentResponse) -> Result<(), String> {
+        Err(format!("{user_id}\u{1f}{}", echo_agent_response(&response)))
+    }
+
+    fn on_shutdown() {}
+}
+
+/// What [`RecordingChannel`] saw in each `on_status` call, in call order.
+static STATUS_RECORDINGS: Mutex<Vec<(u8, String, String)>> = Mutex::new(Vec::new());
+
+/// The recordings added after `before`, cloned so the lock is released.
+fn status_recordings_since(before: usize) -> Vec<(u8, String, String)> {
+    let recorded = STATUS_RECORDINGS.lock().expect("status recordings");
+    recorded[before..].to_vec()
+}
+
+/// The number of `on_status` calls recorded so far.
+fn status_recording_count() -> usize {
+    STATUS_RECORDINGS.lock().expect("status recordings").len()
+}
+
+/// The WIT discriminant of each `status-type` case, in declaration order.
+fn status_index(status: StatusType) -> u8 {
+    match status {
+        StatusType::Thinking => 0,
+        StatusType::Done => 1,
+        StatusType::Interrupted => 2,
+        StatusType::ToolStarted => 3,
+        StatusType::ToolCompleted => 4,
+        StatusType::ToolResult => 5,
+        StatusType::ApprovalNeeded => 6,
+        StatusType::Status => 7,
+        StatusType::JobStarted => 8,
+        StatusType::AuthRequired => 9,
+        StatusType::AuthCompleted => 10,
+    }
+}
+
+/// Encode an agent response so a test can assert every lifted field.
+///
+/// Fields are separated by the ASCII unit separator, which cannot appear in
+/// the fixtures. An absent thread is marked `<none>` and an empty one `<some>`
+/// with no text, so the two states stay distinct.
+fn echo_agent_response(response: &AgentResponse) -> String {
+    let thread = match response.thread_id.as_deref() {
+        None => "<none>".to_string(),
+        Some(text) => format!("<some>{text}"),
+    };
+    format!(
+        "{}\u{1f}{}\u{1f}{thread}\u{1f}{}\u{1f}{}",
+        response.message_id,
+        response.content,
+        response.metadata_json,
+        response.attachments.len()
+    )
+}
+
+/// Require the shim to hand [`RecordingChannel`] exactly the arguments it was
+/// given.
+///
+/// `broadcast_as` releases the return area through
+/// `__post_return_on_broadcast` for every case, so each generated input also
+/// exercises the post-return cleanup of the lowered `user_id`, `content` and
+/// `thread_id`.
+fn assert_lifted_unchanged(user_id: &str, content: &str, thread_id: Option<&str>) {
+    let expected = <RecordingChannel as Guest>::on_broadcast(
+        user_id.to_string(),
+        agent_response(content, thread_id),
+    );
+    assert_eq!(
+        broadcast_as::<RecordingChannel>(user_id, content, thread_id),
+        expected,
+        "results differ"
+    );
+}
+
+/// A deterministic generator of argument strings.
+///
+/// A fixed seed makes the sweep repeatable, and drawing scalars from every
+/// UTF-8 length class keeps multi-byte and multi-scalar content in each run.
+struct Cases(u64);
+
+impl Cases {
+    /// Start a sequence at `seed`.
+    const fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    /// Draw the next value of a xorshift64 sequence.
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    /// Draw a value below `bound`.
+    fn below(&mut self, bound: usize) -> usize {
+        let bound = u64::try_from(bound).expect("bound fits u64");
+        usize::try_from(self.next() % bound).expect("remainder fits usize")
+    }
+
+    /// Draw a string of `scalars` scalars from every UTF-8 length class.
+    fn string(&mut self, scalars: usize) -> String {
+        const ALPHABET: [char; 4] = ['a', 'é', '€', '🦀'];
+        (0..scalars)
+            .map(|_| ALPHABET[self.below(ALPHABET.len())])
+            .collect()
+    }
+}
+
+/// Lengths on both sides of the allocator's small and medium size classes.
+const GENERATED_LENGTHS: [usize; 16] = [0, 1, 2, 3, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65];
 
 #[test]
 fn a_broadcast_reports_that_it_is_not_implemented() {
@@ -120,12 +301,27 @@ fn a_broadcast_reports_that_it_is_not_implemented() {
 
 #[test]
 fn a_broadcast_with_a_thread_lifts_and_drops_every_field() {
-    let result = broadcast("user-é", "héllo wörld", Some("thread-1"));
-    assert!(result.is_err());
+    let error = broadcast_as::<RecordingChannel>("user-é", "héllo wörld", Some("thread-1"))
+        .expect_err("the recording guest reports the lifted arguments as an error");
+    assert_eq!(
+        error,
+        "user-é\u{1f}message-id\u{1f}héllo wörld\u{1f}<some>thread-1\u{1f}{}\u{1f}0"
+    );
+}
+
+#[test]
+fn a_broadcast_without_a_thread_lifts_and_drops_every_field() {
+    let error = broadcast_as::<RecordingChannel>("user", "hello", None)
+        .expect_err("the recording guest reports the lifted arguments as an error");
+    assert_eq!(
+        error,
+        "user\u{1f}message-id\u{1f}hello\u{1f}<none>\u{1f}{}\u{1f}0"
+    );
 }
 
 #[test]
 fn a_status_update_lifts_and_drops_its_strings() {
+    let before = status_recording_count();
     let (message_ptr, message_len) = lower("thinking about it");
     let (metadata_ptr, metadata_len) = lower(r#"{"chat_id": 1}"#);
     // SAFETY: both strings were allocated by `lower` and are handed over to the
@@ -133,7 +329,7 @@ fn a_status_update_lifts_and_drops_its_strings() {
     // discriminant `0` is the first `status-type` case, so it is in range, and
     // `on_status` returns nothing, so there is no return area to release.
     unsafe {
-        _export_on_status_cabi::<DiscordChannel>(
+        _export_on_status_cabi::<RecordingChannel>(
             0,
             message_ptr,
             message_len,
@@ -141,16 +337,26 @@ fn a_status_update_lifts_and_drops_its_strings() {
             metadata_len,
         );
     }
+    assert_eq!(
+        status_recordings_since(before),
+        vec![(
+            0u8,
+            "thinking about it".to_string(),
+            r#"{"chat_id": 1}"#.to_string()
+        )]
+    );
 }
 
 #[test]
 fn an_empty_status_message_crosses_the_abi() {
+    let before = status_recording_count();
     let (message_ptr, message_len) = lower("");
     let (metadata_ptr, metadata_len) = lower("");
     // SAFETY: as for `a_status_update_lifts_and_drops_its_strings`; empty
-    // strings are dangling, aligned pointers with length zero.
+    // strings are dangling, aligned pointers with length zero. The
+    // discriminant `10` is the last `status-type` case, so it is in range.
     unsafe {
-        _export_on_status_cabi::<DiscordChannel>(
+        _export_on_status_cabi::<RecordingChannel>(
             10,
             message_ptr,
             message_len,
@@ -158,6 +364,10 @@ fn an_empty_status_message_crosses_the_abi() {
             metadata_len,
         );
     }
+    assert_eq!(
+        status_recordings_since(before),
+        vec![(10u8, String::new(), String::new())]
+    );
 }
 
 /// Require the shim's result to equal the guest function's own result.
@@ -165,17 +375,14 @@ fn an_empty_status_message_crosses_the_abi() {
 /// `on_broadcast` refuses every request before it reaches a host import, which
 /// is `unreachable` on a non-WebAssembly target. The comparison therefore
 /// exercises the lifting of arbitrary arguments against the same refusal the
-/// guest returns when reached without the ABI.
+/// guest returns when reached without the ABI. The refusal is a constant, so
+/// these cases prove ownership transfer rather than value; the recording guest
+/// in `generated_broadcast_arguments_cross_the_abi_unchanged` observes the
+/// values.
 fn assert_matches_the_guest(user_id: &str, content: &str, thread_id: Option<&str>) {
     let expected = <DiscordChannel as Guest>::on_broadcast(
         user_id.to_string(),
-        AgentResponse {
-            message_id: "message-id".to_string(),
-            content: content.to_string(),
-            thread_id: thread_id.map(str::to_owned),
-            metadata_json: "{}".to_string(),
-            attachments: Vec::new(),
-        },
+        agent_response(content, thread_id),
     );
     assert_eq!(
         broadcast(user_id, content, thread_id),
@@ -204,5 +411,22 @@ fn every_thread_state_crosses_the_abi() {
     for thread_id in states {
         assert_matches_the_guest("user", "content", thread_id);
         assert_matches_the_guest("", "", thread_id);
+    }
+}
+
+#[test]
+fn generated_broadcast_arguments_cross_the_abi_unchanged() {
+    let mut cases = Cases::new(0x5eed_0000_d15c_0001);
+    for round in 0..40usize {
+        let user_id = cases.string(GENERATED_LENGTHS[round % GENERATED_LENGTHS.len()]);
+        let content = cases.string(GENERATED_LENGTHS[(round + 5) % GENERATED_LENGTHS.len()]);
+        // Cycle the optional state so `None`, `Some("")` and a non-empty
+        // `Some` appear in every run, as distinct cases.
+        let thread_id = match round % 3 {
+            0 => None,
+            1 => Some(cases.string(GENERATED_LENGTHS[(round + 11) % GENERATED_LENGTHS.len()])),
+            _ => Some(String::new()),
+        };
+        assert_lifted_unchanged(&user_id, &content, thread_id.as_deref());
     }
 }

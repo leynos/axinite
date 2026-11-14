@@ -8,20 +8,31 @@
 //! checks pointer provenance, the ownership transfer of lowered strings, and
 //! that every allocation is freed exactly once.
 //!
+//! Two guests are exercised. [`WebSearchTool`] is the shipped implementation,
+//! and its round trips check the logic the host will actually reach. The
+//! import-free [`RecordingTool`] returns what it received instead of
+//! searching, which makes `params` and `context` observable in the return
+//! area: the shipped tool ignores `context`, so its own result cannot show
+//! whether the optional argument survived the ABI.
+//!
 //! Only paths that make no host import are exercised, because on a
 //! non-WebAssembly target every import is `unreachable`. The generator lays
 //! the return area out for WebAssembly's 4-byte pointers, so `make miri` runs
-//! these tests for a 32-bit target (`MIRI_ABI_TARGET`, `i686-unknown-linux-gnu`)
-//! and with Stacked Borrows off; the Makefile explains both. A `string` is a
-//! pointer word followed by a length word in the return area decoded here,
-//! and an `option<string>` is a discriminant word followed by that pair.
+//! these tests for a 32-bit target (`MIRI_ABI_TARGET`, `i686-unknown-linux-gnu`).
+//! They also run with Stacked Borrows off: `wit-bindgen` lowers a string from
+//! the `as_ptr()` of a boxed slice it then forgets, which both of Miri's
+//! aliasing models reject, as `docs/rust-boundary-verification.md` records
+//! under "Findings in the generated glue". Allocation, bounds, alignment,
+//! initialization and leak checks stay on. A `string` is a pointer word
+//! followed by a length word in the return area decoded here, and an
+//! `option<string>` is a discriminant word followed by that pair.
 
 use core::mem::size_of;
 use core::{ptr, slice};
 
 use super::exports::near::agent::tool::{
     __post_return_description, __post_return_execute, __post_return_schema,
-    _export_description_cabi, _export_execute_cabi, _export_schema_cabi, Guest,
+    _export_description_cabi, _export_execute_cabi, _export_schema_cabi, Guest, Request, Response,
 };
 use crate::WebSearchTool;
 
@@ -79,8 +90,8 @@ unsafe fn read_option(area: *const u8, word: usize) -> Option<String> {
     }
 }
 
-/// Call `execute` through the ABI and return its `(output, error)` pair.
-fn execute(params: &str, context: Option<&str>) -> (Option<String>, Option<String>) {
+/// Call `execute` through the ABI as guest `G` and return its `(output, error)`.
+fn execute_as<G: Guest>(params: &str, context: Option<&str>) -> (Option<String>, Option<String>) {
     let (params_ptr, params_len) = lower(params);
     let (present, context_ptr, context_len) = match context {
         Some(text) => {
@@ -93,18 +104,116 @@ fn execute(params: &str, context: Option<&str>) -> (Option<String>, Option<Strin
     // the shim, which lifts them into owned `String`s. The shim returns a live
     // return area that is decoded before, and released by, `__post_return`.
     unsafe {
-        let area = _export_execute_cabi::<WebSearchTool>(
-            params_ptr,
-            params_len,
-            present,
-            context_ptr,
-            context_len,
-        );
+        let area =
+            _export_execute_cabi::<G>(params_ptr, params_len, present, context_ptr, context_len);
         let result = (read_option(area, 0), read_option(area, 3));
-        __post_return_execute::<WebSearchTool>(area);
+        __post_return_execute::<G>(area);
         result
     }
 }
+
+/// Call `execute` through the ABI as the shipped tool.
+fn execute(params: &str, context: Option<&str>) -> (Option<String>, Option<String>) {
+    execute_as::<WebSearchTool>(params, context)
+}
+
+/// An import-free stand-in for the tool guest that echoes what it received.
+///
+/// The shipped tool validates `params` and ignores `context`, so its result
+/// cannot show whether either argument was lifted correctly. This guest has no
+/// host import either, which keeps it runnable on a non-WebAssembly target, and
+/// it returns both fields so each is observable in `output`.
+struct RecordingTool;
+
+impl Guest for RecordingTool {
+    fn description() -> String {
+        "recording tool".to_string()
+    }
+
+    fn schema() -> String {
+        "{}".to_string()
+    }
+
+    fn execute(req: Request) -> Response {
+        Response {
+            output: Some(echo(&req.params, req.context.as_deref())),
+            error: None,
+        }
+    }
+}
+
+/// Encode what a guest received, so a test can assert it character for
+/// character.
+///
+/// The ASCII unit separator cannot appear in the fixtures, and an absent
+/// context is marked `<none>` while an empty one is marked `<some>` with no
+/// text, so the two states stay distinct.
+fn echo(params: &str, context: Option<&str>) -> String {
+    let state = match context {
+        None => "<none>".to_string(),
+        Some(text) => format!("<some>{text}"),
+    };
+    format!("{params}\u{1f}{state}")
+}
+
+/// The result [`RecordingTool`] produces when called without the ABI.
+fn recording_guest_result(params: &str, context: Option<&str>) -> Response {
+    <RecordingTool as Guest>::execute(Request {
+        params: params.to_string(),
+        context: context.map(str::to_owned),
+    })
+}
+
+/// Require the shim to hand [`RecordingTool`] exactly the arguments it was
+/// given.
+///
+/// `execute_as` releases the return area through `__post_return_execute` for
+/// every case, so each generated input also exercises the post-return cleanup
+/// of the lowered `params` and `context`.
+fn assert_lifted_unchanged(params: &str, context: Option<&str>) {
+    let (output, error) = execute_as::<RecordingTool>(params, context);
+    let expected = recording_guest_result(params, context);
+    assert_eq!(output, expected.output, "output differs");
+    assert_eq!(error, expected.error, "error differs");
+}
+
+/// A deterministic generator of request strings.
+///
+/// A fixed seed makes the sweep repeatable, and drawing scalars from every
+/// UTF-8 length class keeps multi-byte and multi-scalar content in each run.
+struct Cases(u64);
+
+impl Cases {
+    /// Start a sequence at `seed`.
+    const fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    /// Draw the next value of a xorshift64 sequence.
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    /// Draw a value below `bound`.
+    fn below(&mut self, bound: usize) -> usize {
+        let bound = u64::try_from(bound).expect("bound fits u64");
+        usize::try_from(self.next() % bound).expect("remainder fits usize")
+    }
+
+    /// Draw a string of `scalars` scalars from every UTF-8 length class.
+    fn string(&mut self, scalars: usize) -> String {
+        const ALPHABET: [char; 4] = ['a', 'é', '€', '🦀'];
+        (0..scalars)
+            .map(|_| ALPHABET[self.below(ALPHABET.len())])
+            .collect()
+    }
+}
+
+/// Lengths on both sides of the allocator's small and medium size classes.
+const GENERATED_LENGTHS: [usize; 16] = [0, 1, 2, 3, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65];
 
 #[test]
 fn description_crosses_the_abi_and_is_freed() {
@@ -147,9 +256,27 @@ fn an_empty_parameter_string_crosses_the_abi() {
 
 #[test]
 fn a_present_context_is_lifted_and_dropped() {
-    let (output, error) = execute(r#"{"query": ""}"#, Some(r#"{"job": "j"}"#));
-    assert_eq!(output, None);
-    assert_eq!(error.as_deref(), Some("'query' must not be empty"));
+    let (output, error) = execute_as::<RecordingTool>("p", Some(r#"{"job": "j"}"#));
+    assert_eq!(output.as_deref(), Some("p\u{1f}<some>{\"job\": \"j\"}"));
+    assert_eq!(error, None);
+}
+
+#[test]
+fn absent_empty_and_present_contexts_are_distinct() {
+    let absent = execute_as::<RecordingTool>("p", None)
+        .0
+        .expect("the recording guest returns an output");
+    let empty = execute_as::<RecordingTool>("p", Some(""))
+        .0
+        .expect("the recording guest returns an output");
+    let present = execute_as::<RecordingTool>("p", Some("ctx"))
+        .0
+        .expect("the recording guest returns an output");
+    assert_eq!(absent, "p\u{1f}<none>");
+    assert_eq!(empty, "p\u{1f}<some>");
+    assert_eq!(present, "p\u{1f}<some>ctx");
+    assert_ne!(absent, empty);
+    assert_ne!(empty, present);
 }
 
 #[test]
@@ -169,7 +296,9 @@ fn a_long_multibyte_query_crosses_the_abi_intact() {
 /// Every input here fails validation before the guest reaches a host import,
 /// which is `unreachable` on a non-WebAssembly target. The comparison is
 /// therefore against the same validation the shim lifts its strings into,
-/// reached without the ABI.
+/// reached without the ABI. The shipped tool ignores `context`, so these cases
+/// exercise its ownership transfer rather than its value; the recording guest
+/// in `generated_requests_cross_the_abi_unchanged` observes the value.
 fn assert_matches_the_guest(params: &str, context: Option<&str>) {
     let (output, error) = execute(params, context);
     let guest = crate::execute_inner(params);
@@ -206,5 +335,22 @@ fn every_optional_context_state_crosses_the_abi() {
     for context in contexts {
         assert_matches_the_guest("", context);
         assert_matches_the_guest(r#"{"query": ""}"#, context);
+    }
+}
+
+#[test]
+fn generated_requests_cross_the_abi_unchanged() {
+    let mut cases = Cases::new(0x5eed_1234_9abc_def0);
+    for round in 0..40usize {
+        let scalars = GENERATED_LENGTHS[round % GENERATED_LENGTHS.len()];
+        let params = cases.string(scalars);
+        // Cycle the optional state so `None`, `Some("")` and a non-empty
+        // `Some` appear in every run, as distinct cases.
+        let context = match round % 3 {
+            0 => None,
+            1 => Some(cases.string(scalars)),
+            _ => Some(String::new()),
+        };
+        assert_lifted_unchanged(&params, context.as_deref());
     }
 }

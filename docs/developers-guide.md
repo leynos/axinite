@@ -4994,9 +4994,14 @@ records the inventory and what Miri covers.
   set `[lints.rust] unsafe_code = "forbid"` in their manifests, which covers
   every target Cargo builds, now and in future. The library, binary and
   build-script roots of first-party crates also carry `#![forbid(unsafe_code)]`.
-- Each crate under `channels-src/` and `tools-src/` is a boundary crate. It sets
-  `unsafe_code = "deny"` in its own `[lints.rust]` table and holds all
-  generated bindings in `src/bindings.rs`, declared in `src/lib.rs` as:
+- The fourteen first-party component crates in Table 3 of
+  [ADR 0015](adrs/adr-0015-audited-unsafe-boundaries.md) are boundary crates.
+  The vendored `tools-src/telegram/patches/grammers-crypto` is exempt: it
+  patches a dependency of `tools-src/telegram`, already declares
+  `#![deny(unsafe_code)]` upstream, and is built inside that boundary crate's
+  closure. A boundary crate sets `unsafe_code = "deny"` in its own
+  `[lints.rust]` table and holds all generated bindings in `src/bindings.rs`,
+  declared in `src/lib.rs` as:
 
   ```rust
   #[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
@@ -5005,10 +5010,11 @@ records the inventory and what Miri covers.
   use bindings::{exports, near};
   ```
 
-  `bindings.rs` holds only `use super::GuestType;`, the
-  `wit_bindgen::generate!` invocation and `export!(GuestType);`. Write guest
-  logic in other modules and reach the generated items through the `exports` and
-  `near` re-exports.
+  `bindings.rs` holds `use super::GuestType;`, the `wit_bindgen::generate!`
+  invocation, `export!(GuestType);`, and, where the crate has one, the 32-bit
+  ABI round-trip module declaration described in the next bullet. Nothing else
+  belongs there. Write guest logic in other modules and reach the generated
+  items through the `exports` and `near` re-exports.
 - A component crate may add Miri-checked ABI round trips as
   `src/bindings/abi_round_trip.rs`, declared in `bindings.rs` as
   `#[cfg(all(test, target_pointer_width = "32"))] mod abi_round_trip;`. The
@@ -5026,9 +5032,12 @@ records the inventory and what Miri covers.
 
 1. Add the crate and its entry to `INVENTORY` in
    `scripts/unsafe_boundaries/inventory.py`, choosing `SAFE` unless it hosts an
-   ABI that has no safe form. A boundary entry also needs the table row in
-   `docs/adrs/adr-0015-audited-unsafe-boundaries.md`. The contract accepts only
-   the `wit-bindgen` component layout, so a boundary that is not a WebAssembly
+   ABI that has no safe form. Every inventoried crate, safe or boundary, needs
+   its own row in Table 3 of `docs/adrs/adr-0015-audited-unsafe-boundaries.md`;
+   a boundary row records `src/bindings.rs` in its "Unsafe permitted in"
+   column, and a boundary with ABI round trips is also listed in
+   `MIRI_ABI_ROOTS` in the `Makefile`. The contract accepts only the
+   `wit-bindgen` component layout, so a boundary that is not a WebAssembly
    component also needs a new ADR and an extension of
    `scripts/unsafe_boundaries/` to check that layout, with a fault case in
    `_unsafe_boundary_faults.py` proving the new check fails when it is broken.

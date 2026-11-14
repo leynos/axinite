@@ -44,12 +44,14 @@ carries the crate-root attribute; the vendored `crates/hyper-rustls` is held to
 the manifest lint alone. Compiler probes append four unsafe forms to selected
 safe and boundary crates and require the compiler to reject them.
 
-The historical site totals above do not include the later path-patched crate
-`crates/pg-embed-setup-unpriv`. It contains platform FFI and process-control
-unsafe code, is maintained as a separate upstream project, and is explicitly
-exempt from this component-ABI contract. The `tests/verification/kani-smoke`
-crate is inventoried as safe and standalone; it forbids unsafe code and is not
-part of the historical production-site totals.
+The historical site totals above exclude the path-patched
+`crates/pg-embed-setup-unpriv` that the repository carried when the measurement
+was taken. It held platform FFI and process-control unsafe code and was exempt
+from this component-ABI contract while in tree. It has since moved to the
+published crate, so it is trusted dependency code and no in-tree exemption
+remains for it. The `tests/verification/kani-smoke` crate is inventoried as
+safe and standalone; it forbids unsafe code and is not part of the historical
+production-site totals.
 
 The word `unsafe` also appears in `src/tools/builder/templates/sources.rs`,
 inside string literals that are templates for generated tool source. That is
@@ -138,6 +140,13 @@ Table 3. What Miri covers and what it does not.
 | `rustix::fs::openat2`                                   | Nothing                                                                                                                                                                                                                                                                                                      | Miri does not model the `openat2` syscall. Native tests in `src/skills/file_read/tests` cover the kernel behaviour.                                                                           |
 
 _Table 3: Miri coverage._
+
+The two ABI round-trip modules now also instantiate an import-free recording
+guest, so the lifted arguments are observable: the guest echoes them through
+the return area instead of reproducing a shipped result that ignores or refuses
+them. The runs keep Stacked Borrows off, because `wit-bindgen`'s string
+lowering is rejected by both aliasing models (see "Findings in the generated
+glue", item 1); the recording guest does not remove that limitation.
 
 ### Findings in the generated glue
 

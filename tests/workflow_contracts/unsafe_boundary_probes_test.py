@@ -12,6 +12,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -65,6 +66,23 @@ def _site(tmp_path: Path, path: str) -> probes.ProbeSite:
     """Copy a real crate into a scratch workspace and return its probe site."""
     crate = probes.crate_named(path)
     return probes.copy_probe_workspace(REPOSITORY, crate, tmp_path / "scratch")
+
+
+def _inherit_workspace_lints(text: str) -> str:
+    """Replace a crate's own `[lints.rust]` table with workspace inheritance.
+
+    The table holds every local lint key, not only `unsafe_code`, so the whole
+    table is replaced rather than one adjacent line. A no-op replacement would
+    make the caller pass without exercising the inherited-policy branch, so a
+    pattern that does not match exactly one table is an error.
+    """
+    replaced, count = re.subn(
+        r"(?m)^\[lints\.rust\]\n(?:[A-Za-z_][^\n]*\n?)+",
+        "[lints]\nworkspace = true\n",
+        text,
+    )
+    assert count == 1, "the fixture must own exactly one [lints.rust] table"
+    return replaced
 
 
 @pytest.mark.parametrize("path", [SAFE, BOUNDARY])
@@ -254,10 +272,11 @@ def test_stripping_the_policy_also_releases_inherited_lints(tmp_path: Path) -> N
     """The control must work after the lint-config layer replaces local tables."""
     site = _site(tmp_path, SAFE)
     manifest = site.crate_dir / "Cargo.toml"
-    text = manifest.read_text(encoding="utf-8").replace(
-        '[lints.rust]\nunsafe_code = "forbid"', "[lints]\nworkspace = true"
-    )
+    text = _inherit_workspace_lints(manifest.read_text(encoding="utf-8"))
     manifest.write_text(text, encoding="utf-8")
+    inherited = manifest.read_text(encoding="utf-8")
+    assert "[lints]\nworkspace = true" in inherited
+    assert 'unsafe_code = "forbid"' not in inherited
     probes.strip_policy(site)
     stripped = manifest.read_text(encoding="utf-8")
     assert 'unsafe_code = "allow"' in stripped

@@ -143,16 +143,22 @@ normal root-workspace member.
 These paths should usually be considered together when changing extension
 contracts, packaging, or runtime loading behaviour.
 
-Each crate under `channels-src/` and `tools-src/` is an audited unsafe boundary
-(see `docs/adrs/adr-0015-audited-unsafe-boundaries.md`). Its `src/lib.rs` holds
-the guest logic and declares `mod bindings;` behind one reasoned
-`#[expect(unsafe_code, ...)]`. Its `src/bindings.rs` holds only the
-`wit_bindgen::generate!` and `export!` invocations, which expand to the
-canonical-ABI glue the host calls by symbol name. The crate denies, rather than
-forbids, `unsafe_code` in its own `[lints.rust]` table. The root workspace and
-every inventoried safe crate forbid unsafe code; the standalone
-`tests/verification/kani-smoke` crate is inventoried alongside them.
-`scripts/check_unsafe_boundaries.py` enforces the audited allow-list.
+The fourteen first-party component crates under `channels-src/` and
+`tools-src/` are audited unsafe boundaries (see
+`docs/adrs/adr-0015-audited-unsafe-boundaries.md`). The vendored
+`tools-src/telegram/patches/grammers-crypto` is exempt: it patches a dependency
+of `tools-src/telegram` and is built inside that boundary crate's closure. A
+boundary crate's `src/lib.rs` holds the guest logic and declares
+`mod bindings;` behind one reasoned `#[expect(unsafe_code, ...)]`. Its
+`src/bindings.rs` holds `use super::GuestType;`, the `wit_bindgen::generate!`
+invocation, `export!(GuestType);`, and, where present, a
+`#[cfg(all(test, target_pointer_width = "32"))] mod abi_round_trip;`
+declaration; the invocations expand to the canonical-ABI glue the host calls by
+symbol name. The crate denies, rather than forbids, `unsafe_code` in its own
+`[lints.rust]` table. The root workspace and every inventoried safe crate
+forbid unsafe code; the standalone `tests/verification/kani-smoke` crate is
+inventoried alongside them. `scripts/check_unsafe_boundaries.py` enforces the
+audited allow-list.
 
 ## Generated and unusual paths
 
