@@ -25,11 +25,15 @@
   roadmap structure.
 - [Roadmap](roadmap.md) lays out the implementation workstreams, tasks,
   dependencies, and design checkpoints for planned delivery.
+- [Responses streaming roadmap](responses-streaming-roadmap.md) refines
+  workstream 3.2 into contract, transport, recovery, and safe-delivery tasks.
 
 ## Architecture and subsystem design
 
 - [axinite architecture overview](axinite-architecture-overview.md) explains the
   top-level runtime shape, major subsystems, and how the pieces fit together.
+- [Responses stream handling](responses-streaming-design.md) proposes native
+  inference streaming, conservative recovery, and safe channel previews.
 - [Formal verification methods in Axinite](formal-verification-methods-in-axinite.md)
   describes the available Kani and Verus tooling, its demonstrated smoke
   proofs, and candidate areas for later production proofs.
@@ -78,7 +82,7 @@
   explains the `rustdoc` compilation model and practical doctest patterns for
   public API documentation.
 - [Mastering test fixtures in Rust with `rstest`](rust-testing-with-rstest-fixtures.md)
-  explains fixture-based and parameterized testing with `rstest` for Rust
+  explains fixture-based and parameterized testing for Rust
   contributors.
 
 ## Operator and integration references
