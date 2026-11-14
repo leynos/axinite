@@ -7,14 +7,12 @@
 
 use core::ptr;
 
-use super::abi_round_trip_guest::RecordingChannel;
 use super::abi_round_trip_layout::{
     agent_response, lower, lower_attachments, read_string, AttachmentFixture,
 };
 use super::exports::near::agent::channel::{
     __post_return_on_broadcast, _export_on_broadcast_cabi, Guest,
 };
-use crate::DiscordChannel;
 
 /// Call `on_broadcast` through the ABI as guest `G` and return its error text.
 pub(super) fn broadcast_as<G: Guest>(
@@ -65,61 +63,30 @@ pub(super) fn broadcast_as<G: Guest>(
     }
 }
 
-/// Call `on_broadcast` through the ABI as the shipped channel.
-pub(super) fn broadcast(
-    user_id: &str,
-    content: &str,
-    thread_id: Option<&str>,
-    attachments: &[AttachmentFixture<'_>],
-) -> Result<(), String> {
-    broadcast_as::<DiscordChannel>(user_id, content, thread_id, attachments)
-}
-
-/// Require the shim to hand [`RecordingChannel`] exactly the arguments it was
-/// given.
+/// Require the shim to hand guest `G` exactly the arguments it was given.
 ///
 /// `broadcast_as` releases the return area through
 /// `__post_return_on_broadcast` for every case, so each generated input also
 /// exercises the post-return cleanup of the lowered `user_id`, `content` and
 /// `thread_id`.
-pub(super) fn assert_lifted_unchanged(
-    user_id: &str,
-    content: &str,
-    thread_id: Option<&str>,
-    attachments: &[AttachmentFixture<'_>],
-) {
-    let expected = <RecordingChannel as Guest>::on_broadcast(
-        user_id.to_string(),
-        agent_response(content, thread_id, attachments),
-    );
-    assert_eq!(
-        broadcast_as::<RecordingChannel>(user_id, content, thread_id, attachments),
-        expected,
-        "results differ"
-    );
-}
-
-/// Require the shim's result to equal the guest function's own result.
 ///
-/// `on_broadcast` refuses every request before it reaches a host import, which
-/// is `unreachable` on a non-WebAssembly target. The comparison therefore
-/// exercises the lifting of arbitrary arguments against the same refusal the
-/// guest returns when reached without the ABI. The refusal is a constant, so
-/// these cases prove ownership transfer rather than value; the recording guest
-/// in `generated_broadcast_arguments_cross_the_abi_unchanged` observes the
-/// values.
-pub(super) fn assert_matches_the_guest(
+/// Which property the comparison proves depends on the guest.
+/// [`DiscordChannel`] refuses every request with a constant before it reaches
+/// a host import, which is `unreachable` on a non-WebAssembly target, so its
+/// cases prove ownership transfer rather than value. The recording guest
+/// echoes the lifted arguments, so its cases prove the values.
+pub(super) fn assert_matches_the_guest<G: Guest>(
     user_id: &str,
     content: &str,
     thread_id: Option<&str>,
     attachments: &[AttachmentFixture<'_>],
 ) {
-    let expected = <DiscordChannel as Guest>::on_broadcast(
+    let expected = G::on_broadcast(
         user_id.to_string(),
         agent_response(content, thread_id, attachments),
     );
     assert_eq!(
-        broadcast(user_id, content, thread_id, attachments),
+        broadcast_as::<G>(user_id, content, thread_id, attachments),
         expected,
         "results differ"
     );

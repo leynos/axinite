@@ -37,13 +37,14 @@
 use super::abi_round_trip_guest::{record_status, status_recordings_with, RecordingChannel};
 use super::abi_round_trip_layout::AttachmentFixture;
 use super::abi_round_trip_support::{
-    assert_lifted_unchanged, assert_matches_the_guest, broadcast, broadcast_as, Cases,
-    GENERATED_LENGTHS,
+    assert_matches_the_guest, broadcast_as, Cases, GENERATED_LENGTHS,
 };
+use crate::DiscordChannel;
 
 #[test]
 fn a_broadcast_reports_that_it_is_not_implemented() {
-    let error = broadcast("user", "hello", None, &[]).expect_err("Discord cannot broadcast");
+    let error = broadcast_as::<DiscordChannel>("user", "hello", None, &[])
+        .expect_err("Discord cannot broadcast");
     assert_eq!(error, "broadcast not yet implemented for Discord channel");
 }
 
@@ -136,8 +137,8 @@ fn strings_of_every_length_class_cross_the_abi() {
     for unit in units {
         for repeat in [0usize, 1, 2, 7, 8, 9, 15, 16, 17, 255, 256, 1000] {
             let text = unit.repeat(repeat);
-            assert_matches_the_guest(&text, &text, Some(&text), &[]);
-            assert_matches_the_guest(&text, &text, None, &[]);
+            assert_matches_the_guest::<DiscordChannel>(&text, &text, Some(&text), &[]);
+            assert_matches_the_guest::<DiscordChannel>(&text, &text, None, &[]);
         }
     }
 }
@@ -147,8 +148,8 @@ fn every_thread_state_crosses_the_abi() {
     let long = "é".repeat(1000);
     let states = [None, Some(""), Some("t"), Some("🦀"), Some(long.as_str())];
     for thread_id in states {
-        assert_matches_the_guest("user", "content", thread_id, &[]);
-        assert_matches_the_guest("", "", thread_id, &[]);
+        assert_matches_the_guest::<DiscordChannel>("user", "content", thread_id, &[]);
+        assert_matches_the_guest::<DiscordChannel>("", "", thread_id, &[]);
     }
 }
 
@@ -190,6 +191,11 @@ fn generated_broadcast_arguments_cross_the_abi_unchanged() {
                 data,
             })
             .collect();
-        assert_lifted_unchanged(&user_id, &content, thread_id.as_deref(), &attachments);
+        assert_matches_the_guest::<RecordingChannel>(
+            &user_id,
+            &content,
+            thread_id.as_deref(),
+            &attachments,
+        );
     }
 }
