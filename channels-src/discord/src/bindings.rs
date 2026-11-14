@@ -25,3 +25,9 @@ export!(DiscordChannel);
 // only build for a 32-bit target; `make miri` runs them for i686.
 #[cfg(all(test, target_pointer_width = "32"))]
 mod abi_round_trip;
+#[cfg(all(test, target_pointer_width = "32"))]
+mod abi_round_trip_guest;
+#[cfg(all(test, target_pointer_width = "32"))]
+mod abi_round_trip_layout;
+#[cfg(all(test, target_pointer_width = "32"))]
+mod abi_round_trip_support;

@@ -422,7 +422,7 @@ MIRI_ABI_TARGET ?= i686-unknown-linux-gnu
 MIRI_COMPONENT_ROOTS := channels-src/discord channels-src/slack \
 	channels-src/telegram channels-src/whatsapp tools-src/github \
 	tools-src/telegram tools-src/web-search
-# The subset with ABI round trips in `src/bindings/abi_round_trip.rs`.
+# The subset with ABI round trips in the `src/bindings/abi_round_trip*` modules.
 MIRI_ABI_ROOTS := channels-src/discord tools-src/web-search
 MIRI_CARGO = MIRIFLAGS="$(MIRIFLAGS)$(1)" $(CARGO_COMMAND) +$(MIRI_TOOLCHAIN) miri test
 

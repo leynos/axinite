@@ -5015,15 +5015,19 @@ records the inventory and what Miri covers.
   ABI round-trip module declaration described in the next bullet. Nothing else
   belongs there. Write guest logic in other modules and reach the generated
   items through the `exports` and `near` re-exports.
-- A component crate may add Miri-checked ABI round trips as
-  `src/bindings/abi_round_trip.rs`, declared in `bindings.rs` as
-  `#[cfg(all(test, target_pointer_width = "32"))] mod abi_round_trip;`. The
-  module plays the host: it lowers arguments as `cabi_realloc` would, calls the
-  generated `_export_*_cabi` shim, decodes the return area, and calls
-  `__post_return_*`. It may contain `unsafe` and nothing that exports a symbol
-  or relaxes a lint. List the crate in `MIRI_ABI_ROOTS` in the `Makefile`; the
-  contract rejects a mismatch both ways. `tools-src/web-search` is the
-  tool-world example and `channels-src/discord` the channel-world one.
+- A component crate may add Miri-checked ABI round trips as modules under
+  `src/bindings/`, starting at `src/bindings/abi_round_trip.rs` and continuing
+  in `src/bindings/abi_round_trip_*.rs` when one module would exceed the length
+  limit. Each is declared in `bindings.rs` as
+  `#[cfg(all(test, target_pointer_width = "32"))] mod <name>;`, and the
+  contract requires every file under `src/bindings/` to be one of those
+  declared modules. Together they play the host: they lower arguments as
+  `cabi_realloc` would, call the generated `_export_*_cabi` shim, decode the
+  return area, and call `__post_return_*`. They may contain `unsafe` and
+  nothing that exports a symbol or relaxes a lint. List the crate in
+  `MIRI_ABI_ROOTS` in the `Makefile`; the contract rejects a mismatch both ways.
+  `tools-src/web-search` is the tool-world example and `channels-src/discord`
+  the channel-world one.
 - Prefer a safe dependency to a new unsafe block. `rustix` provides
   `openat2` and `geteuid`, `zeroize` provides zero-on-drop, and the
   `EnvContext` snapshot replaces `std::env::set_var`.

@@ -151,14 +151,14 @@ of `tools-src/telegram` and is built inside that boundary crate's closure. A
 boundary crate's `src/lib.rs` holds the guest logic and declares
 `mod bindings;` behind one reasoned `#[expect(unsafe_code, ...)]`. Its
 `src/bindings.rs` holds `use super::GuestType;`, the `wit_bindgen::generate!`
-invocation, `export!(GuestType);`, and, where present, a
-`#[cfg(all(test, target_pointer_width = "32"))] mod abi_round_trip;`
-declaration; the invocations expand to the canonical-ABI glue the host calls by
-symbol name. The crate denies, rather than forbids, `unsafe_code` in its own
-`[lints.rust]` table. The root workspace and every inventoried safe crate
-forbid unsafe code; the standalone `tests/verification/kani-smoke` crate is
-inventoried alongside them. `scripts/check_unsafe_boundaries.py` enforces the
-audited allow-list.
+invocation, `export!(GuestType);`, and, where present, one
+`#[cfg(all(test, target_pointer_width = "32"))]` declaration per test-only ABI
+round-trip module in `src/bindings/`; the invocations expand to the
+canonical-ABI glue the host calls by symbol name. The crate denies, rather than
+forbids, `unsafe_code` in its own `[lints.rust]` table. The root workspace and
+every inventoried safe crate forbid unsafe code; the standalone
+`tests/verification/kani-smoke` crate is inventoried alongside them.
+`scripts/check_unsafe_boundaries.py` enforces the audited allow-list.
 
 ## Generated and unusual paths
 

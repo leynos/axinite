@@ -475,8 +475,9 @@ order, highest first:
 
 1. The `FEATURE_FLAG_<NAME>` environment variable in the startup environment
    snapshot, captured when the process starts. `true` (in any case) enables the
-   flag; any other non-empty value disables it, and an empty or absent value
-   falls through. Changing the variable requires a restart.
+   flag; any other value, including an empty one, disables it. Only an absent
+   variable falls through to the next layer. Changing the variable requires a
+   restart.
 2. A deployment override, set without a restart through
    `PUT /api/settings/feature_flag:<name>`.
 3. Subsystem availability: a flag whose backing subsystem is not running (for
