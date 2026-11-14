@@ -95,7 +95,7 @@ jobs:
           - name: libsql-only
             flags: "--no-default-features --features libsql,test-helpers"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -155,7 +155,7 @@ jobs:
           large-packages: true
           docker-images: false
           swap-storage: false
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -364,7 +364,7 @@ jobs:
           large-packages: true
           docker-images: false
           swap-storage: false
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -572,7 +572,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: Fetch the libsql-only report
@@ -601,7 +601,7 @@ jobs:
       # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
