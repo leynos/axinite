@@ -1,15 +1,20 @@
 //! Axinite - main entry point.
 
+#![forbid(unsafe_code)]
+
 use clap::Parser;
 
 use axinite::cli::Cli;
 
 #[path = "main_cli.rs"]
 mod cli;
+
 mod startup;
 
 /// Synchronous entry point. Loads `.env` files before the Tokio runtime
-/// starts so that `std::env::set_var` is safe (no worker threads yet).
+/// starts. `dotenvy` writes the loaded values into the process environment,
+/// which is only sound while no other thread exists, so this must stay ahead
+/// of the runtime. The crate itself never calls `std::env::set_var`.
 fn main() -> anyhow::Result<()> {
     #[expect(
         clippy::disallowed_methods,

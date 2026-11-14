@@ -1,23 +1,12 @@
-// Generated WIT bindings and Telegram API DTOs intentionally include fields
-// that are deserialized for compatibility but not read by every module.
-#![allow(dead_code)]
-
-//! Telegram channel for Axinite.
+//! Telegram channel component for Axinite.
 //!
-//! This WASM component implements the channel interface for receiving
-//! Telegram updates by webhook or polling and sending replies, status updates
-//! and attachments back through the Telegram Bot API.
+//! The guest logic handles Telegram webhook updates and host-mediated API
+//! operations. Its ordinary modules contain safe channel behaviour; the
+//! `bindings` module contains generated component ABI glue and is the crate's
+//! only unsafe boundary.
 
-// The generated bindings live in a private module so the undocumented
-// wit-bindgen items are not part of the crate's documented surface.
-mod bindings {
-    //! Guest bindings that wit-bindgen generates from the channel WIT world.
-
-    wit_bindgen::generate!({
-        world: "sandboxed-channel",
-        path: "../../wit/channel.wit",
-    });
-}
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
 
 use bindings::{exports, near};
 
@@ -36,6 +25,3 @@ mod webhook;
 mod tests;
 
 struct TelegramChannel;
-
-// Export the component
-bindings::export!(TelegramChannel with_types_in bindings);

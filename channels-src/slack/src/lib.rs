@@ -16,26 +16,19 @@
 //! - Bot token is injected by host during HTTP requests
 //! - WASM never sees raw credentials
 
-// Generate bindings from the WIT file
-// The generated bindings live in a private module so the undocumented
-// wit-bindgen items are not part of the crate's documented surface.
-mod bindings {
-    //! Guest bindings that wit-bindgen generates from the channel WIT world.
+#[expect(unsafe_code, reason = "wit-bindgen component export ABI")]
+mod bindings;
 
-    wit_bindgen::generate!({
-        world: "sandboxed-channel",
-        path: "../../wit/channel.wit",
-    });
-}
+use bindings::{exports, near};
 
 use serde::{Deserialize, Serialize};
 
 // Re-export generated types
-use bindings::exports::near::agent::channel::{
+use exports::near::agent::channel::{
     AgentResponse, ChannelConfig, Guest, HttpEndpointConfig, IncomingHttpRequest,
     OutgoingHttpResponse, StatusUpdate,
 };
-use bindings::near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
+use near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
 
 /// Slack event wrapper.
 #[derive(Debug, Deserialize)]
@@ -724,9 +717,6 @@ fn json_response(status: u16, value: serde_json::Value) -> OutgoingHttpResponse 
         body,
     }
 }
-
-// Export the component
-bindings::export!(SlackChannel with_types_in bindings);
 
 #[cfg(test)]
 mod tests {
