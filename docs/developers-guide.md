@@ -1646,8 +1646,11 @@ decision now rests on the measurement below.
   `#[should_panic(expected = "…")]` or a plain assertion. That removes the
   explicit `catch_unwind` calls, not the harness's own panic handling: libtest
   still observes a `#[should_panic]` panic itself, which the Cranelift
-  component handled in mapsplice's suite (the pilot conversion). `expected`
-  matches a substring of the panic message, not the whole message.
+  component handled in mapsplice's suite (the pilot conversion). Ordinary
+  in-process libtest therefore still depends on unwinding in general; running
+  tests with the abort strategy is separate experimental support that this
+  repository does not use. `expected` matches a substring of the panic message,
+  not the whole message.
 - **Tracking.** Issue #461 revisits this in six months (April 2027), as well
   as on the triggers below.
 - **Revisit when** `wasmtime` compiles under the pinned nightly's Cranelift and
