@@ -13,7 +13,8 @@
 //! import-free [`RecordingChannel`] returns what it received instead: the
 //! shipped channel refuses every broadcast with a constant, so its result
 //! cannot show whether `user_id`, `content` or `thread_id` survived the ABI.
-//! The recording guest echoes them, and records what `on_status` lifted.
+//! The recording guest echoes them, including every attachment's filename,
+//! MIME type and bytes, and records what `on_status` lifted.
 //!
 //! Only paths that make no host import are exercised, because on a
 //! non-WebAssembly target every import is `unreachable`. The generator lays
@@ -33,33 +34,86 @@ use std::sync::Mutex;
 
 use super::exports::near::agent::channel::{
     __post_return_on_broadcast, _export_on_broadcast_cabi, _export_on_status_cabi, AgentResponse,
-    ChannelConfig, Guest, IncomingHttpRequest, OutgoingHttpResponse, StatusType, StatusUpdate,
+    Attachment, ChannelConfig, Guest, IncomingHttpRequest, OutgoingHttpResponse, StatusType,
+    StatusUpdate,
 };
 use crate::DiscordChannel;
 
 /// Lower `text` the way the host's `cabi_realloc` would.
 ///
 /// The callee takes ownership of the returned buffer, so the caller must not
-/// free it. An empty string needs no allocation: its canonical pointer is any
+/// free it.
+fn lower(text: &str) -> (*mut u8, usize) {
+    lower_bytes(text.as_bytes())
+}
+
+/// Lower `bytes` the way the host's `cabi_realloc` would.
+///
+/// The callee takes ownership of the returned buffer, so the caller must not
+/// free it. An empty list needs no allocation: its canonical pointer is any
 /// aligned, non-null address, which `NonNull::dangling` supplies without the
 /// integer-to-pointer cast that `cabi_realloc` uses for that case.
-fn lower(text: &str) -> (*mut u8, usize) {
-    if text.is_empty() {
+fn lower_bytes(bytes: &[u8]) -> (*mut u8, usize) {
+    if bytes.is_empty() {
         return (ptr::NonNull::<u8>::dangling().as_ptr(), 0);
     }
     // SAFETY: a null old pointer with old length 0 asks `cabi_realloc` for a
-    // fresh allocation of `text.len()` bytes at alignment 1, which is the
+    // fresh allocation of `bytes.len()` bytes at alignment 1, which is the
     // contract of the canonical ABI's allocation function.
-    let buffer = unsafe { wit_bindgen::rt::cabi_realloc(ptr::null_mut(), 0, 1, text.len()) };
-    // SAFETY: `buffer` is valid for `text.len()` writes and cannot overlap the
-    // borrowed `text`, which the allocator did not hand out.
-    unsafe { ptr::copy_nonoverlapping(text.as_ptr(), buffer, text.len()) };
-    (buffer, text.len())
+    let buffer = unsafe { wit_bindgen::rt::cabi_realloc(ptr::null_mut(), 0, 1, bytes.len()) };
+    // SAFETY: `buffer` is valid for `bytes.len()` writes and cannot overlap the
+    // borrowed `bytes`, which the allocator did not hand out.
+    unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len()) };
+    (buffer, bytes.len())
 }
 
-/// Lower an empty `list` of word-aligned records, which has no allocation.
-fn lower_empty_list() -> (*mut u8, usize) {
-    (ptr::NonNull::<usize>::dangling().as_ptr().cast::<u8>(), 0)
+/// One attachment a test sends, in the shape `agent-response` declares.
+struct AttachmentFixture<'a> {
+    /// Original filename.
+    filename: &'a str,
+    /// MIME type.
+    mime_type: &'a str,
+    /// Raw file bytes.
+    data: &'a [u8],
+}
+
+/// Lower a `list<attachment>` into the canonical record layout.
+///
+/// Each record is the three pairs `filename`, `mime-type` and `data`, so it is
+/// six words wide on the 32-bit target these tests build for. The callee takes
+/// ownership of the block and of every buffer it references.
+fn lower_attachments(attachments: &[AttachmentFixture<'_>]) -> (*mut u8, usize) {
+    const WORDS_PER_RECORD: usize = 6;
+    if attachments.is_empty() {
+        return (ptr::NonNull::<usize>::dangling().as_ptr().cast::<u8>(), 0);
+    }
+    let size = attachments.len() * WORDS_PER_RECORD * size_of::<usize>();
+    // SAFETY: a null old pointer with old length 0 asks `cabi_realloc` for a
+    // fresh block of `size` bytes at word alignment, which is the alignment
+    // the canonical ABI uses for a list whose records hold pointers.
+    let base =
+        unsafe { wit_bindgen::rt::cabi_realloc(ptr::null_mut(), 0, size_of::<usize>(), size) };
+    for (index, attachment) in attachments.iter().enumerate() {
+        let (filename_ptr, filename_len) = lower(attachment.filename);
+        let (mime_ptr, mime_len) = lower(attachment.mime_type);
+        let (data_ptr, data_len) = lower_bytes(attachment.data);
+        let record = base.cast::<usize>().wrapping_add(index * WORDS_PER_RECORD);
+        // The pointer words are written as pointers rather than as integers, so
+        // the provenance of each buffer survives into the record the shim
+        // reads. A pointer-to-integer cast would leave these words without
+        // provenance, which Miri rejects when the glue lifts the string.
+        // SAFETY: `record` points at the start of record `index` inside the
+        // block allocated above, and each of the six writes stays within it.
+        unsafe {
+            record.cast::<*mut u8>().write(filename_ptr);
+            record.add(1).write(filename_len);
+            record.add(2).cast::<*mut u8>().write(mime_ptr);
+            record.add(3).write(mime_len);
+            record.add(4).cast::<*mut u8>().write(data_ptr);
+            record.add(5).write(data_len);
+        }
+    }
+    (base, attachments.len())
 }
 
 /// Read the string stored at word `word` of a return area.
@@ -81,13 +135,24 @@ unsafe fn read_string(area: *const u8, word: usize) -> String {
 }
 
 /// The `agent-response` the fixed arguments of [`broadcast_as`] describe.
-fn agent_response(content: &str, thread_id: Option<&str>) -> AgentResponse {
+fn agent_response(
+    content: &str,
+    thread_id: Option<&str>,
+    attachments: &[AttachmentFixture<'_>],
+) -> AgentResponse {
     AgentResponse {
         message_id: "message-id".to_string(),
         content: content.to_string(),
         thread_id: thread_id.map(str::to_owned),
         metadata_json: "{}".to_string(),
-        attachments: Vec::new(),
+        attachments: attachments
+            .iter()
+            .map(|attachment| Attachment {
+                filename: attachment.filename.to_string(),
+                mime_type: attachment.mime_type.to_string(),
+                data: attachment.data.to_vec(),
+            })
+            .collect(),
     }
 }
 
@@ -96,6 +161,7 @@ fn broadcast_as<G: Guest>(
     user_id: &str,
     content: &str,
     thread_id: Option<&str>,
+    attachments: &[AttachmentFixture<'_>],
 ) -> Result<(), String> {
     let (user_ptr, user_len) = lower(user_id);
     let (message_ptr, message_len) = lower("message-id");
@@ -108,10 +174,10 @@ fn broadcast_as<G: Guest>(
         None => (0, ptr::null_mut(), 0),
     };
     let (metadata_ptr, metadata_len) = lower("{}");
-    let (attachments_ptr, attachments_len) = lower_empty_list();
-    // SAFETY: every pointer was allocated by `lower` or `lower_empty_list` and
-    // is handed over to the shim, which lifts it into owned values. The shim
-    // returns a live return area that is decoded before, and released by,
+    let (attachments_ptr, attachments_len) = lower_attachments(attachments);
+    // SAFETY: every pointer was allocated by `lower` or `lower_attachments`
+    // and is handed over to the shim, which lifts it into owned values. The
+    // shim returns a live return area that is decoded before, and released by,
     // `__post_return`.
     unsafe {
         let area = _export_on_broadcast_cabi::<G>(
@@ -140,8 +206,13 @@ fn broadcast_as<G: Guest>(
 }
 
 /// Call `on_broadcast` through the ABI as the shipped channel.
-fn broadcast(user_id: &str, content: &str, thread_id: Option<&str>) -> Result<(), String> {
-    broadcast_as::<DiscordChannel>(user_id, content, thread_id)
+fn broadcast(
+    user_id: &str,
+    content: &str,
+    thread_id: Option<&str>,
+    attachments: &[AttachmentFixture<'_>],
+) -> Result<(), String> {
+    broadcast_as::<DiscordChannel>(user_id, content, thread_id, attachments)
 }
 
 /// An import-free stand-in for the channel guest that echoes what it received.
@@ -189,15 +260,39 @@ impl Guest for RecordingChannel {
 /// What [`RecordingChannel`] saw in each `on_status` call, in call order.
 static STATUS_RECORDINGS: Mutex<Vec<(u8, String, String)>> = Mutex::new(Vec::new());
 
-/// The recordings added after `before`, cloned so the lock is released.
-fn status_recordings_since(before: usize) -> Vec<(u8, String, String)> {
-    let recorded = STATUS_RECORDINGS.lock().expect("status recordings");
-    recorded[before..].to_vec()
+/// The recordings whose metadata is exactly `marker`, cloned out of the lock.
+///
+/// Tests run in parallel threads, so a status test must identify its own
+/// recording instead of counting entries: the metadata string is that test's
+/// marker, and each status test uses one no other test uses.
+fn status_recordings_with(marker: &str) -> Vec<(u8, String, String)> {
+    STATUS_RECORDINGS
+        .lock()
+        .expect("status recordings")
+        .iter()
+        .filter(|(_, _, metadata)| metadata == marker)
+        .cloned()
+        .collect()
 }
 
-/// The number of `on_status` calls recorded so far.
-fn status_recording_count() -> usize {
-    STATUS_RECORDINGS.lock().expect("status recordings").len()
+/// Deliver one `on_status` call through the ABI with the given fields.
+fn record_status(index: u8, message: &str, metadata: &str) {
+    let (message_ptr, message_len) = lower(message);
+    let (metadata_ptr, metadata_len) = lower(metadata);
+    // SAFETY: both strings were allocated by `lower` and are handed over to
+    // the shim, which lifts them into owned `String`s and drops them. The
+    // discriminant is a `status-type` case chosen by the caller, widened to
+    // the `i32` the canonical ABI gives enumerated types, and `on_status`
+    // returns nothing, so there is no return area to release.
+    unsafe {
+        _export_on_status_cabi::<RecordingChannel>(
+            i32::from(index),
+            message_ptr,
+            message_len,
+            metadata_ptr,
+            metadata_len,
+        );
+    }
 }
 
 /// The WIT discriminant of each `status-type` case, in declaration order.
@@ -221,19 +316,35 @@ fn status_index(status: StatusType) -> u8 {
 ///
 /// Fields are separated by the ASCII unit separator, which cannot appear in
 /// the fixtures. An absent thread is marked `<none>` and an empty one `<some>`
-/// with no text, so the two states stay distinct.
+/// with no text, so the two states stay distinct. Each attachment contributes
+/// its filename, MIME type and data, the data hex-encoded so arbitrary bytes
+/// survive the comparison.
 fn echo_agent_response(response: &AgentResponse) -> String {
     let thread = match response.thread_id.as_deref() {
         None => "<none>".to_string(),
         Some(text) => format!("<some>{text}"),
     };
-    format!(
+    let mut encoded = format!(
         "{}\u{1f}{}\u{1f}{thread}\u{1f}{}\u{1f}{}",
         response.message_id,
         response.content,
         response.metadata_json,
         response.attachments.len()
-    )
+    );
+    for attachment in &response.attachments {
+        encoded.push_str(&format!(
+            "\u{1f}{}\u{1f}{}\u{1f}{}",
+            attachment.filename,
+            attachment.mime_type,
+            hex(&attachment.data)
+        ));
+    }
+    encoded
+}
+
+/// Encode bytes as lowercase hexadecimal, so arbitrary data can be asserted.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Require the shim to hand [`RecordingChannel`] exactly the arguments it was
@@ -243,13 +354,18 @@ fn echo_agent_response(response: &AgentResponse) -> String {
 /// `__post_return_on_broadcast` for every case, so each generated input also
 /// exercises the post-return cleanup of the lowered `user_id`, `content` and
 /// `thread_id`.
-fn assert_lifted_unchanged(user_id: &str, content: &str, thread_id: Option<&str>) {
+fn assert_lifted_unchanged(
+    user_id: &str,
+    content: &str,
+    thread_id: Option<&str>,
+    attachments: &[AttachmentFixture<'_>],
+) {
     let expected = <RecordingChannel as Guest>::on_broadcast(
         user_id.to_string(),
-        agent_response(content, thread_id),
+        agent_response(content, thread_id, attachments),
     );
     assert_eq!(
-        broadcast_as::<RecordingChannel>(user_id, content, thread_id),
+        broadcast_as::<RecordingChannel>(user_id, content, thread_id, attachments),
         expected,
         "results differ"
     );
@@ -288,6 +404,14 @@ impl Cases {
             .map(|_| ALPHABET[self.below(ALPHABET.len())])
             .collect()
     }
+
+    /// Draw `len` bytes covering every byte value, so attachment data includes
+    /// NUL and sequences that are not valid UTF-8.
+    fn bytes(&mut self, len: usize) -> Vec<u8> {
+        (0..len)
+            .map(|_| u8::try_from(self.next() & 0xff).expect("masked to a byte"))
+            .collect()
+    }
 }
 
 /// Lengths on both sides of the allocator's small and medium size classes.
@@ -295,13 +419,13 @@ const GENERATED_LENGTHS: [usize; 16] = [0, 1, 2, 3, 7, 8, 9, 15, 16, 17, 31, 32,
 
 #[test]
 fn a_broadcast_reports_that_it_is_not_implemented() {
-    let error = broadcast("user", "hello", None).expect_err("Discord cannot broadcast");
+    let error = broadcast("user", "hello", None, &[]).expect_err("Discord cannot broadcast");
     assert_eq!(error, "broadcast not yet implemented for Discord channel");
 }
 
 #[test]
 fn a_broadcast_with_a_thread_lifts_and_drops_every_field() {
-    let error = broadcast_as::<RecordingChannel>("user-é", "héllo wörld", Some("thread-1"))
+    let error = broadcast_as::<RecordingChannel>("user-é", "héllo wörld", Some("thread-1"), &[])
         .expect_err("the recording guest reports the lifted arguments as an error");
     assert_eq!(
         error,
@@ -311,7 +435,7 @@ fn a_broadcast_with_a_thread_lifts_and_drops_every_field() {
 
 #[test]
 fn a_broadcast_without_a_thread_lifts_and_drops_every_field() {
-    let error = broadcast_as::<RecordingChannel>("user", "hello", None)
+    let error = broadcast_as::<RecordingChannel>("user", "hello", None, &[])
         .expect_err("the recording guest reports the lifted arguments as an error");
     assert_eq!(
         error,
@@ -320,53 +444,64 @@ fn a_broadcast_without_a_thread_lifts_and_drops_every_field() {
 }
 
 #[test]
-fn a_status_update_lifts_and_drops_its_strings() {
-    let before = status_recording_count();
-    let (message_ptr, message_len) = lower("thinking about it");
-    let (metadata_ptr, metadata_len) = lower(r#"{"chat_id": 1}"#);
-    // SAFETY: both strings were allocated by `lower` and are handed over to the
-    // shim, which lifts them into owned `String`s and drops them. The
-    // discriminant `0` is the first `status-type` case, so it is in range, and
-    // `on_status` returns nothing, so there is no return area to release.
-    unsafe {
-        _export_on_status_cabi::<RecordingChannel>(
-            0,
-            message_ptr,
-            message_len,
-            metadata_ptr,
-            metadata_len,
-        );
-    }
+fn a_broadcast_with_attachments_lifts_and_drops_every_field() {
+    let attachments = [
+        AttachmentFixture {
+            filename: "shot-é.png",
+            mime_type: "image/png",
+            data: b"\x89PNG",
+        },
+        AttachmentFixture {
+            filename: "notes.txt",
+            mime_type: "text/plain",
+            data: b"hello",
+        },
+    ];
+    let error = broadcast_as::<RecordingChannel>("user", "hello", None, &attachments)
+        .expect_err("the recording guest reports the lifted arguments as an error");
     assert_eq!(
-        status_recordings_since(before),
-        vec![(
-            0u8,
-            "thinking about it".to_string(),
-            r#"{"chat_id": 1}"#.to_string()
-        )]
+        error,
+        concat!(
+            "user\u{1f}message-id\u{1f}hello\u{1f}<none>\u{1f}{}\u{1f}2",
+            "\u{1f}shot-é.png\u{1f}image/png\u{1f}89504e47",
+            "\u{1f}notes.txt\u{1f}text/plain\u{1f}68656c6c6f",
+        )
+    );
+}
+
+#[test]
+fn a_status_update_lifts_and_drops_its_strings() {
+    let marker = r#"{"chat_id": 1}"#;
+    record_status(0, "thinking about it", marker);
+    assert_eq!(
+        status_recordings_with(marker),
+        vec![(0u8, "thinking about it".to_string(), marker.to_string())]
     );
 }
 
 #[test]
 fn an_empty_status_message_crosses_the_abi() {
-    let before = status_recording_count();
-    let (message_ptr, message_len) = lower("");
-    let (metadata_ptr, metadata_len) = lower("");
-    // SAFETY: as for `a_status_update_lifts_and_drops_its_strings`; empty
-    // strings are dangling, aligned pointers with length zero. The
-    // discriminant `10` is the last `status-type` case, so it is in range.
-    unsafe {
-        _export_on_status_cabi::<RecordingChannel>(
-            10,
-            message_ptr,
-            message_len,
-            metadata_ptr,
-            metadata_len,
-        );
-    }
+    // The empty metadata string is this test's marker; no other status test
+    // records it.
+    record_status(10, "", "");
     assert_eq!(
-        status_recordings_since(before),
+        status_recordings_with(""),
         vec![(10u8, String::new(), String::new())]
+    );
+}
+
+#[test]
+fn status_recordings_are_selected_by_their_marker() {
+    let marker = r#"{"isolation": "target"}"#;
+    record_status(3, "target message", marker);
+    let interleaved = std::thread::spawn(|| record_status(4, "other", r#"{"isolation": "other"}"#));
+    interleaved
+        .join()
+        .expect("the interleaved recording thread");
+    assert_eq!(
+        status_recordings_with(marker),
+        vec![(3u8, "target message".to_string(), marker.to_string())],
+        "another thread's recording must not be selected"
     );
 }
 
@@ -379,13 +514,18 @@ fn an_empty_status_message_crosses_the_abi() {
 /// these cases prove ownership transfer rather than value; the recording guest
 /// in `generated_broadcast_arguments_cross_the_abi_unchanged` observes the
 /// values.
-fn assert_matches_the_guest(user_id: &str, content: &str, thread_id: Option<&str>) {
+fn assert_matches_the_guest(
+    user_id: &str,
+    content: &str,
+    thread_id: Option<&str>,
+    attachments: &[AttachmentFixture<'_>],
+) {
     let expected = <DiscordChannel as Guest>::on_broadcast(
         user_id.to_string(),
-        agent_response(content, thread_id),
+        agent_response(content, thread_id, attachments),
     );
     assert_eq!(
-        broadcast(user_id, content, thread_id),
+        broadcast(user_id, content, thread_id, attachments),
         expected,
         "results differ"
     );
@@ -398,8 +538,8 @@ fn strings_of_every_length_class_cross_the_abi() {
     for unit in units {
         for repeat in [0usize, 1, 2, 7, 8, 9, 15, 16, 17, 255, 256, 1000] {
             let text = unit.repeat(repeat);
-            assert_matches_the_guest(&text, &text, Some(&text));
-            assert_matches_the_guest(&text, &text, None);
+            assert_matches_the_guest(&text, &text, Some(&text), &[]);
+            assert_matches_the_guest(&text, &text, None, &[]);
         }
     }
 }
@@ -409,8 +549,8 @@ fn every_thread_state_crosses_the_abi() {
     let long = "é".repeat(1000);
     let states = [None, Some(""), Some("t"), Some("🦀"), Some(long.as_str())];
     for thread_id in states {
-        assert_matches_the_guest("user", "content", thread_id);
-        assert_matches_the_guest("", "", thread_id);
+        assert_matches_the_guest("user", "content", thread_id, &[]);
+        assert_matches_the_guest("", "", thread_id, &[]);
     }
 }
 
@@ -427,6 +567,31 @@ fn generated_broadcast_arguments_cross_the_abi_unchanged() {
             1 => Some(cases.string(GENERATED_LENGTHS[(round + 11) % GENERATED_LENGTHS.len()])),
             _ => Some(String::new()),
         };
-        assert_lifted_unchanged(&user_id, &content, thread_id.as_deref());
+        // Cycle the attachment count so the empty list and non-empty lists of
+        // one and two records all appear, each with a generated filename, MIME
+        // type and arbitrary bytes.
+        let count = round % 3;
+        let filenames: Vec<String> = (0..count)
+            .map(|index| cases.string(GENERATED_LENGTHS[(round + index) % GENERATED_LENGTHS.len()]))
+            .collect();
+        let mime_types: Vec<String> = (0..count)
+            .map(|_| cases.string(GENERATED_LENGTHS[(round + 7) % GENERATED_LENGTHS.len()]))
+            .collect();
+        let data_blobs: Vec<Vec<u8>> = (0..count)
+            .map(|index| {
+                cases.bytes(GENERATED_LENGTHS[(round + index + 3) % GENERATED_LENGTHS.len()])
+            })
+            .collect();
+        let attachments: Vec<AttachmentFixture<'_>> = filenames
+            .iter()
+            .zip(&mime_types)
+            .zip(&data_blobs)
+            .map(|((filename, mime_type), data)| AttachmentFixture {
+                filename,
+                mime_type,
+                data,
+            })
+            .collect();
+        assert_lifted_unchanged(&user_id, &content, thread_id.as_deref(), &attachments);
     }
 }

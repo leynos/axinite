@@ -493,11 +493,7 @@ struct PairingReplyCtx {
 /// - `Some(false)` when an owner is configured and `user_id` is not that owner.
 /// - `None` when no owner restriction is configured.
 fn owner_allows_sender(user_id: &str) -> Option<bool> {
-    let owner_id = channel_host::workspace_read(OWNER_ID_PATH).filter(|s| !s.is_empty());
-
-    let Some(owner) = owner_id else {
-        return None;
-    };
+    let owner = channel_host::workspace_read(OWNER_ID_PATH).filter(|s| !s.is_empty())?;
 
     if user_id != owner {
         channel_host::log(

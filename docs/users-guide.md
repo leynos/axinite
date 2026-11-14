@@ -473,9 +473,10 @@ panel is hidden separately by `panel_logs`.
 The UI reads its flags from `GET /api/features`. Each flag resolves in this
 order, highest first:
 
-1. The `FEATURE_FLAG_<NAME>` environment variable, read when the process first
-   resolves flags. `true` (in any case) enables the flag; any other set value
-   disables it. Set it before starting the gateway.
+1. The `FEATURE_FLAG_<NAME>` environment variable in the startup environment
+   snapshot, captured when the process starts. `true` (in any case) enables the
+   flag; any other non-empty value disables it, and an empty or absent value
+   falls through. Changing the variable requires a restart.
 2. A deployment override, set without a restart through
    `PUT /api/settings/feature_flag:<name>`.
 3. Subsystem availability: a flag whose backing subsystem is not running (for
