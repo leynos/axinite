@@ -1,5 +1,0 @@
----
-source: tests/support_unit_tests/assertions_tests.rs
-expression: panic
----
-No result for 'memory_tree' contained any of ["alpha"]: [("memory_tree", "Gamma/Delta")]
