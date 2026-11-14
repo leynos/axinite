@@ -1643,8 +1643,11 @@ decision now rests on the measurement below.
   poison a lock) is a genuine unwinding case. The former `catch_unwind`
   assertion helpers in `tests/support_unit_tests/assertions_tests.rs` and
   `src/workspace/search_cosine_tests.rs` now use
-  `#[should_panic(expected = "…")]` or a plain assertion, so they no longer
-  depend on unwinding.
+  `#[should_panic(expected = "…")]` or a plain assertion. That removes the
+  explicit `catch_unwind` calls, not the harness's own panic handling: libtest
+  still observes a `#[should_panic]` panic itself, which the Cranelift
+  component handled in mapsplice's suite (the pilot conversion). `expected`
+  matches a substring of the panic message, not the whole message.
 - **Tracking.** Issue #461 revisits this in six months (April 2027), as well
   as on the triggers below.
 - **Revisit when** `wasmtime` compiles under the pinned nightly's Cranelift and
