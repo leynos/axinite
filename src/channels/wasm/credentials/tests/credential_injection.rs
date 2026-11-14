@@ -2,7 +2,7 @@
 //!
 //! Each test drives [`inject_channel_credentials_from_context`] with an
 //! explicit environment snapshot and an optional secrets store, covering store
-//! precedence, the environment fallback, name normalisation, a channel that
+//! precedence, the environment fallback, name normalization, a channel that
 //! declares no HTTP capability, and the summaries that report unresolved
 //! declared credentials. The fixtures they share live in the parent test
 //! module.
@@ -70,10 +70,10 @@ async fn environment_fallback_skips_empty_credential() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Verify that mixed-case channel and secret names normalise to the uppercase
+/// Verify that mixed-case channel and secret names normalize to the uppercase
 /// placeholder the channel declares, so the stored secret is injected once.
 #[tokio::test]
-async fn mixed_case_names_normalise_to_one_placeholder() -> anyhow::Result<()> {
+async fn mixed_case_names_normalize_to_one_placeholder() -> anyhow::Result<()> {
     let channel = test_channel("Telegram", "Telegram_Bot_Token");
     let store = in_memory_store();
     NativeSecretsStore::create(
