@@ -94,6 +94,34 @@ fn debug_output_redacts_values_and_keys() {
     );
 }
 
+/// The documented exception: the resolved base directory is reported, and an
+/// `AXINITE_BASE_DIR` override is visible in both formatting modes, while the
+/// maps stay redacted.
+#[test]
+fn debug_output_reports_base_dir_override() {
+    const BASE_DIR: &str = "/tmp/axinite-debug-base";
+    const SENTINEL: &str = "sk-debug-sentinel-2a6f04";
+    let ctx = EnvContext::default()
+        .with_env("AXINITE_BASE_DIR", BASE_DIR)
+        .with_env("SENTINEL_ENV_VAR", SENTINEL)
+        .with_secret("SENTINEL_SECRET", SENTINEL);
+
+    let rendered = [format!("{ctx:?}"), format!("{ctx:#?}")];
+
+    for output in &rendered {
+        assert!(output.contains(BASE_DIR), "base dir expected: {output}");
+        assert!(
+            output.contains("env_var_count: 2"),
+            "env count expected: {output}"
+        );
+        assert!(!output.contains(SENTINEL), "value leaked: {output}");
+        assert!(
+            !output.contains("SENTINEL_SECRET"),
+            "secret key leaked: {output}"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn ambient_snapshot_skips_non_utf8_entries() {

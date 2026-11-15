@@ -95,8 +95,10 @@ async fn test_read_skill_file_after_install_returns_io_error_on_non_linux()
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn reads_bundle_reference_text(skill_read_fixture: anyhow::Result<SkillReadFixture>) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+async fn reads_bundle_reference_text(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let response = read_skill_file(&skill_read_fixture.skill, "references/usage.md").await;
 
     assert_eq!(
@@ -108,6 +110,7 @@ async fn reads_bundle_reference_text(skill_read_fixture: anyhow::Result<SkillRea
             content: "# Usage\n".to_string(),
         })
     );
+    Ok(())
 }
 
 #[rstest]
@@ -115,8 +118,8 @@ async fn reads_bundle_reference_text(skill_read_fixture: anyhow::Result<SkillRea
 #[cfg(target_os = "linux")]
 async fn reads_bundle_reference_text_at_max_size(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     ambient_fs::write(
         skill_read_fixture
             .skill
@@ -135,13 +138,16 @@ async fn reads_bundle_reference_text_at_max_size(
     assert_eq!(success.path, "references/max-size.md");
     assert_eq!(success.mime_type, "text/markdown");
     assert_eq!(success.content.len(), MAX_SKILL_READ_FILE_BYTES as usize);
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn reads_skill_entrypoint(skill_read_fixture: anyhow::Result<SkillReadFixture>) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+async fn reads_skill_entrypoint(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let response = read_skill_file(&skill_read_fixture.skill, "SKILL.md").await;
 
     assert_eq!(
@@ -153,6 +159,7 @@ async fn reads_skill_entrypoint(skill_read_fixture: anyhow::Result<SkillReadFixt
             content: "# Deploy docs\n".to_string(),
         })
     );
+    Ok(())
 }
 
 #[rstest]
@@ -167,11 +174,12 @@ async fn reads_skill_entrypoint(skill_read_fixture: anyhow::Result<SkillReadFixt
 async fn rejects_disallowed_paths(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
     #[case] path: &str,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let response = read_skill_file(&skill_read_fixture.skill, path).await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+    Ok(())
 }
 
 #[rstest]
@@ -179,8 +187,8 @@ async fn rejects_disallowed_paths(
 #[cfg(target_os = "linux")]
 async fn binary_asset_returns_non_inline_metadata(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let response = read_skill_file(&skill_read_fixture.skill, "assets/logo.png").await;
 
     let SkillReadFileResponse::Error(response) = response else {
@@ -195,6 +203,7 @@ async fn binary_asset_returns_non_inline_metadata(
             .mime_type,
         "image/png"
     );
+    Ok(())
 }
 
 #[rstest]
@@ -202,8 +211,8 @@ async fn binary_asset_returns_non_inline_metadata(
 #[cfg(target_os = "linux")]
 async fn oversized_text_returns_file_too_large(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     ambient_fs::write(
         skill_read_fixture
             .skill
@@ -216,6 +225,7 @@ async fn oversized_text_returns_file_too_large(
     let response = read_skill_file(&skill_read_fixture.skill, "references/large.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::FileTooLarge);
+    Ok(())
 }
 
 #[rstest]
@@ -223,18 +233,21 @@ async fn oversized_text_returns_file_too_large(
 #[cfg(target_os = "linux")]
 async fn missing_file_returns_path_not_readable(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let response = read_skill_file(&skill_read_fixture.skill, "references/missing.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
 #[rstest]
 #[tokio::test]
-async fn symlink_paths_are_rejected(skill_read_fixture: anyhow::Result<SkillReadFixture>) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+async fn symlink_paths_are_rejected(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     std::os::unix::fs::symlink(
         skill_read_fixture
             .skill
@@ -250,6 +263,7 @@ async fn symlink_paths_are_rejected(skill_read_fixture: anyhow::Result<SkillRead
     let response = read_skill_file(&skill_read_fixture.skill, "references/link.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -257,8 +271,8 @@ async fn symlink_paths_are_rejected(skill_read_fixture: anyhow::Result<SkillRead
 #[tokio::test]
 async fn intermediate_symlink_paths_are_rejected(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let external = tempfile::tempdir().expect("external tempdir should be created");
     ambient_fs::write(external.path().join("usage.md"), "# Escaped\n")
         .expect("external reference should be written");
@@ -274,6 +288,7 @@ async fn intermediate_symlink_paths_are_rejected(
     let response = read_skill_file(&skill_read_fixture.skill, "references/external/usage.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+    Ok(())
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -284,9 +299,10 @@ async fn intermediate_symlink_paths_are_rejected(
 async fn allowed_reads_fail_closed_on_non_linux(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
     #[case] path: &str,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let response = read_skill_file(&skill_read_fixture.skill, path).await;
 
     assert_error_code(response, SkillReadFileErrorCode::IoError);
+    Ok(())
 }

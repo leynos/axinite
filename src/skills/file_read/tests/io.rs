@@ -13,8 +13,8 @@ use super::{SkillReadFixture, assert_error_code, skill_read_fixture};
 #[tokio::test]
 async fn a_relative_symlink_inside_the_root_is_rejected(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     // The target stays beneath the skill root, so `RESOLVE_BENEATH` alone
     // admits it; only `RESOLVE_NO_SYMLINKS` rejects this path.
     std::os::unix::fs::symlink(
@@ -29,6 +29,7 @@ async fn a_relative_symlink_inside_the_root_is_rejected(
     let response = read_skill_file(&skill_read_fixture.skill, "references/relative.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -36,8 +37,8 @@ async fn a_relative_symlink_inside_the_root_is_rejected(
 #[tokio::test]
 async fn an_escaping_relative_symlink_is_rejected(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     let external = tempfile::tempdir().expect("external tempdir should be created");
     ambient_fs::write(external.path().join("outside.md"), "# Escaped\n")
         .expect("external file should be written");
@@ -60,6 +61,7 @@ async fn an_escaping_relative_symlink_is_rejected(
     let response = read_skill_file(&skill_read_fixture.skill, "references/escape.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -67,11 +69,12 @@ async fn an_escaping_relative_symlink_is_rejected(
 #[tokio::test]
 async fn an_interior_nul_in_the_path_is_rejected(
     skill_read_fixture: anyhow::Result<SkillReadFixture>,
-) {
-    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
+) -> anyhow::Result<()> {
+    let skill_read_fixture = skill_read_fixture?;
     // Validation admits this as a `references/` child, so the denial comes
     // from the `CString` conversion rather than from an `openat2` error.
     let response = read_skill_file(&skill_read_fixture.skill, "references/usage\0.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+    Ok(())
 }

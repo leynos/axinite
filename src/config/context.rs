@@ -20,10 +20,13 @@ const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
 /// Snapshot of environment-backed configuration inputs.
 ///
-/// The `Debug` implementation prints only the shape of this snapshot. The
-/// captured environment and the injected secret overlay hold plaintext
-/// credential values, so neither their contents nor their key names may reach
-/// a log line or panic message.
+/// The `Debug` implementation prints the resolved base directory and the size
+/// of each map. The captured environment and the injected secret overlay hold
+/// plaintext credential values, so neither their contents nor their key names
+/// may reach a log line or panic message. The base directory is a filesystem
+/// location rather than a credential, and reporting it is what makes a
+/// misdirected `AXINITE_BASE_DIR` diagnosable from the same summary, so it is
+/// the one documented exception to the redaction rule.
 #[derive(Clone)]
 pub struct EnvContext {
     env_vars: HashMap<String, String>,
@@ -33,8 +36,9 @@ pub struct EnvContext {
 
 impl std::fmt::Debug for EnvContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Counts only: `secret_values()` exists for callers that need the
-        // values, so this is a diagnostic summary, never a disclosure.
+        // Counts plus the resolved base directory: `secret_values()` exists for
+        // callers that need the values, so neither map's contents or key names
+        // can reach this summary.
         f.debug_struct("EnvContext")
             .field("base_dir", &self.base_dir)
             .field("env_var_count", &self.env_vars.len())
