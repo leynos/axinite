@@ -140,22 +140,32 @@ fn install_linux() -> Result<()> {
 
 fn start() -> Result<()> {
     if cfg!(target_os = "macos") {
-        let plist = macos_plist_path()?;
-        if !plist.exists() {
-            bail!("Service not installed. Run `axinite service install` first.");
-        }
-        run_checked(Command::new("launchctl").arg("load").arg("-w").arg(&plist))?;
-        run_checked(Command::new("launchctl").arg("start").arg(SERVICE_LABEL))?;
-        println!("Service started");
-        Ok(())
+        start_macos()
     } else if cfg!(target_os = "linux") {
-        run_checked(Command::new("systemctl").args(["--user", "daemon-reload"]))?;
-        run_checked(Command::new("systemctl").args(["--user", "start", SYSTEMD_UNIT]))?;
-        println!("Service started");
-        Ok(())
+        start_linux()
     } else {
         bail!("Service management is only supported on macOS and Linux");
     }
+}
+
+/// Load and start the launchd agent, refusing to run when it is not installed.
+fn start_macos() -> Result<()> {
+    let plist = macos_plist_path()?;
+    if !plist.exists() {
+        bail!("Service not installed. Run `axinite service install` first.");
+    }
+    run_checked(Command::new("launchctl").arg("load").arg("-w").arg(&plist))?;
+    run_checked(Command::new("launchctl").arg("start").arg(SERVICE_LABEL))?;
+    println!("Service started");
+    Ok(())
+}
+
+/// Start the systemd user unit.
+fn start_linux() -> Result<()> {
+    run_checked(Command::new("systemctl").args(["--user", "daemon-reload"]))?;
+    run_checked(Command::new("systemctl").args(["--user", "start", SYSTEMD_UNIT]))?;
+    println!("Service started");
+    Ok(())
 }
 
 // ── Stop ────────────────────────────────────────────────────────

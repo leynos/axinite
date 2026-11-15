@@ -97,11 +97,7 @@ fn test_emit_and_take_preserves_order_and_content() {
         ("user-b", "Hello from B"),
         ("user-a", "Follow-up from A"),
     ];
-    for (uid, content) in &messages_data {
-        state
-            .emit_message(EmittedMessage::new(*uid, *content))
-            .unwrap();
-    }
+    emit_all(&mut state, &messages_data);
 
     assert_eq!(state.emitted_count(), 3);
 
@@ -109,13 +105,27 @@ fn test_emit_and_take_preserves_order_and_content() {
     assert_eq!(taken.len(), 3);
 
     // Order preserved.
-    for (i, (uid, content)) in messages_data.iter().enumerate() {
-        assert_eq!(taken[i].user_id, *uid);
-        assert_eq!(taken[i].content, *content);
-    }
+    assert_preserves_order(&taken, &messages_data);
 
     // Take empties the queue.
     assert_eq!(state.emitted_count(), 0);
     let taken2 = state.take_emitted_messages();
     assert!(taken2.is_empty());
+}
+
+/// Emit every `(user_id, content)` pair into `state`.
+fn emit_all(state: &mut ChannelHostState, messages: &[(&str, &str)]) {
+    for (user_id, content) in messages {
+        state
+            .emit_message(EmittedMessage::new(*user_id, *content))
+            .unwrap();
+    }
+}
+
+/// Assert that `taken` preserves the order and content of `expected`.
+fn assert_preserves_order(taken: &[EmittedMessage], expected: &[(&str, &str)]) {
+    for (index, (user_id, content)) in expected.iter().enumerate() {
+        assert_eq!(taken[index].user_id, *user_id);
+        assert_eq!(taken[index].content, *content);
+    }
 }

@@ -157,39 +157,47 @@ pub(super) fn parse_headers_param(
 ) -> Result<Vec<(String, String)>, ToolError> {
     match headers {
         None => Ok(Vec::new()),
-        Some(serde_json::Value::Object(map)) => {
-            let mut out = Vec::with_capacity(map.len());
-            for (k, v) in map {
-                let value = v.as_str().ok_or_else(|| {
-                    ToolError::InvalidParameters(format!("header '{}' must have a string value", k))
-                })?;
-                out.push((k.clone(), value.to_string()));
-            }
-            Ok(out)
-        }
-        Some(serde_json::Value::Array(items)) => {
-            let mut out = Vec::with_capacity(items.len());
-            for (idx, item) in items.iter().enumerate() {
-                let obj = item.as_object().ok_or_else(|| {
-                    ToolError::InvalidParameters(format!(
-                        "headers[{}] must be an object with 'name' and 'value'",
-                        idx
-                    ))
-                })?;
-                let name = obj.get("name").and_then(|v| v.as_str()).ok_or_else(|| {
-                    ToolError::InvalidParameters(format!("headers[{}].name must be a string", idx))
-                })?;
-                let value = obj.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
-                    ToolError::InvalidParameters(format!("headers[{}].value must be a string", idx))
-                })?;
-                out.push((name.to_string(), value.to_string()));
-            }
-            Ok(out)
-        }
+        Some(serde_json::Value::Object(map)) => parse_header_object(map),
+        Some(serde_json::Value::Array(items)) => parse_header_array(items),
         Some(_) => Err(ToolError::InvalidParameters(
             "'headers' must be an object or an array of {name, value}".to_string(),
         )),
     }
+}
+
+/// Parse the object form of the `headers` parameter.
+fn parse_header_object(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Vec<(String, String)>, ToolError> {
+    let mut out = Vec::with_capacity(map.len());
+    for (k, v) in map {
+        let value = v.as_str().ok_or_else(|| {
+            ToolError::InvalidParameters(format!("header '{}' must have a string value", k))
+        })?;
+        out.push((k.clone(), value.to_string()));
+    }
+    Ok(out)
+}
+
+/// Parse the array form of the `headers` parameter.
+fn parse_header_array(items: &[serde_json::Value]) -> Result<Vec<(String, String)>, ToolError> {
+    let mut out = Vec::with_capacity(items.len());
+    for (idx, item) in items.iter().enumerate() {
+        let obj = item.as_object().ok_or_else(|| {
+            ToolError::InvalidParameters(format!(
+                "headers[{}] must be an object with 'name' and 'value'",
+                idx
+            ))
+        })?;
+        let name = obj.get("name").and_then(|v| v.as_str()).ok_or_else(|| {
+            ToolError::InvalidParameters(format!("headers[{}].name must be a string", idx))
+        })?;
+        let value = obj.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
+            ToolError::InvalidParameters(format!("headers[{}].value must be a string", idx))
+        })?;
+        out.push((name.to_string(), value.to_string()));
+    }
+    Ok(out)
 }
 
 /// Extract host from URL in params (for approval checks).

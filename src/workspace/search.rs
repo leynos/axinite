@@ -149,20 +149,44 @@ pub fn reciprocal_rank_fusion(
 ) -> Vec<SearchResult> {
     let k = config.rrf_k as f32;
 
-    // Track scores and metadata for each chunk
-    struct ChunkInfo {
-        document_id: Uuid,
-        document_path: String,
-        content: String,
-        score: f32,
-        fts_rank: Option<u32>,
-        vector_rank: Option<u32>,
-    }
-
     let mut chunk_scores: HashMap<Uuid, ChunkInfo> = HashMap::new();
+    record_fts_results(&mut chunk_scores, fts_results, k);
+    record_vector_results(&mut chunk_scores, vector_results, k);
 
-    // Process FTS results
-    for result in fts_results {
+    let mut results = collect_search_results(chunk_scores);
+    normalize_scores(&mut results);
+    filter_by_min_score(&mut results, config.min_score);
+
+    // Sort by score descending
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Limit results
+    results.truncate(config.limit);
+
+    results
+}
+
+/// Accumulated RRF score and metadata for one chunk.
+struct ChunkInfo {
+    document_id: Uuid,
+    document_path: String,
+    content: String,
+    score: f32,
+    fts_rank: Option<u32>,
+    vector_rank: Option<u32>,
+}
+
+/// Fold FTS results into the per-chunk score map, recording each chunk's rank.
+fn record_fts_results(
+    chunk_scores: &mut HashMap<Uuid, ChunkInfo>,
+    results: Vec<RankedResult>,
+    k: f32,
+) {
+    for result in results {
         let rrf_score = 1.0 / (k + result.rank as f32);
         chunk_scores
             .entry(result.chunk_id)
@@ -179,9 +203,16 @@ pub fn reciprocal_rank_fusion(
                 vector_rank: None,
             });
     }
+}
 
-    // Process vector results
-    for result in vector_results {
+/// Fold vector results into the per-chunk score map, recording each chunk's
+/// rank.
+fn record_vector_results(
+    chunk_scores: &mut HashMap<Uuid, ChunkInfo>,
+    results: Vec<RankedResult>,
+    k: f32,
+) {
+    for result in results {
         let rrf_score = 1.0 / (k + result.rank as f32);
         chunk_scores
             .entry(result.chunk_id)
@@ -198,9 +229,11 @@ pub fn reciprocal_rank_fusion(
                 vector_rank: Some(result.rank),
             });
     }
+}
 
-    // Convert to SearchResult and sort by score
-    let mut results: Vec<SearchResult> = chunk_scores
+/// Convert the per-chunk score map into search results.
+fn collect_search_results(chunk_scores: HashMap<Uuid, ChunkInfo>) -> Vec<SearchResult> {
+    chunk_scores
         .into_iter()
         .map(|(chunk_id, info)| SearchResult {
             document_id: info.document_id,
@@ -211,33 +244,25 @@ pub fn reciprocal_rank_fusion(
             fts_rank: info.fts_rank,
             vector_rank: info.vector_rank,
         })
-        .collect();
+        .collect()
+}
 
-    // Normalize scores to 0-1 range
+/// Scale scores so the best result scores 1.0, when any score is positive.
+fn normalize_scores(results: &mut [SearchResult]) {
     if let Some(max_score) = results.iter().map(|r| r.score).reduce(f32::max)
         && max_score > 0.0
     {
-        for result in &mut results {
+        for result in results {
             result.score /= max_score;
         }
     }
+}
 
-    // Filter by minimum score
-    if config.min_score > 0.0 {
-        results.retain(|r| r.score >= config.min_score);
+/// Drop results below the configured minimum score.
+fn filter_by_min_score(results: &mut Vec<SearchResult>, min_score: f32) {
+    if min_score > 0.0 {
+        results.retain(|r| r.score >= min_score);
     }
-
-    // Sort by score descending
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    // Limit results
-    results.truncate(config.limit);
-
-    results
 }
 
 /// Compute cosine similarity between two embedding vectors.

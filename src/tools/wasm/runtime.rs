@@ -32,9 +32,16 @@ pub fn enable_compilation_cache(
     label: &str,
     explicit_dir: Option<&Path>,
 ) -> anyhow::Result<()> {
-    // If the caller provided an explicit directory, or we're on Windows and
-    // need per-engine isolation, write a TOML config with a custom directory.
-    let custom_dir = match explicit_dir {
+    match resolve_cache_dir(label, explicit_dir) {
+        Some(dir) => install_custom_cache(wasmtime_config, &dir),
+        None => install_default_cache(wasmtime_config),
+    }
+}
+
+/// Resolve the cache directory, using the explicit directory when supplied and
+/// a per-engine directory on Windows where engines need isolated caches.
+fn resolve_cache_dir(label: &str, explicit_dir: Option<&Path>) -> Option<PathBuf> {
+    match explicit_dir {
         Some(dir) => Some(dir.to_path_buf()),
         #[cfg(windows)]
         None => {
@@ -48,26 +55,29 @@ pub fn enable_compilation_cache(
             let _ = label;
             None
         }
-    };
-
-    match custom_dir {
-        Some(dir) => {
-            ambient_fs::create_dir_all(&dir)?;
-            let toml_path = dir.join("wasmtime-cache.toml");
-            let escaped = dir
-                .to_string_lossy()
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"");
-            let toml_content = format!("[cache]\ndirectory = \"{}\"\n", escaped);
-            ambient_fs::write(&toml_path, toml_content)?;
-            wasmtime_config.cache(Some(wasmtime::Cache::from_file(Some(&toml_path))?));
-            Ok(())
-        }
-        None => {
-            wasmtime_config.cache(Some(wasmtime::Cache::from_file(None)?));
-            Ok(())
-        }
     }
+}
+
+/// Configure wasmtime to use an explicit cache directory.
+fn install_custom_cache(wasmtime_config: &mut Config, dir: &Path) -> anyhow::Result<()> {
+    ambient_fs::create_dir_all(dir)?;
+    let toml_path = dir.join("wasmtime-cache.toml");
+    let escaped = escape_toml_string(&dir.to_string_lossy());
+    let toml_content = format!("[cache]\ndirectory = \"{}\"\n", escaped);
+    ambient_fs::write(&toml_path, toml_content)?;
+    wasmtime_config.cache(Some(wasmtime::Cache::from_file(Some(&toml_path))?));
+    Ok(())
+}
+
+/// Escape a path for inclusion in a TOML basic string.
+fn escape_toml_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Configure wasmtime to use its platform default cache directory.
+fn install_default_cache(wasmtime_config: &mut Config) -> anyhow::Result<()> {
+    wasmtime_config.cache(Some(wasmtime::Cache::from_file(None)?));
+    Ok(())
 }
 
 /// Configuration for the WASM runtime.

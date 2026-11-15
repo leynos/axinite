@@ -25,6 +25,92 @@ fn resolve_default_timezone(ctx: &EnvContext, settings: &Settings) -> Result<Str
     Ok(tz)
 }
 
+/// Scheduling settings resolved from the environment and defaults.
+struct ExecutionSettings {
+    max_parallel_jobs: usize,
+    job_timeout: Duration,
+    stuck_threshold: Duration,
+    repair_check_interval: Duration,
+    max_repair_attempts: u32,
+    use_planning: bool,
+    session_idle_timeout: Duration,
+}
+
+/// Tool-policy settings resolved from the environment and defaults.
+struct ToolPolicySettings {
+    allow_local_tools: bool,
+    max_cost_per_day_cents: Option<u64>,
+    max_actions_per_hour: Option<u64>,
+    max_tool_iterations: usize,
+    auto_approve_tools: bool,
+}
+
+/// Resolve scheduling settings in their original evaluation order.
+fn resolve_execution(
+    ctx: &EnvContext,
+    settings: &Settings,
+) -> Result<ExecutionSettings, ConfigError> {
+    Ok(ExecutionSettings {
+        max_parallel_jobs: parse_optional_env_from(
+            ctx,
+            EnvKey("AGENT_MAX_PARALLEL_JOBS"),
+            settings.agent.max_parallel_jobs as usize,
+        )?,
+        job_timeout: Duration::from_secs(parse_optional_env_from(
+            ctx,
+            EnvKey("AGENT_JOB_TIMEOUT_SECS"),
+            settings.agent.job_timeout_secs,
+        )?),
+        stuck_threshold: Duration::from_secs(parse_optional_env_from(
+            ctx,
+            EnvKey("AGENT_STUCK_THRESHOLD_SECS"),
+            settings.agent.stuck_threshold_secs,
+        )?),
+        repair_check_interval: Duration::from_secs(parse_optional_env_from(
+            ctx,
+            EnvKey("SELF_REPAIR_CHECK_INTERVAL_SECS"),
+            settings.agent.repair_check_interval_secs,
+        )?),
+        max_repair_attempts: parse_optional_env_from(
+            ctx,
+            EnvKey("SELF_REPAIR_MAX_ATTEMPTS"),
+            settings.agent.max_repair_attempts,
+        )?,
+        use_planning: parse_bool_env_from(
+            ctx,
+            EnvKey("AGENT_USE_PLANNING"),
+            settings.agent.use_planning,
+        )?,
+        session_idle_timeout: Duration::from_secs(parse_optional_env_from(
+            ctx,
+            EnvKey("SESSION_IDLE_TIMEOUT_SECS"),
+            settings.agent.session_idle_timeout_secs,
+        )?),
+    })
+}
+
+/// Resolve tool-policy settings in their original evaluation order.
+fn resolve_tool_policy(
+    ctx: &EnvContext,
+    settings: &Settings,
+) -> Result<ToolPolicySettings, ConfigError> {
+    Ok(ToolPolicySettings {
+        allow_local_tools: parse_bool_env_from(ctx, EnvKey("ALLOW_LOCAL_TOOLS"), false)?,
+        max_cost_per_day_cents: parse_option_env_from(ctx, EnvKey("MAX_COST_PER_DAY_CENTS"))?,
+        max_actions_per_hour: parse_option_env_from(ctx, EnvKey("MAX_ACTIONS_PER_HOUR"))?,
+        max_tool_iterations: parse_optional_env_from(
+            ctx,
+            EnvKey("AGENT_MAX_TOOL_ITERATIONS"),
+            settings.agent.max_tool_iterations,
+        )?,
+        auto_approve_tools: parse_bool_env_from(
+            ctx,
+            EnvKey("AGENT_AUTO_APPROVE_TOOLS"),
+            settings.agent.auto_approve_tools,
+        )?,
+    })
+}
+
 /// Agent behaviour configuration.
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -91,62 +177,32 @@ impl AgentConfig {
     }
 
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
+        let name = parse_optional_env_from(ctx, EnvKey("AGENT_NAME"), settings.agent.name.clone())?;
+        let execution = resolve_execution(ctx, settings)?;
+        let tool_policy = resolve_tool_policy(ctx, settings)?;
+        let default_timezone = resolve_default_timezone(ctx, settings)?;
+        let max_tokens_per_job = parse_optional_env_from(
+            ctx,
+            EnvKey("AGENT_MAX_TOKENS_PER_JOB"),
+            settings.agent.max_tokens_per_job,
+        )?;
+
         Ok(Self {
-            name: parse_optional_env_from(ctx, EnvKey("AGENT_NAME"), settings.agent.name.clone())?,
-            max_parallel_jobs: parse_optional_env_from(
-                ctx,
-                EnvKey("AGENT_MAX_PARALLEL_JOBS"),
-                settings.agent.max_parallel_jobs as usize,
-            )?,
-            job_timeout: Duration::from_secs(parse_optional_env_from(
-                ctx,
-                EnvKey("AGENT_JOB_TIMEOUT_SECS"),
-                settings.agent.job_timeout_secs,
-            )?),
-            stuck_threshold: Duration::from_secs(parse_optional_env_from(
-                ctx,
-                EnvKey("AGENT_STUCK_THRESHOLD_SECS"),
-                settings.agent.stuck_threshold_secs,
-            )?),
-            repair_check_interval: Duration::from_secs(parse_optional_env_from(
-                ctx,
-                EnvKey("SELF_REPAIR_CHECK_INTERVAL_SECS"),
-                settings.agent.repair_check_interval_secs,
-            )?),
-            max_repair_attempts: parse_optional_env_from(
-                ctx,
-                EnvKey("SELF_REPAIR_MAX_ATTEMPTS"),
-                settings.agent.max_repair_attempts,
-            )?,
-            use_planning: parse_bool_env_from(
-                ctx,
-                EnvKey("AGENT_USE_PLANNING"),
-                settings.agent.use_planning,
-            )?,
-            session_idle_timeout: Duration::from_secs(parse_optional_env_from(
-                ctx,
-                EnvKey("SESSION_IDLE_TIMEOUT_SECS"),
-                settings.agent.session_idle_timeout_secs,
-            )?),
-            allow_local_tools: parse_bool_env_from(ctx, EnvKey("ALLOW_LOCAL_TOOLS"), false)?,
-            max_cost_per_day_cents: parse_option_env_from(ctx, EnvKey("MAX_COST_PER_DAY_CENTS"))?,
-            max_actions_per_hour: parse_option_env_from(ctx, EnvKey("MAX_ACTIONS_PER_HOUR"))?,
-            max_tool_iterations: parse_optional_env_from(
-                ctx,
-                EnvKey("AGENT_MAX_TOOL_ITERATIONS"),
-                settings.agent.max_tool_iterations,
-            )?,
-            auto_approve_tools: parse_bool_env_from(
-                ctx,
-                EnvKey("AGENT_AUTO_APPROVE_TOOLS"),
-                settings.agent.auto_approve_tools,
-            )?,
-            default_timezone: resolve_default_timezone(ctx, settings)?,
-            max_tokens_per_job: parse_optional_env_from(
-                ctx,
-                EnvKey("AGENT_MAX_TOKENS_PER_JOB"),
-                settings.agent.max_tokens_per_job,
-            )?,
+            name,
+            max_parallel_jobs: execution.max_parallel_jobs,
+            job_timeout: execution.job_timeout,
+            stuck_threshold: execution.stuck_threshold,
+            repair_check_interval: execution.repair_check_interval,
+            max_repair_attempts: execution.max_repair_attempts,
+            use_planning: execution.use_planning,
+            session_idle_timeout: execution.session_idle_timeout,
+            allow_local_tools: tool_policy.allow_local_tools,
+            max_cost_per_day_cents: tool_policy.max_cost_per_day_cents,
+            max_actions_per_hour: tool_policy.max_actions_per_hour,
+            max_tool_iterations: tool_policy.max_tool_iterations,
+            auto_approve_tools: tool_policy.auto_approve_tools,
+            default_timezone,
+            max_tokens_per_job,
         })
     }
 }

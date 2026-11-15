@@ -119,67 +119,72 @@ impl SignalChannel {
         status: &StatusUpdate,
         metadata: &'m serde_json::Value,
     ) -> Option<(&'m str, String)> {
+        let target = self.status_target(status, metadata)?;
+        let text = Self::status_text(status)?;
+        Some((target, text))
+    }
+
+    /// Resolve the reply target for a status update, when it should be forwarded.
+    fn status_target<'m>(
+        &self,
+        status: &StatusUpdate,
+        metadata: &'m serde_json::Value,
+    ) -> Option<&'m str> {
+        // Tool lifecycle previews are debug mode only.
+        match status {
+            StatusUpdate::ApprovalNeeded { .. }
+            | StatusUpdate::JobStarted { .. }
+            | StatusUpdate::AuthRequired { .. }
+            | StatusUpdate::AuthCompleted { .. } => Self::signal_target(metadata),
+            StatusUpdate::Status(msg) => {
+                Self::signal_target(metadata).filter(|_| should_forward_status(msg))
+            }
+            StatusUpdate::ToolResult { .. }
+            | StatusUpdate::ToolStarted { .. }
+            | StatusUpdate::ToolCompleted { .. } => self.debug_signal_target(metadata),
+            _ => None,
+        }
+    }
+
+    /// Render the display text for a status update, when Signal surfaces it.
+    fn status_text(status: &StatusUpdate) -> Option<String> {
         match status {
             StatusUpdate::ApprovalNeeded {
                 request_id,
                 tool_name,
-                description: _,
                 parameters,
-            } => Some((
-                Self::signal_target(metadata)?,
-                format_approval_prompt(request_id, tool_name, parameters),
-            )),
-
-            StatusUpdate::Status(msg) => Some((
-                Self::signal_target(metadata).filter(|_| should_forward_status(msg))?,
-                msg.clone(),
-            )),
-
-            // Tool lifecycle previews are debug mode only.
-            StatusUpdate::ToolResult { name, preview } => Some((
-                self.debug_signal_target(metadata)?,
-                format_tool_result(name, preview),
-            )),
-            StatusUpdate::ToolStarted { name } => Some((
-                self.debug_signal_target(metadata)?,
-                format!("\u{25CB} Running tool: {}", name),
-            )),
-            StatusUpdate::ToolCompleted { name, success, .. } => Some((
-                self.debug_signal_target(metadata)?,
-                format_tool_completed(name, *success),
-            )),
-
+                ..
+            } => Some(format_approval_prompt(request_id, tool_name, parameters)),
+            StatusUpdate::Status(msg) => Some(msg.clone()),
+            StatusUpdate::ToolResult { name, preview } => Some(format_tool_result(name, preview)),
+            StatusUpdate::ToolStarted { name } => Some(format!("\u{25CB} Running tool: {}", name)),
+            StatusUpdate::ToolCompleted { name, success, .. } => {
+                Some(format_tool_completed(name, *success))
+            }
             StatusUpdate::JobStarted {
                 job_id,
                 title,
                 browse_url,
-            } => Some((
-                Self::signal_target(metadata)?,
-                format!(
-                    "\u{1F680} Job started: {}\nID: {}\nURL: {}",
-                    title, job_id, browse_url
-                ),
+            } => Some(format!(
+                "\u{1F680} Job started: {}\nID: {}\nURL: {}",
+                title, job_id, browse_url
             )),
-
             StatusUpdate::AuthRequired {
                 extension_name,
                 instructions,
                 auth_url,
                 setup_url,
-            } => Some((
-                Self::signal_target(metadata)?,
-                format_auth_required(extension_name, instructions, auth_url, setup_url),
+            } => Some(format_auth_required(
+                extension_name,
+                instructions,
+                auth_url,
+                setup_url,
             )),
-
             StatusUpdate::AuthCompleted {
                 extension_name,
                 success,
-                message: msg,
-            } => Some((
-                Self::signal_target(metadata)?,
-                format_auth_completed(extension_name, *success, msg),
-            )),
-
+                message,
+            } => Some(format_auth_completed(extension_name, *success, message)),
             _ => None,
         }
     }

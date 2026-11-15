@@ -303,27 +303,32 @@ pub fn validate_tool_schema(
 }
 
 fn validate_tool_schema_at(schema: &serde_json::Value, path: &SchemaPath) -> Vec<String> {
-    let mut errors = Vec::new();
-
     if !is_object_type(schema) {
-        match schema.get("type").and_then(|t| t.as_str()) {
-            Some(other) => {
-                errors.push(format!("{path}: expected type \"object\", got \"{other}\""));
-            }
-            None => {
-                errors.push(format!("{path}: missing \"type\": \"object\""));
-            }
-        }
-        return errors;
+        return vec![type_error_message(schema, path)];
     }
 
-    let properties = match properties_obj(schema) {
-        Some(p) => p,
-        None => {
-            errors.push(format!("{path}: missing or non-object \"properties\""));
-            return errors;
-        }
+    let Some(properties) = properties_obj(schema) else {
+        return vec![format!("{path}: missing or non-object \"properties\"")];
     };
+
+    validate_object_schema(schema, properties, path)
+}
+
+/// Describe why a schema is not an object, preserving the historical messages.
+fn type_error_message(schema: &serde_json::Value, path: &SchemaPath) -> String {
+    match schema.get("type").and_then(|t| t.as_str()) {
+        Some(other) => format!("{path}: expected type \"object\", got \"{other}\""),
+        None => format!("{path}: missing \"type\": \"object\""),
+    }
+}
+
+/// Validate an object schema's required keys and nested properties.
+fn validate_object_schema(
+    schema: &serde_json::Value,
+    properties: &Map<String, Value>,
+    path: &SchemaPath,
+) -> Vec<String> {
+    let mut errors = Vec::new();
 
     if let Some(required) = required_array(schema) {
         validate_required_array(required, properties, path, &mut errors);

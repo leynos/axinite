@@ -110,9 +110,14 @@ fn score_skill(skill: &LoadedSkill, message_lower: &str, message_original: &str)
         return 0;
     }
 
-    let mut score: u32 = 0;
+    score_keywords(skill, message_lower)
+        + score_tags(skill, message_lower)
+        + score_patterns(skill, message_original)
+}
 
-    // Keyword scoring with cap to prevent gaming via keyword stuffing
+/// Score exact and substring keyword matches, capped to prevent keyword
+/// stuffing from dominating the total.
+fn score_keywords(skill: &LoadedSkill, message_lower: &str) -> u32 {
     let mut keyword_score: u32 = 0;
     for kw_lower in &skill.lowercased_keywords {
         // Exact word match (surrounded by word boundaries)
@@ -126,27 +131,29 @@ fn score_skill(skill: &LoadedSkill, message_lower: &str, message_original: &str)
             keyword_score += 5;
         }
     }
-    score += keyword_score.min(MAX_KEYWORD_SCORE);
+    keyword_score.min(MAX_KEYWORD_SCORE)
+}
 
-    // Tag scoring from activation.tags
+/// Score tag matches, capped to keep tags from dominating the total.
+fn score_tags(skill: &LoadedSkill, message_lower: &str) -> u32 {
     let mut tag_score: u32 = 0;
     for tag_lower in &skill.lowercased_tags {
         if message_lower.contains(tag_lower.as_str()) {
             tag_score += 3;
         }
     }
-    score += tag_score.min(MAX_TAG_SCORE);
+    tag_score.min(MAX_TAG_SCORE)
+}
 
-    // Regex pattern scoring using pre-compiled patterns (cached at load time), with cap
+/// Score regex pattern matches, capped so patterns cannot dominate the total.
+fn score_patterns(skill: &LoadedSkill, message_original: &str) -> u32 {
     let mut regex_score: u32 = 0;
     for re in &skill.compiled_patterns {
         if re.is_match(message_original) {
             regex_score += 20;
         }
     }
-    score += regex_score.min(MAX_REGEX_SCORE);
-
-    score
+    regex_score.min(MAX_REGEX_SCORE)
 }
 
 #[cfg(test)]

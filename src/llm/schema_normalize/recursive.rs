@@ -38,6 +38,15 @@ fn walk_combinators(schema: &mut JsonValue) {
         None => return,
     };
 
+    walk_combinator_arrays(obj);
+    walk_items(obj);
+    walk_single_schemas(obj);
+    walk_additional_properties(obj);
+}
+
+/// Normalize every variant in the `anyOf`, `oneOf`, and `allOf` combinator
+/// arrays.
+fn walk_combinator_arrays(obj: &mut Map<String, JsonValue>) {
     for key in &["anyOf", "oneOf", "allOf"] {
         if let Some(JsonValue::Array(variants)) = obj.get_mut(*key) {
             for variant in variants.iter_mut() {
@@ -45,17 +54,26 @@ fn walk_combinators(schema: &mut JsonValue) {
             }
         }
     }
+}
 
+/// Normalize the schema in the `items` keyword, when present.
+fn walk_items(obj: &mut Map<String, JsonValue>) {
     if let Some(items) = obj.get_mut("items") {
         normalize_schema_recursive(items);
     }
+}
 
+/// Normalize the subschemas in the `not`, `if`, `then`, and `else` keywords.
+fn walk_single_schemas(obj: &mut Map<String, JsonValue>) {
     for key in &["not", "if", "then", "else"] {
         if let Some(sub) = obj.get_mut(*key) {
             normalize_schema_recursive(sub);
         }
     }
+}
 
+/// Normalize an object-valued `additionalProperties` subschema.
+fn walk_additional_properties(obj: &mut Map<String, JsonValue>) {
     if let Some(additional) = obj.get_mut("additionalProperties")
         && additional.is_object()
     {

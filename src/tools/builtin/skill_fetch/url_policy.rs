@@ -85,17 +85,22 @@ pub(super) fn validate_fetch_url(url: &HttpsUrl) -> Result<reqwest::Url, ToolErr
         .to_string();
     match parse_host(&parsed)? {
         Host::Ip(ip) => validate_fetch_ip(&ip, &display_host)?,
-        Host::Domain(domain) => {
-            if is_blocked_hostname(&domain) {
-                return Err(ToolError::InvalidParameters(format!(
-                    "URL points to an internal hostname: {}",
-                    display_host
-                )));
-            }
-        }
+        Host::Domain(domain) => ensure_domain_allowed(&domain, &display_host)?,
     }
 
     Ok(parsed)
+}
+
+/// Reject a domain known to resolve to an internal or metadata endpoint.
+fn ensure_domain_allowed(domain: &NormalizedDomain, display_host: &str) -> Result<(), ToolError> {
+    if is_blocked_hostname(domain) {
+        return Err(ToolError::InvalidParameters(format!(
+            "URL points to an internal hostname: {}",
+            display_host
+        )));
+    }
+
+    Ok(())
 }
 
 fn parse_host(url: &reqwest::Url) -> Result<Host, ToolError> {

@@ -293,25 +293,22 @@ impl ProviderRegistry {
     /// Returns all providers that have a `setup` hint, in registry order.
     /// NearAI is not in the registry (handled specially) so it won't appear here.
     pub fn selectable(&self) -> Vec<&ProviderDefinition> {
-        // Deduplicate: only keep the last definition for each ID
-        let mut seen = HashMap::new();
-        for def in &self.providers {
-            seen.insert(def.id.as_str(), def);
-        }
+        // Deduplicate: only keep the last definition for each ID.
+        let seen: HashMap<&str, &ProviderDefinition> = self
+            .providers
+            .iter()
+            .map(|def| (def.id.as_str(), def))
+            .collect();
         // Preserve order of first appearance, but use the last (overridden)
         // definition for each ID. A user override that adds `setup` to a
         // provider that previously lacked it will be included correctly.
-        let mut result = Vec::new();
         let mut emitted = std::collections::HashSet::new();
-        for def in &self.providers {
-            if emitted.insert(def.id.as_str()) {
-                let final_def = seen[def.id.as_str()];
-                if final_def.setup.is_some() {
-                    result.push(final_def);
-                }
-            }
-        }
-        result
+        self.providers
+            .iter()
+            .filter(|def| emitted.insert(def.id.as_str()))
+            .map(|def| seen[def.id.as_str()])
+            .filter(|def| def.setup.is_some())
+            .collect()
     }
 
     /// Whether the backend string names the NearAI provider.

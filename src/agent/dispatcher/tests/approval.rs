@@ -26,29 +26,36 @@ fn test_auto_approved_tool_is_respected() {
 fn test_shell_destructive_command_requires_explicit_approval() {
     // requires_explicit_approval() detects destructive commands that
     // should return ApprovalRequirement::Always from ShellTool.
-    use crate::tools::builtin::shell::requires_explicit_approval;
-
     let destructive_cmds = [
         "rm -rf /tmp/test",
         "git push --force origin main",
         "git reset --hard HEAD~5",
     ];
-    for cmd in &destructive_cmds {
-        assert!(
-            requires_explicit_approval(cmd),
-            "'{}' should require explicit approval",
-            cmd
-        );
-    }
+    assert_eq!(
+        first_approval_mismatch(&destructive_cmds, true),
+        None,
+        "every destructive command should require explicit approval"
+    );
 
     let safe_cmds = ["git status", "cargo build", "ls -la"];
-    for cmd in &safe_cmds {
-        assert!(
-            !requires_explicit_approval(cmd),
-            "'{}' should not require explicit approval",
-            cmd
-        );
+    assert_eq!(
+        first_approval_mismatch(&safe_cmds, false),
+        None,
+        "no safe command should require explicit approval"
+    );
+}
+
+/// Return the first command whose explicit-approval verdict differs from
+/// `expected`.
+fn first_approval_mismatch<'a>(commands: &[&'a str], expected: bool) -> Option<&'a str> {
+    use crate::tools::builtin::shell::requires_explicit_approval;
+
+    for command in commands {
+        if requires_explicit_approval(command) != expected {
+            return Some(*command);
+        }
     }
+    None
 }
 
 #[test]

@@ -15,6 +15,13 @@ use crate::settings::Settings;
 #[path = "llm/provider_resolution.rs"]
 mod provider_resolution;
 
+/// Backend-dependent parts of the LLM configuration.
+struct BackendSpecifics {
+    provider: Option<RegistryProviderConfig>,
+    bedrock: Option<BedrockConfig>,
+    request_timeout_secs: u64,
+}
+
 impl LlmConfig {
     /// Create a test-friendly config without reading env vars.
     #[cfg(feature = "libsql")]
@@ -52,13 +59,47 @@ impl LlmConfig {
         let (backend_lower, is_nearai, is_bedrock) = Self::resolve_backend_name(ctx, settings)?;
         let session = Self::resolve_session_config(ctx)?;
         let nearai = Self::resolve_nearai_config(ctx, settings)?;
+        let specifics = Self::resolve_backend_specifics(
+            ctx,
+            settings,
+            &registry,
+            &backend_lower,
+            is_nearai,
+            is_bedrock,
+        )?;
+
+        Ok(Self {
+            backend: Self::backend_tag(
+                is_nearai,
+                is_bedrock,
+                specifics.provider.as_ref(),
+                backend_lower,
+            ),
+            session,
+            nearai,
+            provider: specifics.provider,
+            bedrock: specifics.bedrock,
+            request_timeout_secs: specifics.request_timeout_secs,
+        })
+    }
+
+    /// Resolve the provider, Bedrock, and request-timeout settings that depend
+    /// on the selected backend.
+    fn resolve_backend_specifics(
+        ctx: &EnvContext,
+        settings: &Settings,
+        registry: &ProviderRegistry,
+        backend_lower: &str,
+        is_nearai: bool,
+        is_bedrock: bool,
+    ) -> Result<BackendSpecifics, ConfigError> {
         let provider = if is_nearai || is_bedrock {
             None
         } else {
             Some(Self::resolve_registry_provider(
                 ctx,
-                &backend_lower,
-                &registry,
+                backend_lower,
+                registry,
                 settings,
             )?)
         };
@@ -66,10 +107,7 @@ impl LlmConfig {
         let request_timeout_secs =
             parse_optional_env_from(ctx, EnvKey("LLM_REQUEST_TIMEOUT_SECS"), 120)?;
 
-        Ok(Self {
-            backend: Self::backend_tag(is_nearai, is_bedrock, provider.as_ref(), backend_lower),
-            session,
-            nearai,
+        Ok(BackendSpecifics {
             provider,
             bedrock,
             request_timeout_secs,

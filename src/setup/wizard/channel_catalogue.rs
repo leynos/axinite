@@ -108,25 +108,33 @@ pub(super) fn build_channel_options(
 ) -> Vec<String> {
     let mut names: Vec<String> = discovered.iter().map(|(name, _)| name.clone()).collect();
 
-    // Add bundled channels
+    push_bundled_channel_names(&mut names);
+    push_registry_channel_names(&mut names);
+
+    names.sort();
+    names
+}
+
+/// Append every bundled channel name not already in `names`.
+fn push_bundled_channel_names(names: &mut Vec<String>) {
     for bundled in available_channel_names().iter().copied() {
         if !names.iter().any(|name| name == bundled) {
             names.push(bundled.to_string());
         }
     }
+}
 
-    // Add registry channels
-    if let Some(catalogue) = load_registry_catalogue() {
-        for manifest in catalogue.list(Some(crate::registry::manifest::ManifestKind::Channel), None)
-        {
-            if !names.iter().any(|n| n == &manifest.name) {
-                names.push(manifest.name.clone());
-            }
+/// Append every registry channel name not already in `names`.
+fn push_registry_channel_names(names: &mut Vec<String>) {
+    let Some(catalogue) = load_registry_catalogue() else {
+        return;
+    };
+
+    for manifest in catalogue.list(Some(crate::registry::manifest::ManifestKind::Channel), None) {
+        if !names.iter().any(|n| n == &manifest.name) {
+            names.push(manifest.name.clone());
         }
     }
-
-    names.sort();
-    names
 }
 
 /// Try to load the registry catalogue. Falls back to embedded manifests when

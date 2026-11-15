@@ -36,58 +36,98 @@ pub(super) fn print_capabilities_summary(caps: &CapabilitiesFile) {
 
 /// Print detailed capabilities.
 pub(super) fn print_capabilities_detail(caps: &CapabilitiesFile) {
-    if let Some(ref http) = caps.http {
-        println!("  HTTP:");
-        for endpoint in &http.allowlist {
-            let methods = if endpoint.methods.is_empty() {
-                "*".to_string()
-            } else {
-                endpoint.methods.join(", ")
-            };
-            let path = endpoint.path_prefix.as_deref().unwrap_or("/*");
-            println!("    {} {} {}", methods, endpoint.host, path);
-        }
+    print_http_allowlist(caps);
+    print_http_credentials(caps);
+    print_http_rate_limit(caps);
+    print_secret_names(caps);
+    print_tool_aliases(caps);
+    print_workspace_prefixes(caps);
+}
 
-        if !http.credentials.is_empty() {
-            println!("  Credentials:");
-            for (key, cred) in &http.credentials {
-                println!("    {}: {} -> {:?}", key, cred.secret_name, cred.location);
-            }
-        }
-
-        if let Some(ref rate) = http.rate_limit {
-            println!(
-                "  Rate limit: {}/min, {}/hour",
-                rate.requests_per_minute, rate.requests_per_hour
-            );
-        }
+/// Print the HTTP allowlist entries declared by `caps`.
+fn print_http_allowlist(caps: &CapabilitiesFile) {
+    let Some(ref http) = caps.http else {
+        return;
+    };
+    println!("  HTTP:");
+    for endpoint in &http.allowlist {
+        let methods = if endpoint.methods.is_empty() {
+            "*".to_string()
+        } else {
+            endpoint.methods.join(", ")
+        };
+        let path = endpoint.path_prefix.as_deref().unwrap_or("/*");
+        println!("    {} {} {}", methods, endpoint.host, path);
     }
+}
 
-    if let Some(ref secrets) = caps.secrets
-        && !secrets.allowed_names.is_empty()
-    {
-        println!("  Secrets (existence check only):");
-        for name in &secrets.allowed_names {
-            println!("    {}", name);
-        }
+/// Print the HTTP credential mappings declared by `caps`.
+fn print_http_credentials(caps: &CapabilitiesFile) {
+    let Some(ref http) = caps.http else {
+        return;
+    };
+    if http.credentials.is_empty() {
+        return;
     }
-
-    if let Some(ref tool_invoke) = caps.tool_invoke
-        && !tool_invoke.aliases.is_empty()
-    {
-        println!("  Tool aliases:");
-        for (alias, real_name) in &tool_invoke.aliases {
-            println!("    {} -> {}", alias, real_name);
-        }
+    println!("  Credentials:");
+    for (key, cred) in &http.credentials {
+        println!("    {}: {} -> {:?}", key, cred.secret_name, cred.location);
     }
+}
 
-    if let Some(ref workspace) = caps.workspace
-        && !workspace.allowed_prefixes.is_empty()
-    {
-        println!("  Workspace read prefixes:");
-        for prefix in &workspace.allowed_prefixes {
-            println!("    {}", prefix);
-        }
+/// Print the HTTP rate limit declared by `caps`, when one is configured.
+fn print_http_rate_limit(caps: &CapabilitiesFile) {
+    let Some(ref http) = caps.http else {
+        return;
+    };
+    let Some(ref rate) = http.rate_limit else {
+        return;
+    };
+    println!(
+        "  Rate limit: {}/min, {}/hour",
+        rate.requests_per_minute, rate.requests_per_hour
+    );
+}
+
+/// Print the secret names `caps` may check for.
+fn print_secret_names(caps: &CapabilitiesFile) {
+    let Some(ref secrets) = caps.secrets else {
+        return;
+    };
+    if secrets.allowed_names.is_empty() {
+        return;
+    }
+    println!("  Secrets (existence check only):");
+    for name in &secrets.allowed_names {
+        println!("    {}", name);
+    }
+}
+
+/// Print the tool aliases declared by `caps`.
+fn print_tool_aliases(caps: &CapabilitiesFile) {
+    let Some(ref tool_invoke) = caps.tool_invoke else {
+        return;
+    };
+    if tool_invoke.aliases.is_empty() {
+        return;
+    }
+    println!("  Tool aliases:");
+    for (alias, real_name) in &tool_invoke.aliases {
+        println!("    {} -> {}", alias, real_name);
+    }
+}
+
+/// Print the workspace read prefixes declared by `caps`.
+fn print_workspace_prefixes(caps: &CapabilitiesFile) {
+    let Some(ref workspace) = caps.workspace else {
+        return;
+    };
+    if workspace.allowed_prefixes.is_empty() {
+        return;
+    }
+    println!("  Workspace read prefixes:");
+    for prefix in &workspace.allowed_prefixes {
+        println!("    {}", prefix);
     }
 }
 

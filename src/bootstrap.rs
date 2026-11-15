@@ -240,29 +240,40 @@ pub fn upsert_bootstrap_vars_to(
         Err(e) => return Err(e),
     };
 
-    let mut result = String::new();
-    for line in existing.lines() {
-        // Extract key from lines matching `KEY=...`
-        let is_overwritten = line
-            .split_once('=')
-            .map(|(k, _)| keys_being_written.contains(k.trim()))
-            .unwrap_or(false);
-
-        if !is_overwritten {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-
-    // Append all new key=value pairs
-    for (key, value) in vars {
-        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-        result.push_str(&format!("{}=\"{}\"\n", key, escaped));
-    }
+    let mut result = retained_env_lines(&existing, &keys_being_written);
+    result.push_str(&rendered_env_assignments(vars));
 
     ambient_fs::write(path, &result)?;
     restrict_file_permissions(path)?;
     Ok(())
+}
+
+/// Keep the lines of `existing` whose key is not in `overwritten`.
+fn retained_env_lines(existing: &str, overwritten: &std::collections::HashSet<&str>) -> String {
+    let mut retained = String::new();
+    for line in existing.lines() {
+        // Extract key from lines matching `KEY=...`
+        let is_overwritten = line
+            .split_once('=')
+            .map(|(key, _)| overwritten.contains(key.trim()))
+            .unwrap_or(false);
+
+        if !is_overwritten {
+            retained.push_str(line);
+            retained.push('\n');
+        }
+    }
+    retained
+}
+
+/// Render `vars` as escaped `KEY="value"` lines for the bootstrap `.env`.
+fn rendered_env_assignments(vars: &[(&str, &str)]) -> String {
+    let mut rendered = String::new();
+    for (key, value) in vars {
+        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+        rendered.push_str(&format!("{}=\"{}\"\n", key, escaped));
+    }
+    rendered
 }
 
 /// Update or add a single variable in `~/.axinite/.env`, preserving existing content.
