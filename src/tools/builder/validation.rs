@@ -163,66 +163,65 @@ impl WasmValidator {
 
     /// Validate WASM bytes.
     pub fn validate_bytes(&self, bytes: &[u8]) -> Result<ValidationResult, ValidationError> {
-        let mut errors = Vec::new();
+        let mut parsed = ParsedSections::default();
         let mut warnings = Vec::new();
-        let mut exports = Vec::new();
-        let mut imports = Vec::new();
         let size_bytes = bytes.len() as u64;
 
         // Check size
         if size_bytes > self.max_size {
-            errors.push(ValidationError::TooLarge {
+            parsed.errors.push(ValidationError::TooLarge {
                 size: size_bytes,
                 max: self.max_size,
             });
         }
 
-        collect_sections(
-            bytes,
-            &self.allowed_import_modules,
-            &mut errors,
-            &mut exports,
-            &mut imports,
-        );
+        collect_sections(bytes, &self.allowed_import_modules, &mut parsed);
 
-        push_missing_exports(&self.required_exports, &exports, &mut errors);
+        push_missing_exports(&self.required_exports, &parsed.exports, &mut parsed.errors);
 
-        collect_warnings(&exports, &imports, &mut warnings);
+        collect_warnings(&parsed.exports, &parsed.imports, &mut warnings);
 
         Ok(ValidationResult {
-            is_valid: errors.is_empty(),
-            errors,
+            is_valid: parsed.errors.is_empty(),
+            errors: parsed.errors,
             warnings,
-            exports,
-            imports,
+            exports: parsed.exports,
+            imports: parsed.imports,
             size_bytes,
         })
     }
 }
 
+/// Exports, imports and parse errors gathered from a module's sections.
+#[derive(Default)]
+struct ParsedSections {
+    exports: Vec<ExportInfo>,
+    imports: Vec<ImportInfo>,
+    errors: Vec<ValidationError>,
+}
+
 /// Walk the parsed WASM sections, recording exports, imports, and parse errors.
-fn collect_sections(
-    bytes: &[u8],
-    allowed_import_modules: &[String],
-    errors: &mut Vec<ValidationError>,
-    exports: &mut Vec<ExportInfo>,
-    imports: &mut Vec<ImportInfo>,
-) {
+fn collect_sections(bytes: &[u8], allowed_import_modules: &[String], parsed: &mut ParsedSections) {
     let parser = wasmparser::Parser::new(0);
 
     for payload in parser.parse_all(bytes) {
         match payload {
             Ok(wasmparser::Payload::ExportSection(reader)) => {
-                collect_export_section(reader, errors, exports);
+                collect_export_section(reader, &mut parsed.errors, &mut parsed.exports);
             }
             Ok(wasmparser::Payload::ImportSection(reader)) => {
-                collect_import_section(reader, allowed_import_modules, errors, imports);
+                collect_import_section(
+                    reader,
+                    allowed_import_modules,
+                    &mut parsed.errors,
+                    &mut parsed.imports,
+                );
             }
             Ok(_) => {
                 // Other sections are OK
             }
             Err(e) => {
-                errors.push(ValidationError::InvalidModule(format!(
+                parsed.errors.push(ValidationError::InvalidModule(format!(
                     "Failed to parse WASM: {}",
                     e
                 )));

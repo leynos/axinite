@@ -186,23 +186,9 @@ fn record_fts_results(
     results: Vec<RankedResult>,
     k: f32,
 ) {
-    for result in results {
-        let rrf_score = 1.0 / (k + result.rank as f32);
-        chunk_scores
-            .entry(result.chunk_id)
-            .and_modify(|info| {
-                info.score += rrf_score;
-                info.fts_rank = Some(result.rank);
-            })
-            .or_insert(ChunkInfo {
-                document_id: result.document_id,
-                document_path: result.document_path,
-                content: result.content,
-                score: rrf_score,
-                fts_rank: Some(result.rank),
-                vector_rank: None,
-            });
-    }
+    record_results(chunk_scores, results, k, |info, rank| {
+        info.fts_rank = Some(rank);
+    });
 }
 
 /// Fold vector results into the per-chunk score map, recording each chunk's
@@ -212,22 +198,32 @@ fn record_vector_results(
     results: Vec<RankedResult>,
     k: f32,
 ) {
+    record_results(chunk_scores, results, k, |info, rank| {
+        info.vector_rank = Some(rank);
+    });
+}
+
+/// Fold one ranking list into the per-chunk score map, storing each chunk's
+/// rank in the slot chosen by `set_rank`.
+fn record_results(
+    chunk_scores: &mut HashMap<Uuid, ChunkInfo>,
+    results: Vec<RankedResult>,
+    k: f32,
+    set_rank: impl Fn(&mut ChunkInfo, u32),
+) {
     for result in results {
         let rrf_score = 1.0 / (k + result.rank as f32);
-        chunk_scores
-            .entry(result.chunk_id)
-            .and_modify(|info| {
-                info.score += rrf_score;
-                info.vector_rank = Some(result.rank);
-            })
-            .or_insert(ChunkInfo {
-                document_id: result.document_id,
-                document_path: result.document_path,
-                content: result.content,
-                score: rrf_score,
-                fts_rank: None,
-                vector_rank: Some(result.rank),
-            });
+        let info = chunk_scores.entry(result.chunk_id).or_insert(ChunkInfo {
+            document_id: result.document_id,
+            document_path: result.document_path,
+            content: result.content,
+            score: 0.0,
+            fts_rank: None,
+            vector_rank: None,
+        });
+
+        info.score += rrf_score;
+        set_rank(info, result.rank);
     }
 }
 
