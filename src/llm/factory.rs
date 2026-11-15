@@ -131,24 +131,7 @@ fn create_openai_compat_from_registry(
 ) -> Result<Arc<dyn LlmProvider>, LlmError> {
     use rig::providers::openai;
 
-    let mut extra_headers = reqwest::header::HeaderMap::new();
-    for (key, value) in &config.extra_headers {
-        let name = match reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
-            Ok(n) => n,
-            Err(e) => {
-                tracing::warn!(header = %key, error = %e, "Skipping extra header: invalid name");
-                continue;
-            }
-        };
-        let val = match reqwest::header::HeaderValue::from_str(value) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(header = %key, error = %e, "Skipping extra header: invalid value");
-                continue;
-            }
-        };
-        extra_headers.insert(name, val);
-    }
+    let extra_headers = build_extra_headers(&config.extra_headers);
 
     let api_key = config
         .api_key
@@ -193,6 +176,46 @@ fn create_openai_compat_from_registry(
     let adapter = RigAdapter::new(model, &config.model)
         .with_unsupported_params(config.unsupported_params.clone());
     Ok(Arc::new(adapter))
+}
+
+/// Build the extra HTTP header map from configured name/value pairs.
+///
+/// Invalid names or values are logged and skipped so one bad entry does not
+/// prevent the provider from being created.
+fn build_extra_headers(configured: &[(String, String)]) -> reqwest::header::HeaderMap {
+    let mut extra_headers = reqwest::header::HeaderMap::new();
+    for (key, value) in configured {
+        let Some(name) = parse_header_name(key) else {
+            continue;
+        };
+        let Some(value) = parse_header_value(key, value) else {
+            continue;
+        };
+        extra_headers.insert(name, value);
+    }
+    extra_headers
+}
+
+/// Parse a configured header name, logging and returning `None` when invalid.
+fn parse_header_name(key: &str) -> Option<reqwest::header::HeaderName> {
+    match reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
+        Ok(name) => Some(name),
+        Err(error) => {
+            tracing::warn!(header = %key, error = %error, "Skipping extra header: invalid name");
+            None
+        }
+    }
+}
+
+/// Parse a configured header value, logging and returning `None` when invalid.
+fn parse_header_value(key: &str, value: &str) -> Option<reqwest::header::HeaderValue> {
+    match reqwest::header::HeaderValue::from_str(value) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(header = %key, error = %error, "Skipping extra header: invalid value");
+            None
+        }
+    }
 }
 
 /// Whether the registry config should authenticate via Anthropic OAuth: an

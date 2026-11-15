@@ -12,43 +12,90 @@ fn extract_first_json_object(response: &str) -> Option<&str> {
             continue;
         }
 
-        let mut depth = 0usize;
-        let mut in_string = false;
-        let mut escaped = false;
-
-        for (offset, current) in response[start..].char_indices() {
-            if in_string {
-                if escaped {
-                    escaped = false;
-                    continue;
-                }
-                match current {
-                    '\\' => escaped = true,
-                    '"' => in_string = false,
-                    _ => {}
-                }
-                continue;
-            }
-
-            match current {
-                '"' => in_string = true,
-                '{' => depth += 1,
-                '}' => {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 {
-                        let candidate = &response[start..start + offset + current.len_utf8()];
-                        if serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
-                            return Some(candidate);
-                        }
-                        break;
-                    }
-                }
-                _ => {}
-            }
+        if let Some(object) = extract_json_object_at(response, start) {
+            return Some(object);
         }
     }
 
     None
+}
+
+/// Find the JSON object beginning at `start`, returning it when it parses.
+fn extract_json_object_at(response: &str, start: usize) -> Option<&str> {
+    let mut scanner = JsonObjectScanner::default();
+
+    for (offset, current) in response[start..].char_indices() {
+        if scanner.advance(current) == ScanOutcome::Closed {
+            let candidate = &response[start..start + offset + current.len_utf8()];
+            return parse_json_object(candidate);
+        }
+    }
+
+    None
+}
+
+/// Return `candidate` when it parses as JSON.
+fn parse_json_object(candidate: &str) -> Option<&str> {
+    if serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+/// Whether a scanned character closed the JSON object being tracked.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScanOutcome {
+    /// The object is still open.
+    Continue,
+    /// The object's closing brace was reached.
+    Closed,
+}
+
+/// Tracks brace depth and string state while scanning a JSON object.
+#[derive(Default)]
+struct JsonObjectScanner {
+    depth: usize,
+    in_string: bool,
+    escaped: bool,
+}
+
+impl JsonObjectScanner {
+    /// Feed one character, reporting when the enclosing object closes.
+    fn advance(&mut self, current: char) -> ScanOutcome {
+        if self.in_string {
+            self.advance_in_string(current);
+            return ScanOutcome::Continue;
+        }
+
+        match current {
+            '"' => self.in_string = true,
+            '{' => self.depth += 1,
+            '}' => {
+                self.depth = self.depth.saturating_sub(1);
+                if self.depth == 0 {
+                    return ScanOutcome::Closed;
+                }
+            }
+            _ => {}
+        }
+
+        ScanOutcome::Continue
+    }
+
+    /// Advance the string-literal state for one character.
+    fn advance_in_string(&mut self, current: char) {
+        if self.escaped {
+            self.escaped = false;
+            return;
+        }
+
+        match current {
+            '\\' => self.escaped = true,
+            '"' => self.in_string = false,
+            _ => {}
+        }
+    }
 }
 
 impl NativeSoftwareBuilder for LlmSoftwareBuilder {

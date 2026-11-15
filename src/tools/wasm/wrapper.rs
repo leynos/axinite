@@ -113,48 +113,62 @@ fn coerce_params_to_schema(
     mut params: serde_json::Value,
     schema: &serde_json::Value,
 ) -> serde_json::Value {
-    let properties = schema.get("properties").and_then(|p| p.as_object());
-
-    let properties = match properties {
-        Some(p) => p,
-        None => return params,
+    let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) else {
+        return params;
     };
 
-    let obj = match params.as_object_mut() {
-        Some(o) => o,
-        None => return params,
+    let Some(obj) = params.as_object_mut() else {
+        return params;
     };
 
     for (key, prop_schema) in properties {
-        let declared_type = prop_schema.get("type").and_then(|t| t.as_str());
-        let declared_type = match declared_type {
-            Some(t) => t,
-            None => continue,
+        let Some(declared_type) = prop_schema.get("type").and_then(|t| t.as_str()) else {
+            continue;
         };
 
-        if let Some(current_value) = obj.get_mut(key)
-            && let Some(s) = current_value.as_str()
-        {
-            if declared_type == "string" {
-                continue;
-            }
+        let Some(current_value) = obj.get_mut(key) else {
+            continue;
+        };
 
-            let coerced = match declared_type {
-                "number" => s.parse::<f64>().ok().map(serde_json::Value::from),
-                "integer" => s.parse::<i64>().ok().map(serde_json::Value::from),
-                "boolean" => match s.to_lowercase().as_str() {
-                    "true" => Some(serde_json::json!(true)),
-                    "false" => Some(serde_json::json!(false)),
-                    _ => None,
-                },
-                _ => None,
-            };
-
-            if let Some(new_val) = coerced {
-                *current_value = new_val;
-            }
-        }
+        coerce_value(current_value, declared_type);
     }
 
     params
+}
+
+/// Coerce a JSON value in place to its schema-declared type.
+///
+/// Non-string values and values already declared as strings are left
+/// untouched, as are strings that cannot be converted.
+fn coerce_value(value: &mut serde_json::Value, declared_type: &str) {
+    let Some(text) = value.as_str() else {
+        return;
+    };
+
+    if declared_type == "string" {
+        return;
+    }
+
+    if let Some(coerced) = coerce_string(text, declared_type) {
+        *value = coerced;
+    }
+}
+
+/// Convert a string to the JSON value for `declared_type`, when possible.
+fn coerce_string(text: &str, declared_type: &str) -> Option<serde_json::Value> {
+    match declared_type {
+        "number" => text.parse::<f64>().ok().map(serde_json::Value::from),
+        "integer" => text.parse::<i64>().ok().map(serde_json::Value::from),
+        "boolean" => coerce_bool(text),
+        _ => None,
+    }
+}
+
+/// Convert a string to a JSON boolean, when it spells `true` or `false`.
+fn coerce_bool(text: &str) -> Option<serde_json::Value> {
+    match text.to_lowercase().as_str() {
+        "true" => Some(serde_json::json!(true)),
+        "false" => Some(serde_json::json!(false)),
+        _ => None,
+    }
 }

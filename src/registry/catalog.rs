@@ -263,41 +263,21 @@ impl RegistryCatalog {
     }
 
     fn score_manifest(manifest: &ExtensionManifest, tokens: &[&str]) -> usize {
-        let mut score = 0;
         let name_lower = manifest.name.to_lowercase();
         let display_lower = manifest.display_name.to_lowercase();
         let desc_lower = manifest.description.to_lowercase();
 
+        let mut score = 0;
         for token in tokens {
-            if name_lower == *token {
-                score += 10;
-            } else if name_lower.contains(token) {
-                score += 5;
-            }
-
-            if display_lower == *token {
-                score += 8;
-            } else if display_lower.contains(token) {
-                score += 4;
-            }
+            score += score_match(&name_lower, token, 10, 5);
+            score += score_match(&display_lower, token, 8, 4);
 
             if desc_lower.contains(token) {
                 score += 2;
             }
 
-            for kw in &manifest.keywords {
-                if kw.to_lowercase() == *token {
-                    score += 6;
-                } else if kw.to_lowercase().contains(token) {
-                    score += 3;
-                }
-            }
-
-            for tag in &manifest.tags {
-                if tag.to_lowercase() == *token {
-                    score += 4;
-                }
-            }
+            score += score_keyword_matches(&manifest.keywords, token);
+            score += score_tag_matches(&manifest.tags, token);
         }
 
         score
@@ -368,6 +348,38 @@ impl RegistryCatalog {
         let manifest = self.get_strict(name)?;
         Ok((vec![manifest], None))
     }
+}
+
+/// Score an exact match as `exact`, a partial one as `partial`, else zero.
+fn score_match(candidate: &str, token: &str, exact: usize, partial: usize) -> usize {
+    if candidate == token {
+        exact
+    } else if candidate.contains(token) {
+        partial
+    } else {
+        0
+    }
+}
+
+/// Score all keyword matches for one search token.
+fn score_keyword_matches(keywords: &[String], token: &str) -> usize {
+    keywords
+        .iter()
+        .map(|keyword| score_keyword_match(keyword, token))
+        .sum()
+}
+
+/// Score one exact or partial keyword match.
+fn score_keyword_match(keyword: &str, token: &str) -> usize {
+    score_match(&keyword.to_lowercase(), token, 6, 3)
+}
+
+/// Score exact tag matches for one search token.
+fn score_tag_matches(tags: &[String], token: &str) -> usize {
+    tags.iter()
+        .filter(|tag| tag.to_lowercase() == token)
+        .count()
+        * 4
 }
 
 #[cfg(test)]

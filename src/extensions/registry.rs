@@ -199,41 +199,78 @@ fn collect_scored(
 
 /// Score an entry against search tokens. Higher = better match.
 fn score_entry(entry: &RegistryEntry, tokens: &[String]) -> u32 {
-    let mut score = 0u32;
     let name_lower = entry.name.to_lowercase();
     let display_lower = entry.display_name.to_lowercase();
     let desc_lower = entry.description.to_lowercase();
     let keywords_lower: Vec<String> = entry.keywords.iter().map(|k| k.to_lowercase()).collect();
 
-    for token in tokens {
-        // Exact name match is the strongest signal
-        if name_lower == *token {
-            score += 100;
-        } else if name_lower.contains(token.as_str()) {
-            score += 50;
-        }
+    tokens
+        .iter()
+        .map(|token| {
+            score_token(
+                &name_lower,
+                &display_lower,
+                &desc_lower,
+                &keywords_lower,
+                token,
+            )
+        })
+        .sum()
+}
 
-        // Display name match
-        if display_lower.contains(token.as_str()) {
-            score += 30;
-        }
+/// Score one token against an entry's pre-lowercased searchable fields.
+fn score_token(
+    name_lower: &str,
+    display_lower: &str,
+    desc_lower: &str,
+    keywords_lower: &[String],
+    token: &str,
+) -> u32 {
+    let mut score = score_name(name_lower, token);
 
-        // Keyword match
-        for kw in &keywords_lower {
-            if kw == token {
-                score += 40;
-            } else if kw.contains(token.as_str()) {
-                score += 20;
-            }
-        }
+    // Display name match.
+    if display_lower.contains(token) {
+        score += 30;
+    }
 
-        // Description match (weakest signal)
-        if desc_lower.contains(token.as_str()) {
-            score += 10;
-        }
+    score += score_keywords(keywords_lower, token);
+
+    // Description match (weakest signal).
+    if desc_lower.contains(token) {
+        score += 10;
     }
 
     score
+}
+
+/// Score an exact or partial name match: the strongest search signal.
+fn score_name(name_lower: &str, token: &str) -> u32 {
+    if name_lower == token {
+        100
+    } else if name_lower.contains(token) {
+        50
+    } else {
+        0
+    }
+}
+
+/// Score the keyword matches for one token.
+fn score_keywords(keywords_lower: &[String], token: &str) -> u32 {
+    keywords_lower
+        .iter()
+        .map(|keyword| score_keyword(keyword, token))
+        .sum()
+}
+
+/// Score one exact or partial keyword match.
+fn score_keyword(keyword_lower: &str, token: &str) -> u32 {
+    if keyword_lower == token {
+        40
+    } else if keyword_lower.contains(token) {
+        20
+    } else {
+        0
+    }
 }
 
 mod builtin;

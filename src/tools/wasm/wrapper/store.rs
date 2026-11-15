@@ -170,12 +170,7 @@ impl StoreData {
         url: &mut String,
     ) {
         for cred in &self.host_credentials {
-            let matches = cred
-                .host_patterns
-                .iter()
-                .any(|pattern| host_matches_pattern(url_host, pattern));
-
-            if !matches {
+            if !credential_matches_host(cred, url_host) {
                 continue;
             }
 
@@ -186,27 +181,7 @@ impl StoreData {
 
             // Append query parameters to URL (insert before fragment if present)
             if !cred.query_params.is_empty() {
-                let (base, fragment) = match url.find('#') {
-                    Some(i) => (url[..i].to_string(), Some(url[i..].to_string())),
-                    None => (url.clone(), None),
-                };
-                *url = base;
-
-                let separator = if url.contains('?') { '&' } else { '?' };
-                for (i, (name, value)) in cred.query_params.iter().enumerate() {
-                    if i == 0 {
-                        url.push(separator);
-                    } else {
-                        url.push('&');
-                    }
-                    url.push_str(&urlencoding::encode(name));
-                    url.push('=');
-                    url.push_str(&urlencoding::encode(value));
-                }
-
-                if let Some(frag) = fragment {
-                    url.push_str(&frag);
-                }
+                append_query_params(url, &cred.query_params);
             }
         }
     }
@@ -275,6 +250,39 @@ impl StoreData {
         }
 
         Ok(PreparedHttpRequest { url, headers })
+    }
+}
+
+/// Return `true` when `credential` applies to `url_host`.
+fn credential_matches_host(credential: &ResolvedHostCredential, url_host: &str) -> bool {
+    credential
+        .host_patterns
+        .iter()
+        .any(|pattern| host_matches_pattern(url_host, pattern))
+}
+
+/// Append `params` to `url` as a query string, preserving any fragment.
+fn append_query_params(url: &mut String, params: &HashMap<String, String>) {
+    let (base, fragment) = match url.find('#') {
+        Some(index) => (url[..index].to_string(), Some(url[index..].to_string())),
+        None => (url.clone(), None),
+    };
+    *url = base;
+
+    let separator = if url.contains('?') { '&' } else { '?' };
+    for (index, (name, value)) in params.iter().enumerate() {
+        if index == 0 {
+            url.push(separator);
+        } else {
+            url.push('&');
+        }
+        url.push_str(&urlencoding::encode(name));
+        url.push('=');
+        url.push_str(&urlencoding::encode(value));
+    }
+
+    if let Some(fragment) = fragment {
+        url.push_str(&fragment);
     }
 }
 
