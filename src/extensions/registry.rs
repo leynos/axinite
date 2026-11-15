@@ -199,44 +199,41 @@ fn collect_scored(
 
 /// Score an entry against search tokens. Higher = better match.
 fn score_entry(entry: &RegistryEntry, tokens: &[String]) -> u32 {
-    let name_lower = entry.name.to_lowercase();
-    let display_lower = entry.display_name.to_lowercase();
-    let desc_lower = entry.description.to_lowercase();
-    let keywords_lower: Vec<String> = entry.keywords.iter().map(|k| k.to_lowercase()).collect();
+    let name = entry.name.to_lowercase();
+    let display = entry.display_name.to_lowercase();
+    let description = entry.description.to_lowercase();
+    let keywords: Vec<String> = entry.keywords.iter().map(|k| k.to_lowercase()).collect();
+    let fields = SearchableFields {
+        name: &name,
+        display: &display,
+        description: &description,
+        keywords: &keywords,
+    };
 
-    tokens
-        .iter()
-        .map(|token| {
-            score_token(
-                &name_lower,
-                &display_lower,
-                &desc_lower,
-                &keywords_lower,
-                token,
-            )
-        })
-        .sum()
+    tokens.iter().map(|token| score_token(&fields, token)).sum()
+}
+
+/// An entry's searchable fields, lowercased once per search.
+struct SearchableFields<'a> {
+    name: &'a str,
+    display: &'a str,
+    description: &'a str,
+    keywords: &'a [String],
 }
 
 /// Score one token against an entry's pre-lowercased searchable fields.
-fn score_token(
-    name_lower: &str,
-    display_lower: &str,
-    desc_lower: &str,
-    keywords_lower: &[String],
-    token: &str,
-) -> u32 {
-    let mut score = score_name(name_lower, token);
+fn score_token(fields: &SearchableFields<'_>, token: &str) -> u32 {
+    let mut score = score_name(fields.name, token);
 
     // Display name match.
-    if display_lower.contains(token) {
+    if fields.display.contains(token) {
         score += 30;
     }
 
-    score += score_keywords(keywords_lower, token);
+    score += score_keywords(fields.keywords, token);
 
     // Description match (weakest signal).
-    if desc_lower.contains(token) {
+    if fields.description.contains(token) {
         score += 10;
     }
 

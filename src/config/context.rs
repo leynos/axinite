@@ -20,13 +20,13 @@ const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
 /// Snapshot of environment-backed configuration inputs.
 ///
-/// The `Debug` implementation prints the resolved base directory and the size
-/// of each map. The captured environment and the injected secret overlay hold
-/// plaintext credential values, so neither their contents nor their key names
-/// may reach a log line or panic message. The base directory is a filesystem
-/// location rather than a credential, and reporting it is what makes a
-/// misdirected `AXINITE_BASE_DIR` diagnosable from the same summary, so it is
-/// the one documented exception to the redaction rule.
+/// The `Debug` implementation prints the size of each map and whether an
+/// `AXINITE_BASE_DIR` override was captured. The captured environment and the
+/// injected secret overlay hold plaintext values, so neither their contents nor
+/// their key names may reach a log line or panic message. The resolved base
+/// directory is itself a captured environment value and can name a project, a
+/// user or a customer, so it stays out of the summary too: the boolean says an
+/// override took effect without disclosing where it points.
 #[derive(Clone)]
 pub struct EnvContext {
     env_vars: HashMap<String, String>,
@@ -36,11 +36,15 @@ pub struct EnvContext {
 
 impl std::fmt::Debug for EnvContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Counts plus the resolved base directory: `secret_values()` exists for
-        // callers that need the values, so neither map's contents or key names
-        // can reach this summary.
+        // Counts plus whether a base-dir override was captured:
+        // `secret_values()` and `axinite_base_dir()` exist for callers that
+        // need the values, so neither map's contents, their key names, nor the
+        // resolved path can reach this summary.
         f.debug_struct("EnvContext")
-            .field("base_dir", &self.base_dir)
+            .field(
+                "base_dir_overridden",
+                &has_base_dir_override(&self.env_vars),
+            )
             .field("env_var_count", &self.env_vars.len())
             .field("secret_count", &self.secrets.len())
             .finish()
@@ -285,6 +289,15 @@ fn default_base_dir() -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("/tmp"))
             .join(".axinite")
     }
+}
+
+/// Whether the snapshot holds a usable `AXINITE_BASE_DIR` override.
+///
+/// An empty value is treated as unset, matching `resolve_base_dir_snapshot`.
+fn has_base_dir_override(env_vars: &HashMap<String, String>) -> bool {
+    env_vars
+        .get(AXINITE_BASE_DIR_ENV)
+        .is_some_and(|value| !value.is_empty())
 }
 
 fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {

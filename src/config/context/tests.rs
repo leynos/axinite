@@ -92,13 +92,17 @@ fn debug_output_redacts_values_and_keys() {
         "shape expected: {}",
         rendered[0]
     );
+    assert!(
+        rendered[0].contains("base_dir_overridden: false"),
+        "no override expected: {}",
+        rendered[0]
+    );
 }
 
-/// The documented exception: the resolved base directory is reported, and an
-/// `AXINITE_BASE_DIR` override is visible in both formatting modes, while the
-/// maps stay redacted.
+/// An `AXINITE_BASE_DIR` override is reported as a flag, never as its value,
+/// in either formatting mode.
 #[test]
-fn debug_output_reports_base_dir_override() {
+fn debug_output_withholds_base_dir_override_value() {
     const BASE_DIR: &str = "/tmp/axinite-debug-base";
     const SENTINEL: &str = "sk-debug-sentinel-2a6f04";
     let ctx = EnvContext::default()
@@ -109,11 +113,15 @@ fn debug_output_reports_base_dir_override() {
     let rendered = [format!("{ctx:?}"), format!("{ctx:#?}")];
 
     for output in &rendered {
-        assert!(output.contains(BASE_DIR), "base dir expected: {output}");
+        assert!(
+            output.contains("base_dir_overridden: true"),
+            "override flag expected: {output}"
+        );
         assert!(
             output.contains("env_var_count: 2"),
             "env count expected: {output}"
         );
+        assert!(!output.contains(BASE_DIR), "base dir leaked: {output}");
         assert!(!output.contains(SENTINEL), "value leaked: {output}");
         assert!(
             !output.contains("SENTINEL_SECRET"),

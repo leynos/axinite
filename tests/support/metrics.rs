@@ -186,77 +186,64 @@ pub fn compare_runs(baseline: &RunResult, current: &RunResult, threshold: f64) -
             continue;
         };
 
-        let id = current_scenario.scenario_id.as_str();
         let b = &baseline_scenario.trace;
         let c = &current_scenario.trace;
+        let mut sink = DeltaSink {
+            scenario_id: current_scenario.scenario_id.as_str(),
+            threshold,
+            deltas: &mut deltas,
+        };
 
         // Wall time comparison.
-        record_delta(
-            id,
-            "wall_time_ms",
-            b.wall_time_ms as f64,
-            c.wall_time_ms as f64,
-            threshold,
-            &mut deltas,
-        );
+        sink.record("wall_time_ms", b.wall_time_ms as f64, c.wall_time_ms as f64);
 
         // Token count comparison (input + output).
-        record_delta(
-            id,
+        sink.record(
             "total_tokens",
             (b.input_tokens + b.output_tokens) as f64,
             (c.input_tokens + c.output_tokens) as f64,
-            threshold,
-            &mut deltas,
         );
 
         // LLM calls comparison.
-        record_delta(
-            id,
-            "llm_calls",
-            b.llm_calls as f64,
-            c.llm_calls as f64,
-            threshold,
-            &mut deltas,
-        );
+        sink.record("llm_calls", b.llm_calls as f64, c.llm_calls as f64);
 
         // Tool call count comparison.
-        record_delta(
-            id,
+        sink.record(
             "tool_calls",
             b.tool_calls.len() as f64,
             c.tool_calls.len() as f64,
-            threshold,
-            &mut deltas,
         );
     }
 
     deltas
 }
 
-/// Record one metric's delta when it moved by more than `threshold`.
-///
-/// A zero baseline has no meaningful relative delta, so it is skipped.
-fn record_delta(
-    scenario_id: &str,
-    metric: &str,
-    baseline: f64,
-    current: f64,
+/// Accumulates one scenario's deltas, so each comparison names only its metric
+/// and its two values.
+struct DeltaSink<'a> {
+    scenario_id: &'a str,
     threshold: f64,
-    deltas: &mut Vec<MetricDelta>,
-) {
-    if baseline <= 0.0 {
-        return;
-    }
-    let delta = (current - baseline) / baseline;
-    if delta.abs() > threshold {
-        deltas.push(MetricDelta {
-            scenario_id: scenario_id.to_string(),
-            metric: metric.to_string(),
-            baseline,
-            current,
-            delta,
-            is_regression: delta > 0.0,
-        });
+    deltas: &'a mut Vec<MetricDelta>,
+}
+
+impl DeltaSink<'_> {
+    /// Record one metric's delta when it moved by more than `threshold`.
+    ///
+    /// A zero baseline has no meaningful relative delta, so it is skipped.
+    fn record(&mut self, metric: &str, baseline: f64, current: f64) {
+        if baseline <= 0.0 {
+            return;
+        }
+        let delta = (current - baseline) / baseline;
+        if delta.abs() > self.threshold {
+            self.deltas.push(MetricDelta {
+                scenario_id: self.scenario_id.to_string(),
+                metric: metric.to_string(),
+                baseline,
+                current,
+                delta,
+                is_regression: delta > 0.0,
+            });
+        }
     }
 }
