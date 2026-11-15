@@ -1,12 +1,67 @@
 //! Unit and property tests for skill bundle file read operations.
 
+use std::path::PathBuf;
+
 use insta::assert_json_snapshot;
-use rstest::rstest;
+use rstest::{fixture, rstest};
+use tempfile::TempDir;
 
 use super::*;
+use crate::skills::test_support::TestSkillBuilder;
+use crate::skills::{LoadedSkillLocation, SkillPackageKind};
 
+mod io;
 mod reads;
 mod validation;
+
+/// A loaded skill bundle backed by a temporary directory.
+struct SkillReadFixture {
+    _dir: TempDir,
+    skill: LoadedSkill,
+}
+
+#[fixture]
+fn skill_read_fixture() -> anyhow::Result<SkillReadFixture> {
+    use anyhow::Context as _;
+
+    let dir = tempfile::tempdir().context("tempdir should be created")?;
+    ambient_fs::create_dir_all(dir.path().join("references"))
+        .context("references dir should be created")?;
+    ambient_fs::create_dir_all(dir.path().join("assets"))
+        .context("assets dir should be created")?;
+    ambient_fs::write(dir.path().join("SKILL.md"), "# Deploy docs\n")
+        .context("skill prompt should be written")?;
+    ambient_fs::write(dir.path().join("references/usage.md"), "# Usage\n")
+        .context("reference should be written")?;
+    ambient_fs::write(dir.path().join("assets/note.txt"), "asset notes\n")
+        .context("text asset should be written")?;
+    ambient_fs::write(
+        dir.path().join("assets/logo.png"),
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    )
+    .context("binary asset should be written")?;
+
+    let location = LoadedSkillLocation::new(
+        "deploy-docs",
+        dir.path(),
+        PathBuf::from("SKILL.md"),
+        SkillPackageKind::Bundle,
+    )
+    .context("test location should be valid")?;
+    let skill = TestSkillBuilder::new("deploy-docs")
+        .location(location)
+        .build()?;
+
+    Ok(SkillReadFixture { _dir: dir, skill })
+}
+
+/// Require an error response carrying `expected`.
+fn assert_error_code(response: SkillReadFileResponse, expected: SkillReadFileErrorCode) {
+    let SkillReadFileResponse::Error(response) = response else {
+        panic!("expected error response");
+    };
+    assert_eq!(response.error.code, expected);
+}
 
 // ── JSON shape snapshot tests ────────────────────────────────────────────────
 

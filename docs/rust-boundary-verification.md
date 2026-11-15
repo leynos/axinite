@@ -141,6 +141,18 @@ Table 3. What Miri covers and what it does not.
 
 _Table 3: Miri coverage._
 
+The `openat2` resolve flags are covered natively by
+`src/skills/file_read/tests/io.rs`. A relative symlink whose target stays
+beneath the skill root is admitted by `RESOLVE_BENEATH` and rejected only by
+`RESOLVE_NO_SYMLINKS`, so it isolates the symlink flag. `RESOLVE_BENEATH`
+cannot be isolated the same way while `RESOLVE_NO_SYMLINKS` is also set: every
+symlink lookup is refused before the beneath check runs, so an escaping symlink
+and an in-root symlink both fail on `NO_SYMLINKS`, and a non-symlink escape
+such as `../` is already rejected by path validation before the syscall.
+`BENEATH` therefore remains defence in depth rather than a separately observed
+behaviour. An interior NUL in an otherwise allowed path is rejected by the
+`CString` conversion, not by the syscall, and is tested alongside them.
+
 The two ABI round-trip modules now also instantiate an import-free recording
 guest, so the lifted arguments are observable: the guest echoes them through
 the return area instead of reproducing a shipped result that ignores or refuses

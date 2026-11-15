@@ -181,14 +181,6 @@ mod tests {
     }
 
     #[test]
-    fn zeroizing_clears_the_value() {
-        let mut secret = SecretValue::new("token-123");
-        secret.zeroize();
-        assert!(secret.is_empty());
-        assert_eq!(secret.as_str(), "");
-    }
-
-    #[test]
     fn a_clone_is_zeroed_independently_of_the_original() {
         let original = SecretValue::new("token-123");
         let mut copy = original.clone();

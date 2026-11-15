@@ -1,54 +1,11 @@
 //! Behavioural tests for reading skill bundle files, covering allowed
 //! reads, path rejection, size limits, and symlink handling.
 
-use std::path::PathBuf;
-
-use rstest::{fixture, rstest};
-use tempfile::TempDir;
+use rstest::rstest;
 
 use super::super::*;
-use crate::skills::test_support::{TestSkillBuilder, installed_bundle_fixture};
-use crate::skills::{LoadedSkillLocation, SkillPackageKind};
-
-struct SkillReadFixture {
-    _dir: TempDir,
-    skill: LoadedSkill,
-}
-
-#[fixture]
-fn skill_read_fixture() -> anyhow::Result<SkillReadFixture> {
-    use anyhow::Context as _;
-
-    let dir = tempfile::tempdir().context("tempdir should be created")?;
-    ambient_fs::create_dir_all(dir.path().join("references"))
-        .context("references dir should be created")?;
-    ambient_fs::create_dir_all(dir.path().join("assets"))
-        .context("assets dir should be created")?;
-    ambient_fs::write(dir.path().join("SKILL.md"), "# Deploy docs\n")
-        .context("skill prompt should be written")?;
-    ambient_fs::write(dir.path().join("references/usage.md"), "# Usage\n")
-        .context("reference should be written")?;
-    ambient_fs::write(dir.path().join("assets/note.txt"), "asset notes\n")
-        .context("text asset should be written")?;
-    ambient_fs::write(
-        dir.path().join("assets/logo.png"),
-        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
-    )
-    .context("binary asset should be written")?;
-
-    let location = LoadedSkillLocation::new(
-        "deploy-docs",
-        dir.path(),
-        PathBuf::from("SKILL.md"),
-        SkillPackageKind::Bundle,
-    )
-    .context("test location should be valid")?;
-    let skill = TestSkillBuilder::new("deploy-docs")
-        .location(location)
-        .build()?;
-
-    Ok(SkillReadFixture { _dir: dir, skill })
-}
+use super::{SkillReadFixture, assert_error_code, skill_read_fixture};
+use crate::skills::test_support::installed_bundle_fixture;
 
 fn installed_read_entries() -> Vec<(&'static str, &'static [u8])> {
     vec![
@@ -332,11 +289,4 @@ async fn allowed_reads_fail_closed_on_non_linux(
     let response = read_skill_file(&skill_read_fixture.skill, path).await;
 
     assert_error_code(response, SkillReadFileErrorCode::IoError);
-}
-
-fn assert_error_code(response: SkillReadFileResponse, expected: SkillReadFileErrorCode) {
-    let SkillReadFileResponse::Error(response) = response else {
-        panic!("expected error response");
-    };
-    assert_eq!(response.error.code, expected);
 }
