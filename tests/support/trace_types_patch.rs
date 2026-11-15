@@ -79,24 +79,31 @@ fn patch_tool_calls_in_step(step: &mut TraceStep, from: &str, to: &str) -> usize
 
 fn patch_json_value(value: &mut serde_json::Value, from: &str, to: &str) -> bool {
     match value {
-        serde_json::Value::String(s) if s.contains(from) => {
-            *s = s.replace(from, to);
-            true
-        }
-        serde_json::Value::Array(items) => {
-            let mut mutated = false;
-            for item in items {
-                mutated |= patch_json_value(item, from, to);
-            }
-            mutated
-        }
-        serde_json::Value::Object(map) => {
-            let mut mutated = false;
-            for child in map.values_mut() {
-                mutated |= patch_json_value(child, from, to);
-            }
-            mutated
-        }
+        serde_json::Value::String(s) => patch_string(s, from, to),
+        serde_json::Value::Array(items) => patch_each(items.iter_mut(), from, to),
+        serde_json::Value::Object(map) => patch_each(map.values_mut(), from, to),
         _ => false,
     }
+}
+
+/// Replace `from` with `to` in one string, reporting whether it changed.
+fn patch_string(s: &mut String, from: &str, to: &str) -> bool {
+    if !s.contains(from) {
+        return false;
+    }
+    *s = s.replace(from, to);
+    true
+}
+
+/// Patch every nested value, reporting whether any of them changed.
+fn patch_each<'a>(
+    values: impl IntoIterator<Item = &'a mut serde_json::Value>,
+    from: &str,
+    to: &str,
+) -> bool {
+    let mut mutated = false;
+    for value in values {
+        mutated |= patch_json_value(value, from, to);
+    }
+    mutated
 }

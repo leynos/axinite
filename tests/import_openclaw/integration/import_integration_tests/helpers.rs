@@ -86,11 +86,18 @@ pub(super) fn create_test_openclaw() -> Result<(TempDir, PathBuf), Box<dyn std::
 
 /// Helper: Create a test agent SQLite database
 fn create_test_agent_db(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    use rusqlite::Connection;
+    let conn = rusqlite::Connection::open(db_path)?;
 
-    let conn = Connection::open(db_path)?;
+    create_chunks_table(&conn)?;
+    seed_chunks(&conn)?;
+    create_conversation_tables(&conn)?;
+    seed_conversation(&conn)?;
 
-    // Chunks table
+    Ok(())
+}
+
+/// Create the `chunks` table the importer reads.
+fn create_chunks_table(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     conn.execute(
         "CREATE TABLE chunks (
             id TEXT PRIMARY KEY,
@@ -101,7 +108,11 @@ fn create_test_agent_db(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Err
         )",
         [],
     )?;
+    Ok(())
+}
 
+/// Insert three synthetic chunk rows, one per document section.
+fn seed_chunks(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     for i in 0..3 {
         conn.execute(
             "INSERT INTO chunks (id, path, content, embedding, chunk_index) VALUES (?, ?, ?, ?, ?)",
@@ -114,8 +125,11 @@ fn create_test_agent_db(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Err
             ],
         )?;
     }
+    Ok(())
+}
 
-    // Conversations
+/// Create the `conversations` and `messages` tables the importer reads.
+fn create_conversation_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     conn.execute(
         "CREATE TABLE conversations (id TEXT PRIMARY KEY, channel TEXT, created_at TEXT)",
         [],
@@ -131,7 +145,11 @@ fn create_test_agent_db(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Err
         )",
         [],
     )?;
+    Ok(())
+}
 
+/// Insert one conversation with a user and an assistant message.
+fn seed_conversation(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     let conv_id = Uuid::new_v4().to_string();
     conn.execute(
         "INSERT INTO conversations VALUES (?, ?, ?)",
@@ -150,6 +168,5 @@ fn create_test_agent_db(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Err
             ],
         )?;
     }
-
     Ok(())
 }
