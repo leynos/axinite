@@ -10,6 +10,9 @@ use super::*;
 use crate::skills::test_support::TestSkillBuilder;
 use crate::skills::{LoadedSkillLocation, SkillPackageKind};
 
+// Every case in `io` is Linux-gated, so the module itself is compiled only
+// there; importing it elsewhere would leave its imports unused.
+#[cfg(target_os = "linux")]
 mod io;
 mod reads;
 mod validation;
