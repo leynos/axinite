@@ -2,20 +2,21 @@
 //!
 //! `CreateJobTool` creates jobs either locally (via the Scheduler or
 //! ContextManager) or in a sandboxed Docker container when sandbox deps are
-//! injected. The sandbox execution path lives in [`super::sandbox`]; credential
-//! parsing lives in [`super::credentials`].
+//! injected. The sandbox execution path lives in [`super::sandbox`]; container
+//! polling lives in [`super::container_polling`]; job persistence now lives in
+//! [`super::persistence`]; credential grant parsing lives in
+//! [`super::credentials`].
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use uuid::Uuid;
 
 use crate::channels::IncomingMessage;
 use crate::channels::web::types::SseEvent;
 use crate::context::{ContextManager, JobContext};
-use crate::db::{Database, SandboxJobStatusUpdate};
+use crate::db::Database;
 use crate::orchestrator::job_manager::{ContainerJobManager, JobMode};
 use crate::secrets::SecretsStore;
 use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_str};
@@ -97,33 +98,6 @@ impl CreateJobTool {
         self.job_manager.is_some()
     }
 
-    /// Update sandbox job status in DB (fire-and-forget for best-effort updates).
-    ///
-    /// This method uses `tokio::spawn` to make status updates intentionally
-    /// fire-and-forget for non-terminal states (e.g., "creating", "running").
-    /// These are recoverable on the next poll or after restart.
-    /// For terminal states and pre-container failures, use `update_status_sync`.
-    pub(super) fn update_status(&self, transition: StatusTransition) {
-        let Some(store) = self.store.clone() else {
-            return;
-        };
-        tokio::spawn(async move {
-            apply_status_update(store, transition).await;
-        });
-    }
-
-    /// Update sandbox job status synchronously (for terminal states and pre-container failures).
-    ///
-    /// This method awaits the status update to ensure durability before returning.
-    /// Use for terminal states (completed, failed, cancelled) and pre-container
-    /// failure transitions where the job state must be persisted before returning.
-    pub(super) async fn update_status_sync(&self, transition: StatusTransition) {
-        let Some(store) = self.store.clone() else {
-            return;
-        };
-        apply_status_update(store, transition).await;
-    }
-
     /// Execute via Scheduler (persists to DB + spawns worker), or fall back to
     /// ContextManager-only if the scheduler isn't available yet.
     async fn execute_local(
@@ -181,82 +155,6 @@ impl CreateJobTool {
             ),
             Err(e) => error_output(e.to_string(), start),
         }
-    }
-}
-
-/// Owned fields describing a sandbox job status transition.
-pub(super) struct StatusTransition {
-    job_id: Uuid,
-    status: crate::db::SandboxJobStatus,
-    success: Option<bool>,
-    message: Option<String>,
-    started_at: Option<chrono::DateTime<Utc>>,
-    completed_at: Option<chrono::DateTime<Utc>>,
-}
-
-impl StatusTransition {
-    /// Base transition to `status` with no outcome or timestamps.
-    fn base(job_id: Uuid, status: &str) -> Self {
-        Self {
-            job_id,
-            status: crate::db::SandboxJobStatus::from(status),
-            success: None,
-            message: None,
-            started_at: None,
-            completed_at: None,
-        }
-    }
-
-    /// Transition to `running`, recording when the container started.
-    pub(super) fn running(job_id: Uuid, started_at: chrono::DateTime<Utc>) -> Self {
-        Self {
-            started_at: Some(started_at),
-            ..Self::base(job_id, "running")
-        }
-    }
-
-    /// Transition to `completed` (success), recording the completion time.
-    pub(super) fn completed(job_id: Uuid, completed_at: chrono::DateTime<Utc>) -> Self {
-        Self {
-            success: Some(true),
-            completed_at: Some(completed_at),
-            ..Self::base(job_id, "completed")
-        }
-    }
-
-    /// Transition to `failed` with a failure message and completion time.
-    pub(super) fn failed(
-        job_id: Uuid,
-        message: impl Into<String>,
-        completed_at: chrono::DateTime<Utc>,
-    ) -> Self {
-        Self {
-            success: Some(false),
-            message: Some(message.into()),
-            completed_at: Some(completed_at),
-            ..Self::base(job_id, "failed")
-        }
-    }
-}
-
-/// Persist a sandbox job status transition, logging a warning on failure.
-async fn apply_status_update(store: Arc<dyn Database>, transition: StatusTransition) {
-    if let Err(e) = store
-        .update_sandbox_job_status(SandboxJobStatusUpdate {
-            id: transition.job_id,
-            status: transition.status,
-            success: transition.success,
-            message: transition.message.as_deref(),
-            started_at: transition.started_at,
-            completed_at: transition.completed_at,
-        })
-        .await
-    {
-        tracing::warn!(
-            job_id = %transition.job_id,
-            "Failed to update sandbox job status: {}",
-            e
-        );
     }
 }
 
@@ -372,7 +270,7 @@ impl NativeTool for CreateJobTool {
                 .map(PathBuf::from);
 
             // Parse and validate credential grants
-            let credential_grants = self.parse_credentials(&params, &ctx.user_id).await?;
+            let credential_grants = self.parse_credential_grants(&params, &ctx.user_id).await?;
 
             // Combine title and description into the task prompt for the sub-agent.
             let task = format!("{}\n\n{}", title, description);

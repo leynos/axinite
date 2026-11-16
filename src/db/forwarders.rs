@@ -115,6 +115,7 @@ impl_db_forwarders! {
     native = NativeSandboxStore,
     methods = {
         fn save_sandbox_job(job: &'a SandboxJobRecord) -> Result<(), DatabaseError>;
+        fn save_sandbox_job_with_mode(job: &'a SandboxJobRecord, mode: Option<SandboxMode>) -> Result<(), DatabaseError>;
         fn get_sandbox_job(id: Uuid) -> Result<Option<SandboxJobRecord>, DatabaseError>;
         fn list_sandbox_jobs() -> Result<Vec<SandboxJobRecord>, DatabaseError>;
         fn update_sandbox_job_status(params: SandboxJobStatusUpdate<'a>) -> Result<(), DatabaseError>;

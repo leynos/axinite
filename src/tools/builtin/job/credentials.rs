@@ -70,12 +70,12 @@ fn validate_env_var_name(name: &str) -> Result<(), ToolError> {
 }
 
 impl CreateJobTool {
-    /// Parse and validate the `credentials` parameter.
+    /// Parse and validate the credential grants in the `credentials` parameter.
     ///
     /// Each key is a secret name (must exist in SecretsStore), each value is the
     /// env var name the container should receive it as. Returns an empty vec if
     /// no credentials were requested.
-    pub(super) async fn parse_credentials(
+    pub(super) async fn parse_credential_grants(
         &self,
         params: &serde_json::Value,
         user_id: &str,

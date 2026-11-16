@@ -100,6 +100,11 @@ impl crate::db::NativeSandboxStore for CapturingStore {
     delegate! {
         to self.inner {
             async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError>;
+            async fn save_sandbox_job_with_mode(
+                &self,
+                job: &SandboxJobRecord,
+                mode: Option<SandboxMode>
+            ) -> Result<(), DatabaseError>;
             async fn get_sandbox_job(
                 &self,
                 id: Uuid
