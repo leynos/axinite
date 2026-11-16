@@ -65,8 +65,8 @@ The long-term integration path for domain proofs is a split one:
 - Keep future **production Kani harnesses inside the package** that owns the
   internal helpers they verify. The current standalone harness only checks that
   Kani runs and rejects a deliberately invalid model. The repair-claims
-  experiment below is a targeted exception: it shares production source with
-  an independent package so the verifier is not coupled to application
+  experiment below is a targeted exception: it shares production source with an
+  independent package so the verifier is not coupled to application
   dependencies.
 - Put **Stateright models in a dedicated internal verification crate**, because
   those models should be abstractions of policy rather than thin wrappers
@@ -514,22 +514,21 @@ below; the harness still has private access to the real implementation.
 harness compiled in 2.01 seconds, separating proof compilation from the
 application's current Rust 1.95 minimum. However, construction of the production
 `HashSet<String>` uses `RandomState`, whose Linux entropy path reaches an
-unsupported foreign C
-`syscall`. The proof package retains the minimal reproducer as its
-`compatibility::default_hashset_is_constructible` harness: construct the
-default set and assert that it is empty. Kani reported zero
-verified harnesses, one failure, and a verification time of 1.22 seconds.
-Its diagnostic identifies
-`std::sys::random::linux::getrandom::getrandom` and the unsupported `syscall`.
-This is a verifier limitation, not a detected claim-lifecycle defect.
+unsupported foreign C `syscall`. The proof package retains the minimal
+reproducer as its `compatibility::default_hashset_is_constructible` harness:
+construct the default set and assert that it is empty. Kani reported zero
+verified harnesses, one failure, and a verification time of 1.22 seconds. Its
+diagnostic identifies `std::sys::random::linux::getrandom::getrandom` and the
+unsupported `syscall`. This is a verifier limitation, not a detected
+claim-lifecycle defect.
 
 The first lifecycle attempt was stopped during symbolic execution to isolate
 that failure; it is not a completed proof. Its provisional unwind bound of 8
 has not been validated and is insufficient for the 16-lane SIMD loops used by
 the bundled hash-table implementation. The compatibility reproducer uses an
 unwind bound of 2 and has no input vocabulary or operation sequence. The
-planned four lifecycle harnesses, two-name/four-operation model comparison,
-and deliberate-fault experiments remain outstanding. No counterexample from a
+planned four lifecycle harnesses, two-name/four-operation model comparison, and
+deliberate-fault experiments remain outstanding. No counterexample from a
 mutated implementation has been established.
 
 The intended proofs cover bounded sequential transitions using shared source,
@@ -553,8 +552,8 @@ release through `rust-prover-tools` with `--no-compile`, and no source build or
 upstream installer runs. The package is inventoried as a safe, standalone crate
 under the unsafe-boundary contract and forbids unsafe code.
 
-`make kani-repair-claims` runs `scripts/repair_claims_kani.py`, which drives
-two `scripts/prover_cli.py` actions through `kani exec` with
+`make kani-repair-claims` runs `scripts/repair_claims_kani.py`, which drives two
+`scripts/prover_cli.py` actions through `kani exec` with
 `--cwd tests/verification/repair-claims`:
 
 1. `kani-repair-claims-compatibility` selects the `compatibility::` harness.
@@ -568,10 +567,10 @@ two `scripts/prover_cli.py` actions through `kani exec` with
 The Kani CLI does not expose `--locked`, so the gate compares the package
 lockfile bytes before and after the proof run instead. `make formal-pr` runs
 this gate after the smoke and Verus proofs, and the `kani-smoke` job in
-`.github/workflows/formal-verification.yml` runs it as its final step. Both stay
-red while the compatibility blocker remains. Ordinary format, Clippy, Whitaker,
-typecheck and test targets include the excluded package explicitly. Its
-ordinary Rust tests use only the standard library so the proof dependency
+`.github/workflows/formal-verification.yml` runs it as its final step. Both
+stay red while the compatibility blocker remains. Ordinary format, Clippy,
+Whitaker, typecheck and test targets include the excluded package explicitly.
+Its ordinary Rust tests use only the standard library so the proof dependency
 closure stays empty; they do not enable `cfg(kani)`.
 
 ### Kani tooling model
