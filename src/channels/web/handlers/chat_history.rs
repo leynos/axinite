@@ -34,18 +34,37 @@ const DEFAULT_HISTORY_LIMIT: usize = 50;
 const MAX_HISTORY_LIMIT: usize = 200;
 
 fn parse_before_cursor(value: &str) -> Result<(chrono::DateTime<chrono::Utc>, Uuid), ()> {
-    if let Some((timestamp, message_id)) = value.split_once('|') {
-        let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(timestamp)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .map_err(|_| ())?;
-        let parsed_id = Uuid::parse_str(message_id).map_err(|_| ())?;
-        Ok((parsed_timestamp, parsed_id))
-    } else {
-        let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(value)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .map_err(|_| ())?;
-        Ok((parsed_timestamp, Uuid::nil()))
-    }
+    let Some((timestamp, message_id)) = value.split_once('|') else {
+        return parse_timestamp_only_cursor(value);
+    };
+    parse_timestamped_cursor(timestamp, message_id)
+}
+
+/// Parse a `timestamp|message-id` history cursor.
+fn parse_timestamped_cursor(
+    timestamp: &str,
+    message_id: &str,
+) -> Result<(chrono::DateTime<chrono::Utc>, Uuid), ()> {
+    let parsed_timestamp = parse_cursor_timestamp(timestamp)?;
+    let parsed_id = parse_cursor_message_id(message_id)?;
+    Ok((parsed_timestamp, parsed_id))
+}
+
+/// Parse a legacy history cursor that carries only a timestamp.
+fn parse_timestamp_only_cursor(value: &str) -> Result<(chrono::DateTime<chrono::Utc>, Uuid), ()> {
+    Ok((parse_cursor_timestamp(value)?, Uuid::nil()))
+}
+
+/// Parse an RFC 3339 history cursor timestamp as UTC.
+fn parse_cursor_timestamp(value: &str) -> Result<chrono::DateTime<chrono::Utc>, ()> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .map_err(|_| ())
+}
+
+/// Parse the UUID half of a `timestamp|message-id` history cursor.
+fn parse_cursor_message_id(value: &str) -> Result<Uuid, ()> {
+    Uuid::parse_str(value).map_err(|_| ())
 }
 
 async fn load_stored_history(

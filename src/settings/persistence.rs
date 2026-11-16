@@ -21,28 +21,11 @@ impl Settings {
 
         for (key, value) in map {
             // Convert the JSONB value to a string for the existing set() method
-            let value_str = match value {
-                serde_json::Value::String(s) => s.clone(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Null => continue, // null means default, skip
-                other => other.to_string(),
+            let Some(value_str) = db_value_to_string(value) else {
+                continue; // null means default, skip
             };
 
-            match settings.set(key, &value_str) {
-                Ok(()) => {}
-                // The settings table stores both Settings fields and app-specific
-                // data (e.g. nearai.session_token). Silently skip unknown paths.
-                Err(e) if e.starts_with("Path not found") => {}
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to apply DB setting '{}' = '{}': {}",
-                        key,
-                        value_str,
-                        e
-                    );
-                }
-            }
+            apply_db_setting(&mut settings, key, &value_str);
         }
 
         settings
@@ -226,6 +209,37 @@ fn merge_non_default(
             if other != defaults {
                 *target = other.clone();
             }
+        }
+    }
+}
+
+/// Convert a stored JSONB value into the string form accepted by `set`.
+///
+/// Returns `None` for JSON null, which means "keep the default".
+fn db_value_to_string(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Bool(flag) => Some(flag.to_string()),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        serde_json::Value::Null => None,
+        other => Some(other.to_string()),
+    }
+}
+
+/// Apply one stored setting, skipping unknown paths and logging other failures.
+fn apply_db_setting(settings: &mut Settings, key: &str, value_str: &str) {
+    match settings.set(key, value_str) {
+        Ok(()) => {}
+        // The settings table stores both Settings fields and app-specific
+        // data (e.g. nearai.session_token). Silently skip unknown paths.
+        Err(error) if error.starts_with("Path not found") => {}
+        Err(error) => {
+            tracing::warn!(
+                "Failed to apply DB setting '{}' = '{}': {}",
+                key,
+                value_str,
+                error
+            );
         }
     }
 }

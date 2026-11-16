@@ -115,40 +115,59 @@ enum DirEntryKind {
 fn scan_dir(src: &Path) -> io::Result<Vec<DirEntryKind>> {
     let mut entries = Vec::new();
     for entry_result in fs::read_dir(src)? {
-        let entry = match entry_result {
-            Ok(entry) => entry,
-            Err(error) => {
-                tracing::debug!(
-                    "fs_setup: unreadable dir entry under {}: {error}",
-                    src.display()
-                );
-                continue;
-            }
+        let Some(entry) = read_dir_entry(src, entry_result) else {
+            continue;
         };
-        let path = entry.path();
-        let name = entry.file_name();
-        let file_type = match entry.file_type() {
-            Ok(file_type) => file_type,
-            Err(error) => {
-                tracing::debug!(
-                    "fs_setup: file_type() failed for {}: {error}",
-                    path.display()
-                );
-                continue;
-            }
-        };
-        let kind = if file_type.is_dir() {
-            DirEntryKind::Dir { path, name }
-        } else if file_type.is_file() {
-            DirEntryKind::File { path, name }
-        } else if file_type.is_symlink() {
-            DirEntryKind::Symlink { path }
-        } else {
-            DirEntryKind::Other { path }
+        let Some(kind) = classify_dir_entry(entry) else {
+            continue;
         };
         entries.push(kind);
     }
     Ok(entries)
+}
+
+/// Unwrap one directory-entry result, logging and skipping read failures.
+fn read_dir_entry(src: &Path, entry_result: io::Result<fs::DirEntry>) -> Option<fs::DirEntry> {
+    match entry_result {
+        Ok(entry) => Some(entry),
+        Err(error) => {
+            tracing::debug!(
+                "fs_setup: unreadable dir entry under {}: {error}",
+                src.display()
+            );
+            None
+        }
+    }
+}
+
+/// Classify one directory entry by its file type.
+fn classify_dir_entry(entry: fs::DirEntry) -> Option<DirEntryKind> {
+    let path = entry.path();
+    let name = entry.file_name();
+    let file_type = match entry.file_type() {
+        Ok(file_type) => file_type,
+        Err(error) => {
+            tracing::debug!(
+                "fs_setup: file_type() failed for {}: {error}",
+                path.display()
+            );
+            return None;
+        }
+    };
+    Some(classify_file_type(file_type, path, name))
+}
+
+/// Map a file type to its copy-plan entry kind.
+fn classify_file_type(file_type: fs::FileType, path: PathBuf, name: OsString) -> DirEntryKind {
+    if file_type.is_dir() {
+        DirEntryKind::Dir { path, name }
+    } else if file_type.is_file() {
+        DirEntryKind::File { path, name }
+    } else if file_type.is_symlink() {
+        DirEntryKind::Symlink { path }
+    } else {
+        DirEntryKind::Other { path }
+    }
 }
 
 fn copy_one_file(src: &Path, dst: &Path) -> io::Result<usize> {

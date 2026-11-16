@@ -36,6 +36,16 @@ pub(super) enum ExtensionKind {
     Channel,
 }
 
+impl ExtensionKind {
+    /// Singular name used in the compatibility tests' skip messages.
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Tool => "tool",
+            Self::Channel => "channel",
+        }
+    }
+}
+
 /// A discovered WASM extension from the registry.
 pub(super) struct DiscoveredExtension {
     pub(super) name: String,

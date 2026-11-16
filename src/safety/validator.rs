@@ -198,41 +198,6 @@ impl Validator {
         let mut result = ValidationResult::ok();
 
         // Recursively check all string values in the JSON
-        fn check_strings(
-            value: &serde_json::Value,
-            path: &str,
-            validator: &Validator,
-            result: &mut ValidationResult,
-        ) {
-            match value {
-                serde_json::Value::String(s) => {
-                    let string_result = if s.is_empty() {
-                        ValidationResult::ok()
-                    } else {
-                        validator.validate_non_empty_input(s, path)
-                    };
-                    *result = std::mem::take(result).merge(string_result);
-                }
-                serde_json::Value::Array(arr) => {
-                    for (i, item) in arr.iter().enumerate() {
-                        let child_path = format!("{path}[{i}]");
-                        check_strings(item, &child_path, validator, result);
-                    }
-                }
-                serde_json::Value::Object(obj) => {
-                    for (k, v) in obj {
-                        let child_path = if path.is_empty() {
-                            k.clone()
-                        } else {
-                            format!("{path}.{k}")
-                        };
-                        check_strings(v, &child_path, validator, result);
-                    }
-                }
-                _ => {}
-            }
-        }
-
         check_strings(params, "", self, &mut result);
         result
     }
@@ -241,6 +206,58 @@ impl Validator {
 impl Default for Validator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Recursively validate every string value in a JSON document.
+fn check_strings(
+    value: &serde_json::Value,
+    path: &str,
+    validator: &Validator,
+    result: &mut ValidationResult,
+) {
+    match value {
+        serde_json::Value::String(text) => check_string(text, path, validator, result),
+        serde_json::Value::Array(items) => check_array(items, path, validator, result),
+        serde_json::Value::Object(fields) => check_object(fields, path, validator, result),
+        _ => {}
+    }
+}
+
+/// Validate one string value, leaving empty strings unvalidated.
+fn check_string(text: &str, path: &str, validator: &Validator, result: &mut ValidationResult) {
+    if !text.is_empty() {
+        *result = std::mem::take(result).merge(validator.validate_non_empty_input(text, path));
+    }
+}
+
+/// Validate every element of a JSON array, extending the path with its index.
+fn check_array(
+    items: &[serde_json::Value],
+    path: &str,
+    validator: &Validator,
+    result: &mut ValidationResult,
+) {
+    for (i, item) in items.iter().enumerate() {
+        let child_path = format!("{path}[{i}]");
+        check_strings(item, &child_path, validator, result);
+    }
+}
+
+/// Validate every value of a JSON object, extending the path with its key.
+fn check_object(
+    fields: &serde_json::Map<String, serde_json::Value>,
+    path: &str,
+    validator: &Validator,
+    result: &mut ValidationResult,
+) {
+    for (key, value) in fields {
+        let child_path = if path.is_empty() {
+            key.clone()
+        } else {
+            format!("{path}.{key}")
+        };
+        check_strings(value, &child_path, validator, result);
     }
 }
 

@@ -192,79 +192,88 @@ impl LeakDetector {
 
     /// Scan content for potential secret leaks.
     pub fn scan(&self, content: &str) -> LeakScanResult {
-        let mut matches = Vec::new();
-        let mut should_block = false;
-        let mut redact_ranges = Vec::new();
-
-        // Use prefix matcher for quick elimination
-        let candidate_indices: Vec<usize> = if let Some(ref matcher) = self.prefix_matcher {
-            let mut indices = Vec::new();
-            for mat in matcher.find_iter(content) {
-                let found_prefix = &self.known_prefixes[mat.pattern().as_usize()].0;
-                // Add all patterns whose prefix overlaps with the found prefix.
-                // This handles two cases:
-                // 1. A short prefix shadows a longer one (e.g. "sk-" shadows "sk-ant-api")
-                // 2. Duplicate prefixes mapping to different patterns (e.g. "-----BEGIN" for PEM and SSH)
-                for (other_prefix, other_idx) in &self.known_prefixes {
-                    if prefixes_overlap(other_prefix, found_prefix) && !indices.contains(other_idx)
-                    {
-                        indices.push(*other_idx);
-                    }
-                }
-            }
-            // Also include patterns without prefixes
-            for (idx, _) in self.patterns.iter().enumerate() {
-                if !self.known_prefixes.iter().any(|(_, i)| *i == idx) && !indices.contains(&idx) {
-                    indices.push(idx);
-                }
-            }
-            indices
-        } else {
-            (0..self.patterns.len()).collect()
-        };
-
-        // Check candidate patterns
-        for idx in candidate_indices {
-            let pattern = &self.patterns[idx];
-            for mat in pattern.regex.find_iter(content) {
-                let matched_text = mat.as_str();
-                let location = mat.start()..mat.end();
-
-                let leak_match = LeakMatch {
-                    pattern_name: pattern.name.clone(),
-                    severity: pattern.severity,
-                    action: pattern.action,
-                    location: location.clone(),
-                    masked_preview: mask_secret(matched_text),
-                };
-
-                if pattern.action == LeakAction::Block {
-                    should_block = true;
-                }
-
-                if pattern.action == LeakAction::Redact {
-                    redact_ranges.push(location.clone());
-                }
-
-                matches.push(leak_match);
-            }
-        }
+        let mut matches: Vec<LeakMatch> = self
+            .candidate_indices(content)
+            .into_iter()
+            .flat_map(|idx| self.pattern_matches(idx, content))
+            .collect();
 
         // Sort by location for proper redaction
         matches.sort_by_key(|m| m.location.start);
-        redact_ranges.sort_by_key(|r| r.start);
+
+        let should_block = matches.iter().any(|m| m.action == LeakAction::Block);
+        let redact_ranges = redaction_ranges(&matches);
 
         // Build redacted content if needed
-        let redacted_content = if !redact_ranges.is_empty() {
-            Some(apply_redactions(content, &redact_ranges))
-        } else {
+        let redacted_content = if redact_ranges.is_empty() {
             None
+        } else {
+            Some(apply_redactions(content, &redact_ranges))
         };
 
         LeakScanResult {
             matches,
             should_block,
             redacted_content,
+        }
+    }
+
+    /// Find every match of the pattern at `idx` in `content`.
+    fn pattern_matches(&self, idx: usize, content: &str) -> Vec<LeakMatch> {
+        let pattern = &self.patterns[idx];
+        pattern
+            .regex
+            .find_iter(content)
+            .map(|mat| LeakMatch {
+                pattern_name: pattern.name.clone(),
+                severity: pattern.severity,
+                action: pattern.action,
+                location: mat.start()..mat.end(),
+                masked_preview: mask_secret(mat.as_str()),
+            })
+            .collect()
+    }
+
+    /// Indices of the patterns worth testing against `content`.
+    ///
+    /// The prefix matcher quickly eliminates patterns whose literal prefix is
+    /// absent; when no matcher could be built, every pattern is a candidate.
+    fn candidate_indices(&self, content: &str) -> Vec<usize> {
+        let Some(ref matcher) = self.prefix_matcher else {
+            return (0..self.patterns.len()).collect();
+        };
+
+        let mut indices = Vec::new();
+        for mat in matcher.find_iter(content) {
+            let found_prefix = &self.known_prefixes[mat.pattern().as_usize()].0;
+            self.extend_overlapping(&mut indices, found_prefix);
+        }
+        // Also include patterns without prefixes
+        self.extend_prefixless(&mut indices);
+        indices
+    }
+
+    /// Add every pattern whose literal prefix overlaps with `found_prefix`.
+    ///
+    /// This handles two cases: a short prefix shadowing a longer one (for
+    /// example `sk-` shadows `sk-ant-api`), and duplicate prefixes mapping to
+    /// different patterns (for example `-----BEGIN` for PEM and SSH).
+    fn extend_overlapping(&self, indices: &mut Vec<usize>, found_prefix: &str) {
+        for (other_prefix, other_idx) in &self.known_prefixes {
+            if prefixes_overlap(other_prefix, found_prefix) && !indices.contains(other_idx) {
+                indices.push(*other_idx);
+            }
+        }
+    }
+
+    /// Add the indices of every pattern that has no literal prefix, since
+    /// those can never be ruled out by prefix matching.
+    fn extend_prefixless(&self, indices: &mut Vec<usize>) {
+        for (idx, _) in self.patterns.iter().enumerate() {
+            let has_prefix = self.known_prefixes.iter().any(|(_, i)| *i == idx);
+            if !has_prefix && !indices.contains(&idx) {
+                indices.push(idx);
+            }
         }
     }
 
@@ -358,6 +367,20 @@ impl Default for LeakDetector {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Collect the byte ranges that must be redacted, ordered by start offset.
+///
+/// The incoming matches are already sorted by location, and the sort below is
+/// stable, so equal starts keep their original order.
+fn redaction_ranges(matches: &[LeakMatch]) -> Vec<Range<usize>> {
+    let mut ranges: Vec<Range<usize>> = matches
+        .iter()
+        .filter(|m| m.action == LeakAction::Redact)
+        .map(|m| m.location.clone())
+        .collect();
+    ranges.sort_by_key(|r| r.start);
+    ranges
 }
 
 /// Error from leak detection.

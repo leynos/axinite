@@ -186,76 +186,64 @@ pub fn compare_runs(baseline: &RunResult, current: &RunResult, threshold: f64) -
             continue;
         };
 
+        let b = &baseline_scenario.trace;
+        let c = &current_scenario.trace;
+        let mut sink = DeltaSink {
+            scenario_id: current_scenario.scenario_id.as_str(),
+            threshold,
+            deltas: &mut deltas,
+        };
+
         // Wall time comparison.
-        let b_time = baseline_scenario.trace.wall_time_ms as f64;
-        let c_time = current_scenario.trace.wall_time_ms as f64;
-        if b_time > 0.0 {
-            let delta = (c_time - b_time) / b_time;
-            if delta.abs() > threshold {
-                deltas.push(MetricDelta {
-                    scenario_id: current_scenario.scenario_id.clone(),
-                    metric: "wall_time_ms".to_string(),
-                    baseline: b_time,
-                    current: c_time,
-                    delta,
-                    is_regression: delta > 0.0,
-                });
-            }
-        }
+        sink.record("wall_time_ms", b.wall_time_ms as f64, c.wall_time_ms as f64);
 
         // Token count comparison (input + output).
-        let b_tokens =
-            (baseline_scenario.trace.input_tokens + baseline_scenario.trace.output_tokens) as f64;
-        let c_tokens =
-            (current_scenario.trace.input_tokens + current_scenario.trace.output_tokens) as f64;
-        if b_tokens > 0.0 {
-            let delta = (c_tokens - b_tokens) / b_tokens;
-            if delta.abs() > threshold {
-                deltas.push(MetricDelta {
-                    scenario_id: current_scenario.scenario_id.clone(),
-                    metric: "total_tokens".to_string(),
-                    baseline: b_tokens,
-                    current: c_tokens,
-                    delta,
-                    is_regression: delta > 0.0,
-                });
-            }
-        }
+        sink.record(
+            "total_tokens",
+            (b.input_tokens + b.output_tokens) as f64,
+            (c.input_tokens + c.output_tokens) as f64,
+        );
 
         // LLM calls comparison.
-        let b_calls = baseline_scenario.trace.llm_calls as f64;
-        let c_calls = current_scenario.trace.llm_calls as f64;
-        if b_calls > 0.0 {
-            let delta = (c_calls - b_calls) / b_calls;
-            if delta.abs() > threshold {
-                deltas.push(MetricDelta {
-                    scenario_id: current_scenario.scenario_id.clone(),
-                    metric: "llm_calls".to_string(),
-                    baseline: b_calls,
-                    current: c_calls,
-                    delta,
-                    is_regression: delta > 0.0,
-                });
-            }
-        }
+        sink.record("llm_calls", b.llm_calls as f64, c.llm_calls as f64);
 
         // Tool call count comparison.
-        let b_tools = baseline_scenario.trace.tool_calls.len() as f64;
-        let c_tools = current_scenario.trace.tool_calls.len() as f64;
-        if b_tools > 0.0 {
-            let delta = (c_tools - b_tools) / b_tools;
-            if delta.abs() > threshold {
-                deltas.push(MetricDelta {
-                    scenario_id: current_scenario.scenario_id.clone(),
-                    metric: "tool_calls".to_string(),
-                    baseline: b_tools,
-                    current: c_tools,
-                    delta,
-                    is_regression: delta > 0.0,
-                });
-            }
-        }
+        sink.record(
+            "tool_calls",
+            b.tool_calls.len() as f64,
+            c.tool_calls.len() as f64,
+        );
     }
 
     deltas
+}
+
+/// Accumulates one scenario's deltas, so each comparison names only its metric
+/// and its two values.
+struct DeltaSink<'a> {
+    scenario_id: &'a str,
+    threshold: f64,
+    deltas: &'a mut Vec<MetricDelta>,
+}
+
+impl DeltaSink<'_> {
+    /// Record one metric's delta when it moved by more than `threshold`.
+    ///
+    /// A zero baseline has no meaningful relative delta, so it is skipped.
+    fn record(&mut self, metric: &str, baseline: f64, current: f64) {
+        if baseline <= 0.0 {
+            return;
+        }
+        let delta = (current - baseline) / baseline;
+        if delta.abs() > self.threshold {
+            self.deltas.push(MetricDelta {
+                scenario_id: self.scenario_id.to_string(),
+                metric: metric.to_string(),
+                baseline,
+                current,
+                delta,
+                is_regression: delta > 0.0,
+            });
+        }
+    }
 }

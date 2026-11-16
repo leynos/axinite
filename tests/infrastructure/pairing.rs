@@ -7,6 +7,10 @@ use axinite::cli::{PairingCommand, run_pairing_command_with_store};
 use axinite::pairing::PairingStore;
 use tempfile::TempDir;
 
+/// Build a store over a fresh temporary base directory.
+///
+/// The caller owns the returned guard: bind it for the whole test so the
+/// directory outlives the store and is removed at teardown.
 fn test_store() -> std::io::Result<(PairingStore, TempDir)> {
     let dir = TempDir::new()?;
     let store = PairingStore::with_base_dir(dir.path().to_path_buf());
@@ -15,7 +19,7 @@ fn test_store() -> std::io::Result<(PairingStore, TempDir)> {
 
 #[test]
 fn test_pairing_flow_unknown_user_to_approved() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     let channel = "telegram";
 
     // 1. Unknown user sends first message -> upsert creates request
@@ -66,7 +70,7 @@ fn test_pairing_flow_unknown_user_to_approved() -> anyhow::Result<()> {
 
 #[test]
 fn test_pairing_flow_cli_approve() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     store.upsert_request("telegram", "user_999", None)?;
     let pending = store.list_pending("telegram")?;
     let code = pending[0].code.clone();
@@ -85,7 +89,7 @@ fn test_pairing_flow_cli_approve() -> anyhow::Result<()> {
 
 #[test]
 fn test_pairing_reject_invalid_code() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     store.upsert_request("telegram", "user_1", None)?;
 
     let result = store.approve("telegram", "INVALID1");
@@ -104,7 +108,7 @@ fn test_pairing_reject_invalid_code() -> anyhow::Result<()> {
 
 #[test]
 fn test_pairing_multiple_channels_isolated() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
 
     let r_telegram = store.upsert_request("telegram", "user_a", None)?;
     let r_slack = store.upsert_request("slack", "user_b", None)?;

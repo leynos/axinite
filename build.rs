@@ -1,9 +1,17 @@
 //! Build script: embed registry manifests for the host binary.
 
+#![forbid(unsafe_code)]
+
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+/// Catalogue written when the registry directory is absent.
+const EMPTY_CATALOGUE: &str = r#"{"tools":[],"channels":[],"bundles":{"bundles":{}}}"#;
+
+/// Bundles section used when `registry/_bundles.json` is absent.
+const DEFAULT_BUNDLES: &str = r#"{"bundles":{}}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -30,62 +38,81 @@ fn embed_registry_catalogue(root: &Path) -> Result<(), Box<dyn std::error::Error
     // Always watch the registry paths themselves so Cargo reruns when the
     // directories appear later; collect_json_files adds per-file watches for
     // existing manifests to track content changes reliably.
-    println!("cargo:rerun-if-changed=registry");
-    println!("cargo:rerun-if-changed=registry/tools");
-    println!("cargo:rerun-if-changed=registry/channels");
-    println!("cargo:rerun-if-changed=registry/_bundles.json");
+    announce_registry_watches();
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "owning Cargo build-script boundary; Cargo supplies build outputs through its environment"
-    )]
+    let out_path = embedded_catalogue_path()?;
+    let catalogue = catalogue_for(root, &registry_dir)?;
+    fs::write(&out_path, catalogue)?;
+    Ok(())
+}
+
+/// Announce the registry paths Cargo must watch for later appearance.
+fn announce_registry_watches() {
+    for path in [
+        "registry",
+        "registry/tools",
+        "registry/channels",
+        "registry/_bundles.json",
+    ] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+}
+
+/// Resolve the catalogue output path from Cargo's `OUT_DIR`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "owning Cargo build-script boundary; Cargo supplies build outputs through its environment"
+)]
+fn embedded_catalogue_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
-    let out_path = out_dir.join("embedded_catalogue.json");
+    Ok(out_dir.join("embedded_catalogue.json"))
+}
 
+/// Build the catalogue, or return the empty form when the registry is absent.
+fn catalogue_for(root: &Path, registry_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
     if !registry_dir.is_dir() {
-        // No registry dir: write empty catalogue
-        fs::write(
-            &out_path,
-            r#"{"tools":[],"channels":[],"bundles":{"bundles":{}}}"#,
-        )?;
-        return Ok(());
+        return Ok(EMPTY_CATALOGUE.to_string());
     }
+    build_catalogue(root, registry_dir)
+}
 
+/// Combine the tool manifests, channel manifests and bundle definitions.
+fn build_catalogue(root: &Path, registry_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let mut tools = Vec::new();
+    collect_manifests(root, &registry_dir.join("tools"), &mut tools)?;
+
     let mut channels = Vec::new();
+    collect_manifests(root, &registry_dir.join("channels"), &mut channels)?;
 
-    // Collect tool manifests
-    let tools_dir = registry_dir.join("tools");
-    if tools_dir.is_dir() {
-        collect_json_files(root, &tools_dir, &mut tools)?;
-    }
-
-    // Collect channel manifests
-    let channels_dir = registry_dir.join("channels");
-    if channels_dir.is_dir() {
-        collect_json_files(root, &channels_dir, &mut channels)?;
-    }
-
-    // Read bundles
-    let bundles_path = registry_dir.join("_bundles.json");
-    let bundles_raw = if bundles_path.is_file() {
-        fs::read_to_string(&bundles_path).map_err(|e| {
-            io::Error::other(format!("failed to read {}: {e}", bundles_path.display()))
-        })?
-    } else {
-        r#"{"bundles":{}}"#.to_string()
-    };
-
-    // Build the combined JSON
-    let catalogue = format!(
+    let bundles_raw = read_bundles(&registry_dir.join("_bundles.json"))?;
+    Ok(format!(
         r#"{{"tools":[{}],"channels":[{}],"bundles":{}}}"#,
         tools.join(","),
         channels.join(","),
         bundles_raw,
-    );
+    ))
+}
 
-    fs::write(&out_path, catalogue)?;
+/// Collect manifests from `dir` when that optional directory exists.
+fn collect_manifests(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if dir.is_dir() {
+        collect_json_files(root, dir, out)?;
+    }
     Ok(())
+}
+
+/// Read the bundle definitions, falling back to an empty bundle set.
+fn read_bundles(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    if !path.is_file() {
+        return Ok(DEFAULT_BUNDLES.to_string());
+    }
+    let raw = fs::read_to_string(path)
+        .map_err(|error| io::Error::other(format!("failed to read {}: {error}", path.display())))?;
+    Ok(raw)
 }
 
 /// Read all `.json` files from `dir` and push their raw contents into `out`.
@@ -98,35 +125,46 @@ fn collect_json_files(
     dir: &Path,
     out: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut entries: Vec<_> = fs::read_dir(dir)
-        .map_err(|e| io::Error::other(format!("failed to read {}: {e}", dir.display())))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| io::Error::other(format!("failed to list {}: {e}", dir.display())))?
-        .into_iter()
-        .filter(|e| {
-            e.path().is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("json")
-        })
-        .collect();
-
-    // Sort for deterministic output
-    entries.sort_by_key(|e| e.file_name());
-
-    for entry in entries {
-        // Emit per-file watch so Cargo reruns when file contents change
-        let path = entry.path();
-        let relative_path = path.strip_prefix(root).map_err(|e| {
-            io::Error::other(format!(
-                "failed to strip {} from {}: {e}",
-                root.display(),
-                path.display()
-            ))
-        })?;
-        let normalized_path = relative_path.to_string_lossy().replace('\\', "/");
-        println!("cargo:rerun-if-changed={normalized_path}");
-        let content = fs::read_to_string(&path)
-            .map_err(|e| io::Error::other(format!("failed to read {}: {e}", path.display())))?;
-        out.push(content);
+    for path in sorted_json_paths(dir)? {
+        out.push(watched_contents(root, &path)?);
     }
-
     Ok(())
+}
+
+/// List the JSON files in `dir`, sorted by file name for deterministic output.
+fn sorted_json_paths(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let mut entries: Vec<_> = fs::read_dir(dir)
+        .map_err(|error| io::Error::other(format!("failed to read {}: {error}", dir.display())))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| io::Error::other(format!("failed to list {}: {error}", dir.display())))?;
+
+    entries.retain(is_json_manifest);
+    entries.sort_by_key(|entry| entry.file_name());
+    Ok(entries.into_iter().map(|entry| entry.path()).collect())
+}
+
+/// Report whether a directory entry is a regular file with a `.json` suffix.
+fn is_json_manifest(entry: &fs::DirEntry) -> bool {
+    entry.path().is_file() && entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+}
+
+/// Watch `path` relative to `root` and return its contents.
+fn watched_contents(root: &Path, path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let relative_path = path.strip_prefix(root).map_err(|error| {
+        io::Error::other(format!(
+            "failed to strip {} from {}: {error}",
+            root.display(),
+            path.display()
+        ))
+    })?;
+
+    // Emit per-file watch so Cargo reruns when file contents change.
+    println!(
+        "cargo:rerun-if-changed={}",
+        relative_path.to_string_lossy().replace('\\', "/")
+    );
+
+    let content = fs::read_to_string(path)
+        .map_err(|error| io::Error::other(format!("failed to read {}: {error}", path.display())))?;
+    Ok(content)
 }

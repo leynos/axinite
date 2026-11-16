@@ -463,6 +463,7 @@ dependencies = [
  "rig-core",
  "rust_decimal",
  "rust_decimal_macros",
+ "rustix 1.1.4",
  "rustls",
  "rustls-native-certs",
  "rustyline",
@@ -496,6 +497,7 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "zbus",
+ "zeroize",
  "zip",
 ]
 

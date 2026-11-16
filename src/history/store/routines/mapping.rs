@@ -29,6 +29,36 @@ fn parse_non_negative_u32(value: i32, field: &str) -> Result<u32, DatabaseError>
     })
 }
 
+/// Parse the guardrail columns into their domain representation.
+fn parse_guardrails(
+    cooldown_secs: i32,
+    max_concurrent: i32,
+    dedup_window_secs: Option<i32>,
+) -> Result<RoutineGuardrails, DatabaseError> {
+    let cooldown = parse_non_negative_u64(i64::from(cooldown_secs), "routines.cooldown_secs")?;
+    let max_concurrent = parse_non_negative_u32(max_concurrent, "routines.max_concurrent")?;
+    let dedup_window = dedup_window_secs
+        .map(|seconds| parse_non_negative_u64(i64::from(seconds), "routines.dedup_window_secs"))
+        .transpose()?;
+
+    Ok(RoutineGuardrails {
+        cooldown: std::time::Duration::from_secs(cooldown),
+        max_concurrent,
+        dedup_window: dedup_window.map(std::time::Duration::from_secs),
+    })
+}
+
+/// Read and parse the run counters from the row.
+fn parse_run_counters(row: &tokio_postgres::Row) -> Result<(u64, u32), DatabaseError> {
+    let run_count = parse_non_negative_u64(row.get::<_, i64>("run_count"), "routines.run_count")?;
+    let consecutive_failures = parse_non_negative_u32(
+        row.get::<_, i32>("consecutive_failures"),
+        "routines.consecutive_failures",
+    )?;
+
+    Ok((run_count, consecutive_failures))
+}
+
 pub(crate) fn row_to_routine(row: &tokio_postgres::Row) -> Result<Routine, DatabaseError> {
     let trigger_type: String = row.get("trigger_type");
     let trigger_config: serde_json::Value = row.get("trigger_config");
@@ -42,16 +72,8 @@ pub(crate) fn row_to_routine(row: &tokio_postgres::Row) -> Result<Routine, Datab
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
     let action = RoutineAction::from_db(&action_type, action_config)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
-    let cooldown = parse_non_negative_u64(i64::from(cooldown_secs), "routines.cooldown_secs")?;
-    let max_concurrent = parse_non_negative_u32(max_concurrent, "routines.max_concurrent")?;
-    let dedup_window = dedup_window_secs
-        .map(|seconds| parse_non_negative_u64(i64::from(seconds), "routines.dedup_window_secs"))
-        .transpose()?;
-    let run_count = parse_non_negative_u64(row.get::<_, i64>("run_count"), "routines.run_count")?;
-    let consecutive_failures = parse_non_negative_u32(
-        row.get::<_, i32>("consecutive_failures"),
-        "routines.consecutive_failures",
-    )?;
+    let guardrails = parse_guardrails(cooldown_secs, max_concurrent, dedup_window_secs)?;
+    let (run_count, consecutive_failures) = parse_run_counters(row)?;
 
     Ok(Routine {
         id: row.get("id"),
@@ -61,11 +83,7 @@ pub(crate) fn row_to_routine(row: &tokio_postgres::Row) -> Result<Routine, Datab
         enabled: row.get("enabled"),
         trigger,
         action,
-        guardrails: RoutineGuardrails {
-            cooldown: std::time::Duration::from_secs(cooldown),
-            max_concurrent,
-            dedup_window: dedup_window.map(std::time::Duration::from_secs),
-        },
+        guardrails,
         notify: NotifyConfig {
             channel: row.get("notify_channel"),
             user: row.get("notify_user"),

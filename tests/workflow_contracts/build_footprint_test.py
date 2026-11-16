@@ -140,6 +140,24 @@ def _dev_profile_text() -> str:
     return match.group(0)
 
 
+def _skip_if_sccache_refuses_incremental(
+    extra_env: dict[str, str] | None, output: str
+) -> None:
+    """Skip the incremental override when the active wrapper refuses it."""
+    incremental_requested = (extra_env or {}).get("CARGO_INCREMENTAL") == "1"
+    if not incremental_requested:
+        return
+
+    wrapper_refused_incremental = (
+        "sccache: incremental compilation is prohibited" in output
+    )
+    if wrapper_refused_incremental:
+        pytest.skip(
+            "the active sccache wrapper refuses incremental compilation; "
+            "this override requires a build outside sccache"
+        )
+
+
 def _compile_fixture(tmp_path: Path, extra_env: dict[str, str] | None = None) -> str:
     """Build the fixture crate and return the rustc command line Cargo ran.
 
@@ -174,6 +192,8 @@ def _compile_fixture(tmp_path: Path, extra_env: dict[str, str] | None = None) ->
         text=True,
         check=False,
     )
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    _skip_if_sccache_refuses_incremental(extra_env, combined_output)
     assert result.returncode == 0, f"cargo build failed:\n{result.stderr}"
     lines = RUSTC_LINE.findall(result.stderr)
     assert lines, f"no rustc command line in Cargo's output:\n{result.stderr}"

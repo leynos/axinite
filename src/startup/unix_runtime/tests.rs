@@ -190,9 +190,12 @@ async fn sighup_reload_failure_keeps_the_active_configuration() -> anyhow::Resul
             tokio::time::Instant::now() < deadline,
             "SIGHUP never reached the reload manager"
         );
-        // SAFETY: the Tokio signal driver installed above handles SIGHUP
-        // for this process, so raising it cannot terminate the test.
-        unsafe { libc::raise(libc::SIGHUP) };
+        // The Tokio signal driver installed above handles SIGHUP for this
+        // process, so signalling ourselves cannot terminate the test. The
+        // workspace forbids `unsafe`, so raise the signal through rustix's
+        // safe `kill` wrapper rather than `libc::raise`.
+        rustix::process::kill_process(rustix::process::getpid(), rustix::process::Signal::HUP)
+            .expect("raising SIGHUP for the current process");
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 

@@ -48,25 +48,37 @@ fn read_secret_line() -> io::Result<SecretString> {
     let mut input = String::new();
     let mut stdout = io::stdout();
 
-    // Drain any residual key events (e.g. Enter from a prior `read_line` prompt)
-    // that are already queued before we start reading. Without this, on
-    // Windows the leftover Enter is immediately consumed and the function
-    // returns an empty string before the user can type anything.
-    // Uses Duration::ZERO so we never block waiting for new input — only
-    // events already in the queue are consumed.
+    drain_pending_events()?;
+    read_secret_input(&mut input, &mut stdout)?;
+
+    Ok(SecretString::from(input))
+}
+
+/// Drain any residual key events (such as an Enter from a prior `read_line`
+/// prompt) that are already queued before reading starts.
+///
+/// Without this, on Windows the leftover Enter is consumed immediately and the
+/// prompt returns an empty string before the user can type anything. A
+/// zero-length poll timeout means only queued events are consumed, never
+/// newly typed ones.
+fn drain_pending_events() -> io::Result<()> {
     while event::poll(std::time::Duration::ZERO)? {
         let _ = event::read()?;
     }
+    Ok(())
+}
 
+/// Append masked keystrokes to `input` until the user submits or interrupts.
+fn read_secret_input<W: Write>(input: &mut String, stdout: &mut W) -> io::Result<()> {
     loop {
         if let Event::Key(KeyEvent {
             code, modifiers, ..
         }) = event::read()?
         {
-            let (next_input, effect) = apply_secret_key_event(&input, code, modifiers);
+            let (next_input, effect) = apply_secret_key_event(input, code, modifiers);
             match effect {
                 SecretInputEffect::Submit => {
-                    input = next_input;
+                    *input = next_input;
                     break;
                 }
                 SecretInputEffect::Interrupt => {
@@ -74,14 +86,13 @@ fn read_secret_line() -> io::Result<SecretString> {
                 }
                 SecretInputEffect::None => {}
                 SecretInputEffect::Backspace | SecretInputEffect::MaskChar => {
-                    input = next_input;
-                    apply_secret_input_effect(&mut stdout, &effect)?;
+                    *input = next_input;
+                    apply_secret_input_effect(stdout, &effect)?;
                 }
             }
         }
     }
-
-    Ok(SecretString::from(input))
+    Ok(())
 }
 
 /// Yes/no confirmation prompt.

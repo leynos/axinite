@@ -16,6 +16,8 @@
 //! available, and reach for this crate only when the access is
 //! ambient-by-design.
 
+#![forbid(unsafe_code)]
+
 mod dir;
 mod file;
 mod fns;

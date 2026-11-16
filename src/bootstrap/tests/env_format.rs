@@ -263,11 +263,7 @@ fn bootstrap_env_all_wizard_vars_round_trip() {
         ("EMBEDDING_ENABLED", "false"),
     ];
 
-    let mut content = String::new();
-    for (key, value) in &vars {
-        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-        content.push_str(&format!("{}=\"{}\"\n", key, escaped));
-    }
+    let content = wizard_env_content(&vars);
     ambient_fs::write(&env_path, &content).expect_valid("write full wizard round-trip env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
@@ -276,7 +272,22 @@ fn bootstrap_env_all_wizard_vars_round_trip() {
         .collect();
 
     assert_eq!(parsed.len(), vars.len(), "all vars must survive round-trip");
-    for (key, value) in &vars {
+    assert_all_vars_present(&parsed, &vars);
+}
+
+/// Render `vars` as escaped `KEY="value"` lines for the round-trip fixture.
+fn wizard_env_content(vars: &[(&str, &str)]) -> String {
+    let mut content = String::new();
+    for (key, value) in vars {
+        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+        content.push_str(&format!("{}=\"{}\"\n", key, escaped));
+    }
+    content
+}
+
+/// Assert that `parsed` holds every variable in `vars` with a matching value.
+fn assert_all_vars_present(parsed: &[(String, String)], vars: &[(&str, &str)]) {
+    for (key, value) in vars {
         let found = parsed.iter().find(|(parsed_key, _)| parsed_key == key);
         assert!(found.is_some(), "{key} must be present");
         assert_eq!(

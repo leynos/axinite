@@ -7,3 +7,4 @@ edition = "2021"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+unsafe_code = "forbid"

@@ -17,42 +17,60 @@ use super::*;
 pub fn select_one(prompt: &str, options: &[&str]) -> io::Result<usize> {
     let mut stdout = io::stdout();
 
-    // Print prompt
+    print_menu(&mut stdout, prompt, options)?;
+    read_choice(&mut stdout, options.len())
+}
+
+/// Print the prompt followed by the numbered option list.
+fn print_menu<W: Write>(stdout: &mut W, prompt: &str, options: &[&str]) -> io::Result<()> {
     writeln!(stdout, "{}", prompt)?;
     writeln!(stdout)?;
 
-    // Print options
     for (i, option) in options.iter().enumerate() {
         writeln!(stdout, "  [{}] {}", i + 1, option)?;
     }
-    writeln!(stdout)?;
+    writeln!(stdout)
+}
 
+/// Prompt until the user enters a valid choice, returning its zero-based
+/// index.
+fn read_choice<W: Write>(stdout: &mut W, option_count: usize) -> io::Result<usize> {
     loop {
         print!("> ");
         stdout.flush()?;
 
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
-        let input = input.trim();
 
-        // Handle empty input as first option
-        if input.is_empty() {
-            return Ok(0);
+        if let Some(choice) = parse_choice(input.trim(), option_count) {
+            return Ok(choice);
         }
 
-        // Parse number
-        if let Ok(num) = input.parse::<usize>()
-            && (1..=options.len()).contains(&num)
-        {
-            return Ok(num - 1);
-        }
-
-        writeln!(
-            stdout,
-            "Invalid choice. Please enter a number 1-{}.",
-            options.len()
-        )?;
+        advertise_invalid_choice(stdout, option_count)?;
     }
+}
+
+/// Map trimmed user input to a zero-based option index.
+///
+/// Empty input selects the first option; anything outside `1..=option_count`
+/// is rejected.
+fn parse_choice(input: &str, option_count: usize) -> Option<usize> {
+    if input.is_empty() {
+        return Some(0);
+    }
+
+    let number = input.parse::<usize>().ok()?;
+    let index = number.checked_sub(1)?;
+    (index < option_count).then_some(index)
+}
+
+/// Tell the user which numbers the menu accepts.
+fn advertise_invalid_choice<W: Write>(stdout: &mut W, option_count: usize) -> io::Result<()> {
+    writeln!(
+        stdout,
+        "Invalid choice. Please enter a number 1-{}.",
+        option_count
+    )
 }
 
 /// Multi-select with space to toggle, enter to confirm.

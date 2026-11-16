@@ -131,6 +131,7 @@ name = "ambient-fs"
 version = "0.1.0"
 dependencies = [
  "fs4 0.6.6",
+ "tempfile",
 ]
 
 [[package]]
@@ -967,6 +968,7 @@ dependencies = [
  "rusqlite",
  "rust_decimal",
  "rust_decimal_macros",
+ "rustix 1.1.4",
  "rustls",
  "rustls-native-certs",
  "rustyline",
@@ -1007,6 +1009,7 @@ dependencies = [
  "wasmtime-wasi",
  "wat",
  "zbus",
+ "zeroize",
  "zip",
 ]
 

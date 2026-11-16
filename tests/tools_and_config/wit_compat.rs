@@ -14,72 +14,18 @@
 #[path = "wit_compat/harness.rs"]
 mod harness;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use harness::{
-    ExtensionKind, compile_component, create_engine, discover_extensions,
+    DiscoveredExtension, ExtensionKind, compile_component, create_engine, discover_extensions,
     instantiate_channel_component, instantiate_tool_component,
 };
 
 #[test]
 fn wit_compat_tool_components_compile_and_instantiate() {
-    let extensions = discover_extensions();
-    let engine = create_engine();
-
-    let tool_extensions: Vec<_> = extensions
-        .iter()
-        .filter(|ext| ext.kind == ExtensionKind::Tool)
-        .collect();
-
-    if tool_extensions.is_empty() {
-        eprintln!("SKIP: no tool extensions found in registry");
+    let Some(failures) = verify_components(ExtensionKind::Tool, instantiate_tool_component) else {
         return;
-    }
-
-    let mut found_any = false;
-    let mut failures: Vec<String> = Vec::new();
-
-    for ext in &tool_extensions {
-        let wasm_path = match axinite::registry::artifacts::find_wasm_artifact(
-            &ext.source_dir,
-            &ext.crate_name,
-            "release",
-        ) {
-            Some(p) => p,
-            None => {
-                eprintln!(
-                    "  SKIP {}: no built WASM artefact (run ./scripts/build-wasm-extensions.sh)",
-                    ext.name
-                );
-                continue;
-            }
-        };
-
-        found_any = true;
-        eprintln!("  TEST {}: {}", ext.name, wasm_path.display());
-
-        let wasm_bytes = match std::fs::read(&wasm_path) {
-            Ok(bytes) => bytes,
-            Err(e) => panic!("failed to read {}: {e}", wasm_path.display()),
-        };
-
-        let component = match compile_component(&engine, &wasm_bytes) {
-            Ok(c) => c,
-            Err(e) => {
-                failures.push(format!("{}: {e}", ext.name));
-                continue;
-            }
-        };
-
-        if let Err(e) = instantiate_tool_component(&engine, &component) {
-            failures.push(format!("{}: {e}", ext.name));
-        }
-    }
-
-    if !found_any {
-        eprintln!("SKIP: no WASM artefacts found (build extensions first)");
-        return;
-    }
+    };
 
     assert!(
         failures.is_empty(),
@@ -90,63 +36,10 @@ fn wit_compat_tool_components_compile_and_instantiate() {
 
 #[test]
 fn wit_compat_channel_components_compile_and_instantiate() {
-    let extensions = discover_extensions();
-    let engine = create_engine();
-
-    let channel_extensions: Vec<_> = extensions
-        .iter()
-        .filter(|ext| ext.kind == ExtensionKind::Channel)
-        .collect();
-
-    if channel_extensions.is_empty() {
-        eprintln!("SKIP: no channel extensions found in registry");
+    let Some(failures) = verify_components(ExtensionKind::Channel, instantiate_channel_component)
+    else {
         return;
-    }
-
-    let mut found_any = false;
-    let mut failures: Vec<String> = Vec::new();
-
-    for ext in &channel_extensions {
-        let wasm_path = match axinite::registry::artifacts::find_wasm_artifact(
-            &ext.source_dir,
-            &ext.crate_name,
-            "release",
-        ) {
-            Some(p) => p,
-            None => {
-                eprintln!(
-                    "  SKIP {}: no built WASM artefact (run ./scripts/build-wasm-extensions.sh)",
-                    ext.name
-                );
-                continue;
-            }
-        };
-
-        found_any = true;
-        eprintln!("  TEST {}: {}", ext.name, wasm_path.display());
-
-        let wasm_bytes = match std::fs::read(&wasm_path) {
-            Ok(bytes) => bytes,
-            Err(e) => panic!("failed to read {}: {e}", wasm_path.display()),
-        };
-
-        let component = match compile_component(&engine, &wasm_bytes) {
-            Ok(c) => c,
-            Err(e) => {
-                failures.push(format!("{}: {e}", ext.name));
-                continue;
-            }
-        };
-
-        if let Err(e) = instantiate_channel_component(&engine, &component) {
-            failures.push(format!("{}: {e}", ext.name));
-        }
-    }
-
-    if !found_any {
-        eprintln!("SKIP: no WASM artefacts found (build extensions first)");
-        return;
-    }
+    };
 
     assert!(
         failures.is_empty(),
@@ -155,49 +48,130 @@ fn wit_compat_channel_components_compile_and_instantiate() {
     );
 }
 
+/// Compile and instantiate one component, returning the failure text on error.
+type Instantiator = fn(&wasmtime::Engine, &wasmtime::component::Component) -> Result<(), String>;
+
+/// Compile and instantiate every discovered extension of `kind`.
+///
+/// Returns the collected failures, or `None` when there is nothing to verify:
+/// either the registry has no extension of this kind, or none of them has a
+/// built WASM artefact. Both skip rather than pass, so the suite still works
+/// before `./scripts/build-wasm-extensions.sh` has run.
+fn verify_components(kind: ExtensionKind, instantiate: Instantiator) -> Option<Vec<String>> {
+    let extensions = discover_extensions();
+    let engine = create_engine();
+
+    let selected: Vec<_> = extensions.iter().filter(|ext| ext.kind == kind).collect();
+    if selected.is_empty() {
+        eprintln!("SKIP: no {} extensions found in registry", kind.label());
+        return None;
+    }
+
+    let outcomes: Vec<_> = selected
+        .iter()
+        .map(|ext| verify_extension(&engine, ext, instantiate))
+        .collect();
+
+    if outcomes.iter().all(Option::is_none) {
+        eprintln!("SKIP: no WASM artefacts found (build extensions first)");
+        return None;
+    }
+
+    Some(
+        outcomes
+            .into_iter()
+            .flatten()
+            .filter_map(Result::err)
+            .collect(),
+    )
+}
+
+/// Verify one extension, or report that it has no built artefact.
+fn verify_extension(
+    engine: &wasmtime::Engine,
+    ext: &DiscoveredExtension,
+    instantiate: Instantiator,
+) -> Option<Result<(), String>> {
+    let Some(wasm_path) = axinite::registry::artifacts::find_wasm_artifact(
+        &ext.source_dir,
+        &ext.crate_name,
+        "release",
+    ) else {
+        eprintln!(
+            "  SKIP {}: no built WASM artefact (run ./scripts/build-wasm-extensions.sh)",
+            ext.name
+        );
+        return None;
+    };
+
+    eprintln!("  TEST {}: {}", ext.name, wasm_path.display());
+
+    let wasm_bytes = match std::fs::read(&wasm_path) {
+        Ok(bytes) => bytes,
+        Err(e) => panic!("failed to read {}: {e}", wasm_path.display()),
+    };
+
+    let outcome = compile_component(engine, &wasm_bytes)
+        .and_then(|component| instantiate(engine, &component));
+    Some(outcome.map_err(|e| format!("{}: {e}", ext.name)))
+}
+
 #[test]
 fn wit_compat_all_registry_extensions_have_source() {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut missing = Vec::new();
-
-    for dir in &["registry/tools", "registry/channels"] {
-        let registry_dir = repo_root.join(dir);
-        if !registry_dir.exists() {
-            continue;
-        }
-
-        for entry in std::fs::read_dir(&registry_dir).expect("failed to read registry dir") {
-            let entry = entry.expect("failed to read directory entry");
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-
-            let content = std::fs::read_to_string(&path).unwrap();
-            let manifest: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-            let name = manifest["name"].as_str().unwrap_or("unknown");
-            let source_dir = manifest["source"]["dir"].as_str();
-            let crate_name = manifest["source"]["crate_name"].as_str();
-
-            match (source_dir, crate_name) {
-                (Some(d), Some(_)) => {
-                    if !repo_root.join(d).exists() {
-                        missing.push(format!("{name}: source dir '{d}' does not exist"));
-                    }
-                }
-                _ => {
-                    missing.push(format!("{name}: missing source.dir or source.crate_name"));
-                }
-            }
-        }
-    }
+    let missing: Vec<String> = REGISTRY_DIRS
+        .iter()
+        .flat_map(|dir| missing_sources_in_registry_dir(&repo_root, dir))
+        .collect();
 
     assert!(
         missing.is_empty(),
         "Registry entries with missing sources:\n{}",
         missing.join("\n")
     );
+}
+
+/// Registry directories whose manifests are checked for a usable source.
+const REGISTRY_DIRS: [&str; 2] = ["registry/tools", "registry/channels"];
+
+/// Collect the source problems of every JSON manifest directly under `dir`.
+///
+/// A registry directory that does not exist contributes nothing.
+fn missing_sources_in_registry_dir(repo_root: &Path, dir: &str) -> Vec<String> {
+    let registry_dir = repo_root.join(dir);
+    if !registry_dir.exists() {
+        return Vec::new();
+    }
+
+    json_manifest_paths(&registry_dir)
+        .iter()
+        .filter_map(|path| manifest_source_problem(repo_root, path))
+        .collect()
+}
+
+/// The paths of the JSON manifests directly under one registry directory.
+fn json_manifest_paths(registry_dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(registry_dir)
+        .expect("failed to read registry dir")
+        .map(|entry| entry.expect("failed to read directory entry").path())
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("json"))
+        .collect()
+}
+
+/// Describe what is wrong with one manifest's `source` block, if anything.
+fn manifest_source_problem(repo_root: &Path, path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    let name = manifest["name"].as_str().unwrap_or("unknown");
+    match (
+        manifest["source"]["dir"].as_str(),
+        manifest["source"]["crate_name"].as_str(),
+    ) {
+        (Some(dir), Some(_)) if repo_root.join(dir).exists() => None,
+        (Some(dir), Some(_)) => Some(format!("{name}: source dir '{dir}' does not exist")),
+        _ => Some(format!("{name}: missing source.dir or source.crate_name")),
+    }
 }
 
 #[test]

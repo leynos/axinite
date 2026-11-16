@@ -19,11 +19,36 @@ use crate::llm::config::LlmConfig;
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
 /// Snapshot of environment-backed configuration inputs.
-#[derive(Clone, Debug)]
+///
+/// The `Debug` implementation prints the size of each map and whether an
+/// `AXINITE_BASE_DIR` override was captured. The captured environment and the
+/// injected secret overlay hold plaintext values, so neither their contents nor
+/// their key names may reach a log line or panic message. The resolved base
+/// directory is itself a captured environment value and can name a project, a
+/// user or a customer, so it stays out of the summary too: the boolean says an
+/// override took effect without disclosing where it points.
+#[derive(Clone)]
 pub struct EnvContext {
     env_vars: HashMap<String, String>,
     secrets: HashMap<String, String>,
     base_dir: PathBuf,
+}
+
+impl std::fmt::Debug for EnvContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Counts plus whether a base-dir override was captured:
+        // `secret_values()` and `axinite_base_dir()` exist for callers that
+        // need the values, so neither map's contents, their key names, nor the
+        // resolved path can reach this summary.
+        f.debug_struct("EnvContext")
+            .field(
+                "base_dir_overridden",
+                &has_base_dir_override(&self.env_vars),
+            )
+            .field("env_var_count", &self.env_vars.len())
+            .field("secret_count", &self.secrets.len())
+            .finish()
+    }
 }
 
 /// Inputs used to re-resolve an LLM configuration after credential injection.
@@ -266,6 +291,15 @@ fn default_base_dir() -> PathBuf {
     }
 }
 
+/// Whether the snapshot holds a usable `AXINITE_BASE_DIR` override.
+///
+/// An empty value is treated as unset, matching `resolve_base_dir_snapshot`.
+fn has_base_dir_override(env_vars: &HashMap<String, String>) -> bool {
+    env_vars
+        .get(AXINITE_BASE_DIR_ENV)
+        .is_some_and(|value| !value.is_empty())
+}
+
 fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {
     env_vars
         .get(AXINITE_BASE_DIR_ENV)
@@ -275,92 +309,4 @@ fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
-    //! Unit tests for `EnvContext` environment and secret lookup precedence.
-
-    use super::EnvContext;
-    use std::collections::HashMap;
-    use std::path::PathBuf;
-
-    #[test]
-    fn get_prefers_env_over_secret() {
-        let ctx = EnvContext::for_testing(
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::from("env"))]),
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::from("secret"))]),
-        );
-
-        assert_eq!(ctx.get("OPENAI_API_KEY"), Some("env"));
-    }
-
-    /// An empty environment value is treated as unset, so the secret wins.
-    #[test]
-    fn empty_env_value_falls_back_to_secret() {
-        let ctx = EnvContext::for_testing(
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::new())]),
-            HashMap::from([(String::from("OPENAI_API_KEY"), String::from("secret"))]),
-        );
-
-        assert_eq!(ctx.get("OPENAI_API_KEY"), Some("secret"));
-    }
-
-    #[test]
-    fn contains_env_var_counts_empty_values_and_ignores_secrets() {
-        let ctx = EnvContext::default()
-            .with_env("EMPTY_BACKEND", "")
-            .with_secret("SECRET_BACKEND", "postgres");
-
-        assert!(ctx.contains_env_var("EMPTY_BACKEND"));
-        assert!(!ctx.contains_env_var("SECRET_BACKEND"));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn lookup_is_case_insensitive_on_windows() {
-        let ctx = EnvContext::default().with_env("Path", r"C:\Windows\System32");
-
-        assert_eq!(ctx.get("PATH"), Some(r"C:\Windows\System32"));
-        assert!(ctx.contains_env_var("PATH"));
-        assert_eq!(ctx.env_var_raw("PATH"), Some(r"C:\Windows\System32"));
-    }
-
-    #[test]
-    fn builder_helpers_populate_context() {
-        let ctx = EnvContext::default()
-            .with_env("A", "1")
-            .with_secret("B", "2");
-
-        assert_eq!(ctx.get("A"), Some("1"));
-        assert_eq!(ctx.get("B"), Some("2"));
-    }
-
-    #[test]
-    fn base_dir_uses_snapshot_override() {
-        let ctx = EnvContext::default().with_env("AXINITE_BASE_DIR", "/tmp/axinite");
-
-        assert_eq!(ctx.axinite_base_dir(), PathBuf::from("/tmp/axinite"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn ambient_snapshot_skips_non_utf8_entries() {
-        use super::collect_utf8_env_vars;
-        use std::ffi::OsString;
-        use std::os::unix::ffi::OsStringExt;
-
-        let env_vars = collect_utf8_env_vars([
-            (OsString::from("VALID_KEY"), OsString::from("valid")),
-            (
-                OsString::from_vec(b"BAD\xffKEY".to_vec()),
-                OsString::from("ignored"),
-            ),
-            (
-                OsString::from("BAD_VALUE"),
-                OsString::from_vec(b"bad\xffvalue".to_vec()),
-            ),
-        ]);
-
-        assert_eq!(env_vars.get("VALID_KEY"), Some(&String::from("valid")));
-        assert!(!env_vars.contains_key("BAD_VALUE"));
-        assert_eq!(env_vars.len(), 1);
-    }
-}
+mod tests;

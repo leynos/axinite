@@ -7,12 +7,13 @@
 use std::sync::Arc;
 
 use rig::client::CompletionClient;
+use rig::providers::anthropic;
 use secrecy::ExposeSecret;
 
 use super::anthropic_oauth;
 #[cfg(feature = "bedrock")]
 use super::bedrock;
-use super::config::{LlmConfig, NearAiConfig, RegistryProviderConfig};
+use super::config::{CacheRetention, LlmConfig, NearAiConfig, RegistryProviderConfig};
 use super::error::LlmError;
 use super::nearai_chat::NearAiChatProvider;
 use super::provider::LlmProvider;
@@ -130,24 +131,7 @@ fn create_openai_compat_from_registry(
 ) -> Result<Arc<dyn LlmProvider>, LlmError> {
     use rig::providers::openai;
 
-    let mut extra_headers = reqwest::header::HeaderMap::new();
-    for (key, value) in &config.extra_headers {
-        let name = match reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
-            Ok(n) => n,
-            Err(e) => {
-                tracing::warn!(header = %key, error = %e, "Skipping extra header: invalid name");
-                continue;
-            }
-        };
-        let val = match reqwest::header::HeaderValue::from_str(value) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(header = %key, error = %e, "Skipping extra header: invalid value");
-                continue;
-            }
-        };
-        extra_headers.insert(name, val);
-    }
+    let extra_headers = build_extra_headers(&config.extra_headers);
 
     let api_key = config
         .api_key
@@ -194,6 +178,46 @@ fn create_openai_compat_from_registry(
     Ok(Arc::new(adapter))
 }
 
+/// Build the extra HTTP header map from configured name/value pairs.
+///
+/// Invalid names or values are logged and skipped so one bad entry does not
+/// prevent the provider from being created.
+fn build_extra_headers(configured: &[(String, String)]) -> reqwest::header::HeaderMap {
+    let mut extra_headers = reqwest::header::HeaderMap::new();
+    for (key, value) in configured {
+        let Some(name) = parse_header_name(key) else {
+            continue;
+        };
+        let Some(value) = parse_header_value(key, value) else {
+            continue;
+        };
+        extra_headers.insert(name, value);
+    }
+    extra_headers
+}
+
+/// Parse a configured header name, logging and returning `None` when invalid.
+fn parse_header_name(key: &str) -> Option<reqwest::header::HeaderName> {
+    match reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
+        Ok(name) => Some(name),
+        Err(error) => {
+            tracing::warn!(header = %key, error = %error, "Skipping extra header: invalid name");
+            None
+        }
+    }
+}
+
+/// Parse a configured header value, logging and returning `None` when invalid.
+fn parse_header_value(key: &str, value: &str) -> Option<reqwest::header::HeaderValue> {
+    match reqwest::header::HeaderValue::from_str(value) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(header = %key, error = %error, "Skipping extra header: invalid value");
+            None
+        }
+    }
+}
+
 /// Whether the registry config should authenticate via Anthropic OAuth: an
 /// OAuth token is present and no real API key was provided (either absent or
 /// the placeholder value). When both are set, the API key takes priority
@@ -211,18 +235,8 @@ fn create_anthropic_from_registry(
     config: &RegistryProviderConfig,
 ) -> Result<Arc<dyn LlmProvider>, LlmError> {
     if should_use_anthropic_oauth(config) {
-        tracing::debug!(
-            provider = %config.provider_id,
-            model = %config.model,
-            base_url = if config.base_url.is_empty() { "default" } else { &config.base_url },
-            "Using Anthropic OAuth API"
-        );
-        let provider = anthropic_oauth::AnthropicOAuthProvider::new(config)?;
-        return Ok(Arc::new(provider));
+        return create_anthropic_oauth_provider(config);
     }
-
-    use crate::llm::config::CacheRetention;
-    use rig::providers::anthropic;
 
     let api_key = config
         .api_key
@@ -232,35 +246,16 @@ fn create_anthropic_from_registry(
             provider: config.provider_id.clone(),
         })?;
 
-    let client: anthropic::Client = if config.base_url.is_empty() {
-        anthropic::Client::new(&api_key)
-    } else {
-        anthropic::Client::builder()
-            .api_key(&api_key)
-            .base_url(&config.base_url)
-            .build()
-    }
-    .map_err(|e| LlmError::RequestFailed {
-        provider: config.provider_id.clone(),
-        reason: format!("Failed to create Anthropic client: {e}"),
-    })?;
-
+    let client = create_anthropic_client(&api_key, config)?;
     let cache_retention = config.cache_retention;
-
     let model = client.completion_model(&config.model);
 
-    if cache_retention != CacheRetention::None {
-        tracing::debug!(
-            model = %config.model,
-            retention = %cache_retention,
-            "Anthropic automatic prompt caching enabled"
-        );
-    }
+    log_cache_retention(config, cache_retention);
 
     tracing::debug!(
         provider = %config.provider_id,
         model = %config.model,
-        base_url = if config.base_url.is_empty() { "default" } else { &config.base_url },
+        base_url = describe_base_url(config),
         "Using Anthropic provider"
     );
 
@@ -269,6 +264,60 @@ fn create_anthropic_from_registry(
             .with_cache_retention(cache_retention)
             .with_unsupported_params(config.unsupported_params.clone()),
     ))
+}
+
+/// Describe the configured base URL for diagnostic output.
+fn describe_base_url(config: &RegistryProviderConfig) -> &str {
+    if config.base_url.is_empty() {
+        "default"
+    } else {
+        &config.base_url
+    }
+}
+
+/// Build the Anthropic provider that authenticates with an OAuth token.
+fn create_anthropic_oauth_provider(
+    config: &RegistryProviderConfig,
+) -> Result<Arc<dyn LlmProvider>, LlmError> {
+    tracing::debug!(
+        provider = %config.provider_id,
+        model = %config.model,
+        base_url = describe_base_url(config),
+        "Using Anthropic OAuth API"
+    );
+
+    let provider = anthropic_oauth::AnthropicOAuthProvider::new(config)?;
+    Ok(Arc::new(provider))
+}
+
+/// Build the Anthropic client for API-key authentication.
+fn create_anthropic_client(
+    api_key: &str,
+    config: &RegistryProviderConfig,
+) -> Result<anthropic::Client, LlmError> {
+    if config.base_url.is_empty() {
+        anthropic::Client::new(api_key)
+    } else {
+        anthropic::Client::builder()
+            .api_key(api_key)
+            .base_url(&config.base_url)
+            .build()
+    }
+    .map_err(|e| LlmError::RequestFailed {
+        provider: config.provider_id.clone(),
+        reason: format!("Failed to create Anthropic client: {e}"),
+    })
+}
+
+/// Log the prompt-caching decision when caching is enabled.
+fn log_cache_retention(config: &RegistryProviderConfig, retention: CacheRetention) {
+    if retention != CacheRetention::None {
+        tracing::debug!(
+            model = %config.model,
+            retention = %retention,
+            "Anthropic automatic prompt caching enabled"
+        );
+    }
 }
 
 fn create_ollama_from_registry(

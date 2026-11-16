@@ -128,10 +128,9 @@ async fn open_relative_to_root(
     root: &Path,
     relative_path: &Path,
 ) -> Result<OpenedTarget, SkillReadFileError> {
+    use rustix::fs::{Mode, OFlags, ResolveFlags};
     use std::ffi::CString;
-    use std::os::fd::{FromRawFd, OwnedFd};
     use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::io::AsRawFd;
 
     let root = open_root_directory(root).await?;
     if !root
@@ -142,38 +141,25 @@ async fn open_relative_to_root(
         return Err(path_not_readable());
     }
 
+    // Reject interior NULs here so they keep mapping to `path_not_readable`
+    // instead of surfacing as the `EINVAL` that `rustix` would report.
     let path =
         CString::new(relative_path.as_os_str().as_bytes()).map_err(|_| path_not_readable())?;
-    // SAFETY: Linux requires `open_how` to be zero-initialized so unknown
-    // future fields default to zero before the supported fields are set.
-    let mut how: libc::open_how = unsafe { std::mem::zeroed() };
-    how.flags = (libc::O_RDONLY | libc::O_CLOEXEC) as u64;
-    how.mode = 0;
-    how.resolve = libc::RESOLVE_BENEATH | libc::RESOLVE_NO_SYMLINKS;
 
-    // SAFETY: `root` is a live directory file descriptor, `path` is a
-    // NUL-terminated relative path owned by this stack frame, and `how` points
-    // to an initialized `open_how` with its correct size. `openat2` returns a
-    // new file descriptor on success, which is immediately wrapped in
-    // `OwnedFd` to transfer ownership and ensure it is closed.
-    let fd = unsafe {
-        libc::syscall(
-            libc::SYS_openat2,
-            root.as_raw_fd(),
-            path.as_ptr(),
-            &how,
-            std::mem::size_of::<libc::open_how>(),
-        )
-    };
+    // `BENEATH | NO_SYMLINKS` confines resolution to the skill root and
+    // rejects every symlink, including in the final component, atomically in
+    // one syscall. `rustix` returns an `OwnedFd`, so the descriptor is closed
+    // on every path without any handwritten ownership transfer.
+    let fd = rustix::fs::openat2(
+        &root,
+        path.as_c_str(),
+        OFlags::RDONLY | OFlags::CLOEXEC,
+        Mode::empty(),
+        ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS,
+    )
+    .map_err(|errno| openat2_error(&std::io::Error::from(errno)))?;
 
-    if fd < 0 {
-        let error = std::io::Error::last_os_error();
-        return Err(openat2_error(error));
-    }
-
-    // SAFETY: `fd` was returned by a successful `openat2` call above and has
-    // not been transferred elsewhere.
-    let file = ambient_fs::File::from(unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) });
+    let file = ambient_fs::File::from(fd);
     let file = tokio::fs::File::from_std(file.into_std());
     let size = metadata_for_opened_file(&file).await?;
 
@@ -208,7 +194,7 @@ async fn open_relative_to_root(
 }
 
 #[cfg(target_os = "linux")]
-fn openat2_error(error: std::io::Error) -> SkillReadFileError {
+fn openat2_error(error: &std::io::Error) -> SkillReadFileError {
     match error.raw_os_error() {
         Some(libc::ENOENT | libc::ENOTDIR | libc::ELOOP | libc::EXDEV | libc::EAGAIN) => {
             tracing::debug!(os_error = ?error, "skill_read_file: openat2 path not readable");

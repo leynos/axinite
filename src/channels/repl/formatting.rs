@@ -46,20 +46,10 @@ pub(super) fn print_help() {
     println!("  {h}Axinite REPL{r}");
     println!();
     println!("  {h}Commands{r}");
-    for cmd in SLASH_COMMANDS
-        .iter()
-        .filter(|c| general_cmds.contains(&c.name))
-    {
-        println!("  {c}{:<16}{r}  {d}{}{r}", cmd.name, cmd.description);
-    }
+    print_matching_commands(general_cmds);
     println!();
     println!("  {h}Conversation{r}");
-    for cmd in SLASH_COMMANDS
-        .iter()
-        .filter(|c| conversation_cmds.contains(&c.name))
-    {
-        println!("  {c}{:<16}{r}  {d}{}{r}", cmd.name, cmd.description);
-    }
+    print_matching_commands(conversation_cmds);
     println!("  {c}esc{r}              {d}stop current operation{r}");
     println!();
     println!("  {h}Approval responses{r}");
@@ -67,6 +57,22 @@ pub(super) fn print_help() {
     println!("  {c}no{r} ({c}n{r})          {d}deny tool execution{r}");
     println!("  {c}always{r} ({c}a{r})      {d}approve for this session{r}");
     println!();
+}
+
+/// Print the descriptions of the slash commands whose names appear in `names`.
+fn print_matching_commands(names: &[&str]) {
+    let cyan = "\x1b[1;36m";
+    let dim = "\x1b[90m";
+    let reset = "\x1b[0m";
+    for cmd in SLASH_COMMANDS
+        .iter()
+        .filter(|cmd| names.contains(&cmd.name))
+    {
+        println!(
+            "  {cyan}{:<16}{reset}  {dim}{}{reset}",
+            cmd.name, cmd.description
+        );
+    }
 }
 
 /// The indentation prefix used when rendering JSON parameters inside an approval card.

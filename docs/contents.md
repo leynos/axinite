@@ -33,6 +33,9 @@
 - [Formal verification methods in Axinite](formal-verification-methods-in-axinite.md)
   describes the available Kani and Verus tooling, its demonstrated smoke
   proofs, and candidate areas for later production proofs.
+- [Rust boundary verification and unsafe inventory](rust-boundary-verification.md)
+  records the unsafe-site inventory before and after ADR 0015, what the
+  boundary contract checks, and what Miri does and does not cover.
 - [Webhook server design](webhook-server-design.md) describes the unified
   webhook listener, route composition model, and rollback-focused restart
   behaviour.
@@ -272,3 +275,7 @@
   moves short jobs off the hosted pool only when it makes them wait.
 - [ADR 0014: Apply Oxlint plug-ins to the front end](adrs/adr-0014-front-end-oxlint-plugins.md)
   records the pinned Unicorn and `ai-deslop` rules and their conflict policy.
+- [ADR 0015: Audited unsafe boundaries](adrs/adr-0015-audited-unsafe-boundaries.md)
+  records why the root workspace forbids unsafe code, why the fourteen
+  WebAssembly component crates confine generated bindings to one audited
+  module, and how the allow-list contract and Miri enforce and verify that.

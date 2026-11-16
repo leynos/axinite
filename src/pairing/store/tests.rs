@@ -25,6 +25,10 @@ fn test_random_code() {
     assert!(c.chars().all(|c| PAIRING_ALPHABET.contains(&(c as u8))));
 }
 
+/// Build a store over a fresh temporary base directory.
+///
+/// The caller owns the returned guard: bind it for the whole test so the
+/// directory outlives the store and is removed at teardown.
 fn test_store() -> std::io::Result<(PairingStore, TempDir)> {
     let dir = TempDir::new()?;
     let store = PairingStore::with_base_dir(dir.path().to_path_buf());
@@ -33,7 +37,7 @@ fn test_store() -> std::io::Result<(PairingStore, TempDir)> {
 
 #[test]
 fn test_list_pending_empty() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     let requests = store.list_pending("telegram")?;
     assert!(requests.is_empty());
     Ok(())
@@ -41,7 +45,7 @@ fn test_list_pending_empty() -> anyhow::Result<()> {
 
 #[test]
 fn test_upsert_request_creates_new() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     let result = store.upsert_request(
         "telegram",
         "user123",
@@ -60,7 +64,7 @@ fn test_upsert_request_creates_new() -> anyhow::Result<()> {
 
 #[test]
 fn test_upsert_request_updates_existing() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     let r1 = store.upsert_request("telegram", "user123", None)?;
     assert!(r1.created);
     let r2 = store.upsert_request("telegram", "user123", Some(serde_json::json!({"x": 1})))?;
@@ -76,7 +80,7 @@ fn test_upsert_request_updates_existing() -> anyhow::Result<()> {
 
 #[test]
 fn test_approve_adds_to_allow_from() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     let r = store.upsert_request("telegram", "user456", None)?;
     assert!(r.created);
 
@@ -96,7 +100,7 @@ fn test_approve_adds_to_allow_from() -> anyhow::Result<()> {
 
 #[test]
 fn test_approve_case_insensitive_code() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     let r = store.upsert_request("telegram", "user789", None)?;
     let code_lower = r.code.to_lowercase();
     let approved = store.approve("telegram", &code_lower)?;
@@ -106,7 +110,7 @@ fn test_approve_case_insensitive_code() -> anyhow::Result<()> {
 
 #[test]
 fn test_approve_invalid_code_returns_none() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     store.upsert_request("telegram", "user123", None)?;
     let approved = store.approve("telegram", "BADCODE1")?;
     assert!(approved.is_none());
@@ -115,7 +119,7 @@ fn test_approve_invalid_code_returns_none() -> anyhow::Result<()> {
 
 #[test]
 fn test_approve_rate_limited_after_many_failures() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     store.upsert_request("telegram", "user123", None)?;
     for _ in 0..PAIRING_APPROVE_RATE_LIMIT {
         let _ = store.approve("telegram", "WRONG01");
@@ -127,7 +131,7 @@ fn test_approve_rate_limited_after_many_failures() -> anyhow::Result<()> {
 
 #[test]
 fn test_is_sender_allowed_by_id() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     let r = store.upsert_request("telegram", "user999", None)?;
     store.approve("telegram", &r.code)?;
 
@@ -138,7 +142,7 @@ fn test_is_sender_allowed_by_id() -> anyhow::Result<()> {
 
 #[test]
 fn test_is_sender_allowed_by_username() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     store.upsert_request(
         "telegram",
         "alice",
@@ -156,7 +160,7 @@ fn test_is_sender_allowed_by_username() -> anyhow::Result<()> {
 
 #[test]
 fn test_channel_normalization() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     store.upsert_request("Telegram", "u1", None)?;
     let pending = store.list_pending("telegram")?;
     assert_eq!(pending.len(), 1);
@@ -166,7 +170,7 @@ fn test_channel_normalization() -> anyhow::Result<()> {
 
 #[test]
 fn test_invalid_channel_rejected() -> anyhow::Result<()> {
-    let (store, _) = test_store()?;
+    let (store, _temp_dir) = test_store()?;
     store.upsert_request("telegram", "u1", None)?;
     store.list_pending("").unwrap_err();
     store.upsert_request("", "u1", None).unwrap_err();

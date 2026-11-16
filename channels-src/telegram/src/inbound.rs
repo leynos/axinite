@@ -1,3 +1,15 @@
+//! Inbound Telegram updates: authorization, media retrieval and content
+//! cleaning.
+//!
+//! [`handle_update`] receives the [`TelegramUpdate`] and [`TelegramMessage`]
+//! payloads defined in this crate's `types` module. For each message it
+//! extracts attachments with `attachments`, stores voice, image and document
+//! media through `downloads`, and authorizes the sender against the owner,
+//! allow-list and DM policy paths in `state` plus the pairing store. Authorized
+//! messages are then filtered for group addressing, have leading commands and
+//! mentions stripped, and are emitted to the agent loop; unauthorized senders
+//! are dropped, with a pairing request when the DM policy requires one.
+
 use crate::attachments::extract_attachments;
 use crate::downloads::{
     download_and_store_documents, download_and_store_images, download_and_store_voice,
@@ -141,9 +153,7 @@ fn user_display_name(first_name: &str, last_name: Option<&str>) -> String {
 fn owner_allows_sender(user_id: TelegramUserId) -> Option<bool> {
     let owner_id_str = channel_host::workspace_read(OWNER_ID_PATH).filter(|s| !s.is_empty());
 
-    let Some(id_str) = owner_id_str else {
-        return None;
-    };
+    let id_str = owner_id_str?;
 
     let Ok(owner_id) = id_str.parse::<i64>() else {
         return Some(true);

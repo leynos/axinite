@@ -21,22 +21,28 @@ pub(super) fn materialize_install_artefact(
 ) -> Result<InstallArtefact, SkillRegistryError> {
     match payload {
         SkillInstallPayload::Markdown(content) => build_markdown_artefact(content),
-        SkillInstallPayload::DownloadedBytes(bytes) => {
-            if looks_like_skill_archive(&bytes) {
-                Ok(build_bundle_artefact(validate_skill_archive(&bytes)?))
-            } else {
-                let content = String::from_utf8(bytes).map_err(|error| {
-                    SkillRegistryError::InvalidContent {
-                        reason: format!("downloaded skill content is not valid UTF-8: {error}"),
-                    }
-                })?;
-                build_markdown_artefact(content)
-            }
-        }
-        SkillInstallPayload::ArchiveBytes(bytes) => {
-            Ok(build_bundle_artefact(validate_skill_archive(&bytes)?))
-        }
+        SkillInstallPayload::DownloadedBytes(bytes) => materialize_downloaded_bytes(bytes),
+        SkillInstallPayload::ArchiveBytes(bytes) => materialize_archive_bytes(&bytes),
     }
+}
+
+/// Materialize a downloaded payload, validating it as an archive when it looks
+/// like one and decoding it as Markdown otherwise.
+fn materialize_downloaded_bytes(bytes: Vec<u8>) -> Result<InstallArtefact, SkillRegistryError> {
+    if looks_like_skill_archive(&bytes) {
+        Ok(build_bundle_artefact(validate_skill_archive(&bytes)?))
+    } else {
+        let content =
+            String::from_utf8(bytes).map_err(|error| SkillRegistryError::InvalidContent {
+                reason: format!("downloaded skill content is not valid UTF-8: {error}"),
+            })?;
+        build_markdown_artefact(content)
+    }
+}
+
+/// Materialize an explicit archive payload as a bundle.
+fn materialize_archive_bytes(bytes: &[u8]) -> Result<InstallArtefact, SkillRegistryError> {
+    Ok(build_bundle_artefact(validate_skill_archive(bytes)?))
 }
 
 fn build_markdown_artefact(content: String) -> Result<InstallArtefact, SkillRegistryError> {

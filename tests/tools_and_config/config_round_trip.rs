@@ -25,6 +25,23 @@ fn read_env_map(path: &std::path::Path) -> HashMap<String, String> {
         .collect()
 }
 
+/// Assert that every `(key, value)` pair in `vars` is present and unchanged in
+/// `map`. `context` is appended to the failure message to name the stage.
+fn assert_vars_preserved(map: &HashMap<String, String>, vars: &[(&str, &str)], context: &str) {
+    for (key, value) in vars {
+        assert_eq!(
+            map.get(*key).map(String::as_str),
+            Some(*value),
+            "{key} must be preserved{context}"
+        );
+    }
+}
+
+/// Assert that `map` maps `key` to `value`, reporting `message` otherwise.
+fn assert_env_value(map: &HashMap<String, String>, key: &str, value: &str, message: &str) {
+    assert_eq!(map.get(key).map(String::as_str), Some(value), "{message}");
+}
+
 // ── Test 1: LLM_BACKEND round-trips ────────────────────────────────────────
 
 #[test]
@@ -213,30 +230,19 @@ fn bootstrap_env_preserves_existing_values() {
         initial_vars.len(),
         "all vars must survive round-trip"
     );
-    for (key, value) in initial_vars {
-        assert_eq!(
-            map.get(*key).map(String::as_str),
-            Some(*value),
-            "{key} must be preserved"
-        );
-    }
+    assert_vars_preserved(&map, initial_vars, "");
 
     // Now upsert a new key and verify nothing is lost
     upsert_bootstrap_var_to(&env_path, "LLM_MODEL", "gpt-4o").unwrap();
 
     let map2 = read_env_map(&env_path);
 
-    for (key, value) in initial_vars {
-        assert_eq!(
-            map2.get(*key).map(String::as_str),
-            Some(*value),
-            "{key} must be preserved after upsert"
-        );
-    }
-    assert_eq!(
-        map2.get("LLM_MODEL").map(String::as_str),
-        Some("gpt-4o"),
-        "upserted LLM_MODEL must be present"
+    assert_vars_preserved(&map2, initial_vars, " after upsert");
+    assert_env_value(
+        &map2,
+        "LLM_MODEL",
+        "gpt-4o",
+        "upserted LLM_MODEL must be present",
     );
 
     // Upsert an existing key and verify the value is updated, others preserved
@@ -244,20 +250,23 @@ fn bootstrap_env_preserves_existing_values() {
 
     let map3 = read_env_map(&env_path);
 
-    assert_eq!(
-        map3.get("LLM_BACKEND").map(String::as_str),
-        Some("anthropic"),
-        "LLM_BACKEND must be updated after upsert"
+    assert_env_value(
+        &map3,
+        "LLM_BACKEND",
+        "anthropic",
+        "LLM_BACKEND must be updated after upsert",
     );
-    assert_eq!(
-        map3.get("DATABASE_URL").map(String::as_str),
-        Some("postgres://user:pass@localhost:5432/axinite"),
-        "DATABASE_URL must be preserved after upsert of different key"
+    assert_env_value(
+        &map3,
+        "DATABASE_URL",
+        "postgres://user:pass@localhost:5432/axinite",
+        "DATABASE_URL must be preserved after upsert of different key",
     );
-    assert_eq!(
-        map3.get("LLM_MODEL").map(String::as_str),
-        Some("gpt-4o"),
-        "previously upserted LLM_MODEL must be preserved"
+    assert_env_value(
+        &map3,
+        "LLM_MODEL",
+        "gpt-4o",
+        "previously upserted LLM_MODEL must be preserved",
     );
 }
 

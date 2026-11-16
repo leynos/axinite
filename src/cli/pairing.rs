@@ -107,6 +107,10 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// Build a store over a fresh temporary base directory.
+    ///
+    /// The caller owns the returned guard: bind it for the whole test so the
+    /// directory outlives the store and is removed at teardown.
     fn test_store() -> (PairingStore, TempDir) {
         let dir = TempDir::new().unwrap();
         let store = PairingStore::with_base_dir(dir.path().to_path_buf());
@@ -115,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_list_empty_returns_ok() {
-        let (store, _) = test_store();
+        let (store, _temp_dir) = test_store();
         let result = run_pairing_command_with_store(
             &store,
             PairingCommand::List {
@@ -128,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_list_json_empty_returns_ok() {
-        let (store, _) = test_store();
+        let (store, _temp_dir) = test_store();
         let result = run_pairing_command_with_store(
             &store,
             PairingCommand::List {
@@ -141,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_approve_invalid_code_returns_err() {
-        let (store, _) = test_store();
+        let (store, _temp_dir) = test_store();
         // Create a pending request so the pairing file exists, then approve with wrong code
         store.upsert_request("telegram", "user1", None).unwrap();
 
@@ -158,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_approve_valid_code_returns_ok() {
-        let (store, _) = test_store();
+        let (store, _temp_dir) = test_store();
         let r = store.upsert_request("telegram", "user1", None).unwrap();
         assert!(r.created);
 
@@ -174,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_list_with_pending_returns_ok() {
-        let (store, _) = test_store();
+        let (store, _temp_dir) = test_store();
         store.upsert_request("telegram", "user1", None).unwrap();
 
         let result = run_pairing_command_with_store(

@@ -16,6 +16,11 @@ serde_json = "1"
 [dependencies.axinite]
 path = ".."
 
+# Unsafe policy: forbidden in every target. See
+# docs/adrs/adr-0015-audited-unsafe-boundaries.md.
+[lints.rust]
+unsafe_code = "forbid"
+
 [[bin]]
 name = "fuzz_safety_sanitizer"
 path = "fuzz_targets/fuzz_safety_sanitizer.rs"

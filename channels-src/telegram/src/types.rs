@@ -1,3 +1,5 @@
+//! Telegram Bot API payloads and channel configuration data.
+
 use serde::{Deserialize, Serialize};
 
 /// Telegram Update object (webhook payload).
@@ -14,6 +16,10 @@ pub(crate) struct TelegramUpdate {
     pub(crate) edited_message: Option<TelegramMessage>,
 
     /// Channel post (we ignore these for now).
+    #[expect(
+        dead_code,
+        reason = "Channel posts are decoded for wire compatibility but are not routed"
+    )]
     pub(crate) channel_post: Option<TelegramMessage>,
 }
 
@@ -38,9 +44,17 @@ pub(crate) struct TelegramMessage {
     pub(crate) caption: Option<String>,
 
     /// Original message if this is a reply.
+    #[expect(
+        dead_code,
+        reason = "Reply metadata is decoded while response routing uses message IDs"
+    )]
     pub(crate) reply_to_message: Option<Box<TelegramMessage>>,
 
     /// Bot command entities (for /commands).
+    #[expect(
+        dead_code,
+        reason = "Entity metadata is decoded while commands use message text"
+    )]
     pub(crate) entities: Option<Vec<MessageEntity>>,
 
     /// Photo sizes (Telegram sends multiple sizes; last is largest).
@@ -67,8 +81,20 @@ pub(crate) struct TelegramMessage {
 #[derive(Debug, Deserialize)]
 pub(crate) struct PhotoSize {
     pub(crate) file_id: String,
+    #[expect(
+        dead_code,
+        reason = "Retained Telegram attachment metadata; downloads use file_id"
+    )]
     pub(crate) file_unique_id: String,
+    #[expect(
+        dead_code,
+        reason = "Telegram photo ordering determines selection without inspecting dimensions"
+    )]
     pub(crate) width: i32,
+    #[expect(
+        dead_code,
+        reason = "Telegram photo ordering determines selection without inspecting dimensions"
+    )]
     pub(crate) height: i32,
     pub(crate) file_size: Option<i64>,
 }
@@ -77,6 +103,10 @@ pub(crate) struct PhotoSize {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TelegramDocument {
     pub(crate) file_id: String,
+    #[expect(
+        dead_code,
+        reason = "Retained Telegram attachment metadata; downloads use file_id"
+    )]
     pub(crate) file_unique_id: String,
     pub(crate) file_name: Option<String>,
     pub(crate) mime_type: Option<String>,
@@ -87,6 +117,10 @@ pub(crate) struct TelegramDocument {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TelegramAudio {
     pub(crate) file_id: String,
+    #[expect(
+        dead_code,
+        reason = "Retained Telegram attachment metadata; downloads use file_id"
+    )]
     pub(crate) file_unique_id: String,
     pub(crate) duration: Option<u32>,
     pub(crate) file_name: Option<String>,
@@ -98,6 +132,10 @@ pub(crate) struct TelegramAudio {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TelegramVideo {
     pub(crate) file_id: String,
+    #[expect(
+        dead_code,
+        reason = "Retained Telegram attachment metadata; downloads use file_id"
+    )]
     pub(crate) file_unique_id: String,
     pub(crate) duration: Option<u32>,
     pub(crate) file_name: Option<String>,
@@ -109,6 +147,10 @@ pub(crate) struct TelegramVideo {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TelegramVoice {
     pub(crate) file_id: String,
+    #[expect(
+        dead_code,
+        reason = "Retained Telegram attachment metadata; downloads use file_id"
+    )]
     pub(crate) file_unique_id: String,
     pub(crate) duration: u32,
     pub(crate) mime_type: Option<String>,
@@ -119,8 +161,16 @@ pub(crate) struct TelegramVoice {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TelegramSticker {
     pub(crate) file_id: String,
+    #[expect(
+        dead_code,
+        reason = "Retained Telegram attachment metadata; downloads use file_id"
+    )]
     pub(crate) file_unique_id: String,
     #[serde(rename = "type")]
+    #[expect(
+        dead_code,
+        reason = "Sticker format metadata does not alter attachment handling"
+    )]
     pub(crate) sticker_type: Option<String>,
     pub(crate) file_size: Option<i64>,
 }
@@ -157,9 +207,17 @@ pub(crate) struct TelegramChat {
     pub(crate) chat_type: String,
 
     /// Title for groups/channels.
+    #[expect(
+        dead_code,
+        reason = "Chat metadata is decoded while routing uses the chat ID"
+    )]
     pub(crate) title: Option<String>,
 
     /// Username for private chats.
+    #[expect(
+        dead_code,
+        reason = "Chat metadata is decoded while routing uses the chat ID"
+    )]
     pub(crate) username: Option<String>,
 }
 
@@ -169,15 +227,31 @@ pub(crate) struct TelegramChat {
 pub(crate) struct MessageEntity {
     /// Type: mention, bot_command, etc.
     #[serde(rename = "type")]
+    #[expect(
+        dead_code,
+        reason = "Entity metadata is decoded while commands use message text"
+    )]
     pub(crate) entity_type: String,
 
     /// Offset in UTF-16 code units.
+    #[expect(
+        dead_code,
+        reason = "Entity metadata is decoded while commands use message text"
+    )]
     pub(crate) offset: i64,
 
     /// Length in UTF-16 code units.
+    #[expect(
+        dead_code,
+        reason = "Entity metadata is decoded while commands use message text"
+    )]
     pub(crate) length: i64,
 
     /// For "mention" type, the mentioned user.
+    #[expect(
+        dead_code,
+        reason = "Entity metadata is decoded while commands use message text"
+    )]
     pub(crate) user: Option<TelegramUser>,
 }
 
@@ -186,7 +260,10 @@ pub(crate) struct MessageEntity {
 #[derive(Debug, Deserialize)]
 pub(crate) struct TelegramFile {
     /// Identifier for this file.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "The getFile response ID is retained; downloads use file_path"
+    )]
     pub(crate) file_id: String,
 
     /// File path for downloading. Use https://api.telegram.org/file/bot<token>/<file_path>.

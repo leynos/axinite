@@ -204,34 +204,8 @@ impl Sanitizer {
 
     /// Sanitize content by detecting and escaping potential injection attempts.
     pub fn sanitize(&self, content: &str) -> SanitizedOutput {
-        let mut warnings = Vec::new();
-
-        // Detect patterns using Aho-Corasick
-        for mat in self
-            .pattern_matcher
-            .iter()
-            .flat_map(|m| m.find_iter(content))
-        {
-            let pattern_info = &self.patterns[mat.pattern().as_usize()];
-            warnings.push(InjectionWarning {
-                pattern: pattern_info.pattern.clone(),
-                severity: pattern_info.severity,
-                location: mat.start()..mat.end(),
-                description: pattern_info.description.clone(),
-            });
-        }
-
-        // Detect regex patterns
-        for pattern in &self.regex_patterns {
-            for mat in pattern.regex.find_iter(content) {
-                warnings.push(InjectionWarning {
-                    pattern: pattern.name.clone(),
-                    severity: pattern.severity,
-                    location: mat.start()..mat.end(),
-                    description: pattern.description.clone(),
-                });
-            }
-        }
+        let mut warnings = self.literal_warnings(content);
+        warnings.extend(self.regex_warnings(content));
 
         // Sort warnings by severity (critical first)
         warnings.sort_by_key(|b| std::cmp::Reverse(b.severity));
@@ -251,6 +225,40 @@ impl Sanitizer {
             warnings,
             was_modified,
         }
+    }
+
+    /// Collect warnings for the literal patterns detected by the
+    /// Aho-Corasick matcher.
+    fn literal_warnings(&self, content: &str) -> Vec<InjectionWarning> {
+        self.pattern_matcher
+            .iter()
+            .flat_map(|m| m.find_iter(content))
+            .map(|mat| {
+                let pattern_info = &self.patterns[mat.pattern().as_usize()];
+                InjectionWarning {
+                    pattern: pattern_info.pattern.clone(),
+                    severity: pattern_info.severity,
+                    location: mat.start()..mat.end(),
+                    description: pattern_info.description.clone(),
+                }
+            })
+            .collect()
+    }
+
+    /// Collect warnings for the regex patterns detected in `content`.
+    fn regex_warnings(&self, content: &str) -> Vec<InjectionWarning> {
+        let mut warnings = Vec::new();
+        for pattern in &self.regex_patterns {
+            for mat in pattern.regex.find_iter(content) {
+                warnings.push(InjectionWarning {
+                    pattern: pattern.name.clone(),
+                    severity: pattern.severity,
+                    location: mat.start()..mat.end(),
+                    description: pattern.description.clone(),
+                });
+            }
+        }
+        warnings
     }
 
     /// Detect injection attempts without modifying content.

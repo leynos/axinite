@@ -15,6 +15,20 @@ use crate::settings::Settings;
 #[path = "llm/provider_resolution.rs"]
 mod provider_resolution;
 
+/// The backend selected for this configuration run.
+struct BackendSelection {
+    backend_lower: String,
+    is_nearai: bool,
+    is_bedrock: bool,
+}
+
+/// Backend-dependent parts of the LLM configuration.
+struct BackendSpecifics {
+    provider: Option<RegistryProviderConfig>,
+    bedrock: Option<BedrockConfig>,
+    request_timeout_secs: u64,
+}
+
 impl LlmConfig {
     /// Create a test-friendly config without reading env vars.
     #[cfg(feature = "libsql")]
@@ -50,26 +64,48 @@ impl LlmConfig {
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         let registry = ProviderRegistry::load()?;
         let (backend_lower, is_nearai, is_bedrock) = Self::resolve_backend_name(ctx, settings)?;
+        let selection = BackendSelection {
+            backend_lower,
+            is_nearai,
+            is_bedrock,
+        };
         let session = Self::resolve_session_config(ctx)?;
         let nearai = Self::resolve_nearai_config(ctx, settings)?;
-        let provider = if is_nearai || is_bedrock {
+        let specifics = Self::resolve_backend_specifics(ctx, settings, &registry, &selection)?;
+
+        Ok(Self {
+            backend: Self::backend_tag(&selection, specifics.provider.as_ref()),
+            session,
+            nearai,
+            provider: specifics.provider,
+            bedrock: specifics.bedrock,
+            request_timeout_secs: specifics.request_timeout_secs,
+        })
+    }
+
+    /// Resolve the provider, Bedrock, and request-timeout settings that depend
+    /// on the selected backend.
+    fn resolve_backend_specifics(
+        ctx: &EnvContext,
+        settings: &Settings,
+        registry: &ProviderRegistry,
+        selection: &BackendSelection,
+    ) -> Result<BackendSpecifics, ConfigError> {
+        let provider = if selection.is_nearai || selection.is_bedrock {
             None
         } else {
             Some(Self::resolve_registry_provider(
                 ctx,
-                &backend_lower,
-                &registry,
+                &selection.backend_lower,
+                registry,
                 settings,
             )?)
         };
-        let bedrock = Self::resolve_bedrock_config(ctx, settings, is_bedrock)?;
+        let bedrock = Self::resolve_bedrock_config(ctx, settings, selection.is_bedrock)?;
         let request_timeout_secs =
             parse_optional_env_from(ctx, EnvKey("LLM_REQUEST_TIMEOUT_SECS"), 120)?;
 
-        Ok(Self {
-            backend: Self::backend_tag(is_nearai, is_bedrock, provider.as_ref(), backend_lower),
-            session,
-            nearai,
+        Ok(BackendSpecifics {
             provider,
             bedrock,
             request_timeout_secs,
@@ -81,19 +117,17 @@ impl LlmConfig {
     /// Built-in backends keep their canonical tags; registry providers use
     /// their provider id; otherwise the lowered backend name stands as-is.
     fn backend_tag(
-        is_nearai: bool,
-        is_bedrock: bool,
+        selection: &BackendSelection,
         provider: Option<&RegistryProviderConfig>,
-        backend_lower: String,
     ) -> String {
-        if is_nearai {
+        if selection.is_nearai {
             "nearai".to_string()
-        } else if is_bedrock {
+        } else if selection.is_bedrock {
             "bedrock".to_string()
         } else if let Some(p) = provider {
             p.provider_id.clone()
         } else {
-            backend_lower
+            selection.backend_lower.clone()
         }
     }
 }
