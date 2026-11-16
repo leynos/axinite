@@ -8,10 +8,12 @@
 //!
 //! The module is split by concern: [`create`] holds the `create_job` tool and
 //! its local execution path, [`sandbox`] the container execution path,
-//! [`credentials`] credential grant parsing, [`project_dir`] project directory
-//! resolution, [`status`] the list/status/cancel tools, [`interaction`]
-//! the event log and follow-up prompt tools, and [`output`] shared
-//! `ToolOutput` construction helpers.
+//! [`container_polling`] container-state polling and terminal-outcome dispatch,
+//! [`persistence`] sandbox job records and status writes, [`credentials`]
+//! credential grant parsing, [`project_dir`] project directory resolution,
+//! [`status`] the list/status/cancel tools, [`interaction`] the event log and
+//! follow-up prompt tools, and [`output`] shared `ToolOutput` construction
+//! helpers.
 
 use std::sync::Arc;
 
@@ -21,10 +23,12 @@ use uuid::Uuid;
 use crate::context::ContextManager;
 use crate::tools::tool::ToolError;
 
+mod container_polling;
 mod create;
 mod credentials;
 mod interaction;
 mod output;
+mod persistence;
 mod project_dir;
 mod sandbox;
 mod status;
