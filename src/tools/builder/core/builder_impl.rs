@@ -188,3 +188,7 @@ JSON:"#,
         NativeSoftwareBuilder::build(self, &requirement).await
     }
 }
+
+#[cfg(test)]
+#[path = "builder_impl_tests.rs"]
+mod tests;
