@@ -1,6 +1,6 @@
 //! Message compaction tests.
 
-use super::super::types::compact_messages_for_retry;
+use super::super::context::compact_messages_for_retry;
 use super::*;
 
 /// Asserts the standard preamble of a compacted message list:

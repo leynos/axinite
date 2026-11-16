@@ -10,7 +10,8 @@ use crate::error::Error;
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 
 use super::ChatDelegate;
-use crate::agent::dispatcher::types::{compact_messages_for_retry, strip_internal_tool_call_text};
+use crate::agent::dispatcher::context::compact_messages_for_retry;
+use crate::agent::dispatcher::preview::strip_internal_tool_call_text;
 
 impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
     async fn check_signals(&self) -> LoopSignal {

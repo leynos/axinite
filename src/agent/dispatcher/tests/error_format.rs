@@ -3,7 +3,7 @@
 use insta::assert_snapshot;
 use rstest::rstest;
 
-use super::super::types::strip_internal_tool_call_text;
+use super::super::preview::strip_internal_tool_call_text;
 
 #[rstest]
 #[case::called_marker(
@@ -33,7 +33,7 @@ fn test_strip_internal_tool_call_text_all_markers_yields_fallback_snapshot() {
 #[test]
 fn strip_internal_markers_snapshot_markers_only() {
     let input = "[Called tool `x`]\n[Tool `x` returned: ...]";
-    let out = crate::agent::dispatcher::types::strip_internal_tool_call_text(input);
+    let out = crate::agent::dispatcher::preview::strip_internal_tool_call_text(input);
     assert_snapshot!("strip_markers_only", out);
 }
 
