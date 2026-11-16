@@ -16,6 +16,7 @@ impl NativeSandboxStore for PgBackend {
     crate::db::delegate_async! {
         to store;
         async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError>;
+        async fn save_sandbox_job_with_mode(&self, job: &SandboxJobRecord, mode: Option<SandboxMode>) -> Result<(), DatabaseError>;
         async fn get_sandbox_job(&self, id: Uuid) -> Result<Option<SandboxJobRecord>, DatabaseError>;
         async fn list_sandbox_jobs(&self) -> Result<Vec<SandboxJobRecord>, DatabaseError>;
     }

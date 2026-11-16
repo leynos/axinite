@@ -65,34 +65,12 @@ impl CreateJobTool {
             return Ok(());
         };
 
+        let sandbox_mode =
+            (mode == JobMode::ClaudeCode).then_some(crate::db::SandboxMode::ClaudeCode);
         store
-            .save_sandbox_job(record)
+            .save_sandbox_job_with_mode(record, sandbox_mode)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("failed to persist job: {}", e)))?;
-
-        if mode == JobMode::ClaudeCode
-            && let Err(e) = store
-                .update_sandbox_job_mode(record.id, crate::db::SandboxMode::ClaudeCode)
-                .await
-        {
-            // Synchronously update status to failed before returning error
-            // (don't use fire-and-forget update_status here)
-            let status = crate::db::SandboxJobStatus::from("failed");
-            let _ = store
-                .update_sandbox_job_status(SandboxJobStatusUpdate {
-                    id: record.id,
-                    status,
-                    success: Some(false),
-                    message: Some(&e.to_string()),
-                    started_at: None,
-                    completed_at: Some(Utc::now()),
-                })
-                .await;
-            return Err(ToolError::ExecutionFailed(format!(
-                "failed to persist job mode: {}",
-                e
-            )));
-        }
 
         Ok(())
     }

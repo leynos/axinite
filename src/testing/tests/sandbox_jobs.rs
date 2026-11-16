@@ -144,6 +144,59 @@ async fn test_sandbox_job_mode() {
 }
 
 #[tokio::test]
+async fn test_save_sandbox_job_with_mode_persists_record_and_mode() {
+    use crate::db::SandboxMode;
+    use crate::history::SandboxJobRecord;
+
+    let harness = TestHarnessBuilder::new()
+        .build()
+        .await
+        .expect("test harness should build");
+    let db = &harness.db;
+
+    let job_id = uuid::Uuid::new_v4();
+    let job = SandboxJobRecord {
+        id: job_id,
+        task: "Atomic mode test".to_string(),
+        status: "creating".to_string(),
+        user_id: crate::db::UserId::from("user1"),
+        project_dir: "/workspace".to_string(),
+        success: None,
+        failure_reason: None,
+        created_at: chrono::Utc::now(),
+        started_at: None,
+        completed_at: None,
+        credential_grants_json: "[]".to_string(),
+    };
+
+    db.save_sandbox_job_with_mode(&job, Some(SandboxMode::ClaudeCode))
+        .await
+        .expect("save sandbox job with mode");
+
+    let fetched = db
+        .get_sandbox_job(job_id)
+        .await
+        .expect("get")
+        .expect("record and mode should be saved together");
+    assert_eq!(fetched.task, "Atomic mode test");
+
+    let mode = db.get_sandbox_job_mode(job_id).await.expect("get mode");
+    assert_eq!(mode, Some(SandboxMode::ClaudeCode));
+
+    // Re-saving without a mode must keep the stored mode rather than
+    // downgrading it to the worker default.
+    db.save_sandbox_job_with_mode(&job, None)
+        .await
+        .expect("save sandbox job without mode");
+
+    let mode = db
+        .get_sandbox_job_mode(job_id)
+        .await
+        .expect("get mode after mode-less save");
+    assert_eq!(mode, Some(SandboxMode::ClaudeCode));
+}
+
+#[tokio::test]
 async fn test_job_events() {
     use crate::history::SandboxJobRecord;
 
