@@ -51,3 +51,27 @@ const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = _clear_sig;
 const _: fn(&test_rig::TestRig) -> f64 = test_rig::TestRig::estimated_cost_usd;
 #[cfg(feature = "libsql")]
 const _: fn(&test_rig::TestRig) -> bool = test_rig::TestRig::has_safety_warnings;
+
+#[cfg(feature = "libsql")]
+type MinimalEngineFn = fn(
+    trace_types::LlmTrace,
+    std::sync::Arc<dyn axinite::db::Database>,
+    std::sync::Arc<axinite::workspace::Workspace>,
+) -> (
+    std::sync::Arc<axinite::agent::routine_engine::RoutineEngine>,
+    tokio::sync::mpsc::Receiver<axinite::channels::OutgoingResponse>,
+);
+
+// Compile-time API assertions: pin the shared routine helpers' signatures so
+// that accidental drift breaks this binary rather than a distant test.
+#[cfg(feature = "libsql")]
+const _: fn(&str) -> axinite::channels::IncomingMessage = routines::make_test_incoming_message;
+#[cfg(feature = "libsql")]
+const _: fn(&str, axinite::agent::routine::Trigger, &str) -> axinite::agent::routine::Routine =
+    routines::make_routine;
+#[cfg(feature = "libsql")]
+const _: fn(
+    &std::sync::Arc<dyn axinite::db::Database>,
+) -> std::sync::Arc<axinite::workspace::Workspace> = routines::create_workspace;
+#[cfg(feature = "libsql")]
+const _: MinimalEngineFn = routines::make_minimal_engine;
