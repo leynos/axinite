@@ -112,7 +112,9 @@ def test_formal_jobs_cannot_be_skipped_or_soft_failed(
         )
 
 
-def _installs_through_the_shared_action(job: dict[str, object], name: str, tools: str) -> None:
+def _installs_through_the_shared_action(
+    job: dict[str, object], name: str, tools: str
+) -> None:
     """Require *name* to call the shared install action, pinned, for *tools*."""
     step = _step(job, name)
     action, _, pin = step.uses.partition("@")
@@ -130,6 +132,7 @@ def test_kani_job_installs_probes_and_checks_the_pinned_harness(
     _installs_through_the_shared_action(job, "Install Kani", "kani")
     assert _step(job, "Probe Kani").run == "make kani-check"
     assert _step(job, "Run Kani proof").run == "make kani"
+    assert _step(job, "Run repair-claims proofs").run == "make kani-repair-claims"
 
 
 def test_verus_job_installs_both_binaries_and_checks_proofs(

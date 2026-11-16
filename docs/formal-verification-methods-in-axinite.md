@@ -64,7 +64,10 @@ The long-term integration path for domain proofs is a split one:
 
 - Keep future **production Kani harnesses inside the package** that owns the
   internal helpers they verify. The current standalone harness only checks that
-  Kani runs and rejects a deliberately invalid model.
+  Kani runs and rejects a deliberately invalid model. The repair-claims
+  experiment below is a targeted exception: it shares production source with
+  an independent package so the verifier is not coupled to application
+  dependencies.
 - Put **Stateright models in a dedicated internal verification crate**, because
   those models should be abstractions of policy rather than thin wrappers
   around the runtime.
@@ -486,6 +489,90 @@ line is technically optional. It is still worth adding, because it makes the
 intent explicit once the verification crate exists.
 
 ## Kani integration
+
+### Repair-claims shared-source experiment (#178)
+
+The repair registry and its RAII guard live in
+`src/agent/self_repair/claim_registry.rs`. Axinite compiles this module through
+its self-repair module tree. The independent
+`tests/verification/repair-claims/src/lib.rs` includes the **same file** with
+`#[path]`; acquisition and destructor-driven release are not copied or stubbed.
+The Axinite adapter retains `BrokenTool` handling, `RepairError` mapping,
+tracing and feature-gated metrics. An observational release callback runs after
+the shared transition and cannot decide whether removal happens.
+
+The independent package is explicitly excluded from the application workspace
+and declares its own workspace, edition 2024, Rust 1.85 minimum and lockfile.
+Cargo metadata and `cargo tree --locked` report only
+`repair-claims-verification`, with no dependencies. Neither Wasmtime nor the
+application build script is compiled. The root dependency versions and lockfile
+are unchanged. This is a targeted exception to the main-package recommendation
+below; the harness still has private access to the real implementation.
+
+**Status: blocked, not verified.** Released Kani 0.67.0 uses Rust
+`1.93.0-nightly (53732d5e0 2025-11-20)`. The isolated acquire/drop/reacquire
+harness compiled in 2.01 seconds, separating proof compilation from the
+application's current Rust 1.95 minimum. However, construction of the production
+`HashSet<String>` uses `RandomState`, whose Linux entropy path reaches an
+unsupported foreign C
+`syscall`. The proof package retains the minimal reproducer as its
+`compatibility::default_hashset_is_constructible` harness: construct the
+default set and assert that it is empty. Kani reported zero
+verified harnesses, one failure, and a verification time of 1.22 seconds.
+Its diagnostic identifies
+`std::sys::random::linux::getrandom::getrandom` and the unsupported `syscall`.
+This is a verifier limitation, not a detected claim-lifecycle defect.
+
+The first lifecycle attempt was stopped during symbolic execution to isolate
+that failure; it is not a completed proof. Its provisional unwind bound of 8
+has not been validated and is insufficient for the 16-lane SIMD loops used by
+the bundled hash-table implementation. The compatibility reproducer uses an
+unwind bound of 2 and has no input vocabulary or operation sequence. The
+planned four lifecycle harnesses, two-name/four-operation model comparison,
+and deliberate-fault experiments remain outstanding. No counterexample from a
+mutated implementation has been established.
+
+The intended proofs cover bounded sequential transitions using shared source,
+not the exact production binary or exhaustive thread interleavings. Their
+relevance to concurrent callers relies on the standard mutex synchronization
+contract. Poisoning, panic unwinding, forgotten guards, process abort and
+fairness/liveness are outside their scope. Ordinary Rust tests cover actual
+lock poisoning: acquisition fails, and a guard dropped after poisoning reports
+failure and leaves its entry present. Existing generated-operation and
+concurrency tests remain in place.
+
+Monthly Kani binary production/hosting, compiler porting and future verifier
+distribution changes are outside this workstream. No source-build fallback is
+permitted for tools.
+
+### Repair-claims proof gate
+
+The repair-claims package uses the same pinned, binary-only Kani installation
+as the smoke package: `make install-kani` selects the prebuilt Kani 0.67.0
+release through `rust-prover-tools` with `--no-compile`, and no source build or
+upstream installer runs. The package is inventoried as a safe, standalone crate
+under the unsafe-boundary contract and forbids unsafe code.
+
+`make kani-repair-claims` runs `scripts/repair_claims_kani.py`, which drives
+two `scripts/prover_cli.py` actions through `kani exec` with
+`--cwd tests/verification/repair-claims`:
+
+1. `kani-repair-claims-compatibility` selects the `compatibility::` harness.
+   A failure here stops the gate and is reported as a blocked verifier, not as
+   a lifecycle counterexample.
+2. `kani-repair-claims-lifecycle` selects the `claim_registry::verification::`
+   harnesses. The gate requires all four lifecycle harness names and Kani's
+   exact four-success, zero-failure summary. A successful exit with a missing
+   harness, an extra failure, or a changed package lockfile still fails.
+
+The Kani CLI does not expose `--locked`, so the gate compares the package
+lockfile bytes before and after the proof run instead. `make formal-pr` runs
+this gate after the smoke and Verus proofs, and the `kani-smoke` job in
+`.github/workflows/formal-verification.yml` runs it as its final step. Both stay
+red while the compatibility blocker remains. Ordinary format, Clippy, Whitaker,
+typecheck and test targets include the excluded package explicitly. Its
+ordinary Rust tests use only the standard library so the proof dependency
+closure stays empty; they do not enable `cfg(kani)`.
 
 ### Kani tooling model
 
@@ -946,7 +1033,7 @@ The repository exposes explicit install, check, proof, and integration-test
 targets. The core proof commands are:
 
 ```make
-.PHONY: install-kani kani-check kani kani-full
+.PHONY: install-kani kani-check kani kani-full kani-repair-claims
 .PHONY: install-verus install-z3 verus formal-pr
 
 install-kani kani-check install-verus install-z3 verus:
@@ -955,9 +1042,13 @@ install-kani kani-check install-verus install-z3 verus:
 kani kani-full: kani-check
 	python3 scripts/prover_cli.py $@
 
+kani-repair-claims: kani-check
+	python3 scripts/repair_claims_kani.py
+
 formal-pr:
 	$(MAKE) kani
 	$(MAKE) verus
+	$(MAKE) kani-repair-claims
 ```
 
 `make all` does not depend on these optional tools.
@@ -987,7 +1078,10 @@ own tool installation; Z3 is installed and pinned separately for Verus. Job
 logs retain tool versions and proof outcomes.
 
 Verus runs on pull requests because the current model is small and has positive
-and negative controls. Neither job implies production proof coverage.
+and negative controls. Neither job implies production proof coverage. The
+`kani-smoke` job finishes with `make kani-repair-claims`, the fail-closed
+repair-claims gate described above; it fails while the `HashSet` compatibility
+blocker remains.
 
 ### Where future Proptest suites should run
 

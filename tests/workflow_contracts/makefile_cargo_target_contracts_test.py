@@ -12,6 +12,7 @@ from _build_tools_sandbox import make_sandbox
 from _makefile_test_support import _MakeTestContext, shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPAIR_CLAIMS_MANIFEST = "tests/verification/repair-claims/Cargo.toml"
 
 #: Environment assignments a recipe may put before the Cargo executable, such as
 #: the release routes' `RUSTFLAGS="${RUSTFLAGS-}"`. They are the subject of
@@ -118,6 +119,7 @@ def test_test_target_uses_expected_nextest_command(
                 "fmt --all",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all",
                 "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all",
+                f"fmt --manifest-path {REPAIR_CLAIMS_MANIFEST} --all",
             ),
         ),
         (
@@ -126,6 +128,7 @@ def test_test_target_uses_expected_nextest_command(
                 "fmt --all -- --check",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
                 "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all -- --check",
+                f"fmt --manifest-path {REPAIR_CLAIMS_MANIFEST} --all -- --check",
             ),
         ),
         (
@@ -144,6 +147,7 @@ def test_test_target_uses_expected_nextest_command(
                     "--features test-helpers,embedded-postgres"
                 ),
                 "check --manifest-path tools-src/github/Cargo.toml --tests",
+                f"check --manifest-path {REPAIR_CLAIMS_MANIFEST} --all-targets --locked",
             ),
         ),
         (
@@ -164,6 +168,10 @@ def test_test_target_uses_expected_nextest_command(
                 (
                     "clippy --manifest-path tools-src/github/Cargo.toml --tests "
                     "-- -D warnings"
+                ),
+                (
+                    f"clippy --manifest-path {REPAIR_CLAIMS_MANIFEST} --all-targets "
+                    "--locked -- -D warnings"
                 ),
             ),
         ),
@@ -202,6 +210,7 @@ def test_test_target_uses_expected_nextest_command(
                     "--no-default-features "
                     "--features rustls-native-certs,tokio-runtime,http1 --doc"
                 ),
+                f"test --manifest-path {REPAIR_CLAIMS_MANIFEST} --locked",
             ),
         ),
         (
@@ -213,6 +222,7 @@ def test_test_target_uses_expected_nextest_command(
                 ),
                 "test --features test-helpers,embedded-postgres",
                 "test --manifest-path tools-src/github/Cargo.toml",
+                f"test --manifest-path {REPAIR_CLAIMS_MANIFEST} --locked",
             ),
         ),
         (
@@ -241,7 +251,14 @@ def test_test_target_uses_expected_nextest_command(
                 "test --manifest-path tools-src/github/Cargo.toml -- --nocapture",
             ),
         ),
-        ("clean", ("clean", "clean --manifest-path tools-src/github/Cargo.toml")),
+        (
+            "clean",
+            (
+                "clean",
+                "clean --manifest-path tools-src/github/Cargo.toml",
+                f"clean --manifest-path {REPAIR_CLAIMS_MANIFEST}",
+            ),
+        ),
     ],
     ids=(
         "install",
