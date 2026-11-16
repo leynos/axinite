@@ -17,21 +17,32 @@ use super::sandbox::ContainerJobView;
 
 impl CreateJobTool {
     /// Handle a stopped container, returning success or failure output.
+    ///
+    /// Only an explicit, successful worker result counts as success. A
+    /// container can reach [`ContainerState::Stopped`] without a result when
+    /// it is stopped by the web cancel handler or removed by the reaper, and
+    /// such a job did not complete successfully.
     async fn handle_stopped_container(
         &self,
         handle: &ContainerHandle,
         view: &ContainerJobView<'_>,
     ) -> Result<ToolOutput, ToolError> {
-        let message = handle
-            .completion_result
-            .as_ref()
-            .and_then(|r| r.message.clone())
-            .unwrap_or_else(|| "Container job completed".to_string());
-        let success = handle
-            .completion_result
-            .as_ref()
-            .map(|r| r.success)
-            .unwrap_or(true);
+        let (success, message) = match handle.completion_result.as_ref() {
+            Some(result) => {
+                let message = result.message.clone().unwrap_or_else(|| {
+                    if result.success {
+                        "Container job completed".to_string()
+                    } else {
+                        "unknown failure".to_string()
+                    }
+                });
+                (result.success, message)
+            }
+            None => (
+                false,
+                "Container stopped without a completion result".to_string(),
+            ),
+        };
         view.jm.cleanup_job(view.job_id).await;
 
         let finished_at = Utc::now();
