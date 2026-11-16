@@ -1,0 +1,12 @@
+---
+source: src/agent/thread_ops/document_store/tests/mod.rs
+expression: payload
+---
+# report.pdf
+
+> Uploaded by **test-user** via **test-channel** on 2026-04-03
+> MIME: application/pdf | Size: 1024 bytes
+
+---
+
+This is extracted document text
