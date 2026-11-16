@@ -214,7 +214,25 @@ def _kani_check_arguments(sources: _ArgumentSources) -> list[str]:
     ]
 
 
-def _kani_exec_arguments(sources: _ArgumentSources, selection: str) -> list[str]:
+@dataclass(frozen=True)
+class _KaniSelection:
+    """One Kani proof package and the verifier arguments that select harnesses.
+
+    Attributes
+    ----------
+    proof_dir_setting : str
+        Name of the setting that holds the proof package directory.
+    arguments : tuple[str, ...]
+        Literal ``--extra-arg`` options forwarded to the verifier.
+    """
+
+    proof_dir_setting: str
+    arguments: tuple[str, ...]
+
+
+def _kani_exec_arguments(
+    sources: _ArgumentSources, selection: _KaniSelection
+) -> list[str]:
     """Return the Kani execution arguments for one harness selection."""
     return [
         "kani",
@@ -222,8 +240,8 @@ def _kani_exec_arguments(sources: _ArgumentSources, selection: str) -> list[str]
         "--installation",
         sources.kani_installation(),
         "--cwd",
-        sources.setting("KANI_PROOF_DIR"),
-        selection,
+        sources.setting(selection.proof_dir_setting),
+        *selection.arguments,
     ]
 
 
@@ -250,8 +268,30 @@ def _verus_run_arguments(sources: _ArgumentSources) -> list[str]:
 
 
 _KANI_SELECTIONS = {
-    "kani": "--extra-arg=--harness=verify_exact_projection_four_entries",
-    "kani-full": "--extra-arg=--output-format=regular",
+    "kani": _KaniSelection(
+        "KANI_PROOF_DIR",
+        ("--extra-arg=--harness=verify_exact_projection_four_entries",),
+    ),
+    "kani-full": _KaniSelection(
+        "KANI_PROOF_DIR", ("--extra-arg=--output-format=regular",)
+    ),
+    # The repair-claims package (#178) runs its standard-library compatibility
+    # probe separately, so a verifier limitation is never reported as a
+    # lifecycle counterexample.
+    "kani-repair-claims-compatibility": _KaniSelection(
+        "REPAIR_CLAIMS_PROOF_DIR",
+        (
+            "--extra-arg=--harness=compatibility::",
+            "--extra-arg=--output-format=terse",
+        ),
+    ),
+    "kani-repair-claims-lifecycle": _KaniSelection(
+        "REPAIR_CLAIMS_PROOF_DIR",
+        (
+            "--extra-arg=--harness=claim_registry::verification::",
+            "--extra-arg=--output-format=terse",
+        ),
+    ),
 }
 
 _ARGUMENT_BUILDERS: dict[str, Callable[[_ArgumentSources], list[str]]] = {

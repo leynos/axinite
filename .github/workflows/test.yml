@@ -447,6 +447,11 @@ jobs:
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Run GitHub Tool Tests
         run: make test-github-tool
+      # The standalone package that compiles the shared repair-claims registry
+      # source (#178) is outside the workspace, like the GitHub tool, so it
+      # runs once here rather than once per workspace matrix leg.
+      - name: Run Repair-Claims Registry Tests
+        run: make test-repair-claims
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics

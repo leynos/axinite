@@ -110,6 +110,13 @@ management.
   development build standard" in `docs/developers-guide.md` before changing a
   flag or a recipe that assigns `RUSTFLAGS`.
 - `make build` builds every target of the workspace under the standard.
+- The standalone `tests/verification/repair-claims` package compiles the
+  production repair-claims registry source and is included explicitly in the
+  ordinary format, lint, typecheck and test targets. Its Kani gate,
+  `make kani-repair-claims`, runs in `make formal-pr` and the formal
+  verification workflow. Kani 0.67.0 currently rejects the default `HashSet`
+  entropy path; a failed proof must remain a failure, never a skip or an
+  inferred success. See `docs/formal-verification-methods-in-axinite.md`.
 - Run `make audit` when dependency manifests, lockfiles, audit policy, or CI
   supply-chain gates change. It is intentionally separate from `make all`
   because it fetches the RustSec advisory database and requires network access.
@@ -139,7 +146,7 @@ management.
       - `RUSTFLAGS="-D warnings" whitaker --all \
         --manifest-path tools-src/github/Cargo.toml -- --tests`
   - `make test` (runs `make test-workspace`, `make test-github-tool`,
-    and `make test-libsql-transport`)
+    `make test-libsql-transport`, and `make test-repair-claims`)
     - `make test-workspace`
       - `make build-github-tool-wasm`
       - `cargo nextest run --workspace $TEST_FEATURES \

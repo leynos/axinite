@@ -41,6 +41,8 @@ from _suite_targets import (
     GITHUB_TOOL_SCOPE,
     LIBSQL_TRANSPORT_SCOPE,
     MAKEFILE_PROFILE_DEFAULT,
+    REPAIR_CLAIMS_RECIPE,
+    REPAIR_CLAIMS_SCOPE,
     WORKSPACE,
     WORKSPACE_RECIPE_LINES,
     make_rule_in,
@@ -81,7 +83,8 @@ def test_make_test_is_the_ci_suites() -> None:
         "test-workspace",
         "test-github-tool",
         "test-libsql-transport",
-    }, f"`make test` builds {prerequisites}; expected the three CI suites"
+        "test-repair-claims",
+    }, f"`make test` builds {prerequisites}; expected the four CI suites"
     assert not recipe, (
         f"`make test` has grown a recipe of its own ({recipe}), so it runs "
         "work outside its named suite targets"
@@ -118,6 +121,12 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
     _, tool = make_rule_in(makefile, "test-github-tool")
     assert tool == (GITHUB_TOOL_RECIPE,), (
         f"`make test-github-tool` runs {tool}, not {(GITHUB_TOOL_RECIPE,)}; "
+        "the scope and the empty feature set this module gives it both come "
+        "from that one command"
+    )
+    _, claims = make_rule_in(makefile, "test-repair-claims")
+    assert claims == (REPAIR_CLAIMS_RECIPE,), (
+        f"`make test-repair-claims` runs {claims}, not {(REPAIR_CLAIMS_RECIPE,)}; "
         "the scope and the empty feature set this module gives it both come "
         "from that one command"
     )
@@ -221,6 +230,7 @@ EXPECTED_SCOPES: frozenset[str] = frozenset(
         WORKSPACE,
         GITHUB_TOOL_SCOPE,
         LIBSQL_TRANSPORT_SCOPE,
+        REPAIR_CLAIMS_SCOPE,
         "crate:channels-src/telegram/Cargo.toml",
     }
 )

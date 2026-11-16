@@ -108,6 +108,7 @@ def _prover_harness(make_context: _MakeTestContext) -> _ProverHarness:
         "}\n"
         "with open(os.environ['PROVER_CALL_LOG'], 'a', encoding='utf-8') as calls:\n"
         "    calls.write(json.dumps(record, sort_keys=True) + '\\n')\n"
+        "sys.stdout.write(os.environ.get('PROVER_FAKE_STDOUT', ''))\n"
         "failure_prefix = os.environ.get('PROVER_FAKE_FAIL_ON', '').split()\n"
         "if failure_prefix and sys.argv[1:1 + len(failure_prefix)] == failure_prefix:\n"
         "    raise SystemExit(int(os.environ.get('PROVER_FAKE_EXIT', '23')))\n",
@@ -476,15 +477,33 @@ def test_failed_kani_proof_stops_formal_pr_before_verus(
     ]
 
 
+def _repair_claims_inventory() -> str:
+    """Return Kani terse output in which every repair-claims harness succeeds."""
+    names = (
+        "same_tool_is_refused_while_held",
+        "distinct_tools_coexist",
+        "dropped_claim_can_be_reclaimed",
+        "bounded_operation_sequences",
+    )
+    lines = [
+        f"Checking harness claim_registry::verification::{name}..." for name in names
+    ]
+    lines.append("Complete - 4 successfully verified harnesses, 0 failures, 4 total.")
+    return "\n".join(lines) + "\n"
+
+
 def test_successful_formal_pr_runs_kani_then_verus(
     make_context: _MakeTestContext,
 ) -> None:
-    """Run both proof suites in order and succeed when both pass."""
+    """Run every proof suite in order and succeed when all of them pass."""
     harness = _prover_harness(make_context)
     verus_inputs, _, _ = _verus_inputs(make_context.tmp_path)
 
     result = harness.run(
-        "formal-pr", **_kani_inputs(make_context.tmp_path), **verus_inputs
+        "formal-pr",
+        **_kani_inputs(make_context.tmp_path),
+        **verus_inputs,
+        PROVER_FAKE_STDOUT=_repair_claims_inventory(),
     )
 
     assert result.returncode == 0, result.stderr
@@ -492,7 +511,36 @@ def test_successful_formal_pr_runs_kani_then_verus(
         ["kani", "check-version"],
         ["kani", "exec"],
         ["verus", "run"],
+        ["kani", "check-version"],
+        ["kani", "exec"],
+        ["kani", "exec"],
     ]
+
+
+def test_blocked_repair_claims_probe_fails_before_lifecycle(
+    make_context: _MakeTestContext,
+) -> None:
+    """A failed compatibility probe fails the gate without a lifecycle run."""
+    harness = _prover_harness(make_context)
+
+    result = harness.run(
+        "kani-repair-claims",
+        **_kani_inputs(make_context.tmp_path),
+        PROVER_FAKE_FAIL_ON="kani exec",
+        PROVER_FAKE_EXIT="23",
+    )
+
+    assert result.returncode != 0
+    assert "blocked by the standard-library compatibility probe" in result.stderr
+    calls = _calls(harness.log)
+    assert [call["argv"][:2] for call in calls] == [
+        ["kani", "check-version"],
+        ["kani", "exec"],
+    ]
+    assert "--extra-arg=--harness=compatibility::" in calls[1]["argv"]
+    assert _option_value(calls[1]["argv"], "--cwd").endswith(
+        "tests/verification/repair-claims"
+    )
 
 
 def test_verus_failure_fails_formal_pr_after_kani(
