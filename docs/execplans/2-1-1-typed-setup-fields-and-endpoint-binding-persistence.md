@@ -37,7 +37,7 @@ sources are:
 - [Roadmap 2.1](../roadmap.md#21-delegated-endpoint-requests).
 - [RFC 0004](../rfcs/rfc-0004-tokenized-delegated-authorized-endpoint-requests.md).
 - [Architecture overview](../axinite-architecture-overview.md).
-- [Proposed ADR 0015](../adrs/adr-0015-confidential-endpoint-setup.md).
+- [Proposed ADR 0016](../adrs/adr-0016-confidential-endpoint-setup.md).
 
 RFC 0004 remains Proposed; approval of this plan accepts only the scoped
 choices below, not all later RFC phases. There is no separate
@@ -671,6 +671,10 @@ explicit operations; never imply that an error proves no commit occurred.
 
 ## Progress
 
+- [x] 2026-11-17: Rebased onto the PR target again and reconciled the contents
+  conflict, preserving both entries. Upstream PR #464 landed ADR 0015 for the
+  audited unsafe boundaries, so the endpoint ADR moved to 0016.
+
 - [x] 2026-11-12: Rebased onto the PR target and reconciled the contents
   conflict, preserving both plans and moving the endpoint ADR to 0015 under
   `docs/adrs/`. Updated M1 and proof gates to reuse merged PR #492 tooling.
@@ -707,6 +711,11 @@ runtime correctness.
 
 ## Decision log
 
+2026-11-17: Renumber this proposal to ADR 0016. Upstream ADR 0015 now records
+the audited unsafe boundaries and is referenced across manifests, scripts, and
+workflow contracts, so the unmerged proposal yields the number. The earlier
+entries below record the 0015 assignment as it stood at the time.
+
 2026-11-12: Reuse the shared Verus/Kani runner, pins, Make targets, integration
 tests, and existing CI jobs from PR #492. Endpoint proof selection must be
 explicit; a smoke proof success is not evidence for P1–P3. The scope and
@@ -715,7 +724,7 @@ proposal ADR 0015 in the new `docs/adrs/` layout.
 
 2026-10-20: Choose a dedicated encrypted endpoint store with scope-bound
 authentication; reuse crypto mechanics without assigning credential semantics
-to endpoint configuration. See proposed ADR 0015.
+to endpoint configuration. See proposed ADR 0016.
 
 2026-10-20: Define offline structural validation and defer connection-time
 network policy to 2.1.2. This avoids introducing an unsafe setup-time HTTP
