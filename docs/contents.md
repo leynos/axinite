@@ -281,5 +281,5 @@
   records why the root workspace forbids unsafe code, why the fourteen
   WebAssembly component crates confine generated bindings to one audited
   module, and how the allow-list contract and Miri enforce and verify that.
-- [ADR 0015: Confidential endpoint setup](adrs/adr-0015-confidential-endpoint-setup.md)
+- [ADR 0016: Confidential endpoint setup](adrs/adr-0016-confidential-endpoint-setup.md)
   proposes the scope, encryption, and failure semantics for roadmap 2.1.1.

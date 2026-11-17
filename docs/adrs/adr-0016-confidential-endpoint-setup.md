@@ -1,4 +1,4 @@
-# Architectural decision record (ADR) 0015: Confidential endpoint setup
+# Architectural decision record (ADR) 0016: Confidential endpoint setup
 
 ## Status
 
