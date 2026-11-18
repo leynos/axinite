@@ -174,12 +174,52 @@ fn default_success_status() -> u16 {
     200
 }
 
-/// Setup schema for WASM tools: secrets the user must provide via the UI.
+/// Setup schema for WASM tools: fields the user must provide via the UI.
+///
+/// A manifest uses either the legacy `required_secrets` list or the typed
+/// `fields` list, never both. Normalization happens at the manifest boundary;
+/// runtime consumers never see the legacy form.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolSetupSchema {
     /// Secrets the user must provide before the tool can be used.
     #[serde(default)]
     pub required_secrets: Vec<ToolSecretSetupSchema>,
+
+    /// Typed setup fields, including confidential endpoint bindings.
+    #[serde(default)]
+    pub fields: Vec<ToolSetupFieldSchema>,
+}
+
+/// One typed setup field declared by a tool manifest.
+///
+/// The tag is `type`; a secret is `{"type": "secret", ...}` and an endpoint is
+/// `{"type": "endpoint", ...}`. The endpoint `name` is opaque metadata and the
+/// `kind` is declarative only; neither triggers discovery.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ToolSetupFieldSchema {
+    /// A credential the user supplies.
+    Secret {
+        /// Secret name in the secrets store.
+        name: String,
+        /// User-facing prompt.
+        prompt: String,
+        /// If true, the user may skip this field.
+        #[serde(default)]
+        optional: bool,
+    },
+    /// A confidential endpoint binding the user supplies.
+    Endpoint {
+        /// Opaque endpoint destination name.
+        name: String,
+        /// Declarative endpoint kind, for example `jmap`.
+        kind: String,
+        /// User-facing prompt.
+        prompt: String,
+        /// If true, the user may skip this field.
+        #[serde(default)]
+        optional: bool,
+    },
 }
 
 /// A single secret required during tool setup.

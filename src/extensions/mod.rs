@@ -24,6 +24,7 @@ pub mod discovery;
 pub mod manager;
 pub mod registry;
 mod results;
+pub mod setup;
 #[cfg(test)]
 mod tests;
 

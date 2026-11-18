@@ -1,6 +1,6 @@
 # Typed setup fields and delegated endpoint binding persistence (2.1.1)
 
-Status: DRAFT — awaiting explicit approval before implementation.
+Status: APPROVED — implementation authorized on 2026-11-18.
 
 This execution plan (ExecPlan) is a living document. Keep its progress,
 decisions, verification evidence, and conformance links current at every
@@ -689,8 +689,24 @@ explicit operations; never imply that an error proves no commit occurred.
 - [x] 2026-10-20: Nixie and diff whitespace checks passed. Direct Markdown
   lint found three overlong reference lists; split them before final checks.
   Publication and final candidate gate evidence are recorded in the draft PR.
-- [ ] Explicit user approval obtained.
-- [ ] M1 verified policy core.
+- [x] 2026-11-18: Explicit user approval obtained; implementation authorized.
+- [x] 2026-11-18: M1 verified policy core implemented. Added
+  `src/extensions/setup/` (`model.rs`, `error.rs`, `endpoint.rs`, `policy.rs`,
+  `manifest.rs`, `tests.rs`, `endpoint_tests.rs`, `planning_tests.rs`) with
+  typed declarations, offline endpoint validation, planner, and legacy manifest
+  normalization. Extended `ToolSetupSchema` with typed `fields` and public
+  re-exports. Added 52 passing `rstest`/`proptest` cases covering C1, C2, and
+  C3. Added `verus/endpoint_setup.rs` (P1–P3, 28 verified, 0 errors) and
+  `verus/README.md` refinement mapping; extended the `verus-proofs` job.
+- [x] 2026-11-18: Split the policy core to satisfy Whitaker's 400-line module
+  limit and its two-branch conditional limit: endpoint validation moved to
+  `endpoint.rs`, and tests split by contract (C1, C2, C3). Re-ran the focused
+  `cargo test` (52 passed), `cargo clippy -D warnings`, scoped
+  `whitaker --all -p axinite`, `make check-fmt`, `make spelling`, and
+  `make markdownlint`; all passed. Both Verus proofs pass with the renamed
+  `lemma_seq_new_len`/`lemma_seq_new_index` lemmas.
+- [ ] M1 verification evidence: full local gate set (`make lint test`) still to
+  run before commit.
 - [ ] M2 encrypted dual-backend persistence.
 - [ ] M3 setup service, web contracts, and both interfaces.
 - [ ] M4 E2E and recovery evidence.
@@ -708,6 +724,25 @@ proof tree was found. PR #492 now provides `verus/tooling_smoke/main.rs`, the
 standalone Kani smoke crate, shared Make targets, runner integration tests, and
 formal-verification CI. These establish tooling contracts, not endpoint or
 runtime correctness.
+
+M1 implementation findings. `url::Url::to_string` appends a trailing `/` to a
+bare origin, so canonical expectations must use `https://example.com/`.
+`Ipv4Addr::is_reserved` is unstable on the pinned Verus/Rust toolchain; the
+numeric-range checks cover 240.0.0.0/4 explicitly. Verus needs `implies` with
+an explicit trigger on the checked term for singleton index reasoning, and
+`seq![..]` literals need an explicit `subrange(..) =~= Seq::empty()` assertion
+before a recursive sequence function reduces. The whole readiness predicate was
+therefore defined recursively over `Seq` rather than as a quantifier, which
+makes the required/optional witnesses deterministic.
+
+Whitaker enforces a 400-line module limit, at most two branches per `if`,
+`while`, or match-guard predicate, and a bumpy-road complexity signal. The
+first M1 shape failed all three: `model.rs` and `policy.rs` exceeded the line
+limit, `is_public_ipv4`/`is_public_ipv6` and three test match guards carried
+three or more branches, and planner nesting raised the bumpy-road signal. Named
+predicate helpers, single-purpose effects, and contract-scoped test modules
+resolved the findings; `axiom_seq_new_len`/`axiom_seq_new_index` were also
+deprecated in the pinned Verus and renamed to `lemma_seq_new_*`.
 
 ## Decision log
 
@@ -756,8 +791,9 @@ reconnaissance and all six expert perspectives are complete; follow-up review
 confirmed their findings resolved. Publication evidence belongs in the draft
 PR, including direct candidate Markdown lint because the Makefile target only
 selects committed changes. No implementation, migration, proof, or user-visible
-feature has been delivered. The implementation status remains pending explicit
-approval, and roadmap 2.1.1 remains unchecked.
+feature has been delivered yet. Explicit approval was granted on 2026-11-18 and
+implementation has begun; roadmap 2.1.1 remains unchecked until the M5
+acceptance evidence is complete.
 
 ## Research references
 

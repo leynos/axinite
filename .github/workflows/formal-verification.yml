@@ -76,5 +76,7 @@ jobs:
           tools: verus
           runner-image: ubuntu2404
           z3-install-dir: .cache/z3/4.16.0
-      - name: Run Verus proofs
+      - name: Run Verus tooling smoke proof
         run: make verus
+      - name: Verify endpoint setup model
+        run: make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs
