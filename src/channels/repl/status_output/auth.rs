@@ -1,6 +1,7 @@
 //! Terminal renderers for authentication-required and authentication-completed
 //! status updates, including the info structs they consume.
 
+use crate::channels::StatusUpdate;
 use crate::channels::repl::common::sanitize_for_terminal;
 
 /// Describes an authentication-required event for terminal rendering.
@@ -29,21 +30,39 @@ pub(super) fn render_auth_required_lines(info: &AuthRequiredInfo<'_>) -> Vec<Str
     let sanitized_ext_name = sanitize_for_terminal(info.extension_name);
     let mut lines = vec![
         String::new(),
-        format!("\x1b[33m  Authentication required for {sanitized_ext_name}\x1b[0m"),
+        format!(
+            "{ansi_yellow}{status_indent}Authentication required for {sanitized_ext_name}{ansi_reset}",
+            ansi_yellow = super::ANSI_YELLOW,
+            status_indent = super::STATUS_INDENT,
+            ansi_reset = super::ANSI_RESET,
+        ),
     ];
     if let Some(instr) = info.instructions {
         let sanitized_instr = sanitize_for_terminal(instr);
-        lines.push(format!("  {sanitized_instr}"));
+        lines.push(format!(
+            "{status_indent}{sanitized_instr}",
+            status_indent = super::STATUS_INDENT,
+        ));
     }
     if let Some(url) = info.auth_url {
         let sanitized_url = sanitize_for_terminal(url);
-        lines.push(format!("  \x1b[4m{sanitized_url}\x1b[0m"));
+        lines.push(format!(
+            "{status_indent}{ansi_underline}{sanitized_url}{ansi_reset}",
+            status_indent = super::STATUS_INDENT,
+            ansi_underline = super::ANSI_UNDERLINE,
+            ansi_reset = super::ANSI_RESET,
+        ));
     }
     if let Some(url) = info.setup_url
         && Some(url) != info.auth_url
     {
         let sanitized_url = sanitize_for_terminal(url);
-        lines.push(format!("  \x1b[4m{sanitized_url}\x1b[0m"));
+        lines.push(format!(
+            "{status_indent}{ansi_underline}{sanitized_url}{ansi_reset}",
+            status_indent = super::STATUS_INDENT,
+            ansi_underline = super::ANSI_UNDERLINE,
+            ansi_reset = super::ANSI_RESET,
+        ));
     }
     lines.push(String::new());
     lines
@@ -63,9 +82,19 @@ pub(super) fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
     let sanitized_ext_name = sanitize_for_terminal(info.extension_name);
     let sanitized_message = sanitize_for_terminal(info.message);
     if info.success {
-        format!("\x1b[32m  {sanitized_ext_name}: {sanitized_message}\x1b[0m")
+        format!(
+            "{ansi_green}{status_indent}{sanitized_ext_name}: {sanitized_message}{ansi_reset}",
+            ansi_green = super::ANSI_GREEN,
+            status_indent = super::STATUS_INDENT,
+            ansi_reset = super::ANSI_RESET,
+        )
     } else {
-        format!("\x1b[31m  {sanitized_ext_name}: {sanitized_message}\x1b[0m")
+        format!(
+            "{ansi_red}{status_indent}{sanitized_ext_name}: {sanitized_message}{ansi_reset}",
+            ansi_red = super::ANSI_RED,
+            status_indent = super::STATUS_INDENT,
+            ansi_reset = super::ANSI_RESET,
+        )
     }
 }
 
@@ -77,32 +106,40 @@ pub(super) fn print_auth_completed(info: &AuthCompletedInfo<'_>) {
     eprintln!("{}", render_auth_completed(info));
 }
 
-/// Build an [`AuthRequiredInfo`] from destructured [`StatusUpdate::AuthRequired`]
-/// fields and delegate to [`print_auth_required`].
+/// Renders the authentication variants of [`StatusUpdate`], ignoring any
+/// other variant.
 ///
-/// [`StatusUpdate::AuthRequired`]: crate::channels::StatusUpdate::AuthRequired
-pub(super) fn handle_auth_required(
-    extension_name: &str,
-    instructions: Option<&str>,
-    setup_url: Option<&str>,
-    auth_url: Option<&str>,
-) {
-    print_auth_required(&AuthRequiredInfo {
-        extension_name,
-        instructions,
-        setup_url,
-        auth_url,
-    });
-}
-
-/// Build an [`AuthCompletedInfo`] from destructured [`StatusUpdate::AuthCompleted`]
-/// fields and delegate to [`print_auth_completed`].
-///
-/// [`StatusUpdate::AuthCompleted`]: crate::channels::StatusUpdate::AuthCompleted
-pub(super) fn handle_auth_completed(extension_name: &str, success: bool, message: &str) {
-    print_auth_completed(&AuthCompletedInfo {
-        extension_name,
-        success,
-        message,
-    });
+/// The REPL dispatcher routes only [`StatusUpdate::AuthRequired`] and
+/// [`StatusUpdate::AuthCompleted`] here. Keeping the field mapping beside the
+/// renderers that consume it leaves the main dispatcher a flat event table.
+pub(super) fn dispatch_auth_status(status: &StatusUpdate) {
+    match status {
+        StatusUpdate::AuthRequired {
+            extension_name,
+            instructions,
+            auth_url,
+            setup_url,
+        } => {
+            let info = AuthRequiredInfo {
+                extension_name,
+                instructions: instructions.as_deref(),
+                setup_url: setup_url.as_deref(),
+                auth_url: auth_url.as_deref(),
+            };
+            print_auth_required(&info);
+        }
+        StatusUpdate::AuthCompleted {
+            extension_name,
+            success,
+            message,
+        } => {
+            let info = AuthCompletedInfo {
+                extension_name,
+                success: *success,
+                message,
+            };
+            print_auth_completed(&info);
+        }
+        _ => {}
+    }
 }
