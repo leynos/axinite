@@ -13,7 +13,7 @@ use super::formatting::{ToolApprovalRequest, render_approval_card};
 
 mod auth;
 
-use auth::{AuthCompletedInfo, AuthRequiredInfo, print_auth_completed, print_auth_required};
+use auth::dispatch_auth_status;
 
 /// Max characters for tool result previews in the terminal.
 pub(super) const CLI_TOOL_RESULT_MAX: usize = 200;
@@ -243,9 +243,9 @@ pub(super) fn dispatch_status_update(
     is_streaming: &Arc<AtomicBool>,
     is_debug: bool,
 ) {
-    match status {
-        StatusUpdate::Thinking(msg) => print_thinking(&msg),
-        StatusUpdate::ToolStarted { name } => print_tool_started(&name),
+    match &status {
+        StatusUpdate::Thinking(msg) => print_thinking(msg),
+        StatusUpdate::ToolStarted { name } => print_tool_started(name),
         StatusUpdate::ToolCompleted {
             name,
             success,
@@ -253,28 +253,28 @@ pub(super) fn dispatch_status_update(
             parameters,
         } => {
             let info = ToolCompletedInfo {
-                name: &name,
-                success,
+                name,
+                success: *success,
                 error: error.as_deref(),
                 parameters: parameters.as_deref(),
             };
             print_tool_completed(&info);
         }
-        StatusUpdate::ToolResult { name: _, preview } => print_tool_result(&preview),
-        StatusUpdate::StreamChunk(chunk) => print_stream_chunk(is_streaming, &chunk),
+        StatusUpdate::ToolResult { name: _, preview } => print_tool_result(preview),
+        StatusUpdate::StreamChunk(chunk) => print_stream_chunk(is_streaming, chunk),
         StatusUpdate::JobStarted {
             job_id,
             title,
             browse_url,
         } => {
             let info = JobStartedInfo {
-                job_id: &job_id,
-                title: &title,
-                browse_url: &browse_url,
+                job_id,
+                title,
+                browse_url,
             };
             print_job_started(&info);
         }
-        StatusUpdate::Status(msg) => print_status(is_debug, &msg),
+        StatusUpdate::Status(msg) => print_status(is_debug, msg),
         StatusUpdate::ApprovalNeeded {
             request_id,
             tool_name,
@@ -282,37 +282,14 @@ pub(super) fn dispatch_status_update(
             parameters,
         } => {
             let request = ToolApprovalRequest {
-                request_id: &request_id,
-                tool_name: &tool_name,
-                description: &description,
+                request_id,
+                tool_name,
+                description,
             };
-            print_approval_needed(&request, &parameters);
+            print_approval_needed(&request, parameters);
         }
-        StatusUpdate::AuthRequired {
-            extension_name,
-            instructions,
-            auth_url,
-            setup_url,
-        } => {
-            let info = AuthRequiredInfo {
-                extension_name: &extension_name,
-                instructions: instructions.as_deref(),
-                setup_url: setup_url.as_deref(),
-                auth_url: auth_url.as_deref(),
-            };
-            print_auth_required(&info);
-        }
-        StatusUpdate::AuthCompleted {
-            extension_name,
-            success,
-            message,
-        } => {
-            let info = AuthCompletedInfo {
-                extension_name: &extension_name,
-                success,
-                message: &message,
-            };
-            print_auth_completed(&info);
+        StatusUpdate::AuthRequired { .. } | StatusUpdate::AuthCompleted { .. } => {
+            dispatch_auth_status(&status);
         }
         StatusUpdate::ImageGenerated { path, .. } => print_image_generated(path.as_deref()),
     }

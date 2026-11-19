@@ -1,6 +1,7 @@
 //! Terminal renderers for authentication-required and authentication-completed
 //! status updates, including the info structs they consume.
 
+use crate::channels::StatusUpdate;
 use crate::channels::repl::common::sanitize_for_terminal;
 
 /// Describes an authentication-required event for terminal rendering.
@@ -103,4 +104,42 @@ pub(super) fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
 /// or red (failure) styling based on the authentication result.
 pub(super) fn print_auth_completed(info: &AuthCompletedInfo<'_>) {
     eprintln!("{}", render_auth_completed(info));
+}
+
+/// Renders the authentication variants of [`StatusUpdate`], ignoring any
+/// other variant.
+///
+/// The REPL dispatcher routes only [`StatusUpdate::AuthRequired`] and
+/// [`StatusUpdate::AuthCompleted`] here. Keeping the field mapping beside the
+/// renderers that consume it leaves the main dispatcher a flat event table.
+pub(super) fn dispatch_auth_status(status: &StatusUpdate) {
+    match status {
+        StatusUpdate::AuthRequired {
+            extension_name,
+            instructions,
+            auth_url,
+            setup_url,
+        } => {
+            let info = AuthRequiredInfo {
+                extension_name,
+                instructions: instructions.as_deref(),
+                setup_url: setup_url.as_deref(),
+                auth_url: auth_url.as_deref(),
+            };
+            print_auth_required(&info);
+        }
+        StatusUpdate::AuthCompleted {
+            extension_name,
+            success,
+            message,
+        } => {
+            let info = AuthCompletedInfo {
+                extension_name,
+                success: *success,
+                message,
+            };
+            print_auth_completed(&info);
+        }
+        _ => {}
+    }
 }
