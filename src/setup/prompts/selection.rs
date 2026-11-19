@@ -210,17 +210,46 @@ fn render_select_many_options<W: Write>(
     options: &[(&str, bool)],
     state: &SelectManyState,
 ) -> io::Result<()> {
-    for (i, (label, _)) in options.iter().enumerate() {
-        let checkbox = if state.selected[i] { "[x]" } else { "[ ]" };
-        let prefix = if i == state.cursor_pos { ">" } else { " " };
-
-        if i == state.cursor_pos {
-            execute!(stdout, SetForegroundColor(Color::Cyan))?;
-            writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-            execute!(stdout, ResetColor)?;
-        } else {
-            writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-        }
+    for (index, (label, _)) in options.iter().enumerate() {
+        render_select_many_row(stdout, label, index, state)?;
     }
     Ok(())
+}
+
+/// Render one option row, colouring it when the cursor is on it.
+fn render_select_many_row<W: Write>(
+    stdout: &mut W,
+    label: &str,
+    index: usize,
+    state: &SelectManyState,
+) -> io::Result<()> {
+    let row = select_many_row(label, index, state);
+    if index == state.cursor_pos {
+        execute!(stdout, SetForegroundColor(Color::Cyan))?;
+        writeln!(stdout, "{}", row)?;
+        return execute!(stdout, ResetColor);
+    }
+    writeln!(stdout, "{}", row)
+}
+
+/// Compose an option row, including the carriage return that lets the next
+/// redraw overwrite it in place.
+fn select_many_row(label: &str, index: usize, state: &SelectManyState) -> String {
+    let is_cursor_row = index == state.cursor_pos;
+    format!(
+        "  {} {} {}\r",
+        cursor_prefix(is_cursor_row),
+        checkbox(state.selected[index]),
+        label
+    )
+}
+
+/// The marker shown in front of the row under the cursor.
+fn cursor_prefix(is_cursor_row: bool) -> &'static str {
+    if is_cursor_row { ">" } else { " " }
+}
+
+/// The checkbox shown for a row's selection state.
+fn checkbox(is_selected: bool) -> &'static str {
+    if is_selected { "[x]" } else { "[ ]" }
 }
