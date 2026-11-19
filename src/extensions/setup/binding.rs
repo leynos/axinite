@@ -83,7 +83,7 @@ impl fmt::Debug for BindingRecord {
 /// A ciphertext record as read back from storage.
 ///
 /// Versions and kind are returned as stored, without interpretation, so the
-/// service can recognise stale or transplanted rows.
+/// service can identify stale or transplanted rows.
 pub struct StoredBinding {
     /// Endpoint name the row is keyed by.
     pub endpoint_name: String,
