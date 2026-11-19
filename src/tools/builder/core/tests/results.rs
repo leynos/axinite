@@ -39,13 +39,7 @@ fn test_build_result_serde_success() {
     };
     let json = serde_json::to_string(&result).expect("serialize BuildResult");
     let deserialized: BuildResult = serde_json::from_str(&json).expect("deserialize BuildResult");
-    assert_build_success(&deserialized);
-    assert_eq!(deserialized.iterations, 3);
-    assert_eq!(
-        (deserialized.tests_passed, deserialized.tests_failed),
-        (5, 0)
-    );
-    assert!(deserialized.registered);
+    assert_build_result_success(&deserialized);
 }
 
 #[test]
@@ -78,21 +72,22 @@ fn test_build_result_serde_failure() {
     };
     let json = serde_json::to_string(&result).expect("serialize BuildResult");
     let deserialized: BuildResult = serde_json::from_str(&json).expect("deserialize BuildResult");
-    assert_build_failure_contains(&deserialized, "compilation error: undefined reference");
     assert_eq!(deserialized.iterations, 10);
-    assert_eq!(
-        (
-            deserialized.validation_warnings.len(),
-            deserialized.tests_passed,
-            deserialized.tests_failed,
-        ),
-        (1, 2, 3)
+    assert_build_result_failure(
+        &deserialized,
+        "compilation error: undefined reference",
+        FailureCounts {
+            warnings: 1,
+            tests_passed: 2,
+            tests_failed: 3,
+        },
     );
-    assert!(!deserialized.registered);
 }
 
 #[test]
 fn test_build_result_default_fields_from_json() {
+    use super::assertions::*;
+
     // Verify #[serde(default)] fields can be omitted in JSON
     let json = serde_json::json!({
         "build_id": "00000000-0000-0000-0000-000000000000",
@@ -116,10 +111,7 @@ fn test_build_result_default_fields_from_json() {
     });
     let result: BuildResult =
         serde_json::from_value(json).expect("deserialize BuildResult from value");
-    assert_eq!(result.validation_warnings, Vec::<String>::new());
-    assert_eq!(result.tests_passed, 0);
-    assert_eq!(result.tests_failed, 0);
-    assert!(!result.registered);
+    assert_build_result_defaults(&result);
 }
 
 #[test]
