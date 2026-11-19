@@ -8,23 +8,38 @@
 //! - [`policy`] plans setup operations without performing I/O.
 //! - [`manifest`] normalizes shipped capabilities manifests, including the
 //!   legacy `required_secrets` form, into typed declarations.
+//! - [`binding`] defines scoped ciphertext records and the driven repository
+//!   port.
+//! - [`service`] validates, seals, and reports status for endpoint bindings.
 //!
-//! The service and its storage adapters are added in a later milestone; this
-//! module currently contains no database or HTTP dependency.
+//! Database adapters live under `src/db/`; this module has no SQL or HTTP
+//! dependency, and no transport exposes an endpoint value.
 
+pub mod binding;
 pub mod endpoint;
 pub mod error;
 pub mod manifest;
 pub mod model;
 pub mod policy;
+pub mod service;
 
+#[cfg(test)]
+pub(crate) mod binding_contract;
+#[cfg(test)]
+mod binding_test_support;
 #[cfg(test)]
 mod endpoint_tests;
 #[cfg(test)]
 mod planning_tests;
 #[cfg(test)]
+mod service_tests;
+#[cfg(test)]
 mod tests;
 
+pub use binding::{
+    BindingFuture, BindingRecord, BindingScope, BindingStoreError, EndpointBindingRepository,
+    MAX_BINDING_BATCH, NativeEndpointBindingRepository, StoredBinding,
+};
 pub use endpoint::{validate_endpoint_url, validation_policy_version};
 pub use error::{EndpointRejection, SetupError};
 pub use model::{
@@ -34,3 +49,4 @@ pub use model::{
     SetupOperation,
 };
 pub use policy::{PlannedEffect, SetupPlan, plan_setup, validate_declarations};
+pub use service::{BindingServiceError, EndpointBindingService, EndpointState, EndpointStatus};
