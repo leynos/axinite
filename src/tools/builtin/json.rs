@@ -143,38 +143,67 @@ fn parse_json_input(data: &serde_json::Value) -> Result<serde_json::Value, ToolE
 fn query_json(data: &serde_json::Value, path: &str) -> Result<serde_json::Value, ToolError> {
     let mut current = data;
 
-    for segment in path.split('.') {
-        if segment.is_empty() {
-            continue;
-        }
-
-        // Check for array indexing: field[0]
-        if let Some((field, index_str)) = segment.split_once('[') {
-            // First navigate to the field
-            if !field.is_empty() {
-                current = current.get(field).ok_or_else(|| {
-                    ToolError::ExecutionFailed(format!("field not found: {}", field))
-                })?;
-            }
-
-            // Then get the array index
-            let index_str = index_str.trim_end_matches(']');
-            let index: usize = index_str.parse().map_err(|_| {
-                ToolError::InvalidParameters(format!("invalid array index: {}", index_str))
-            })?;
-
-            current = current.get(index).ok_or_else(|| {
-                ToolError::ExecutionFailed(format!("array index out of bounds: {}", index))
-            })?;
-        } else {
-            // Simple field access
-            current = current.get(segment).ok_or_else(|| {
-                ToolError::ExecutionFailed(format!("field not found: {}", segment))
-            })?;
-        }
+    for segment in path.split('.').filter(|segment| !segment.is_empty()) {
+        current = query_segment(current, segment)?;
     }
 
     Ok(current.clone())
+}
+
+/// Resolve one dotted path segment against a JSON value.
+fn query_segment<'a>(
+    value: &'a serde_json::Value,
+    segment: &str,
+) -> Result<&'a serde_json::Value, ToolError> {
+    match segment.split_once('[') {
+        Some((field, index_str)) => query_indexed_field(value, field, index_str),
+        None => field_lookup(value, segment),
+    }
+}
+
+/// Resolve a `field[index]` segment: an empty field means the value itself.
+fn query_indexed_field<'a>(
+    value: &'a serde_json::Value,
+    field: &str,
+    index_str: &str,
+) -> Result<&'a serde_json::Value, ToolError> {
+    let field_value = if field.is_empty() {
+        value
+    } else {
+        field_lookup(value, field)?
+    };
+
+    let index = parse_array_index(index_str)?;
+    array_index_lookup(field_value, index)
+}
+
+/// Look up an object field, reporting a missing field as a failed query.
+fn field_lookup<'a>(
+    value: &'a serde_json::Value,
+    field: &str,
+) -> Result<&'a serde_json::Value, ToolError> {
+    value
+        .get(field)
+        .ok_or_else(|| ToolError::ExecutionFailed(format!("field not found: {}", field)))
+}
+
+/// Parse the index text of a `field[index]` segment.
+fn parse_array_index(index_str: &str) -> Result<usize, ToolError> {
+    let index_str = index_str.trim_end_matches(']');
+    index_str
+        .parse()
+        .map_err(|_| ToolError::InvalidParameters(format!("invalid array index: {}", index_str)))
+}
+
+/// Look up an array element, reporting an out-of-range index as a failed
+/// query.
+fn array_index_lookup(
+    value: &serde_json::Value,
+    index: usize,
+) -> Result<&serde_json::Value, ToolError> {
+    value
+        .get(index)
+        .ok_or_else(|| ToolError::ExecutionFailed(format!("array index out of bounds: {}", index)))
 }
 
 #[cfg(test)]

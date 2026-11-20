@@ -139,23 +139,39 @@ fn coerce_number(
 ) -> Result<serde_json::Value, String> {
     let RawAssignment { path, value } = *assignment;
     if existing.is_u64() {
-        let n = value
-            .parse::<u64>()
-            .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
-        Ok(serde_json::Value::Number(n.into()))
+        parse_unsigned(value, path)
     } else if existing.is_i64() {
-        let n = value
-            .parse::<i64>()
-            .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
-        Ok(serde_json::Value::Number(n.into()))
+        parse_signed(value, path)
     } else {
-        let n = value
-            .parse::<f64>()
-            .map_err(|_| format!("Expected number for {}, got '{}'", path, value))?;
-        Ok(serde_json::Number::from_f64(n)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::String(value.to_string())))
+        parse_float(value, path)
     }
+}
+
+/// Parse an unsigned integer, keeping the existing value's unsigned width.
+fn parse_unsigned(value: &str, path: &str) -> Result<serde_json::Value, String> {
+    let n = value
+        .parse::<u64>()
+        .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
+    Ok(serde_json::Value::Number(n.into()))
+}
+
+/// Parse a signed integer, keeping the existing value's signed width.
+fn parse_signed(value: &str, path: &str) -> Result<serde_json::Value, String> {
+    let n = value
+        .parse::<i64>()
+        .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
+    Ok(serde_json::Value::Number(n.into()))
+}
+
+/// Parse a floating-point number, falling back to the raw text when the
+/// value cannot be represented finitely.
+fn parse_float(value: &str, path: &str) -> Result<serde_json::Value, String> {
+    let n = value
+        .parse::<f64>()
+        .map_err(|_| format!("Expected number for {}, got '{}'", path, value))?;
+    Ok(serde_json::Number::from_f64(n)
+        .map(serde_json::Value::Number)
+        .unwrap_or(serde_json::Value::String(value.to_string())))
 }
 
 /// Recursively collect settings paths and values.

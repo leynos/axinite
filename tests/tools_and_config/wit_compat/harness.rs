@@ -170,6 +170,34 @@ fn stub_shared_host_functions(
     Ok(())
 }
 
+/// Register the tool stubs under one `near:agent/host` interface path.
+///
+/// A path the component model does not expose is skipped, because the suite
+/// probes both the versioned and the unversioned spelling. If the WIT
+/// added, removed or renamed a function, stub registration or the later
+/// instantiation fails.
+fn stub_tool_host_interface(
+    linker: &mut wasmtime::component::Linker<TestStoreData>,
+    interface: &str,
+) -> Result<(), String> {
+    let mut root = linker.root();
+    let Ok(mut host) = root.instance(interface) else {
+        return Ok(());
+    };
+
+    stub_shared_host_functions(&mut host)?;
+
+    host.func_new("tool-invoke", |_ctx, _func, _args, results| {
+        results[0] = wasmtime::component::Val::Result(Err(Some(Box::new(
+            wasmtime::component::Val::String("stub".into()),
+        ))));
+        Ok(())
+    })
+    .map_err(|e| format!("stub 'tool-invoke': {e}"))?;
+
+    Ok(())
+}
+
 /// Instantiate a tool component (world: sandboxed-tool, imports: near:agent/host).
 pub(super) fn instantiate_tool_component(
     engine: &wasmtime::Engine,
@@ -183,23 +211,10 @@ pub(super) fn instantiate_tool_component(
     wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
         .map_err(|e| format!("WASI linker failed: {e}"))?;
 
-    // If the WIT added/removed/renamed a function, stub registration
-    // or instantiation will fail.
-    // Register stubs for both versioned (0.3.0+) and unversioned (pre-0.3.0) interface
-    // paths so that both old and new WASM artefacts can instantiate.
+    // Register stubs for both versioned (0.3.0+) and unversioned (pre-0.3.0)
+    // interface paths so that both old and new WASM artefacts can instantiate.
     for interface in &["near:agent/host", "near:agent/host@0.3.0"] {
-        let mut root = linker.root();
-        if let Ok(mut host) = root.instance(interface) {
-            stub_shared_host_functions(&mut host)?;
-
-            host.func_new("tool-invoke", |_ctx, _func, _args, results| {
-                results[0] = wasmtime::component::Val::Result(Err(Some(Box::new(
-                    wasmtime::component::Val::String("stub".into()),
-                ))));
-                Ok(())
-            })
-            .map_err(|e| format!("stub 'tool-invoke': {e}"))?;
-        }
+        stub_tool_host_interface(&mut linker, interface)?;
     }
 
     let mut store = Store::new(engine, TestStoreData::new());
