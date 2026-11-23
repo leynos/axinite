@@ -170,6 +170,22 @@ fn stub_shared_host_functions(
     Ok(())
 }
 
+/// Register the shared stubs plus `tool-invoke` on one host interface.
+fn stub_tool_host(
+    host: &mut wasmtime::component::LinkerInstance<'_, TestStoreData>,
+) -> Result<(), String> {
+    stub_shared_host_functions(host)?;
+
+    host.func_new("tool-invoke", |_ctx, _func, _args, results| {
+        results[0] = wasmtime::component::Val::Result(Err(Some(Box::new(
+            wasmtime::component::Val::String("stub".into()),
+        ))));
+        Ok(())
+    })
+    .map_err(|e| format!("stub 'tool-invoke': {e}"))?;
+    Ok(())
+}
+
 /// Instantiate a tool component (world: sandboxed-tool, imports: near:agent/host).
 pub(super) fn instantiate_tool_component(
     engine: &wasmtime::Engine,
@@ -190,15 +206,7 @@ pub(super) fn instantiate_tool_component(
     for interface in &["near:agent/host", "near:agent/host@0.3.0"] {
         let mut root = linker.root();
         if let Ok(mut host) = root.instance(interface) {
-            stub_shared_host_functions(&mut host)?;
-
-            host.func_new("tool-invoke", |_ctx, _func, _args, results| {
-                results[0] = wasmtime::component::Val::Result(Err(Some(Box::new(
-                    wasmtime::component::Val::String("stub".into()),
-                ))));
-                Ok(())
-            })
-            .map_err(|e| format!("stub 'tool-invoke': {e}"))?;
+            stub_tool_host(&mut host)?;
         }
     }
 
