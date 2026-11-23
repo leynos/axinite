@@ -15,8 +15,11 @@ an implementation detail, and `test_cancellation_is_conditioned_on_the_event`
 fails on the literal.
 
 The group also has to distinguish one pull request from another. A group
-derived from ``github.run_id`` is unique per run and so cancels nothing, while
-a constant group would let one branch cancel another's gates.
+derived only from ``github.run_id`` is unique per run and so cancels nothing,
+while a constant group would let one branch cancel another's gates. The run
+identifier is allowed as the fallback after the pull request number, which
+gives each push, schedule and dispatch a group of its own, so GitHub never drops
+a pending run for an earlier push to `main`.
 
 Only `pull_request` is in scope. A `pull_request_target` workflow runs against
 the base repository to carry a token, and the workflows that use it here label
@@ -56,9 +59,10 @@ PULL_REQUEST: str = "pull_request"
 
 #: Expressions that are unique to a single run. A group built from one of these
 #: can never match another run, so it queues nothing and cancels nothing while
-#: looking exactly like a concurrency control.
+#: looking exactly like a concurrency control. ``github.run_id`` is absent
+#: because it is the permitted fallback after the pull request number, which
+#: the next contract requires the group to name.
 RUN_UNIQUE_EXPRESSIONS: tuple[str, ...] = (
-    "github.run_id",
     "github.run_number",
     "github.run_attempt",
     "github.sha",
@@ -70,7 +74,6 @@ RUN_UNIQUE_EXPRESSIONS: tuple[str, ...] = (
 PER_PULL_REQUEST_EXPRESSIONS: tuple[str, ...] = (
     "github.event.pull_request.number",
     "github.head_ref",
-    "github.ref",
 )
 
 #: Workflows known to start on `pull_request`. Discovery below is dynamic so a
