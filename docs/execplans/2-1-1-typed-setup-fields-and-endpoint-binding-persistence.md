@@ -705,9 +705,60 @@ explicit operations; never imply that an error proves no commit occurred.
   `whitaker --all -p axinite`, `make check-fmt`, `make spelling`, and
   `make markdownlint`; all passed. Both Verus proofs pass with the renamed
   `lemma_seq_new_len`/`lemma_seq_new_index` lemmas.
-- [ ] M1 verification evidence: full local gate set (`make lint test`) still to
-  run before commit.
-- [ ] M2 encrypted dual-backend persistence.
+- [x] 2026-11-18: M1 full gate set passed and the domain plateau was committed
+  as `7dba1ec9`. Scrutineer ran `make check-fmt`, `make lint`, `make test`,
+  `make spelling`, `make markdownlint`, and both Verus proofs sequentially:
+  4602 passed, 12 skipped; Verus 4/0 (smoke) and 28/0 (endpoint). No transport
+  capability was advertised.
+- [x] 2026-11-18: M2 encrypted dual-backend persistence implemented. Added
+  domain-separated AEAD (`src/secrets/crypto/scoped.rs`) with endpoint-binding
+  HKDF info and associated data over scope, kind, envelope, and validation
+  policy; the credential API and ciphertext format are unchanged. Added
+  `binding.rs` (scoped records, dyn/native repository port), `service.rs`
+  (validation, sealing, authenticated status), and `binding_contract.rs`
+  (shared A2 contract). Added PostgreSQL `V19` and libSQL version 19 in both
+  the consolidated schema and `INCREMENTAL_MIGRATIONS`, plus
+  `src/db/endpoint_bindings/` adapters and the backend-selecting factory.
+  Focused tests: 97 setup/crypto cases passed; 6 backend contract, migration,
+  reopen, and schema cases passed against embedded PostgreSQL and file-backed
+  libSQL.
+- [ ] M2 gate evidence: `make check-fmt`, `make spelling`, `make markdownlint`,
+      `make lint`, and `make test` passed (4635 passed, 12 skipped);
+      `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs` reported 28
+      verified, 0 errors. Matrix attempt 4 completed lane 1 (4637 passed, 12
+      skipped; compile contract 1664.9s) and lane 2 (4516 passed, 7 skipped;
+      contract 1973.9s) inside the 2400-second bound, proving the earlier
+      timeouts were admission contention. Lane 3 reached 4636 of 4637 with
+      four fixtures failing on `ENOSPC`, and lane 4 did not run, when the host
+      volume reached 100%; that is disk exhaustion, not a contract result.
+      Scrutineer logs are under `/tmp/*-2-1-1-m2.out`; no gate modified a
+      tracked file.
+- [ ] 2026-11-23: M2 gate set re-run against `8a610e60`. `make check-fmt`,
+  `make lint` (four Clippy lanes, both Whitaker lanes, Interrogate 1802/1802),
+  `make typecheck`, `make markdownlint` and `make nixie` all passed.
+  `make test` passed: 4635 run, 4635 passed, 12 skipped. `make verus` reported
+  4 verified, 0 errors, and
+  `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs` reported 28 verified, 0
+  errors. `NEXTEST_PROFILE=ci make test-matrix` ran lane 1 to 4636 of 4637:
+  4635 passed and only `trybuild::db_surface_compile_contracts` hit its
+  2400-second bound while the compile-admission pool held 200 or more queued
+  compiler groups; the summary ended `1 timed out` and `make` returned Error
+  100. That is the same scheduling outcome recorded above, not a fixture
+  diagnostic, and lanes 2-4 therefore did not run. The matrix must be re-run on
+  a less contended host, or exercised by hosted CI, before the M2 plateau is
+  called complete; the bound is not to be raised in `.config/nextest.toml`.
+  Logs:
+  `/tmp/{check-fmt,lint,typecheck,markdownlint,nixie,test,verus,verus-smoke,matrix}-2-1-1-m2-g3.out`.
+- [x] 2026-11-19: The host's `whitaker` launcher was replaced, switching
+  `make lint-whitaker` from the suite pinned under `~/.local/share/dylint` to
+  the installer-managed suite. The newer suite reported `bumpy-road-function`
+  in four pre-existing functions outside this plan's scope. Extracted helpers in
+  `src/settings/access.rs`, `src/setup/prompts/selection.rs`,
+  `src/tools/builtin/json.rs`, and
+  `tests/tools_and_config/wit_compat/harness.rs` with no behaviour change;
+  focused tests passed (56 settings, 6 JSON) and
+  `make check-fmt lint typecheck` passes, including all four Clippy lanes,
+  Interrogate, and both Whitaker lanes.
 - [ ] M3 setup service, web contracts, and both interfaces.
 - [ ] M4 E2E and recovery evidence.
 - [ ] M5 documentation, final evidence, and roadmap completion.
@@ -744,7 +795,67 @@ predicate helpers, single-purpose effects, and contract-scoped test modules
 resolved the findings; `axiom_seq_new_len`/`axiom_seq_new_index` were also
 deprecated in the pinned Verus and renamed to `lemma_seq_new_*`.
 
+M2 implementation findings. `SecretsCrypto` had no associated-data surface, so
+endpoint sealing was added as a child module of `crypto` that reuses the
+master-key field and derives with a distinct HKDF info string. Keeping the
+credential `encrypt`/`decrypt` methods untouched preserves existing ciphertext
+and proves cross-domain opening fails in both directions. The repository port
+is a handwritten dyn/native pair rather than `impl_db_forwarders!` because that
+macro is private to `src/db/forwarders.rs` and fixed to `DbFuture` and
+`DatabaseError`; the secrets-store precedent has the same shape. PostgreSQL
+uses single-statement `ON CONFLICT` upserts and libSQL uses the same statement
+with its own dialect; neither needs a transaction because each mutation is one
+statement. The shared contract caught a test-side assumption that a row always
+exists after a concurrent replace/clear; the settled state is legitimately
+`Missing` or `Configured`, so cleanup now uses `delete_scope` and does not
+assert a row count.
+
+The `ci` nextest profile includes `trybuild`, whose
+`db_surface_compile_contracts` test builds a fixture workspace. Under a
+saturated compile-admission pool that fixture waits for slots inside the test,
+and `.config/nextest.toml`'s 2400-second slow timeout then terminates it. The
+timeout is a scheduling outcome, not a compile-contract failure: the log shows
+package-cache and admission waits and no fixture diagnostic. `make test` uses
+the `default` profile, which excludes `trybuild`, so only the matrix lane
+observes this. A third attempt reused a completed 11-minute fixture-project
+build and reached the first fixture file before the same bound fired, so the
+remaining cost is nested fixture compilation and execution rather than the
+dependency graph. Re-run the matrix on a less contended host rather than
+raising the repository's bound. Recording a rejected token verbatim in this
+document also re-triggers the spelling gate, so report such corrections by
+description.
+
+The host's `whitaker` launcher changed underneath this worktree on 2026-11-19:
+`~/.local/bin/whitaker` now delegates to `whitaker-installer run` and selects
+`~/.local/share/whitaker/lints/.../libwhitaker_suite@nightly-2026-05-28.so`,
+whereas the earlier passing runs used the launcher that pinned
+`~/.local/share/dylint/lib/nightly-2026-05-28/release`. The two suite builds
+are different binaries, and the newer one reports `bumpy-road-function` in four
+pre-existing functions that the older suite passed. The findings are real
+nested clusters, so they were fixed by extraction rather than suppressed. A
+lint gate's verdict can therefore move with the host's suite selection, quite
+independently of the candidate diff; confirm which suite the launcher selects
+before treating such a finding as newly introduced.
+
 ## Decision log
+
+2026-11-18: Allocate PostgreSQL `V19__endpoint_bindings.sql` and libSQL
+incremental version 19 for the binding table. The schema is
+`(user_id, extension_name, endpoint_name)` unique, with `endpoint_kind`,
+`envelope_version`, `validation_policy_version`, `encrypted_value`, and
+`key_salt`; there is no plaintext URL or origin column. The table is added to
+both `migrations/libsql_schema.sql` for fresh databases and
+`INCREMENTAL_MIGRATIONS` for upgrades, matching the V18 precedent. Version 17
+remains deliberately absent on libSQL for the documented BIGINT no-op.
+
+2026-11-18: Keep endpoint crypto on `SecretsCrypto` as distinct
+`encrypt_endpoint_binding`/`decrypt_endpoint_binding` methods with a separate
+HKDF info string and caller-supplied associated data. This satisfies ADR 0016's
+domain-separation requirement without changing the credential envelope or
+introducing a second key holder. Status reads authenticate every declared row
+and classify `Stale` (kind, envelope, or policy mismatch) and `Corrupt`
+(authentication or decoding failure) separately from `Missing` and from a
+repository error.
 
 2026-11-17: Renumber this proposal to ADR 0016. Upstream ADR 0015 now records
 the audited unsafe boundaries and is referenced across manifests, scripts, and
