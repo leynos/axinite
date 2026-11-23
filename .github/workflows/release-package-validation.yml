@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-package-validation-${{ github.event.pull_request.number || github.ref }}
+  group: release-package-validation-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:

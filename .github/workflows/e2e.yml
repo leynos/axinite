@@ -18,7 +18,7 @@ name: E2E Tests
 # workflow that expression resolves to the *caller's* name, which would
 # put every workflow a single caller invokes into one group.
 concurrency:
-  group: e2e-tests-${{ github.event.pull_request.number || github.ref }}
+  group: e2e-tests-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
