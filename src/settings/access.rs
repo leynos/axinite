@@ -137,25 +137,36 @@ fn coerce_number(
     existing: &serde_json::Number,
     assignment: &RawAssignment<'_>,
 ) -> Result<serde_json::Value, String> {
-    let RawAssignment { path, value } = *assignment;
     if existing.is_u64() {
-        let n = value
-            .parse::<u64>()
-            .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
-        Ok(serde_json::Value::Number(n.into()))
+        coerce_integer::<u64>(assignment)
     } else if existing.is_i64() {
-        let n = value
-            .parse::<i64>()
-            .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
-        Ok(serde_json::Value::Number(n.into()))
+        coerce_integer::<i64>(assignment)
     } else {
-        let n = value
-            .parse::<f64>()
-            .map_err(|_| format!("Expected number for {}, got '{}'", path, value))?;
-        Ok(serde_json::Number::from_f64(n)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::String(value.to_string())))
+        coerce_float(assignment)
     }
+}
+
+/// Parse the assignment value as an integer of type `T`.
+fn coerce_integer<T>(assignment: &RawAssignment<'_>) -> Result<serde_json::Value, String>
+where
+    T: std::str::FromStr + Into<serde_json::Number>,
+{
+    let RawAssignment { path, value } = *assignment;
+    let n = value
+        .parse::<T>()
+        .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
+    Ok(serde_json::Value::Number(n.into()))
+}
+
+/// Parse the assignment value as a float, keeping non-finite input as text.
+fn coerce_float(assignment: &RawAssignment<'_>) -> Result<serde_json::Value, String> {
+    let RawAssignment { path, value } = *assignment;
+    let n = value
+        .parse::<f64>()
+        .map_err(|_| format!("Expected number for {}, got '{}'", path, value))?;
+    Ok(serde_json::Number::from_f64(n)
+        .map(serde_json::Value::Number)
+        .unwrap_or(serde_json::Value::String(value.to_string())))
 }
 
 /// Recursively collect settings paths and values.

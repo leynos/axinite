@@ -143,38 +143,50 @@ fn parse_json_input(data: &serde_json::Value) -> Result<serde_json::Value, ToolE
 fn query_json(data: &serde_json::Value, path: &str) -> Result<serde_json::Value, ToolError> {
     let mut current = data;
 
-    for segment in path.split('.') {
-        if segment.is_empty() {
-            continue;
-        }
-
-        // Check for array indexing: field[0]
-        if let Some((field, index_str)) = segment.split_once('[') {
-            // First navigate to the field
-            if !field.is_empty() {
-                current = current.get(field).ok_or_else(|| {
-                    ToolError::ExecutionFailed(format!("field not found: {}", field))
-                })?;
-            }
-
-            // Then get the array index
-            let index_str = index_str.trim_end_matches(']');
-            let index: usize = index_str.parse().map_err(|_| {
-                ToolError::InvalidParameters(format!("invalid array index: {}", index_str))
-            })?;
-
-            current = current.get(index).ok_or_else(|| {
-                ToolError::ExecutionFailed(format!("array index out of bounds: {}", index))
-            })?;
-        } else {
-            // Simple field access
-            current = current.get(segment).ok_or_else(|| {
-                ToolError::ExecutionFailed(format!("field not found: {}", segment))
-            })?;
-        }
+    for segment in path.split('.').filter(|s| !s.is_empty()) {
+        current = step_into_segment(current, segment)?;
     }
 
     Ok(current.clone())
+}
+
+/// Resolve one path segment (`field` or `field[index]`) against `current`.
+fn step_into_segment<'a>(
+    current: &'a serde_json::Value,
+    segment: &str,
+) -> Result<&'a serde_json::Value, ToolError> {
+    let Some((field, index_str)) = segment.split_once('[') else {
+        return get_field(current, segment);
+    };
+    let current = if field.is_empty() {
+        current
+    } else {
+        get_field(current, field)?
+    };
+    get_array_index(current, index_str.trim_end_matches(']'))
+}
+
+/// Look up an object field, failing when it is absent.
+fn get_field<'a>(
+    current: &'a serde_json::Value,
+    field: &str,
+) -> Result<&'a serde_json::Value, ToolError> {
+    current
+        .get(field)
+        .ok_or_else(|| ToolError::ExecutionFailed(format!("field not found: {}", field)))
+}
+
+/// Parse and look up an array index, failing when invalid or out of bounds.
+fn get_array_index<'a>(
+    current: &'a serde_json::Value,
+    index_str: &str,
+) -> Result<&'a serde_json::Value, ToolError> {
+    let index: usize = index_str
+        .parse()
+        .map_err(|_| ToolError::InvalidParameters(format!("invalid array index: {}", index_str)))?;
+    current
+        .get(index)
+        .ok_or_else(|| ToolError::ExecutionFailed(format!("array index out of bounds: {}", index)))
 }
 
 #[cfg(test)]
