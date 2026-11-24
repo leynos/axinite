@@ -112,28 +112,31 @@ describe("stub HTTP contract", () => {
   it.each([
     ["malformed JSON", "{ malformed"],
     ["an invalid schema", JSON.stringify({ enabled: "false" })],
-  ])("rejects routine toggle bodies with %s without toggling", async (_, body) => {
-    const state = new MockBackendState();
-    try {
-      const routineBefore = state.getRoutine("routine-standup");
-      const response = await handleMockRequest(
-        request("/api/routines/routine-standup/toggle", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        }),
-        state
-      );
+  ])(
+    "rejects routine toggle bodies with %s without toggling",
+    async (_, body) => {
+      const state = new MockBackendState();
+      try {
+        const routineBefore = state.getRoutine("routine-standup");
+        const response = await handleMockRequest(
+          request("/api/routines/routine-standup/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          }),
+          state
+        );
 
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({
-        error: "Invalid routine toggle body.",
-      });
-      expect(state.getRoutine("routine-standup")).toEqual(routineBefore);
-    } finally {
-      state.dispose();
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({
+          error: "Invalid routine toggle body.",
+        });
+        expect(state.getRoutine("routine-standup")).toEqual(routineBefore);
+      } finally {
+        state.dispose();
+      }
     }
-  });
+  );
 
   it("allows a bodyless routine toggle", async () => {
     const state = new MockBackendState();

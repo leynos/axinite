@@ -50,7 +50,6 @@ visual hierarchy inside the SPA rather than treating the generic hero/card
 layout as the final design.
 
 The restoration order is:
-
 1. shared shell chrome and watermark treatment
 2. Chat and Memory, because they are the most visually distinctive
 3. Jobs and Routines, because they share a dashboard/table design family
@@ -60,7 +59,6 @@ The restoration order is:
 
 The original mock-up lived in `axinite/` (now `web-src/axinite/`). At the start
 of this plan it was a set of page-specific HTML files:
-
 - `axinite/chat/index.html`
 - `axinite/memory/index.html`
 - `axinite/jobs/index.html`
@@ -245,7 +243,6 @@ The application shell should use TanStack Router nested routes so the top bar,
 status strip, locale switcher, debug controls, and any persistent logs access
 live once at the shell level. Child routes should preserve the current product
 areas instead of inventing a new information architecture:
-
 1. `/chat`
 2. `/memory`
 3. `/jobs`
@@ -269,7 +266,6 @@ like product UI rather than a wall of inline utility tokens.
 ## Internationalization and localization design
 
 The SPA must ship with these locales from the first production-ready release:
-
 - `en-GB`
 - `fr`
 - `de`
@@ -314,7 +310,6 @@ Feature flags are not an afterthought in this migration. They are the safety
 valve that keeps the mock-up honest while the backend catches up.
 
 Build a typed flag system around three concepts:
-
 1. A canonical flag registry in `src/lib/feature-flags/registry.ts` that names
    every gated surface and documents its owner, default, and backend contract.
 2. A runtime loader that fetches `GET /api/features` after authentication, as
@@ -344,7 +339,6 @@ a maintainer tool, not a release contract.
 
 WCAG 2.2 compliance must be designed into the architecture rather than patched
 in later. The migration should adopt the following operational rules:
-
 - Every interactive primitive must be keyboard-reachable and must expose visible
   focus states that satisfy WCAG 2.2 focus appearance expectations.
 - No modal, drawer, popover, or menu may ship without tested focus management,
@@ -373,7 +367,6 @@ This site should be a real PWA, but only within the constraints of a live,
 authenticated agent product.
 
 Use a Vite-compatible PWA plugin so the SPA can emit:
-
 - `manifest.webmanifest`
 - a service worker
 - app icons
@@ -409,7 +402,6 @@ switch routes without page reloads.
 ### Stream 2: Build the shared shell and cross-cutting providers
 
 Create the application shell, providers, and support layers:
-
 - router provider
 - query client
 - i18n provider
@@ -426,7 +418,6 @@ layout. Do not migrate feature pages deeply until this shell is stable.
 
 Migrate each current page family into a feature module while preserving route
 identity and semantics:
-
 1. Chat, because it exercises the heaviest mix of routing, streaming, prompts,
    dialogs, and status feedback.
 2. Memory, because it exercises tree navigation, editing states, markdown
@@ -446,7 +437,6 @@ feature gating, and test coverage, not just visual resemblance.
 
 Introduce a typed API layer that matches the documented backend surfaces in
 `docs/front-end-architecture.md`. This layer should isolate:
-
 - authenticated fetch helpers
 - typed request and response models
 - SSE setup and reconnection
@@ -495,7 +485,6 @@ make nixie
 
 The implementation behind those targets should follow the examples already in
 `../corbusier-mockup` and `../wildside-mockup-v2a`:
-
 - format and lint the Solid application with Bun-driven tooling
 - run strict TypeScript checks with no emit
 - run unit and behaviour tests in a browser-like environment
@@ -506,7 +495,6 @@ The implementation behind those targets should follow the examples already in
   semantic class checks
 
 Test coverage expectations are concrete:
-
 - Unit tests cover pure functions such as locale metadata, flag resolution,
   route guard logic, query key construction, and formatters.
 - Behaviour tests cover interactive components with keyboard and pointer flows,
@@ -525,7 +513,6 @@ behaviour.
 
 The approved implementation should be considered complete only when all of the
 following are true:
-
 1. `web-src/axinite/` is a SolidJS SPA rather than a collection of standalone
    HTML pages.
 2. Route navigation between the current product areas occurs without full page

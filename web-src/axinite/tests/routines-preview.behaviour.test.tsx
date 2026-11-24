@@ -366,24 +366,29 @@ describe("routines preview behaviour", () => {
     ["Run now", "triggerRoutine"],
     ["Disable", "toggleRoutine"],
     ["Delete", "deleteRoutine"],
-  ] as const)("shows a failed %s action without refreshing or clearing selection", async (button, mutation) => {
-    const action = {
-      triggerRoutine: ["POST", "/api/routines/alpha/trigger"],
-      toggleRoutine: ["POST", "/api/routines/alpha/toggle"],
-      deleteRoutine: ["DELETE", "/api/routines/alpha"],
-    } as const;
-    const [method, path] = action[mutation];
-    gateway.fail({ method, path, status: 500, message: "Gateway offline" });
-    renderRoutines();
-    await userEvent.click(await screen.findByRole("button", { name: button }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The routine action failed. Try again."
-    );
-    expect(
-      screen.getByRole("heading", { name: "Routine alpha" })
-    ).toBeVisible();
-    expect(
-      gateway.requests.filter((request) => request.path === "/api/routines")
-    ).toHaveLength(1);
-  });
+  ] as const)(
+    "shows a failed %s action without refreshing or clearing selection",
+    async (button, mutation) => {
+      const action = {
+        triggerRoutine: ["POST", "/api/routines/alpha/trigger"],
+        toggleRoutine: ["POST", "/api/routines/alpha/toggle"],
+        deleteRoutine: ["DELETE", "/api/routines/alpha"],
+      } as const;
+      const [method, path] = action[mutation];
+      gateway.fail({ method, path, status: 500, message: "Gateway offline" });
+      renderRoutines();
+      await userEvent.click(
+        await screen.findByRole("button", { name: button })
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The routine action failed. Try again."
+      );
+      expect(
+        screen.getByRole("heading", { name: "Routine alpha" })
+      ).toBeVisible();
+      expect(
+        gateway.requests.filter((request) => request.path === "/api/routines")
+      ).toHaveLength(1);
+    }
+  );
 });

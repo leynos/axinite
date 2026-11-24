@@ -323,7 +323,6 @@ Manage cascade layers with native CSS `@layer base`, `@layer components`, and
 ## Performance Optimizations
 
 v4's Oxide engine provides:
-
 - 5x faster full builds
 - 100x faster incremental builds
 - Automatic content detection
@@ -1810,7 +1809,7 @@ npm list | grep postcss
 - [ ] Backup your project
 - [ ] Ensure Node.js 20+ is installed
 - [ ] Check browser support requirements (Safari 16.4+, Chrome 111+, Firefox
-      128+)
+  128+)
 
 ### Automated Migration
 

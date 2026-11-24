@@ -180,13 +180,16 @@ describe("resource path contract", () => {
     ["job", () => fetchJobDetail("../x"), "/api/jobs/..%2Fx"],
     ["routine", () => deleteRoutine("r 1"), "/api/routines/r%201"],
     ["skill", () => removeSkill("x/../y"), "/api/skills/x%2F..%2Fy"],
-  ] as const)("encodes the %s identifier as one path segment", async (_kind, call, expected) => {
-    const fetchMock = stubFetch();
-    try {
-      await call();
-    } finally {
-      vi.unstubAllGlobals();
+  ] as const)(
+    "encodes the %s identifier as one path segment",
+    async (_kind, call, expected) => {
+      const fetchMock = stubFetch();
+      try {
+        await call();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(expected);
     }
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(expected);
-  });
+  );
 });

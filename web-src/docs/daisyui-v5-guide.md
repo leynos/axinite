@@ -4,7 +4,6 @@
 
 daisyUI 5 is a CSS library for Tailwind CSS 4 daisyUI 5 provides class names
 for common UI components
-
 - [daisyUI 5 docs](https://daisyui.com)
 - [Guide: How to use this file in LLMs and code editors](https://daisyui.com/docs/editor/)
 - [daisyUI 5 release notes](https://daisyui.com/docs/v5/)
@@ -13,7 +12,6 @@ for common UI components
 ## daisyUI 5 install notes
 
 [install guide](https://daisyui.com/docs/install/)
-
 1. daisyUI 5 requires Tailwind CSS 4
 2. Tailwind CSS v4 prefers a CSS-first configuration using directives such as
    `@import "tailwindcss";` and `@theme`, but it still supports JavaScript
@@ -73,7 +71,6 @@ for common UI components
 
 daisyUI 5 class names are one of the following categories. These type names are
 only for reference and are not used in the actual code.
-
 - `component`: the required component class
 - `part`: a child part of a component
 - `style`: sets a specific style to component or part
@@ -111,9 +108,9 @@ daisyUI with all the default configs:
     light --default,
     dark --prefersdark;
   root: ":root";
-  include:;
-  exclude:;
-  prefix:;
+  include: ;
+  exclude: ;
+  prefix: ;
   logs: true;
 }
 ```
@@ -164,7 +161,7 @@ disabled
     abyss,
     silk;
   root: ":root";
-  include:;
+  include: ;
   exclude: rootscrollgutter, checkbox;
   prefix: daisy-;
   logs: false;

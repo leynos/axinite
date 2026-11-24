@@ -46,98 +46,102 @@ function requestDetails(
 }
 
 describe("HTTP wrapper wire contracts", () => {
-  it.each(
-    wireCases
-  )("$name sends the exact gateway request and decodes JSON", async (entry) => {
-    const payload = entry.response ?? { wire: true };
-    const fetchMock = vi.fn(
-      async (_url: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json(payload)
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    await expect(entry.call()).resolves.toEqual(entry.result ?? payload);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const actual = requestDetails(fetchMock.mock.calls[0]);
-    expect(actual.url).toBe(entry.path);
-    expect(actual.method).toBe(entry.method ?? "GET");
-    expect(actual.headers.get("Authorization")).toBe("Bearer wire +/?secret");
-    expect(actual.headers.get("Accept")).toBe("application/json");
-    const jsonWrite = entry.method === "POST" || entry.method === "PUT";
-    expect(actual.headers.get("Content-Type")).toBe(
-      jsonWrite ? "application/json" : null
-    );
-    expect(actual.body).toEqual(entry.body ?? null);
-    expect(actual.signal).toBeInstanceOf(AbortSignal);
-    expect(actual.signal?.aborted).toBe(false);
-  });
+  it.each(wireCases)(
+    "$name sends the exact gateway request and decodes JSON",
+    async (entry) => {
+      const payload = entry.response ?? { wire: true };
+      const fetchMock = vi.fn(
+        async (_url: RequestInfo | URL, _init?: RequestInit) =>
+          Response.json(payload)
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(entry.call()).resolves.toEqual(entry.result ?? payload);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const actual = requestDetails(fetchMock.mock.calls[0]);
+      expect(actual.url).toBe(entry.path);
+      expect(actual.method).toBe(entry.method ?? "GET");
+      expect(actual.headers.get("Authorization")).toBe("Bearer wire +/?secret");
+      expect(actual.headers.get("Accept")).toBe("application/json");
+      const jsonWrite = entry.method === "POST" || entry.method === "PUT";
+      expect(actual.headers.get("Content-Type")).toBe(
+        jsonWrite ? "application/json" : null
+      );
+      expect(actual.body).toEqual(entry.body ?? null);
+      expect(actual.signal).toBeInstanceOf(AbortSignal);
+      expect(actual.signal?.aborted).toBe(false);
+    }
+  );
 
-  it.each(
-    wireCases
-  )("$name propagates HTTP errors or its documented status fallback", async (entry) => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () => new Response("Gateway rejected request", { status: 429 })
-      )
-    );
-    const assertion =
-      "fallback" in entry
-        ? expect(entry.call()).resolves.toEqual(entry.fallback)
-        : expect(entry.call()).rejects.toMatchObject({
-            category: "http",
-            message: "Gateway rejected request",
-          });
-    await assertion;
-  });
+  it.each(wireCases)(
+    "$name propagates HTTP errors or its documented status fallback",
+    async (entry) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () => new Response("Gateway rejected request", { status: 429 })
+        )
+      );
+      const assertion =
+        "fallback" in entry
+          ? expect(entry.call()).resolves.toEqual(entry.fallback)
+          : expect(entry.call()).rejects.toMatchObject({
+              category: "http",
+              message: "Gateway rejected request",
+            });
+      await assertion;
+    }
+  );
 
-  it.each(
-    wireCases
-  )("$name propagates transport errors or its documented status fallback", async (entry) => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new TypeError("Network unreachable");
-      })
-    );
-    const assertion =
-      "fallback" in entry
-        ? expect(entry.call()).resolves.toEqual(entry.fallback)
-        : expect(entry.call()).rejects.toMatchObject({
-            category: "transport",
-          });
-    await assertion;
-  });
+  it.each(wireCases)(
+    "$name propagates transport errors or its documented status fallback",
+    async (entry) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new TypeError("Network unreachable");
+        })
+      );
+      const assertion =
+        "fallback" in entry
+          ? expect(entry.call()).resolves.toEqual(entry.fallback)
+          : expect(entry.call()).rejects.toMatchObject({
+              category: "transport",
+            });
+      await assertion;
+    }
+  );
 
-  it.each(
-    wireCases
-  )("$name aborts a hung fetch at the request deadline", async (entry) => {
-    vi.useFakeTimers();
-    let signal: AbortSignal | null | undefined;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
-        signal = init?.signal;
-        return new Promise<Response>((_resolve, reject) =>
-          signal?.addEventListener(
-            "abort",
-            () => reject(new DOMException("Aborted", "AbortError")),
-            { once: true }
-          )
-        );
-      })
-    );
-    const pending = entry.call();
-    // Attach the assertion before advancing timers so rejection is observed.
-    const assertion =
-      "fallback" in entry
-        ? expect(pending).resolves.toEqual(entry.fallback)
-        : expect(pending).rejects.toMatchObject({ category: "timeout" });
-    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1);
-    expect(signal?.aborted).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(signal?.aborted).toBe(true);
-    await assertion;
-  });
+  it.each(wireCases)(
+    "$name aborts a hung fetch at the request deadline",
+    async (entry) => {
+      vi.useFakeTimers();
+      let signal: AbortSignal | null | undefined;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+          signal = init?.signal;
+          return new Promise<Response>((_resolve, reject) =>
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true }
+            )
+          );
+        })
+      );
+      const pending = entry.call();
+      // Attach the assertion before advancing timers so rejection is observed.
+      const assertion =
+        "fallback" in entry
+          ? expect(pending).resolves.toEqual(entry.fallback)
+          : expect(pending).rejects.toMatchObject({ category: "timeout" });
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(true);
+      await assertion;
+    }
+  );
 });
 
 describe("shared HTTP helper contracts", () => {
@@ -175,68 +179,70 @@ describe("shared HTTP helper contracts", () => {
     ["native Headers", (values) => new Headers(values)],
   ];
 
-  it.each(
-    headerForms
-  )("preserves %s headers and JSON defaults for POST and PUT", async (_name, makeHeaders) => {
-    const payload = { accepted: true };
-    const fetchMock = vi.fn(
-      async (_url: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json(payload, { status: 201 })
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    for (const write of [postJson, putJson]) {
-      await expect(
-        write(
-          "/resource",
-          { enabled: false },
-          makeHeaders({ "X-Deployment-Id": "preview" })
-        )
-      ).resolves.toEqual(payload);
-    }
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    for (const [index, [url, init]] of fetchMock.mock.calls.entries()) {
-      expect(url).toBe("/resource");
-      expect(init?.method).toBe(index === 0 ? "POST" : "PUT");
-      const headers = new Headers(init?.headers);
-      expect(headers.get("X-Deployment-Id")).toBe("preview");
-      expect(headers.get("Content-Type")).toBe("application/json");
-      expect(headers.get("Accept")).toBe("application/json");
-      expect(headers.get("Authorization")).toBe("Bearer wire +/?secret");
-      expect(init?.body).toBe('{"enabled":false}');
-    }
-  });
-
-  it.each(
-    headerForms
-  )("preserves explicit %s overrides for POST and PUT", async (_name, makeHeaders) => {
-    const payload = { accepted: true };
-    const fetchMock = vi.fn(
-      async (_url: RequestInfo | URL, _init?: RequestInit) =>
-        Response.json(payload, { status: 202 })
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const supplied = {
-      "x-deployment-id": "tenant_2",
-      "content-type": "application/vnd.axinite+json",
-      accept: "application/vnd.axinite+json",
-      authorization: "Bearer explicit-token",
-    };
-    for (const write of [postJson, putJson]) {
-      await expect(
-        write("/resource", { enabled: false }, makeHeaders(supplied))
-      ).resolves.toEqual(payload);
-    }
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    for (const [index, [url, init]] of fetchMock.mock.calls.entries()) {
-      expect(url).toBe("/resource");
-      expect(init?.method).toBe(index === 0 ? "POST" : "PUT");
-      const headers = new Headers(init?.headers);
-      for (const [name, value] of Object.entries(supplied)) {
-        expect(headers.get(name)).toBe(value);
+  it.each(headerForms)(
+    "preserves %s headers and JSON defaults for POST and PUT",
+    async (_name, makeHeaders) => {
+      const payload = { accepted: true };
+      const fetchMock = vi.fn(
+        async (_url: RequestInfo | URL, _init?: RequestInit) =>
+          Response.json(payload, { status: 201 })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      for (const write of [postJson, putJson]) {
+        await expect(
+          write(
+            "/resource",
+            { enabled: false },
+            makeHeaders({ "X-Deployment-Id": "preview" })
+          )
+        ).resolves.toEqual(payload);
       }
-      expect(init?.body).toBe('{"enabled":false}');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const [index, [url, init]] of fetchMock.mock.calls.entries()) {
+        expect(url).toBe("/resource");
+        expect(init?.method).toBe(index === 0 ? "POST" : "PUT");
+        const headers = new Headers(init?.headers);
+        expect(headers.get("X-Deployment-Id")).toBe("preview");
+        expect(headers.get("Content-Type")).toBe("application/json");
+        expect(headers.get("Accept")).toBe("application/json");
+        expect(headers.get("Authorization")).toBe("Bearer wire +/?secret");
+        expect(init?.body).toBe('{"enabled":false}');
+      }
     }
-  });
+  );
+
+  it.each(headerForms)(
+    "preserves explicit %s overrides for POST and PUT",
+    async (_name, makeHeaders) => {
+      const payload = { accepted: true };
+      const fetchMock = vi.fn(
+        async (_url: RequestInfo | URL, _init?: RequestInit) =>
+          Response.json(payload, { status: 202 })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const supplied = {
+        "x-deployment-id": "tenant_2",
+        "content-type": "application/vnd.axinite+json",
+        accept: "application/vnd.axinite+json",
+        authorization: "Bearer explicit-token",
+      };
+      for (const write of [postJson, putJson]) {
+        await expect(
+          write("/resource", { enabled: false }, makeHeaders(supplied))
+        ).resolves.toEqual(payload);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const [index, [url, init]] of fetchMock.mock.calls.entries()) {
+        expect(url).toBe("/resource");
+        expect(init?.method).toBe(index === 0 ? "POST" : "PUT");
+        const headers = new Headers(init?.headers);
+        for (const [name, value] of Object.entries(supplied)) {
+          expect(headers.get(name)).toBe(value);
+        }
+        expect(init?.body).toBe('{"enabled":false}');
+      }
+    }
+  );
 
   it("uses an HTTP diagnostic for an empty rejection body", async () => {
     vi.stubGlobal(

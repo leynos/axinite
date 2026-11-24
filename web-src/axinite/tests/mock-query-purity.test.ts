@@ -97,20 +97,19 @@ const queries: { name: string; read: (state: MockBackendState) => object }[] = [
 ];
 
 describe("mock query purity", () => {
-  it.each(
-    queries
-  )("$name returns a detached snapshot without selecting a thread", ({
-    read,
-  }) => {
-    const state = new MockBackendState();
-    const active = state.listThreads().active_thread;
-    const response = read(state);
-    const expected = structuredClone(response);
-    expect(state.listThreads().active_thread).toBe(active);
-    corrupt(response);
-    expect(read(state)).toEqual(expected);
-    expect(state.listThreads().active_thread).toBe(active);
-  });
+  it.each(queries)(
+    "$name returns a detached snapshot without selecting a thread",
+    ({ read }) => {
+      const state = new MockBackendState();
+      const active = state.listThreads().active_thread;
+      const response = read(state);
+      const expected = structuredClone(response);
+      expect(state.listThreads().active_thread).toBe(active);
+      corrupt(response);
+      expect(read(state)).toEqual(expected);
+      expect(state.listThreads().active_thread).toBe(active);
+    }
+  );
 
   it("keeps history reads separate from explicit create and send selection", () => {
     const state = new MockBackendState();
@@ -120,25 +119,24 @@ describe("mock query purity", () => {
     state.dispose();
   });
 
-  it.each([
-    "constructor",
-    "toString",
-    "missing.txt",
-  ])("treats inherited or unknown job file %s as missing", (path) => {
-    const state = new MockBackendState();
-    let thrown: unknown;
-    try {
-      state.readJobFile("job-comparison", path);
-    } catch (error) {
-      thrown = error;
-    } finally {
-      state.dispose();
-    }
+  it.each(["constructor", "toString", "missing.txt"])(
+    "treats inherited or unknown job file %s as missing",
+    (path) => {
+      const state = new MockBackendState();
+      let thrown: unknown;
+      try {
+        state.readJobFile("job-comparison", path);
+      } catch (error) {
+        thrown = error;
+      } finally {
+        state.dispose();
+      }
 
-    expect(thrown).toBeInstanceOf(Error);
-    expect(thrown).not.toBeInstanceOf(TypeError);
-    expect(thrown).toHaveProperty("message", "File not found");
-  });
+      expect(thrown).toBeInstanceOf(Error);
+      expect(thrown).not.toBeInstanceOf(TypeError);
+      expect(thrown).toHaveProperty("message", "File not found");
+    }
+  );
 
   it("does not expose the created thread as a mutable state alias", () => {
     const state = new MockBackendState();

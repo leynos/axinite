@@ -32,7 +32,6 @@ bun create solid
 ```
 
 During the prompts:
-
 1. Choose a project name.
 2. Select a non-SolidStart app unless server rendering is explicitly required.
 3. Choose `ts-tailwindcss` for a Bun + Vite + Tailwind starting point.
@@ -57,7 +56,6 @@ bun run dev
 ```
 
 This setup provides:
-
 - Vite's Solid-aware module pipeline,
 - fast rebuilds during development, and
 - a simpler path to production builds than relying on Bun's older framework-
@@ -114,7 +112,6 @@ render(() => <App />, document.getElementById("root")!);
 ```
 
 The important shift from the old React version is simple:
-
 - no `react-dom/client`,
 - no `createRoot`,
 - no `className`,
@@ -182,7 +179,6 @@ If the template does not ship a preview script yet, add one:
 ## 7) What the Axinite workspace adds
 
 The Axinite workspace (`web-src/`) builds on this baseline with:
-
 - Tailwind CSS v4 plus DaisyUI v5 for the design layer,
 - Kobalte for accessible, unstyled interactive primitives,
 - TanStack Router for Solid for SPA routing,

@@ -77,41 +77,44 @@ describe("stub routine mutation contracts", () => {
     });
   });
 
-  it.each([
-    false,
-    true,
-  ])("persists enabled=%s in detail, list and summary", async (enabled) => {
-    const state = new MockBackendState();
-    const id = await firstRoutine(state);
-    const path = `/api/routines/${id}`;
-    const before = await requestJson<RoutineSummaryResponse>(
-      state,
-      "/api/routines/summary"
-    );
-    const previous = await requestJson<RoutineDetailResponse>(state, path);
-    const action = await requestJson<ActionResponse>(
-      state,
-      `${path}/toggle`,
-      "POST",
-      { enabled }
-    );
-    expect(action.success).toBe(true);
+  it.each([false, true])(
+    "persists enabled=%s in detail, list and summary",
+    async (enabled) => {
+      const state = new MockBackendState();
+      const id = await firstRoutine(state);
+      const path = `/api/routines/${id}`;
+      const before = await requestJson<RoutineSummaryResponse>(
+        state,
+        "/api/routines/summary"
+      );
+      const previous = await requestJson<RoutineDetailResponse>(state, path);
+      const action = await requestJson<ActionResponse>(
+        state,
+        `${path}/toggle`,
+        "POST",
+        { enabled }
+      );
+      expect(action.success).toBe(true);
 
-    expect(await requestJson<RoutineDetailResponse>(state, path)).toMatchObject(
-      { enabled }
-    );
-    const list = await requestJson<RoutineListResponse>(state, "/api/routines");
-    expect(list.routines.find((routine) => routine.id === id)?.enabled).toBe(
-      enabled
-    );
-    const summary = await requestJson<RoutineSummaryResponse>(
-      state,
-      "/api/routines/summary"
-    );
-    const delta = Number(enabled) - Number(previous.enabled);
-    expect(summary.enabled).toBe(before.enabled + delta);
-    expect(summary.disabled).toBe(before.disabled - delta);
-  });
+      expect(
+        await requestJson<RoutineDetailResponse>(state, path)
+      ).toMatchObject({ enabled });
+      const list = await requestJson<RoutineListResponse>(
+        state,
+        "/api/routines"
+      );
+      expect(list.routines.find((routine) => routine.id === id)?.enabled).toBe(
+        enabled
+      );
+      const summary = await requestJson<RoutineSummaryResponse>(
+        state,
+        "/api/routines/summary"
+      );
+      const delta = Number(enabled) - Number(previous.enabled);
+      expect(summary.enabled).toBe(before.enabled + delta);
+      expect(summary.disabled).toBe(before.disabled - delta);
+    }
+  );
 
   it("toggles twice without an explicit enabled value", async () => {
     const state = new MockBackendState();

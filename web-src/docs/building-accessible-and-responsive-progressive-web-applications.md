@@ -33,27 +33,26 @@ pillars: reliability and capability, adaptability and reach, and inclusivity
 and robustness. This guide is structured around the mastery and synthesis of
 these three domains, which together define the gold standard for modern web
 applications.
-
 1. **Reliability & Capability (PWA):** This pillar encompasses the core
-    technical features that define a PWA. It is centered on the application's
-    ability to provide a consistent and dependable experience, regardless of
-    network conditions. This includes the capacity to work offline, load
-    instantly from a local cache, be installable on user devices, and leverage
-    advanced web APIs to offer native-like functionalities.
+   technical features that define a PWA. It is centered on the application's
+   ability to provide a consistent and dependable experience, regardless of
+   network conditions. This includes the capacity to work offline, load
+   instantly from a local cache, be installable on user devices, and leverage
+   advanced web APIs to offer native-like functionalities.
 
 2. **Adaptability & Reach (RWD):** This pillar is defined by the principles of
-    Responsive Web Design (RWD). It ensures that the application provides an
-    optimal viewing, interaction, and navigation experience across the vast and
-    ever-expanding ecosystem of devices. The PWA must intelligently adapt its
-    layout and functionality to fit any screen size and input method, from a
-    small smartphone to a large desktop monitor.
+   Responsive Web Design (RWD). It ensures that the application provides an
+   optimal viewing, interaction, and navigation experience across the vast and
+   ever-expanding ecosystem of devices. The PWA must intelligently adapt its
+   layout and functionality to fit any screen size and input method, from a
+   small smartphone to a large desktop monitor.
 
 3. **Inclusivity & Robustness (Accessibility):** This pillar addresses the
-    ethical, legal, and commercial imperative to ensure that the application is
-    usable by everyone, including people with disabilities. It involves a
-    commitment to adhering to established international standards, primarily the
-    W3C's Web Content Accessibility Guidelines (WCAG), to create an experience
-    that is perceivable, operable, understandable, and robust for all users.[^4]
+   ethical, legal, and commercial imperative to ensure that the application is
+   usable by everyone, including people with disabilities. It involves a
+   commitment to adhering to established international standards, primarily the
+   W3C's Web Content Accessibility Guidelines (WCAG), to create an experience
+   that is perceivable, operable, understandable, and robust for all users.[^4]
 
 These pillars are not independent objectives to be addressed in isolation; they
 are deeply interconnected and mutually reinforcing. A responsive design is a
@@ -85,7 +84,6 @@ advanced features and a richer user experience are layered on for browsers and
 devices that can support them.
 
 In the context of this guide, progressive enhancement means:
-
 - The core content of the application is accessible as a standard, navigable
   website in any browser.
 
@@ -141,7 +139,6 @@ tag.[^5]
 While the manifest specification includes numerous members, a specific subset
 is required for a PWA to meet the baseline installability criteria in most
 modern browsers.
-
 - **`name` and/or `short_name`**: At least one of these must be present. `name`
   is the full name of the application, used in contexts like the app store
   listing or installation prompt. `short_name` is a shorter version, intended
@@ -167,7 +164,6 @@ modern browsers.
 
 Beyond the minimum requirements, several other manifest members are highly
 recommended to create a more polished and integrated user experience.
-
 - **`scope`**: Defines the navigation scope of the PWA. Any URL outside of this
   scope will cause navigation to revert to a standard browser tab, effectively
   defining the boundaries of the application.
@@ -239,7 +235,6 @@ network requests originating from the pages it controls.[^6]
 #### Core Capabilities
 
 This proxying capability unlocks the defining features of a PWA:
-
 - **Offline Experience:** By intercepting network requests, a service worker can
   serve responses from a cache instead of the network. This enables the
   creation of robust offline-first experiences, where the application remains
@@ -362,7 +357,7 @@ self.addEventListener("install", (event) => {
     caches.open(CACHE_NAME).then((cache) => {
       console.log("Opened cache");
       return cache.addAll(urlsToCache);
-    }),
+    })
   );
 });
 ```
@@ -396,9 +391,9 @@ self.addEventListener("activate", (event) => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
             return caches.delete(cacheName);
           }
-        }),
+        })
       );
-    }),
+    })
   );
 });
 ```
@@ -473,7 +468,7 @@ self.addEventListener("fetch", (event) => {
       }
       // Not in cache - fetch from network
       return fetch(event.request);
-    }),
+    })
   );
 });
 ```
@@ -539,29 +534,28 @@ relationship between CSS pixels and DIPs, preventing any initial zooming.[^9]
 
 The mobile-first strategy is implemented using three core technical ingredients
 originally defined by Ethan Marcotte.
-
 1. **Fluid Grids:** This principle involves building the page layout using
-    relative units, such as percentages (`%`), viewport units (`vw`, `vh`), or
-    the flexible fraction unit (`fr`) in CSS Grid, instead of fixed units like
-    pixels (`px`). This allows containers and columns to resize proportionally
-    to the viewport, creating a layout that flows and adapts smoothly rather
-    than breaking at arbitrary points.
+   relative units, such as percentages (`%`), viewport units (`vw`, `vh`), or
+   the flexible fraction unit (`fr`) in CSS Grid, instead of fixed units like
+   pixels (`px`). This allows containers and columns to resize proportionally
+   to the viewport, creating a layout that flows and adapts smoothly rather
+   than breaking at arbitrary points.
 
 2. **Flexible Images:** To prevent images from breaking the fluid layout, they
-    must also be flexible. The most common technique is to apply
-    `max-width: 100%;` and `height: auto;` to images in CSS. This allows an
-    image to scale down to fit within its container but prevents it from scaling
-    up beyond its intrinsic size, which would cause pixelation.
+   must also be flexible. The most common technique is to apply
+   `max-width: 100%;` and `height: auto;` to images in CSS. This allows an
+   image to scale down to fit within its container but prevents it from scaling
+   up beyond its intrinsic size, which would cause pixelation.
 
 3. **Media Queries:** Media queries are the mechanism that allows for more
-    significant layout changes at different viewport sizes. They are a feature
-    of CSS that allows styles to be applied conditionally based on the
-    characteristics of the device, such as its width, height, orientation, or
-    resolution. The specific viewport widths at which a media query is
-    introduced to change the layout are known as **breakpoints**. In a
-    mobile-first approach, the base CSS contains the styles for the
-    single-column mobile layout, and `min-width` media queries are used to add
-    styles for larger screens.
+   significant layout changes at different viewport sizes. They are a feature
+   of CSS that allows styles to be applied conditionally based on the
+   characteristics of the device, such as its width, height, orientation, or
+   resolution. The specific viewport widths at which a media query is
+   introduced to change the layout are known as **breakpoints**. In a
+   mobile-first approach, the base CSS contains the styles for the
+   single-column mobile layout, and `min-width` media queries are used to add
+   styles for larger screens.
 
 ```css
 /* Base styles for mobile */
@@ -640,7 +634,6 @@ designs that were previously difficult to achieve on the web.
 The choice between Flexbox and Grid is not a matter of which is "better," but
 which is the right tool for the specific layout task. The fundamental
 distinction is one of dimensionality :
-
 - Use **Flexbox** when arranging items in a single line (a row or a column) with
   control over spacing and alignment within that line. It is content-out.
 
@@ -678,7 +671,6 @@ While `max-width: 100%` prevents images from breaking the layout, it is
 inefficient from a performance perspective, as it forces a small mobile device
 to download a large, high-resolution image intended for a desktop screen.
 Modern HTML provides more sophisticated solutions.
-
 - **`srcset` attribute:** This attribute on the `<img>` tag allows a
   comma-separated list of different-sized versions of the same image. The
   browser can then use information about the viewport size and device pixel
@@ -726,19 +718,18 @@ and ARIA attributes and is far more brittle.
 
 A logical document structure is one of the most powerful accessibility aids.
 This is achieved through two primary mechanisms:
-
 1. **Headings:** Use heading elements (`<h1>` through `<h6>`) to create a clear
-    and logical outline of the page content. There should be only one `<h1>` per
-    page, which typically matches the page title. Heading levels should not be
-    skipped when descending the hierarchy (e.g., an `<h2>` should not be
-    followed directly by an `<h4>`). Screen reader users frequently use headings
-    to scan a page and navigate directly to the section they are interested in.
+   and logical outline of the page content. There should be only one `<h1>` per
+   page, which typically matches the page title. Heading levels should not be
+   skipped when descending the hierarchy (e.g., an `<h2>` should not be
+   followed directly by an `<h4>`). Screen reader users frequently use headings
+   to scan a page and navigate directly to the section they are interested in.
 
 2. **Landmark Roles:** HTML5 introduced several sectioning elements that act as
-    "landmarks" on the page, such as `<header>`, `<nav>`, `<main>`, and
-    `<footer>`. These elements programmatically identify the major regions of a
-    page, allowing assistive technology users to quickly jump between them,
-    bypassing repetitive content like navigation menus.
+   "landmarks" on the page, such as `<header>`, `<nav>`, `<main>`, and
+   `<footer>`. These elements programmatically identify the major regions of a
+   page, allowing assistive technology users to quickly jump between them,
+   bypassing repetitive content like navigation menus.
 
 ### 4.2 Adhering to WCAG 2.2
 
@@ -746,7 +737,6 @@ The Web Content Accessibility Guidelines (WCAG), developed by the W3C's Web
 Accessibility Initiative (WAI), are the internationally recognized standard for
 web accessibility. WCAG is organized under four core principles, known by the
 acronym POUR:[^4]
-
 - **Perceivable:** Information and user interface components must be presentable
   to users in ways they can perceive.
 
@@ -767,7 +757,6 @@ latest version and is backwards-compatible with previous versions.[^4]
 
 While a full exploration of WCAG is beyond the scope of this guide, several
 success criteria are particularly relevant to modern PWAs:
-
 - **SC 1.4.3 Contrast (Minimum):** This criterion requires a contrast ratio of
   at least **4.5:1** for normal-sized text and **3:1** for large text against
   their background. Large text is defined as 18 point (typically 24px) or 14
@@ -805,7 +794,6 @@ should only be used to bridge the accessibility gaps that HTML cannot fill on
 its own.[^11]
 
 ARIA consists of three main types of attributes:
-
 - **Roles:** Define the type of a UI component, e.g., `role="tablist"`,
   `role="dialog"`.
 
@@ -973,25 +961,24 @@ the previous "page".
 
 To make SPA routing accessible, developers must manually replicate the
 browser's native behaviour on every view change:
-
 1. **Update the Page Title:** Immediately after the new content is rendered,
-    the page title must be updated via JavaScript to reflect the new view's
-    content. This is essential for user orientation and is a requirement of WCAG
-    SC 2.4.2 (Page Titled).[^4]
+   the page title must be updated via JavaScript to reflect the new view's
+   content. This is essential for user orientation and is a requirement of WCAG
+   SC 2.4.2 (Page Titled).[^4]
 
-    ```javascript
-    document.title = "New Page Title | App Name";
-    ```
+   ```javascript
+   document.title = "New Page Title | App Name";
+   ```
 
 2. **Manage Focus:** After updating the title, keyboard focus must be
-    programmatically moved to the main content area of the new view. The
-    consensus best practice is to set focus on the primary heading (e.g., the
-    `<h1>`) of the new content. To make a non-interactive element like a heading
-    focusable, it should be given `tabindex="-1"`. This allows it to receive
-    focus via JavaScript (`element.focus()`) without adding it to the natural
-    keyboard tab order. This action causes a screen reader to announce the new
-    heading, informing the user of the view change and placing them at the start
-    of the new content.
+   programmatically moved to the main content area of the new view. The
+   consensus best practice is to set focus on the primary heading (e.g., the
+   `<h1>`) of the new content. To make a non-interactive element like a heading
+   focusable, it should be given `tabindex="-1"`. This allows it to receive
+   focus via JavaScript (`element.focus()`) without adding it to the natural
+   keyboard tab order. This action causes a screen reader to announce the new
+   heading, informing the user of the view change and placing them at the start
+   of the new content.
 
 A critical nuance is that this focus management should **only** occur on
 client-side route changes, **not** on the initial page load. Moving focus on
@@ -1053,7 +1040,6 @@ categories.[^15]
 
 The Lighthouse "Progressive Web App" category specifically checks for the
 technical requirements of a PWA. The audits are grouped into subcategories :
-
 - **Fast and Reliable:** Verifies that the PWA loads quickly on slow networks
   and that both the current page and the manifest's `start_url` respond with a
   status code of 200 when offline.
@@ -1089,27 +1075,26 @@ essential and non-negotiable part of the quality assurance process.
 
 A comprehensive keyboard accessibility test is one of the most effective manual
 checks a developer can perform. The process is straightforward :
-
 1. **Disconnect the Mouse:** To avoid temptation, unplug or disable the mouse
-    and trackpad.
+   and trackpad.
 
 2. **Navigate Sequentially:** Use the `Tab` key to move forward through all
-    interactive elements on the page and `Shift+Tab` to move backward.
+   interactive elements on the page and `Shift+Tab` to move backward.
 
 3. **Verify Focus Order and Visibility:** Confirm that the focus moves in a
-    logical, predictable order that follows the visual layout. At all times,
-    there must be a clear and visible focus indicator (e.g., an outline) showing
-    which element is active.
+   logical, predictable order that follows the visual layout. At all times,
+   there must be a clear and visible focus indicator (e.g., an outline) showing
+   which element is active.
 
 4. **Test Activation:** Ensure that all interactive elements (links, buttons,
-    form controls) can be activated using the `Enter` or `Space` key. For custom
-    widgets, verify that arrow keys function as expected.
+   form controls) can be activated using the `Enter` or `Space` key. For custom
+   widgets, verify that arrow keys function as expected.
 
 5. **Check for Keyboard Traps:** A keyboard trap occurs when focus can move
-    into a component (like a modal dialog or a third-party widget) but cannot be
-    moved out again using the keyboard. Ensure that focus can always be moved
-    out of every component, and that modal dialogs can be dismissed with the
-    `Escape` key.
+   into a component (like a modal dialog or a third-party widget) but cannot be
+   moved out again using the keyboard. Ensure that focus can always be moved
+   out of every component, and that modal dialogs can be dismissed with the
+   `Escape` key.
 
 #### Screen Reader Testing
 
@@ -1117,20 +1102,19 @@ While full usability testing should be conducted with experienced screen reader
 users, developers can and should perform basic checks to catch obvious errors.
 Using a free screen reader like NVDA on Windows or VoiceOver on macOS, a
 developer should perform the following checks :[^16][^17]
-
 1. **Listen to Announcements:** Navigate the page and listen to how key
-    elements are announced. Does a link sound like a link? Is a button
-    identified as a button? Is the alt text for images descriptive and
-    meaningful?
+   elements are announced. Does a link sound like a link? Is a button
+   identified as a button? Is the alt text for images descriptive and
+   meaningful?
 
 2. **Navigate by Structure:** Use the screen reader's shortcuts to navigate by
-    headings and landmarks. Does this provide a coherent outline of the page?
+   headings and landmarks. Does this provide a coherent outline of the page?
 
 3. **Verify Dynamic Updates:** Trigger actions that cause dynamic content to
-    appear on the page (e.g., opening an accordion, submitting a form that shows
-    an error message). Verify that these changes are announced to the screen
-    reader, which typically requires the use of ARIA live regions
-    (`aria-live`).[^11]
+   appear on the page (e.g., opening an accordion, submitting a form that shows
+   an error message). Verify that these changes are announced to the screen
+   reader, which typically requires the use of ARIA live regions
+   (`aria-live`).[^11]
 
 ### Table 4: PWA Accessibility and Performance Audit Checklist
 
@@ -1214,55 +1198,53 @@ inclusive, embodying the web's greatest strengths.
 ## References
 
 [^1]:
-    [Progressive web apps | MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
+[Progressive web apps | MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
 
 [^2]:
-    [Progressive web apps | MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
+[Progressive web apps | MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
 
 [^3]:
-    [Progressive web apps | MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps),
-    [Capabilities | web.dev](https://web.dev/learn/pwa/capabilities),
-    [Push API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Push_API),
-    and
-    [Background Synchronization API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Background_Synchronization_API)
+[Progressive web apps | MDN](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps), [Capabilities | web.dev](https://web.dev/learn/pwa/capabilities), [Push API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Push_API),
+and
+[Background Synchronization API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Background_Synchronization_API)
 
 [^4]:
-    [Web Content Accessibility Guidelines (WCAG) 2.2 - W3C](https://www.w3.org/TR/WCAG22/)
+[Web Content Accessibility Guidelines (WCAG) 2.2 - W3C](https://www.w3.org/TR/WCAG22/)
 
 [^5]: [Web Application Manifest - W3C](https://www.w3.org/TR/appmanifest/)
 
 [^6]:
-    [Using Service Workers - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
+[Using Service Workers - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
 
 [^7]:
-    [Using Service Workers - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
+[Using Service Workers - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
 
 [^8]:
-    [Using Service Workers - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
-    and [Let's Encrypt](https://letsencrypt.org/)
+[Using Service Workers - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)
+and [Let's Encrypt](https://letsencrypt.org/)
 
 [^9]:
-    [Responsive web design - Learn web development | MDN](https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout/Responsive_Design)
+[Responsive web design - Learn web development | MDN](https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout/Responsive_Design)
 
 [^10]:
-    [Web Content Accessibility Guidelines (WCAG) 2.2 - W3C](https://www.w3.org/TR/WCAG22/)
+[Web Content Accessibility Guidelines (WCAG) 2.2 - W3C](https://www.w3.org/TR/WCAG22/)
 
 [^11]:
-    [ARIA - Accessibility | MDN](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA)
+[ARIA - Accessibility | MDN](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA)
 
 [^12]:
-    [ARIA Authoring Practices Guide (APG) Home | WAI | W3C](https://www.w3.org/WAI/ARIA/apg/)
+[ARIA Authoring Practices Guide (APG) Home | WAI | W3C](https://www.w3.org/WAI/ARIA/apg/)
 
 [^13]:
-    [Push API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Push_API)
+[Push API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Push_API)
 
 [^14]:
-    [Background Synchronization API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Background_Synchronization_API)
+[Background Synchronization API - Web APIs | MDN](https://developer.mozilla.org/en-US/docs/Web/API/Background_Synchronization_API)
 
 [^15]:
-    [Introduction to Lighthouse | Chrome for Developers](https://developer.chrome.com/docs/lighthouse/overview)
+[Introduction to Lighthouse | Chrome for Developers](https://developer.chrome.com/docs/lighthouse/overview)
 
 [^16]: [NV Access | Download NVDA](https://www.nvaccess.org/download/)
 
 [^17]:
-    [VoiceOver User Guide for Mac – Apple Support (UK)](https://support.apple.com/en-gb/guide/voiceover/welcome/mac)
+[VoiceOver User Guide for Mac – Apple Support (UK)](https://support.apple.com/en-gb/guide/voiceover/welcome/mac)
