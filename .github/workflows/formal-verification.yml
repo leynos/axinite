@@ -17,7 +17,7 @@ permissions:
 # A new push supersedes an in-flight PR proof, but main and scheduled runs
 # continue to completion.
 concurrency:
-  group: formal-verification-${{ github.event.pull_request.number || github.ref }}
+  group: formal-verification-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

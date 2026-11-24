@@ -30,7 +30,7 @@ permissions:
 # workflow that expression resolves to the *caller's* name, which would
 # put every workflow a single caller invokes into one group.
 concurrency:
-  group: run-tests-${{ github.event.pull_request.number || github.ref }}
+  group: run-tests-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Tool pins shared by every job. Each tool is installed from a pinned,

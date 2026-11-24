@@ -23,7 +23,7 @@ name: Frontend
 # on the event so a push to `main`, which has no successor waiting, always
 # runs to completion.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The job reads the checkout and writes nothing.
