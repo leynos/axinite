@@ -33,6 +33,7 @@ This plan began in `DRAFT` status and was approved by the user before
 implementation started.
 
 Approval means agreement on all of the following:
+
 1. `bun run dev` will become a supervisor for three cooperating tasks: the Bun
    mock API, the static-build watcher, and the Bun preview gateway.
 2. The mock backend will mirror the Rust gateway contracts in
@@ -286,6 +287,7 @@ representative computed CSS for status pills in the jobs view.
 The current repository is a SolidJS and Vite front-end preview rooted under
 `axinite/`. The visual structure is already restored route by route, but the
 data flow is still mostly static. The files below matter most:
+
 - `package.json` currently defines `bun run dev` as `vite` and `bun run build`
   as `vite build && node scripts/postbuild-routes.mjs`.
 - `vite.config.ts` builds the app with the GitHub Pages base path and outputs
@@ -308,6 +310,7 @@ data flow is still mostly static. The files below matter most:
 
 The Rust gateway in `src/channels/web/` (this repository) is the contract
 source for the mock backend. The most important files are:
+
 - `src/channels/web/types.rs` for request and response shapes.
 - `src/channels/web/handlers/chat.rs`,
   `chat_history.rs`, and `chat_threads.rs` for chat endpoints and SSE.
@@ -327,6 +330,7 @@ source for the mock backend. The most important files are:
   interaction model, including SSE and logs.
 
 The route inventory that must move off front-end fixtures is:
+
 1. Chat thread list, chat history, chat send, approvals, and SSE event flow.
 2. Memory tree, list, file read, search, and write.
 3. Job summary cards, job table, job detail, event history, file listing and
@@ -347,6 +351,7 @@ Stage A is a transport and contract prototype. Add a small Bun entry point,
 likely under `mock-backend/` or `scripts/`, that can answer a minimal
 `/api/gateway/status` request and a minimal `/api/features` request. Pair that
 with a supervisor script that can:
+
 1. watch source files and rebuild `dist/`,
 2. start the Bun mock API on a dedicated local port, and
 3. start `bunx http-server -p 2020 dist` (original prototype plan; superseded
@@ -366,6 +371,7 @@ place, such as `mock-backend/src/contracts.ts` plus matching front-end types
 under `axinite/src/lib/api/contracts.ts`, so the mock gateway and the browser
 share the same schema vocabulary. Build in-memory fixture state for each
 browser surface:
+
 - several chat threads, turns, tool calls, and queued SSE events;
 - a nested memory tree with readable and writable documents;
 - jobs in pending, in-progress, completed, failed, and stuck states, with
@@ -381,6 +387,7 @@ Stage C is the Bun mock backend itself. Implement endpoint handlers grouped by
 domain, mirroring the Rust handler layout as closely as is practical. The mock
 service should support at least the following routes, using the Rust request
 and response shapes:
+
 1. `GET /api/gateway/status`
 2. `GET /api/features`
 3. `GET /api/chat/threads`
@@ -434,6 +441,7 @@ presentation concerns such as selection, expanded rows, or currently open
 dialogs, but the content being presented must originate from the mock backend.
 
 State management in this stage should follow a deliberate escalation ladder:
+
 1. start with route-local state, Solid signals, and TanStack Query;
 2. use `@tanstack/solid-form` when complex form state or validation makes
    plain signals too implicit;
@@ -454,6 +462,7 @@ teardown, or listener coordination that the code starts to sprawl, prefer
 
 During this stage, preserve the existing debug-panel feature flag overrides.
 The merge order should stay:
+
 1. backend defaults from `/api/features`,
 2. browser overrides from `localStorage`, then
 3. route visibility and interaction gating in the UI.
@@ -468,6 +477,7 @@ static preview stack driven by `bun run dev`. Validate a representative route in
 
 Run every command from the `web-src/` directory of this repository, unless a
 step says otherwise.
+
 1. Prototype the dev supervisor.
 
    ```plaintext
@@ -475,6 +485,7 @@ step says otherwise.
    ```
 
    Expected behaviour after implementation:
+
    - one process reports the Bun mock API port,
    - one process reports static rebuilds into `dist/`, and
    - one process reports the Bun preview gateway serving `dist` on port `2020`
@@ -488,6 +499,7 @@ step says otherwise.
    ```
 
    Expected behaviour after implementation:
+
    - gateway status returns JSON with connection and version or preview fields,
    - feature flags return a JSON object or `{ "flags": { ... } }`, and
    - the browser shell uses those responses without local fixture fallbacks.
@@ -499,6 +511,7 @@ step says otherwise.
    ```
 
    Expected behaviour after implementation:
+
    - Playwright boots through `bun run dev`,
    - route pages load from the static server on port `2020`, and
    - chat, memory, jobs, routines, extensions, and skills interact through the
@@ -511,6 +524,7 @@ step says otherwise.
    ```
 
    Expected behaviour after implementation:
+
    - the built route loads from the static server, and
    - the computed CSS still reflects the intended classes after the data-source
      migration.
@@ -534,6 +548,7 @@ step says otherwise.
 ## Validation and acceptance
 
 Acceptance will be demonstrated by the following observable behaviour:
+
 - `bun run dev` starts the mock API, the build watcher, and the Bun preview
   gateway without needing Vite's dev server.
 - Opening `http://127.0.0.1:2020/chat` shows route data loaded
@@ -547,6 +562,7 @@ Acceptance will be demonstrated by the following observable behaviour:
   successful, failing, and warning states without editing source files.
 
 Quality criteria:
+
 - Tests: front-end unit tests and Playwright tests pass against the mock stack.
 - Lint and formatting: `make check-fmt`, `make lint`, and `make markdownlint`
   pass.
@@ -575,6 +591,7 @@ relative `/api/*` paths.
 ## Artefacts and notes
 
 Useful implementation artefacts to preserve during execution:
+
 - a short transcript of `bun run dev` showing all three cooperating processes;
 - one `curl` transcript for a JSON endpoint and one `curl -N` transcript for an
   SSE endpoint;
@@ -594,6 +611,7 @@ native watch facilities are not sufficient.
 
 For front-end state and behaviour abstraction, the allowed escalation options
 are:
+
 - `@tanstack/solid-form` for richer form state and validation;
 - `solid-state` for explicit shared client-side stores in Solid-native code;
 - Zustand for broader interactive client and UI state when the behaviour aligns
@@ -608,6 +626,7 @@ These are options, not baseline requirements. Prefer the lightest tool that
 keeps the resulting behaviour legible.
 
 The mock backend should expose clearly named modules, for example:
+
 - `mock-backend/src/contracts.ts` for shared request and response types,
 - `mock-backend/src/state.ts` for mutable in-memory fixtures,
 - `mock-backend/src/routes/chat.ts`, `memory.ts`, `jobs.ts`, `routines.ts`,
@@ -616,6 +635,7 @@ The mock backend should expose clearly named modules, for example:
 
 The front end should gain corresponding client modules under
 `axinite/src/lib/api/`, for example:
+
 - `chat.ts`
 - `memory.ts`
 - `jobs.ts`

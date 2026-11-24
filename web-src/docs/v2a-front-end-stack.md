@@ -2,6 +2,7 @@
 
 This document describes the v2a front-end stack as implemented by the Axinite
 SolidJS single-page application (SPA) in `web-src/axinite/`, in two layers:
+
 - the stack the Axinite SPA declares and ships today (see
   `web-src/package.json`), and
 - the fuller v2a application stack described elsewhere in this repository’s
@@ -36,6 +37,7 @@ stack's map-based applications. Axinite does not declare MapLibre GL JS in
 ### Axinite SPA stack
 
 The Axinite SPA declares:
+
 - Bun,
 - Vite,
 - SolidJS,
@@ -50,6 +52,7 @@ The Axinite SPA declares:
 ### Full v2a application stack
 
 The fuller v2a stack described across the repo’s architecture documents adds:
+
 - **Zustand** for interactive client and UI state,
 - **TanStack Query** (already used by the Axinite SPA) for server-state
   fetching, caching, and synchronization,
@@ -80,6 +83,7 @@ architecture.
   as GitHub Pages.
 
 In practice, the front-end entry path is:
+
 1. `src/main.tsx` mounts the application with Solid's `render`.
 2. `src/app/app.tsx` wires global providers and shell state.
 3. `src/app/routes/app-routes.tsx` mounts the TanStack Router tree for Solid.
@@ -98,6 +102,7 @@ and can provide asynchronous loading fallbacks via `Suspense` where useful.
 ### Routing
 
 Routing is handled by TanStack Router's Solid framework support:
+
 - `src/app/routes/app-routes.tsx` creates the router.
 - `src/app/routes/route-tree.tsx` assembles the route tree.
 - Route modules live under `src/app/routes/`.
@@ -111,6 +116,7 @@ safety-accessibility flows.
 
 In the currently documented mockup, there is no requirement for a heavyweight
 global client-state library in the baseline UI layer. State is managed through:
+
 - Solid signals and stores,
 - small context providers for cross-cutting concerns such as theme or locale,
   and
@@ -120,6 +126,7 @@ That keeps the mockup closer to a Solid signals-plus-context architecture than
 to a reducer-heavy state machine or cache-led design.
 
 For the fuller v2a application stack, the state split is broader:
+
 - **Zustand** owns interactive client and UI state,
 - **TanStack Query** owns server and synchronized domain state, and
 - **XState** is the right fit for explicit multistep workflows or long-running
@@ -130,6 +137,7 @@ For the fuller v2a application stack, the state split is broader:
 ### Tailwind CSS and DaisyUI
 
 The styling stack is built on Tailwind CSS v4 and DaisyUI v5.
+
 - `src/index.css` imports Tailwind and the generated token CSS first, then
   layers project-specific component and utility styles on top.
 - `tailwind.config.cjs` loads generated Tailwind theme extensions from
@@ -137,6 +145,7 @@ The styling stack is built on Tailwind CSS v4 and DaisyUI v5.
 - DaisyUI is registered as a Tailwind plugin in `tailwind.config.cjs`.
 
 The styling approach is not utility-only. The project uses a hybrid of:
+
 - Tailwind utilities,
 - DaisyUI component classes such as `btn`, and
 - semantic project classes defined in `src/index.css` and the files under
@@ -145,6 +154,7 @@ The styling approach is not utility-only. The project uses a hybrid of:
 ### Design tokens
 
 Design tokens are a first-class part of the stack.
+
 - `tokens/build/style-dictionary.js` uses Style Dictionary to generate token
   artefacts.
 - `bun run tokens:build` produces:
@@ -162,6 +172,7 @@ and Tailwind consume generated outputs.
 
 Theme selection is handled with a small Solid context backed by signals rather
 than a separate theme framework:
+
 - `src/app/providers/theme-provider.tsx` persists the active theme in
   `localStorage`.
 - The provider sets `data-theme` on the document root and body.
@@ -171,6 +182,7 @@ than a separate theme framework:
 ### PostCSS
 
 `postcss.config.cjs` applies:
+
 - `@tailwindcss/postcss`,
 - `autoprefixer`, and
 - a small custom plugin that removes DaisyUI's `@property --radialprogress` rule
@@ -184,6 +196,7 @@ behaviour. Kobalte is intentionally unstyled, built for SolidJS, and follows
 WAI-ARIA authoring practices while handling keyboard support, focus management,
 and assistive-technology wiring. Representative examples from the official
 component docs include:
+
 - Dialog support for modal and non-modal modes, focus trapping, Escape to close,
   scroll blocking, and screen-reader announcements via title and description.
 - Tabs support for semantic tab-to-panel linking, horizontal or vertical
@@ -199,6 +212,7 @@ presentation shape, rather than a single monolithic component framework.
 ## Localization stack
 
 Localization is one of the more specialized parts of this stack.
+
 - `src/i18n.ts` configures `i18next`.
 - A Solid-oriented binding layer exposes translations to components and keeps
   locale changes reactive.
@@ -208,6 +222,7 @@ Localization is one of the more specialized parts of this stack.
   metadata.
 
 The current detection order is intentionally narrow:
+
 - query string first, then
 - `localStorage`.
 
@@ -222,6 +237,7 @@ Interactive map views use MapLibre GL JS, but this should be understood as a
 domain-specific layer rather than a foundational part of the general front-end
 stack. The map, tile, and location elements exist because Wildside is a
 map-based application with itinerary, quick-walk, and saved-route flows.
+
 - The fuller map stack is expected to lazy-load `maplibre-gl` and its CSS.
 - OpenMapTiles-backed styling supplies the base map presentation.
 - The integration is expected to register the MapLibre RTL text plugin when the
@@ -233,6 +249,7 @@ not only a static mockup image.
 
 In the full v2a architecture, map-related persistence is also expected to touch
 the broader local-first stack:
+
 - TanStack Query for route and place data,
 - Dexie for offline bundles, map tile storage, and other heavier offline
   artefacts, and
@@ -254,6 +271,7 @@ The repository has a broader-than-average front-end verification setup.
 ### Accessibility-focused tests
 
 There are two accessibility layers:
+
 - `bun run test:a11y` runs Vitest in a dedicated `jsdom` configuration for
   `*.a11y.test.ts(x)` files.
 - `bun run test:e2e` runs Playwright tests, including `@axe-core/playwright`
@@ -268,6 +286,7 @@ nature of the mockup.
 ## Linting, type-checking, and semantic checks
 
 The repo’s front-end quality stack goes beyond a simple formatter plus linter.
+
 - `bun fmt` runs Biome formatting.
 - `bun lint` runs Biome checks across source, tests, tools, and docs, then
   applies the pinned Oxlint Unicorn recommended and `ai-deslop` rules to the
@@ -280,6 +299,7 @@ The repo’s front-end quality stack goes beyond a simple formatter plus linter.
 - `bun run lint:ftl-vars` validates Fluent variable usage.
 
 The strict TypeScript settings in `tsconfig.json` include:
+
 - `strict`,
 - `noUncheckedIndexedAccess`,
 - `exactOptionalPropertyTypes`,
@@ -299,6 +319,7 @@ per locale.
 ### Shared primitives
 
 The following types form the shared vocabulary across all v2a front ends:
+
 - **`LocaleCode`** — a branded string identifying a supported locale (e.g.
   `en-GB`, `ja`).
 - **`LocalizedStringSet`** — a record mapping `LocaleCode` keys to translated
@@ -332,6 +353,7 @@ once and shared by every component that renders them.
 ### Folder layout
 
 The conventional folder layout is:
+
 - `src/app/domain/entities/` — TypeScript interfaces and type aliases for entity
   models and their localization shapes.
 - `src/data/entities/` — fixture data used during the mockup phase, structured
@@ -352,6 +374,7 @@ toward production data sources.
 
 For the shortest accurate summary of the checked-in mockup, the current
 front-end stack is:
+
 - Bun for package management, scripts, and the primary test runner,
 - Vite 7 for bundling and development,
 - SolidJS for the SPA runtime,
@@ -368,12 +391,14 @@ front-end stack is:
 
 For map/location-based applications specifically, add a domain layer atop that
 stack:
+
 - MapLibre GL JS for interactive maps,
 - OpenMapTiles-backed tile styling, and
 - location-centric UI and state for itinerary and route experiences.
 
 For the shortest accurate summary of the fuller v2a application architecture,
 add:
+
 - Zustand for interactive state,
 - TanStack Query for server-state caching and synchronization,
 - Dexie for offline bundle and map tile storage, and
@@ -387,6 +412,7 @@ mockup on `origin/main`, not the broader architecture described above.
 
 The following common front-end tools are outside the baseline SolidJS + Kobalte
 approach described here:
+
 - TanStack Table,
 - Redux,
 - Next.js, Remix, or any SSR framework, and

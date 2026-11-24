@@ -8,6 +8,7 @@ reason about, easy to test, accessible by default, and safe to localize without
 turning UI code into a translation dump or a side-effect nest.
 
 The recommended stack is layered on purpose:
+
 - **Behavioural layer:** Kobalte primitives provide accessible interaction
   behaviour and WAI-ARIA aligned semantics for complex controls.
 - **Presentational layer:** Tailwind CSS v4 and DaisyUI v5 provide styling,
@@ -27,6 +28,7 @@ changes the performance model, but not the architectural standard: rendering
 logic should still stay pure.
 
 A Solid component should:
+
 - derive UI from props, signals, and context,
 - avoid mutating external state during render,
 - keep DOM writes and subscriptions out of the render path, and
@@ -44,6 +46,7 @@ global browser APIs, move it elsewhere.
 In Solid, performance does not come from scattering `memo`, `useCallback`, and
 comparison functions around the tree. The baseline model is already granular.
 The main job is to choose the right primitive:
+
 - `createSignal` for scalar or narrow local state,
 - `createStore` for nested object state,
 - `createMemo` for derived values,
@@ -51,6 +54,7 @@ The main job is to choose the right primitive:
 - context only for genuinely shared cross-cutting state.
 
 Avoid porting React habits directly:
+
 - do not wrap every helper in indirection just to "avoid re-renders",
 - do not centralize trivial local UI state out of fear of parent updates,
 - do not mutate store objects behind Solid's back.
@@ -85,6 +89,7 @@ dependencies. That is the standard to preserve.
 ## 3) Behavioural foundation: Kobalte
 
 Kobalte is the preferred interaction layer for SolidJS because it is:
+
 - built specifically for Solid,
 - intentionally unstyled,
 - aligned with WAI-ARIA authoring practices, and
@@ -92,6 +97,7 @@ Kobalte is the preferred interaction layer for SolidJS because it is:
   technology wiring that should not be reimplemented ad hoc.
 
 Representative guarantees from the official docs:
+
 - **Dialog:** modal and non-modal modes, focus trapping, Escape to close, scroll
   locking, and screen-reader announcements through title and description.
 - **Tabs:** semantic tab-to-panel linking, automatic or manual activation, and
@@ -110,11 +116,13 @@ components when a primitive already exists.
 ## 4) Styling: DaisyUI + Tailwind
 
 The styling boundary should stay clear:
+
 - DaisyUI for component roles and theme-aware tokens,
 - Tailwind utilities for local layout, spacing, and stateful refinement,
 - semantic project classes for repeated product-language patterns.
 
 This produces a stable split:
+
 - Kobalte owns behaviour,
 - DaisyUI/Tailwind own appearance,
 - the project owns naming.
@@ -178,6 +186,7 @@ loading/error caches. The Solid adapter exists specifically to handle fetching,
 caching, synchronization, and updates in Solid applications.
 
 This avoids three recurring mistakes:
+
 - duplicating request state into ad hoc signals everywhere,
 - mixing transport concerns into presentational components, and
 - rebuilding retry/cache invalidation logic component by component.
@@ -185,11 +194,13 @@ This avoids three recurring mistakes:
 ## 6) Localizable component boundaries
 
 Localization should not leak everywhere. Components should receive either:
+
 - already-resolved display strings, or
 - stable translation keys plus interpolation values where the caller controls
   the locale context.
 
 Keep the split disciplined:
+
 - translation bundles own UI chrome and sentence structure,
 - entity models own localized domain text where the entity itself is content,
 - components format and present, but do not invent fallback copy.
@@ -206,6 +217,7 @@ the translation helpers the application should use.
 
 Every component intended for reuse should be testable through accessible
 queries and should preserve these guarantees:
+
 - correct native element choice before ARIA,
 - visible and logical keyboard interaction,
 - robust labelling,
@@ -213,6 +225,7 @@ queries and should preserve these guarantees:
 - localized text that does not break names or descriptions.
 
 For component tests, prefer:
+
 - `@solidjs/testing-library`,
 - `jsdom`,
 - `@testing-library/user-event`, and
@@ -222,6 +235,7 @@ For component tests, prefer:
 
 For non-trivial flows, keep orchestration outside the presentational component.
 One workable split is:
+
 - `useDeleteTaskController()` handles mutations, loading, and optimistic state.
 - `DeleteTaskDialogView` renders Kobalte primitives and display text.
 - the route or screen container wires them together.
@@ -231,6 +245,7 @@ This keeps the presentational layer easy to snapshot, inspect, and reuse.
 ## 9) Recommended defaults
 
 Use these defaults unless there is a strong reason not to:
+
 1. Build interaction components on Kobalte.
 2. Use Solid signals and stores before introducing heavier state tooling.
 3. Use TanStack Query Solid for server-state caching and invalidation.

@@ -16,7 +16,7 @@ target described below; no `tools/grit/` rules are checked in yet.
 **Verify:** run `bun run semantic` from `web-src/`, or `make frontend-full`
 from the repository root.
 
----
+______________________________________________________________________
 
 ## 0) Scope & Philosophy
 
@@ -36,7 +36,7 @@ from the repository root.
      classes** via `@apply` and sensible cascades.
   5. **Configurable thresholds** — warn on repetition beyond agreed limits.
 
----
+______________________________________________________________________
 
 ## 1) Repository Layout (suggested)
 
@@ -75,7 +75,7 @@ imports `semantic.css` and Tailwind v4. The rest of the tree above is a
 proposed layout, not a list of checked-in files. `semantic.css` stores reusable
 classes via `@apply`.
 
----
+______________________________________________________________________
 
 ## 2) Tailwind v4 + DaisyUI v5 baseline (CSS‑first)
 
@@ -118,7 +118,7 @@ the entry). Apply DaisyUI component classes directly in markup, and only use
 > Use semantic classes for **repeated patterns**; keep one‑offs directly in
 > markup.
 
----
+______________________________________________________________________
 
 ## 3) Configure BiomeJS + GritQL
 
@@ -165,9 +165,9 @@ pnpm add -D @biomejs/biome
     "./tools/grit/rule-heading-semantic-h1.grit",
     "./tools/grit/rule-heading-semantic-h2.grit",
     "./tools/grit/rule-heading-semantic-h3.grit",
-    "./tools/grit/rule-heading-semantic-h4.grit"
+    "./tools/grit/rule-heading-semantic-h4.grit",
   ],
-  "linter": { "enabled": true, "rules": { "recommended": true } }
+  "linter": { "enabled": true, "rules": { "recommended": true } },
 }
 ```
 
@@ -213,7 +213,7 @@ file; their limits and behaviour are defined in their TypeScript sources.
 }
 ```
 
----
+______________________________________________________________________
 
 ## 4) GritQL rules (practical starters)
 
@@ -223,6 +223,7 @@ file; their limits and behaviour are defined in their TypeScript sources.
 ### A) Semantic interactivity (no clickable `<div>` / `<span>`)
 
 Files:
+
 - `tools/grit/rule-a11y.grit`
 - `tools/grit/rule-a11y-trailing.grit`
 - `tools/grit/rule-a11y-leading.grit`
@@ -234,7 +235,10 @@ Each file targets a common attribute ordering, for example:
 
 ```grit
 `<div ... onClick={$CALL}>$body</div>` where {
-  register_diagnostic(span=$CALL, message="Replace this clickable <div> with a semantic <button> or <a>.")
+  register_diagnostic(
+    span = $CALL,
+    message = "Replace this clickable <div> with a semantic <button> or <a>."
+  )
 }
 ```
 
@@ -255,6 +259,7 @@ where { not(match($attrs, /aria-label=|id=/)) }
 ### C) DaisyUI usage sanity
 
 Files:
+
 - `tools/grit/rule-daisyui-btn-div.grit`
 - `tools/grit/rule-daisyui-btn-span.grit`
 - `tools/grit/rule-daisyui-btn-section.grit`
@@ -289,6 +294,7 @@ restricts repositories to one pattern per file.
 
 Both TypeScript checks share `scripts/scan-class-attributes.ts`. The scanner
 reads static `class="..."` attributes in `axinite/src/**/*.tsx`.
+
 - `check-classlist-length.ts` fails when an attribute contains more than 12
   whitespace-separated class tokens.
 - `find-near-duplicate-classes.ts` fails when a single attribute repeats the
@@ -306,7 +312,7 @@ in one static attribute. It does not identify similar class lists across
 different elements. Extracting a shared semantic class remains a useful manual
 refactoring when repeated patterns are found.
 
----
+______________________________________________________________________
 
 ## Proposed meaning-first semantic checks (roadmap)
 
@@ -413,7 +419,7 @@ Until that changes, the repository enforces the allowlist via **Semgrep**
 camelCase tokens and other non‑Tailwind/DaisyUI class names. Migration back
 into Grit can be performed when the integration grows richer predicates.
 
----
+______________________________________________________________________
 
 ## 5) Stylelint (focused rules only)
 
@@ -462,7 +468,7 @@ module.exports = {
 > Stylelint is **not** used for general formatting; it only enforces tokens and
 > a few hygiene rules.
 
----
+______________________________________________________________________
 
 ## 6) Semgrep (targeted HTML/JSX checks)
 
@@ -503,7 +509,7 @@ rules:
     severity: WARNING
 ```
 
----
+______________________________________________________________________
 
 ## 7) Unified CLI & Dev Workflow
 
@@ -532,13 +538,14 @@ rules:
 > (<https://github.com/astral-sh/uv>). The repo keeps the command consistent
 > across local + CI environments.
 
----
+______________________________________________________________________
 
 ## 8) Proposed companion semantic checks
 
 The ideas in this section are future work. The current TypeScript checkers only
 apply the fixed length limit and detect duplicate tokens within one static
 class attribute. They do not implement these analyses:
+
 - **Cross-attribute similarity:** compare separate class attributes, potentially
   using token-set similarity such as Jaccard distance.
 - **Loop and sibling repetition:** find repeated classes in `.map()` output or
@@ -550,7 +557,7 @@ class attribute. They do not implement these analyses:
 - **Configurable thresholds and allowlists:** read policies from a checked-in
   configuration file and report actionable diagnostics.
 
----
+______________________________________________________________________
 
 ## 9) Proposed configuration and tuning ideas
 
@@ -561,7 +568,7 @@ checks are implemented, a configuration file could define their thresholds,
 allowlists, and narrowly scoped suppressions. Until then, those settings are
 examples of future work, not operator controls.
 
----
+______________________________________________________________________
 
 ## 10) How to refactor into `@apply` (+ cascades)
 
@@ -597,13 +604,14 @@ examples of future work, not operator controls.
    ```
 
 **Naming guidance:**
+
 - Mirror DaisyUI where it fits: `.btn`, `.btn-primary`, `.card`, `.card-title`.
 - For bespoke patterns: BEM‑ish and role‑based, e.g. `.walk-card`,
   `.walk-card__title`; or `.nav__link--active`.
 - Prefer **role tokens** (`primary`, `secondary`, `accent`, `success`, `error`)
   to colour words.
 
----
+______________________________________________________________________
 
 ## 11) Quick rule checklists (what the lints enforce)
 
@@ -628,7 +636,7 @@ examples of future work, not operator controls.
   - Unknown class tokens flagged (must be Tailwind, DaisyUI, or project semantic
     class prefix).
 
----
+______________________________________________________________________
 
 ## 12) IDE tips
 
@@ -637,7 +645,7 @@ examples of future work, not operator controls.
 - Configure an editor task to open `semantic.css` quickly when a repetition
   warning appears.
 
----
+______________________________________________________________________
 
 ## 13) Future extensions
 
@@ -647,7 +655,7 @@ examples of future work, not operator controls.
 - **Autofix codemods** (Grit rewrite scripts that scaffold a new class and
   replace duplicates in a file).
 
----
+______________________________________________________________________
 
 ## 14) FAQ
 
@@ -666,7 +674,7 @@ A: The class-list check fails above 12 whitespace-separated tokens. The
 duplicate-token check flags repeats within one static class attribute. Neither
 check has configurable thresholds.
 
----
+______________________________________________________________________
 
 ## 15) Current tooling and proposed work
 

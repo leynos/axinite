@@ -4,7 +4,7 @@ This is a pragmatic layering recipe for building accessible, themeable UIs with
 **semantic HTML**, **semantic class names**, **Tailwind v4 utilities**,
 **daisyUI v5 components**, and **Kobalte** primitives.
 
----
+______________________________________________________________________
 
 ## 0) Setup (Tailwind v4 + daisyUI v5)
 
@@ -42,7 +42,7 @@ When components are stored in unusual places, explicit sources should be added:
 > These are theme-aware, so they should be preferred to raw colours for
 > brand‑consistent styling.
 
----
+______________________________________________________________________
 
 ## 1) Mental model: five layers
 
@@ -64,7 +64,7 @@ When components are stored in unusual places, explicit sources should be added:
 The cascade should flow so that **inline utilities win** over broad component
 styles. That keeps local adjustments easy.
 
----
+______________________________________________________________________
 
 ## 2) Semantic HTML (with minimal classes)
 
@@ -90,7 +90,7 @@ Native elements should be used first. Where a button is needed, `<button>`
 should be used; for navigation, `<nav>` should be used. This improves keyboard
 behaviour, form semantics, and SR (screen reader) output without extra ceremony.
 
----
+______________________________________________________________________
 
 ## 3) Semantic class names: where they help
 
@@ -126,7 +126,7 @@ These belong in markup where repetition would otherwise become excessive:
 > business or user, keep it. If it describes _how it looks_ (e.g., `.blue-btn`,
 > `.mt-4`), prefer utilities.
 
----
+______________________________________________________________________
 
 ## 4) Using daisyUI component classes with utilities
 
@@ -161,7 +161,7 @@ variants in selectors. For example, with `data-*` states emitted by Kobalte:
 </button>
 ```
 
----
+______________________________________________________________________
 
 ## 5) Kobalte + Tailwind: style via `data-*` & ARIA
 
@@ -200,6 +200,7 @@ export function ExampleDialog() {
 ```
 
 Other handy Kobalte states:
+
 - `data-[highlighted]` for focused/hovered items in menus/lists.
 - `data-[pressed]` for toggle buttons.
 - `data-[disabled]` for disabled components.
@@ -209,9 +210,11 @@ Example for a menu item:
 ```tsx
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 
-<DropdownMenu.Item class="px-3 py-2 rounded-field data-[highlighted]:bg-base-200 data-[disabled]:opacity-50">
+<DropdownMenu.Item
+  class="px-3 py-2 rounded-field data-[highlighted]:bg-base-200 data-[disabled]:opacity-50"
+>
   Preferences
-</DropdownMenu.Item>;
+</DropdownMenu.Item>
 ```
 
 `DropdownMenu.Item` must render inside `DropdownMenu.Root` and
@@ -224,7 +227,7 @@ the `data-highlighted` and `data-disabled` attributes.
 > flip by state, compute the class in the component
 > (`classList={{ "btn-primary": isOn() }}`).
 
----
+______________________________________________________________________
 
 ## 6) `@apply` vs `@utility` (v4 reality)
 
@@ -295,7 +298,7 @@ Markup stays semantic:
 <ToggleGroup.Item value={id} class="interest-chip">
   <Icon class="interest-chip__icon text-lg transition" aria-hidden />
   {interest.label}
-</ToggleGroup.Item>;
+</ToggleGroup.Item>
 ```
 
 > **Summary:** Use `@apply` for the base utility stack, then express Kobalte /
@@ -311,7 +314,7 @@ Markup stays semantic:
 > utilities. Otherwise those utilities will win the cascade and the state styles
 > will never show up.
 
----
+______________________________________________________________________
 
 ## 7) Cascading styles without fights
 
@@ -328,7 +331,7 @@ Markup stays semantic:
 /* Usage: class="scheme-midnight:bg-black scheme-midnight:text-white" */
 ```
 
----
+______________________________________________________________________
 
 ## 8) Putting it together: a small card with Kobalte toggle
 
@@ -359,21 +362,22 @@ export function PlanCard() {
 }
 ```
 
----
+______________________________________________________________________
 
 ## 9) Checklist (fast sanity)
 
 - [ ] Semantic element first; ARIA as clarifier.
 - [ ] Prefer daisyUI tokens (`bg-primary`, `rounded-box`, `text-base-content`)
-  for theme‑aware styles.
+      for theme‑aware styles.
 - [ ] Use Tailwind utilities for per‑instance polish and state.
 - [ ] Create semantic wrappers only for reused intent; implement with
-  `@utility`/`@apply` (utilities only).
+      `@utility`/`@apply` (utilities only).
 - [ ] Target Kobalte state via `data-[state=…]`, `data-[highlighted]`,
-  `data-[disabled]`, or component-specific attributes such as `data-[pressed]`.
+      `data-[disabled]`, or component-specific attributes such as
+      `data-[pressed]`.
 - [ ] Keep specificity low; let utilities win locally.
 
----
+______________________________________________________________________
 
 ## 10) Troubleshooting notes
 
@@ -385,7 +389,7 @@ export function PlanCard() {
 - If a class isn’t generated, ensure the literal string exists in project source
   files or is safelisted via `@source inline("class-name")`.
 
----
+______________________________________________________________________
 
 ### TL;DR defaults
 
@@ -395,7 +399,7 @@ export function PlanCard() {
   language.
 - Let Kobalte drive state through `data-*` and style it with utilities.
 
----
+______________________________________________________________________
 
 ## 11) Style tokens: define once, reuse everywhere
 
@@ -543,7 +547,7 @@ consistent theming and good contrast.
 ```tsx
 <Toggle.Root class="btn btn-ghost data-[state=on]:bg-(--color-primary) data-[state=on]:text-(color:--color-primary-content)">
   Enable
-</Toggle.Root>;
+</Toggle.Root>
 ```
 
 ### 11.7 Theming strategies

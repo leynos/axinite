@@ -32,6 +32,7 @@ of the shared card primitives, see `docs/v2a-front-end-stack.md`.
 
 > Illustrative only: this inventory comes from the originating mockup and does
 > not list Axinite's own screens or data modules.
+
 - **Dashboard (`dashboard-screen.tsx`)**: system health status panel, KPI cards,
   recent activity feed, agent utilization summary. Data comes from
   `data/dashboard.ts`.
@@ -249,6 +250,7 @@ locale is absent.
 
 Descriptors resolve stable internal identifiers to localized display strings.
 Each registry entry owns its `localizations`.
+
 - **LabelDescriptor** — `backend`, `agent`, `schema`, `hooks`, `policy`,
   `streaming`, `frontend`, `ui`, `testing`, `devops`, `governance`, `dashboard`,
   `parser`, `security`, `automation`, `a11y`, `monitoring`, `settings`.
