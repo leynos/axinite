@@ -790,6 +790,21 @@ explicit operations; never imply that an error proves no commit occurred.
   `src/app/phase_support.rs`. `clippy::result_large_err` required returning the
   rejection category instead of a whole response from `build_operations`.
 - [ ] M4 E2E and recovery evidence.
+- [ ] 2026-11-24: M4 in progress. `tests/e2e/scenarios/test_endpoint_setup.py`
+  runs nine scenarios against real handlers and real libSQL storage: mixed
+  submission persisted across a restart, idempotent clear, a rejected endpoint
+  writing nothing, deployment isolation, an SSE frame that never carries the
+  URL, and the UI state and replacement flows for both `solid` and `legacy`.
+  The conftest gained a restartable handle with its own database file, its own
+  `HOME` (the single-instance PID lock lives under `~/.axinite`), and a
+  deterministic `SECRETS_MASTER_KEY`, since binding storage is unavailable
+  without one. All nine pass:
+  `.venv/bin/python -m pytest scenarios/test_endpoint_setup.py -v` →
+  `9 passed`. The scope test asserts deployment isolation, because the gateway
+  is single-user and hardcodes the extension-manager user id; per-user row
+  isolation stays covered by the M2 repository contract. Remaining: the
+  agent-browser/`css-view` computed-style pass, a full `scenarios/` regression
+  run, and re-running the ordinary gates before the M4 commit.
 - [ ] M5 documentation, final evidence, and roadmap completion.
 
 ## Surprises & discoveries

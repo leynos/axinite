@@ -773,6 +773,26 @@
   font-weight: 700;
 }
 
+.catalogue-form__optional {
+  color: #a1a1aa;
+  font-style: italic;
+}
+
+.catalogue-form__check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  color: #a1a1aa;
+  font-size: 0.75rem;
+}
+
+.catalogue-form__warning {
+  margin: 0.4rem 0 0;
+  color: var(--colour-status-warning, #f5a623);
+  font-size: 0.75rem;
+}
+
 .dashboard-detail .catalogue-form__button {
   min-height: 2rem;
   padding-inline: 0.8rem;
