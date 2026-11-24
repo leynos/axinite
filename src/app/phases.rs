@@ -11,10 +11,10 @@ use crate::llm::{LlmProvider, RecordingLlm};
 use crate::safety::SafetyLayer;
 use crate::skills::SkillRegistry;
 use crate::skills::catalog::SkillCatalog;
+use crate::tools::ToolRegistry;
 use crate::tools::mcp::{McpProcessManager, McpSessionManager};
 use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
-use crate::tools::{ImageToolsRegistration, ToolRegistry, VisionToolsRegistration};
 use crate::workspace::{EmbeddingProvider, Workspace};
 
 use super::builder::AppBuilder;
@@ -132,7 +132,8 @@ impl AppBuilder {
         // early before populating `self.handles`.
         let empty_handles = crate::db::DatabaseHandles::default();
         let handles = self.handles.as_ref().unwrap_or(&empty_handles);
-        let store = crate::secrets::create_secrets_store(crypto, handles);
+        let store = crate::secrets::create_secrets_store(Arc::clone(&crypto), handles);
+        self.endpoint_bindings = super::builder::build_endpoint_bindings(&crypto, handles);
 
         if let Some(ref secrets) = store {
             // Inject LLM API keys from encrypted storage
@@ -249,69 +250,6 @@ impl AppBuilder {
         Some(ws)
     }
 
-    /// Resolve the API base URL and (optional) key used for image and vision
-    /// tools, preferring the explicit provider config over NEAR AI defaults.
-    fn media_api_credentials(&self) -> (String, Option<String>) {
-        use secrecy::ExposeSecret;
-        if let Some(ref provider) = self.config.llm.provider {
-            (
-                provider.base_url.clone(),
-                provider
-                    .api_key
-                    .as_ref()
-                    .map(|s| s.expose_secret().to_string()),
-            )
-        } else {
-            (
-                self.config.llm.nearai.base_url.clone(),
-                self.config
-                    .llm
-                    .nearai
-                    .api_key
-                    .as_ref()
-                    .map(|s| s.expose_secret().to_string()),
-            )
-        }
-    }
-
-    /// Register image generation and vision tools when API credentials are
-    /// available.
-    fn register_media_tools(&self, tools: &Arc<ToolRegistry>) {
-        let (api_base, api_key_opt) = self.media_api_credentials();
-        let Some(api_key) = api_key_opt else {
-            return;
-        };
-
-        // Check for image generation models
-        let model_name = self
-            .config
-            .llm
-            .provider
-            .as_ref()
-            .map(|p| p.model.clone())
-            .unwrap_or_else(|| self.config.llm.nearai.model.clone());
-        let models = vec![model_name.clone()];
-        let gen_model = crate::llm::image_models::suggest_image_model(&models)
-            .unwrap_or("flux-1.1-pro")
-            .to_string();
-        tools.register_image_tools(ImageToolsRegistration::new(
-            api_base.clone(),
-            api_key.clone(),
-            gen_model,
-        ));
-
-        // Check for vision models
-        let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
-            .unwrap_or(&model_name)
-            .to_string();
-        tools.register_vision_tools(VisionToolsRegistration {
-            api_base_url: api_base,
-            api_key,
-            vision_model,
-            base_dir: None,
-        });
-    }
-
     /// Return `true` when the builder tool is enabled and local tool
     /// execution is available (allowed explicitly, or implied by a
     /// disabled sandbox).
@@ -368,6 +306,7 @@ impl AppBuilder {
             config: &self.config,
             db: self.db.clone(),
             secrets_store: self.secrets_store.clone(),
+            endpoint_bindings: self.endpoint_bindings.clone(),
             tools,
             hooks,
             relay_config: self.relay_config.clone(),

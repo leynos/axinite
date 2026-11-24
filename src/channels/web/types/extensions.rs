@@ -80,42 +80,6 @@ pub struct InstallExtensionRequest {
     pub kind: Option<String>,
 }
 
-// --- Extension Setup ---
-
-/// Setup schema for one extension: the secrets it asks the user to provide.
-#[derive(Debug, Serialize)]
-pub struct ExtensionSetupResponse {
-    /// Extension name the schema belongs to.
-    pub name: String,
-    /// Extension kind in snake_case, or empty when the extension is not installed.
-    pub kind: String,
-    /// Secret fields the extension requires, in declaration order.
-    pub secrets: Vec<SecretFieldInfo>,
-}
-
-/// One secret an extension asks the user to provide during setup.
-#[derive(Debug, Serialize)]
-pub struct SecretFieldInfo {
-    /// Secret name, the key expected in the setup request.
-    pub name: String,
-    /// Prompt text shown to the user when requesting the value.
-    pub prompt: String,
-    /// Whether the secret may be left blank.
-    pub optional: bool,
-    /// Whether this secret is already stored.
-    pub provided: bool,
-    /// Whether the secret will be auto-generated if left empty.
-    pub auto_generate: bool,
-}
-
-/// Request body submitting setup secrets for an extension.
-#[derive(Debug, Deserialize)]
-pub struct ExtensionSetupRequest {
-    /// Secret values keyed by secret name. Names are checked against the
-    /// extension's setup schema.
-    pub secrets: std::collections::HashMap<String, String>,
-}
-
 /// Outcome of a state-changing extension or auth action.
 #[derive(Debug, Serialize)]
 pub struct ActionResponse {

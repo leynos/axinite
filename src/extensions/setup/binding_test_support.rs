@@ -23,20 +23,21 @@ use crate::testing::credentials::TEST_CRYPTO_KEY;
 
 /// Mutex-backed repository with fault injection and row mutation hooks.
 #[derive(Default)]
-pub(super) struct MemoryRepository {
+pub(crate) struct MemoryRepository {
     rows: Mutex<Vec<(BindingScope, BindingRecord)>>,
     fail: AtomicBool,
+    fail_writes: AtomicBool,
     last_limit: AtomicUsize,
 }
 
 impl MemoryRepository {
     /// Snapshot every stored row.
-    pub(super) async fn stored(&self) -> Vec<(BindingScope, BindingRecord)> {
+    pub(crate) async fn stored(&self) -> Vec<(BindingScope, BindingRecord)> {
         self.rows.lock().await.clone()
     }
 
     /// Apply a mutation to one stored row, simulating tampering.
-    pub(super) async fn mutate_row<F>(&self, scope: &BindingScope, name: &str, mutate: F)
+    pub(crate) async fn mutate_row<F>(&self, scope: &BindingScope, name: &str, mutate: F)
     where
         F: FnOnce(&mut BindingRecord),
     {
@@ -51,24 +52,32 @@ impl MemoryRepository {
     }
 
     /// Insert a row without passing through the service.
-    pub(super) async fn insert_raw(&self, scope: BindingScope, record: BindingRecord) {
+    pub(crate) async fn insert_raw(&self, scope: BindingScope, record: BindingRecord) {
         self.rows.lock().await.push((scope, record));
     }
 
     /// Make every operation fail with [`BindingStoreError::Unavailable`].
-    pub(super) fn fail_operations(&self) {
+    pub(crate) fn fail_operations(&self) {
         self.fail.store(true, Ordering::SeqCst);
     }
 
+    /// Make only mutations fail, leaving reads working.
+    ///
+    /// This models a write that was refused or whose acknowledgement was lost
+    /// while status reads still succeed.
+    pub(crate) fn fail_writes(&self) {
+        self.fail_writes.store(true, Ordering::SeqCst);
+    }
+
     /// The limit passed to the most recent batch read.
-    pub(super) fn last_limit(&self) -> usize {
+    pub(crate) fn last_limit(&self) -> usize {
         self.last_limit.load(Ordering::SeqCst)
     }
 }
 
 impl NativeEndpointBindingRepository for MemoryRepository {
     async fn upsert<'a>(&'a self, record: &'a BindingRecord) -> Result<(), BindingStoreError> {
-        if self.fail.load(Ordering::SeqCst) {
+        if self.fail.load(Ordering::SeqCst) || self.fail_writes.load(Ordering::SeqCst) {
             return Err(BindingStoreError::Unavailable);
         }
         let mut rows = self.rows.lock().await;
@@ -87,7 +96,7 @@ impl NativeEndpointBindingRepository for MemoryRepository {
         scope: &'a BindingScope,
         endpoint_name: &'a str,
     ) -> Result<bool, BindingStoreError> {
-        if self.fail.load(Ordering::SeqCst) {
+        if self.fail.load(Ordering::SeqCst) || self.fail_writes.load(Ordering::SeqCst) {
             return Err(BindingStoreError::Unavailable);
         }
         let mut rows = self.rows.lock().await;
@@ -126,7 +135,7 @@ impl NativeEndpointBindingRepository for MemoryRepository {
     }
 
     async fn delete_scope<'a>(&'a self, scope: &'a BindingScope) -> Result<u64, BindingStoreError> {
-        if self.fail.load(Ordering::SeqCst) {
+        if self.fail.load(Ordering::SeqCst) || self.fail_writes.load(Ordering::SeqCst) {
             return Err(BindingStoreError::Unavailable);
         }
         let mut rows = self.rows.lock().await;
@@ -137,22 +146,22 @@ impl NativeEndpointBindingRepository for MemoryRepository {
 }
 
 /// Build a crypto holder from an explicit master key.
-pub(super) fn crypto(key: &str) -> Arc<SecretsCrypto> {
+pub(crate) fn crypto(key: &str) -> Arc<SecretsCrypto> {
     Arc::new(SecretsCrypto::new(SecretString::from(key.to_string())).expect("test key"))
 }
 
 /// Build a crypto holder from the repository's standard test key.
-pub(super) fn test_crypto() -> Arc<SecretsCrypto> {
+pub(crate) fn test_crypto() -> Arc<SecretsCrypto> {
     crypto(TEST_CRYPTO_KEY)
 }
 
 /// Build a host scope.
-pub(super) fn scope(user: &str, extension: &str) -> BindingScope {
+pub(crate) fn scope(user: &str, extension: &str) -> BindingScope {
     BindingScope::new(user, extension)
 }
 
 /// Build an endpoint declaration.
-pub(super) fn endpoint(name: &str, kind: &str, optional: bool) -> SetupField {
+pub(crate) fn endpoint(name: &str, kind: &str, optional: bool) -> SetupField {
     SetupField::Endpoint(EndpointField {
         name: EndpointName::parse(name).expect("valid endpoint name"),
         kind: EndpointKind::parse(kind).expect("valid endpoint kind"),
@@ -162,7 +171,7 @@ pub(super) fn endpoint(name: &str, kind: &str, optional: bool) -> SetupField {
 }
 
 /// Build a secret declaration, to prove status ignores it.
-pub(super) fn secret(name: &str) -> SetupField {
+pub(crate) fn secret(name: &str) -> SetupField {
     SetupField::Secret(SecretField {
         name: CredentialName::parse(name).expect("valid credential name"),
         prompt: "Secret".to_string(),
@@ -172,7 +181,7 @@ pub(super) fn secret(name: &str) -> SetupField {
 }
 
 /// Borrow the name and kind from an endpoint declaration.
-pub(super) fn endpoint_parts(field: &SetupField) -> (&EndpointName, &EndpointKind) {
+pub(crate) fn endpoint_parts(field: &SetupField) -> (&EndpointName, &EndpointKind) {
     match field {
         SetupField::Endpoint(endpoint) => (&endpoint.name, &endpoint.kind),
         SetupField::Secret(_) => panic!("expected an endpoint declaration"),
@@ -180,12 +189,12 @@ pub(super) fn endpoint_parts(field: &SetupField) -> (&EndpointName, &EndpointKin
 }
 
 /// Validate a fixture URL.
-pub(super) fn url(raw: &str) -> EndpointUrl {
+pub(crate) fn url(raw: &str) -> EndpointUrl {
     validate_endpoint_url(raw).expect("valid endpoint URL")
 }
 
 /// Replace one endpoint binding with a valid fixture URL.
-pub(super) async fn configure(
+pub(crate) async fn configure(
     service: &EndpointBindingService,
     scope: &BindingScope,
     name: &str,
@@ -200,7 +209,7 @@ pub(super) async fn configure(
 }
 
 /// Find one endpoint's state in a status list.
-pub(super) fn state(statuses: &[EndpointStatus], name: &str) -> EndpointState {
+pub(crate) fn state(statuses: &[EndpointStatus], name: &str) -> EndpointState {
     statuses
         .iter()
         .find(|status| status.field().as_str() == name)
@@ -209,7 +218,7 @@ pub(super) fn state(statuses: &[EndpointStatus], name: &str) -> EndpointState {
 }
 
 /// Read one endpoint's state through a single-declaration status call.
-pub(super) async fn status_of(
+pub(crate) async fn status_of(
     service: &EndpointBindingService,
     scope: &BindingScope,
     name: &str,
@@ -223,7 +232,7 @@ pub(super) async fn status_of(
 }
 
 /// Byte-substring search used to prove plaintext never reaches storage.
-pub(super) fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+pub(crate) fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)

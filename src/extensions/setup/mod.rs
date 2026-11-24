@@ -26,7 +26,7 @@ pub mod service;
 #[cfg(test)]
 pub(crate) mod binding_contract;
 #[cfg(test)]
-mod binding_test_support;
+pub(crate) mod binding_test_support;
 #[cfg(test)]
 mod endpoint_tests;
 #[cfg(test)]
@@ -42,9 +42,10 @@ pub use binding::{
 };
 pub use endpoint::{validate_endpoint_url, validation_policy_version};
 pub use error::{EndpointRejection, SetupError};
+pub use manifest::{normalize_channel_setup, normalize_tool_setup};
 pub use model::{
-    ENDPOINT_ENVELOPE_VERSION, ENDPOINT_VALIDATION_POLICY_VERSION, EndpointField, EndpointKind,
-    EndpointName, EndpointUrl, FieldKey, FieldKeyKind, MAX_ENDPOINT_KIND_BYTES,
+    CredentialName, ENDPOINT_ENVELOPE_VERSION, ENDPOINT_VALIDATION_POLICY_VERSION, EndpointField,
+    EndpointKind, EndpointName, EndpointUrl, FieldKey, FieldKeyKind, MAX_ENDPOINT_KIND_BYTES,
     MAX_ENDPOINT_URL_BYTES, MAX_FIELD_KEY_BYTES, MAX_SETUP_FIELDS, SecretField, SetupField,
     SetupOperation,
 };

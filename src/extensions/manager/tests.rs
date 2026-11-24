@@ -54,5 +54,6 @@ fn make_manager_custom_dirs(
         user_id: "test".to_string(),
         store: None,
         catalog_entries: Vec::new(),
+        endpoint_bindings: None,
     })
 }

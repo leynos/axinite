@@ -10,6 +10,7 @@ import type {
   ExtensionListResponse,
   ExtensionSetupRequest,
   ExtensionSetupResponse,
+  ExtensionSetupSubmitResponse,
   InstallExtensionRequest,
   RegistrySearchResponse,
   ToolListResponse,
@@ -73,8 +74,8 @@ export function fetchExtensionSetup(
 export function submitExtensionSetup(
   name: string,
   request: ExtensionSetupRequest
-): Promise<ActionResponse> {
-  return postJson<ActionResponse, ExtensionSetupRequest>(
+): Promise<ExtensionSetupSubmitResponse> {
+  return postJson<ExtensionSetupSubmitResponse, ExtensionSetupRequest>(
     `/api/extensions/${encodeURIComponent(name)}/setup`,
     request
   );

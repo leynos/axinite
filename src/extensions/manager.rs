@@ -16,7 +16,11 @@ mod oauth_flow;
 mod oauth_launch;
 mod ops;
 mod removal;
-mod setup_secrets;
+mod setup_activation;
+mod setup_apply;
+mod setup_generate;
+mod setup_provider;
+mod setup_schema;
 mod upgrade;
 mod wasm_install;
 
@@ -60,15 +64,8 @@ pub struct LiveWasmChannelSharedState {
         Arc<RwLock<Option<tokio::sync::broadcast::Sender<crate::channels::web::types::SseEvent>>>>,
 }
 
-/// Result of saving setup secrets and attempting activation.
-pub struct SetupResult {
-    /// Human-readable status message.
-    pub message: String,
-    /// Whether the channel was successfully activated after saving secrets.
-    pub activated: bool,
-    /// OAuth authorization URL for the UI to open (if OAuth flow was started).
-    pub auth_url: Option<String>,
-}
+pub use setup_apply::{FieldOutcome, FieldOutcomeReport, SetupApplication};
+pub use setup_schema::{BlockerReason, SecretStatus, SetupBlocker, SetupSnapshot};
 
 /// Central manager for extension lifecycle operations.
 pub struct ExtensionManager {
@@ -106,6 +103,8 @@ pub struct ExtensionManager {
     user_id: String,
     /// Optional database store for DB-backed MCP config.
     store: Option<Arc<dyn crate::db::Database>>,
+    /// Confidential endpoint-binding service, when storage and a key exist.
+    endpoint_bindings: Option<Arc<crate::extensions::setup::EndpointBindingService>>,
     /// Names of WASM channels that were successfully loaded at startup.
     ///
     /// Wrapped in `Arc` so the live channel activation adapter can share
@@ -173,6 +172,8 @@ pub struct ExtensionManagerConfig {
     pub user_id: String,
     /// Database store for persistence (optional).
     pub store: Option<Arc<dyn crate::db::Database>>,
+    /// Confidential endpoint-binding service (optional).
+    pub endpoint_bindings: Option<Arc<crate::extensions::setup::EndpointBindingService>>,
     /// Catalogue entries for built-in and discovered extensions (required, may be empty).
     pub catalog_entries: Vec<RegistryEntry>,
 }
@@ -275,6 +276,7 @@ impl ExtensionManager {
             tunnel_url: config.tunnel_url,
             user_id: config.user_id,
             store: config.store,
+            endpoint_bindings: config.endpoint_bindings,
             active_channel_names: shared_state.active_channel_names,
             installed_relay_extensions: shared_state.installed_relay_extensions,
             activation_errors: shared_state.activation_errors,
@@ -339,5 +341,7 @@ fn combine_install_errors(
     }
 }
 
+#[cfg(test)]
+mod setup_tests;
 #[cfg(test)]
 mod tests;

@@ -31,6 +31,7 @@
 
 mod builder;
 mod components;
+mod phase_support;
 mod phases;
 mod side_effects;
 

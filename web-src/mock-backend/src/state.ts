@@ -11,8 +11,10 @@ import type {
   AuthCancelRequest,
   AuthTokenRequest,
   ChatSseEvent,
+  EndpointOperations,
   ExtensionInfo,
   ExtensionSetupResponse,
+  ExtensionSetupSubmitResponse,
   FeatureFlagsResponse,
   GatewayStatusResponse,
   HistoryResponse,
@@ -41,6 +43,8 @@ import type {
   SearchHit,
   SendMessageRequest,
   SendMessageResponse,
+  SetupBlockerInfo,
+  SetupOutcomeInfo,
   SkillInstallRequest,
   SkillListResponse,
   SkillSearchRequest,
@@ -1273,45 +1277,115 @@ export class MockBackendState {
     if (!extension) {
       throw new Error("Extension not found");
     }
+    const endpoints = extension.setupEndpoints ?? [];
+    const blockers: SetupBlockerInfo[] = [
+      ...extension.setupSecrets
+        .filter((field) => !field.optional && !field.provided)
+        .map((field) => ({
+          field: field.name,
+          kind: "secret" as const,
+          reason: "missing" as const,
+        })),
+      ...endpoints
+        .filter((field) => field.state === "stale" || field.state === "corrupt")
+        .map((field) => ({
+          field: field.name,
+          kind: "endpoint" as const,
+          reason: field.state === "stale" ? ("stale" as const) : ("corrupt" as const),
+        })),
+      ...endpoints
+        .filter((field) => !field.optional && field.state === "missing")
+        .map((field) => ({
+          field: field.name,
+          kind: "endpoint" as const,
+          reason: "missing" as const,
+        })),
+    ];
     return structuredClone({
       name: extension.info.name,
       kind: extension.info.kind,
       secrets: extension.setupSecrets,
+      endpoints,
+      ready: blockers.length === 0,
+      blockers,
     });
   }
 
   /**
-   * Marks non-blank submitted secrets as provided, activates the extension
-   * and publishes auth completion. Throws when the extension is missing.
+   * Applies submitted secrets and endpoint operations, reports per-field
+   * outcomes, and only activates an extension whose setup is complete.
    */
   submitExtensionSetup(
     name: string,
-    secrets: Record<string, string>
-  ): ActionResponse {
+    secrets: Record<string, string>,
+    endpoints: EndpointOperations = {}
+  ): ExtensionSetupSubmitResponse {
     const extension = this.extensions.get(name);
     if (!extension) {
       throw new Error("Extension not found");
     }
-    extension.setupSecrets = extension.setupSecrets.map((field) => ({
-      ...field,
-      provided: field.provided || isNonBlankString(secrets[field.name]),
-    }));
+    const set = endpoints.set ?? {};
+    const clear = new Set(endpoints.clear);
+    const outcomes: SetupOutcomeInfo[] = [];
+    extension.setupSecrets = extension.setupSecrets.map((field) => {
+      const written = isNonBlankString(secrets[field.name]);
+      outcomes.push({
+        field: field.name,
+        kind: "secret",
+        outcome: written ? "stored" : "kept",
+      });
+      return { ...field, provided: field.provided || written };
+    });
+    extension.setupEndpoints = (extension.setupEndpoints ?? []).map((field) => {
+      if (clear.has(field.name)) {
+        outcomes.push({
+          field: field.name,
+          kind: "endpoint",
+          outcome: "cleared",
+        });
+        return { ...field, state: "missing" as const };
+      }
+      if (isNonBlankString(set[field.name])) {
+        outcomes.push({
+          field: field.name,
+          kind: "endpoint",
+          outcome: "stored",
+        });
+        return { ...field, state: "configured" as const };
+      }
+      return field;
+    });
+
+    const snapshot = this.getExtensionSetup(name);
     extension.info = {
       ...extension.info,
       authenticated: extension.info.has_auth
         ? true
         : extension.info.authenticated,
-      active: true,
-      activation_status: "active",
+      active: snapshot.ready ? true : extension.info.active,
+      activation_status: snapshot.ready ? "active" : "configured",
     };
     this.publishChatEvent({
       type: "auth_completed",
       extension_name: name,
       success: true,
-      message: `${extension.info.display_name ?? name} is ready to use.`,
+      message: snapshot.ready
+        ? `${extension.info.display_name ?? name} is ready to use.`
+        : `${extension.info.display_name ?? name} still needs configuration.`,
     });
     this.pushLog(`Stored setup values for ${name}.`, "extensions");
-    return createActionResponse("Extension setup saved.", { activated: true });
+    const message = snapshot.ready
+      ? "Extension setup saved."
+      : "Configuration saved, but setup is incomplete.";
+    return {
+      success: true,
+      message,
+      activated: snapshot.ready,
+      ready: snapshot.ready,
+      outcomes,
+      endpoints: snapshot.endpoints,
+      blockers: snapshot.blockers,
+    };
   }
 
   /**

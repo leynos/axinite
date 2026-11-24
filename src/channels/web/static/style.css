@@ -2819,6 +2819,21 @@ body {
   white-space: nowrap;
 }
 
+.configure-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.configure-warning {
+  margin: 6px 0 0 0;
+  font-size: 12px;
+  color: var(--warning);
+}
+
 .configure-actions {
   display: flex;
   gap: 8px;

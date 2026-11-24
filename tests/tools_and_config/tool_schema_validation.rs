@@ -59,6 +59,7 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
                 user_id: "test".to_string(),
                 store: None,
                 catalog_entries: Vec::new(),
+                endpoint_bindings: None,
             },
         )),
     }

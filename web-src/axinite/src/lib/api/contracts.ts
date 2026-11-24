@@ -484,6 +484,9 @@ export type ExtensionSetupResponse = {
   name: string;
   kind: string;
   secrets: SecretFieldInfo[];
+  endpoints: EndpointFieldInfo[];
+  ready: boolean;
+  blockers: SetupBlockerInfo[];
 };
 
 export type SecretFieldInfo = {
@@ -494,8 +497,54 @@ export type SecretFieldInfo = {
   auto_generate: boolean;
 };
 
+export type EndpointFieldState = "missing" | "configured" | "stale" | "corrupt";
+
+export type EndpointFieldInfo = {
+  name: string;
+  kind: string;
+  prompt: string;
+  optional: boolean;
+  state: EndpointFieldState;
+};
+
+export type SetupBlockerInfo = {
+  field: string;
+  kind: "secret" | "endpoint";
+  reason: "missing" | "stale" | "corrupt";
+};
+
+export type EndpointOperations = {
+  set?: Record<string, string>;
+  clear?: string[];
+};
+
 export type ExtensionSetupRequest = {
   secrets: Record<string, string>;
+  endpoints?: EndpointOperations;
+};
+
+export type SetupOutcomeInfo = {
+  field: string;
+  kind: "secret" | "endpoint";
+  outcome:
+    | "stored"
+    | "kept"
+    | "cleared"
+    | "failed"
+    | "indeterminate"
+    | "skipped";
+};
+
+export type ExtensionSetupSubmitResponse = {
+  success: boolean;
+  message: string;
+  activated: boolean;
+  auth_url?: string;
+  category?: string;
+  ready: boolean;
+  outcomes: SetupOutcomeInfo[];
+  endpoints: EndpointFieldInfo[];
+  blockers: SetupBlockerInfo[];
 };
 
 export type RegistryEntryInfo = {

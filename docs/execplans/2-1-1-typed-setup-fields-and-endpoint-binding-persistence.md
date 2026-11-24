@@ -760,6 +760,27 @@ explicit operations; never imply that an error proves no commit occurred.
   `make check-fmt lint typecheck` passes, including all four Clippy lanes,
   Interrogate, and both Whitaker lanes.
 - [ ] M3 setup service, web contracts, and both interfaces.
+- [ ] 2026-11-23: M3 implementation in progress. The manager now reads typed
+  declarations through the existing capabilities loaders, plans every
+  submission with `plan_setup` before any write, executes effects with
+  per-field outcomes (`stored`, `kept`, `cleared`, `failed`, `indeterminate`,
+  `skipped`), preserves channel auto-generation at the manifest's declared byte
+  length, gates activation on recomputed readiness, and purges a tool's OAuth
+  grant only when a credential actually changed. The web contract adds
+  `endpoints`/`ready`/`blockers` to the schema response, tagged endpoint
+  operations to the request, and per-field outcomes to the response; both the
+  Solid client and the legacy `app.js` render URL controls, replacement hints,
+  explicit clears, and attention states. Focused evidence so far: 174 extension
+  tests, 5 HTTP setup-contract tests, 620 frontend tests, Fluent coverage
+  496/496, `make frontend-check`, `make frontend-test`, and
+  `make frontend-build` pass. The Biome 2.6.2 bump committed on `main` had left
+  30 frontend files unformatted; `bunx biome format --write` repaired them
+  mechanically. `uvx semgrep` needs `UV_PYTHON=3.12` on this host because the
+  default freethreaded 3.15 cannot build `ruamel-yaml-clib`; that is an
+  environment constraint, not a code failure. Remaining before the M3 commit:
+  `make check-fmt`, `make lint`, `make typecheck`, `make test`,
+  `make markdownlint`, and
+  `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`.
 - [ ] M4 E2E and recovery evidence.
 - [ ] M5 documentation, final evidence, and roadmap completion.
 
