@@ -4281,15 +4281,17 @@ block:
 
 ```yaml
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
 
 Two halves matter, and each fails in a way nothing else would notice.
 
-- **The group keys on the pull request.** A group built from
+- **The group keys on the pull request.** A group built only from
   `github.run_id` is unique to one run, so it matches no predecessor and
-  cancels nothing while reading exactly like a concurrency control. A constant
+  cancels nothing while reading exactly like a concurrency control; the run
+  identifier is allowed only as the fallback after the pull request number,
+  which gives each push, schedule and dispatch a group of its own. A constant
   group is the opposite failure: every open pull request shares one queue, and
   the first push anywhere cancels the gates running everywhere else.
 - **Cancellation is conditioned on the event.** A literal
@@ -4302,30 +4304,6 @@ Two halves matter, and each fails in a way nothing else would notice.
 repository to carry a token, and the ones here automate pull-request
 housekeeping rather than building, so cancelling one mid-flight is a hazard
 with no minutes to win.
-
-### 37.1. The cancellation contract
-
-`tests/workflow_contracts/concurrency_test.py` reads `.github/workflows` and
-asserts, for every workflow declaring a `pull_request` trigger, that it
-declares a concurrency group, that the group names no per-run expression, that
-the group names something that varies per pull request, and that
-`cancel-in-progress` is exactly the expression above. A further test asserts
-that discovery still finds the workflows it is expected to, so a broken read
-cannot empty the list and turn the rest into a vacuous pass. Run it with
-`make test-workflow-contracts`.
-
-Discovery reads a workflow's triggers in every shape GitHub accepts: a mapping
-of event to configuration, a list of event names, or one bare event name. It
-reads them under the string key `on` and under the boolean `True`, which is
-what PyYAML makes of an unquoted `on:`. A workflow that declares neither key
-has no triggers and is out of scope. A workflow whose `on:` the reader cannot
-model is reported by file name in
-`test_every_workflow_declares_a_trigger_set_this_reader_models`, not dropped.
-That covers an explicit `on: null`, a scalar that is not an event name, a list
-or mapping holding anything but event names, and a document declaring both
-keys, since GitHub merges the two and a reader that picked one would be blind
-to the other. Dropped silently, such a workflow would leave every contract
-above passing while saying nothing about it.
 
 ## 38. Test timeouts: the tiers this repository sets
 
