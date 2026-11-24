@@ -212,15 +212,26 @@ fn render_select_many_options<W: Write>(
 ) -> io::Result<()> {
     for (i, (label, _)) in options.iter().enumerate() {
         let checkbox = if state.selected[i] { "[x]" } else { "[ ]" };
-        let prefix = if i == state.cursor_pos { ">" } else { " " };
+        let is_cursor = i == state.cursor_pos;
+        render_select_many_row(stdout, label, checkbox, is_cursor)?;
+    }
+    Ok(())
+}
 
-        if i == state.cursor_pos {
-            execute!(stdout, SetForegroundColor(Color::Cyan))?;
-            writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-            execute!(stdout, ResetColor)?;
-        } else {
-            writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-        }
+/// Write one option row, in cyan when it is the cursor row.
+fn render_select_many_row<W: Write>(
+    stdout: &mut W,
+    label: &str,
+    checkbox: &str,
+    is_cursor: bool,
+) -> io::Result<()> {
+    let prefix = if is_cursor { ">" } else { " " };
+    if is_cursor {
+        execute!(stdout, SetForegroundColor(Color::Cyan))?;
+    }
+    writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
+    if is_cursor {
+        execute!(stdout, ResetColor)?;
     }
     Ok(())
 }
