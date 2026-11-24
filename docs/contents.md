@@ -176,8 +176,8 @@
     entrypoint metadata, active-skill injection updates, proportional test
     coverage, and synchronized documentation.
   - [Add a Monty helper subprocess and expose `exec_code`](execplans/2-2-1-helper-subprocess-wrapper-for-monty.md)
-    plans roadmap item `2.2.1` for isolated code execution, per-run tool
-    capabilities, mediated callbacks, and verification before implementation.
+    completed roadmap item `2.2.1` with isolated code execution, per-run tool
+    capabilities, mediated callbacks, and the verified capability projection.
 
 ## RFCs
 
@@ -282,3 +282,7 @@
   records why the root workspace forbids unsafe code, why the fourteen
   WebAssembly component crates confine generated bindings to one audited
   module, and how the allow-list contract and Miri enforce and verify that.
+- [ADR 0016: Isolated Monty execution](adrs/adr-0016-monty-execution.md)
+  records the helper process boundary, the bounded frame protocol, the verified
+  capability projection, the caller-issued broker, and why interactive approval
+  fails closed inside `exec_code`.

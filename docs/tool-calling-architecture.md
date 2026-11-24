@@ -159,3 +159,57 @@ sequenceDiagram
     Agent->>Agent: process_approval(scope, params)
     Agent-->>Dispatch: SubmissionResult
 ```
+
+## Nested callbacks: the `exec_code` broker
+
+`exec_code` is an ordinary `Tool` from the chat pipeline's point of view: the
+preflight, hook, approval, execution, and post-flight phases in Figure 1 apply
+to it unchanged. What differs is what happens inside `execute`.
+
+**Figure 3. Parent/helper boundary for one `exec_code` run. The chat adapter
+issues an immutable broker before dispatch; the runner starts one helper
+process; every guest callback is mediated by the broker through the same
+registry, hooks, approval snapshot, and safety layer as a top-level call.**
+
+```mermaid
+sequenceDiagram
+    participant Chat as Chat adapter
+    participant Tool as exec_code
+    participant Broker as BrokerContext
+    participant Runner as Supervisor
+    participant Helper as axinite-monty-helper
+    participant Tools as ToolRegistry
+    participant Safety as SafetyLayer
+
+    Chat->>Broker: new(registry, safety, hooks, requested, policy)
+    Broker->>Tools: resolve and pin selected Arc identities
+    Chat->>Tool: execute(params, JobContext with broker)
+    Tool->>Tool: parse and verify requested == broker table
+    Tool->>Runner: run(request, broker, ctx)
+    Runner->>Helper: spawn, hello, start_run
+    loop each guest suspension
+        Helper-->>Runner: host_call(name, arguments)
+        Runner->>Broker: mediate(name, arguments, ctx)
+        Broker->>Broker: membership, identity, approval, hooks, schema
+        Broker->>Tools: dispatch selected tool
+        Tools->>Safety: execute with output sanitization
+        Safety-->>Broker: sanitized, size-bounded JSON
+        Broker-->>Runner: value or typed denial
+        Runner-->>Helper: resume_run or terminal
+    end
+    Helper-->>Runner: terminal(outcome)
+    Runner->>Helper: shutdown, wait, reap
+    Runner-->>Tool: outcome
+    Tool-->>Chat: {"result": ..., "state": {...}}
+```
+
+The broker is issued by the attenuating caller, not by `exec_code`. A
+`JobContext` without one makes `exec_code` fail closed with
+`broker_unavailable`, which is why scheduler, container, and worker paths
+cannot use it yet. Interactive approval is represented in the chat pipeline by
+a deferred `LoopOutcome::NeedApproval`, which an in-flight helper cannot await;
+the broker therefore denies any callback that would need it, before dispatch.
+Outer approval of `exec_code` never authorizes a nested effect.
+
+See `docs/adrs/adr-0016-monty-execution.md` for the process, protocol, and
+proof decisions.

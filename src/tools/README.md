@@ -144,3 +144,28 @@ both), but they have different strengths.
 
 The LLM-facing interface is identical for both (tool name, schema, execute), so
 swapping between them is transparent to the agent.
+
+### Host-mediated composite tools
+
+A small number of native tools compose other tools rather than implementing a
+capability themselves. `exec_code` is the first: it runs agent-authored Python
+in an isolated helper and brokers every guest callback back through the
+caller's own policy path. It is deliberately not a WASM tool, because the guest
+is an interpreter and the helper needs a process boundary, and it is not an MCP
+server, because the callbacks must be attenuated by Axinite's registry rather
+than trusted wholesale.
+
+The pattern to follow when adding another composite tool:
+
+- The caller supplies immutable authority explicitly. `exec_code` requires
+  `JobContext::broker`; a caller that cannot build one must not fall back to
+  ambient registry access.
+- Pin the tools a run may use, and re-check identity, approval, hooks, and
+  schema at the point of dispatch.
+- Keep the child process free of credentials and policy. It may request a
+  callback; it may never execute a tool itself.
+- Bound every boundary: frame size, JSON depth, output size, result size,
+  wall-clock deadline, and concurrent child count.
+
+See `docs/adrs/adr-0016-monty-execution.md` and
+`docs/tool-calling-architecture.md`.

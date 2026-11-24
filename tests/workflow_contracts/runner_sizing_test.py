@@ -215,6 +215,13 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
             "runtime; provisional until its first resource peak is recorded"
         ),
     ),
+    ("test.yml", "monty-helper-tests"): (
+        "ubicloud-standard-4",
+        (
+            "compiles the Monty interpreter, the largest single out-of-workspace "
+            "crate, and then runs its framed end-to-end suites"
+        ),
+    ),
     ("test.yml", "telegram-tests"): (
         "ubicloud-standard-2",
         "one small out-of-workspace crate, 33 s",

@@ -1,0 +1,15 @@
+[package]
+name = "monty-capabilities"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+description = "Verified capability-projection kernel for Axinite's Monty exec_code"
+license = "MIT OR Apache-2.0"
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[dev-dependencies]
+pretty_assertions = "1"

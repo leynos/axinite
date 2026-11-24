@@ -6,7 +6,7 @@ This ExecPlan is a living document. Its `Constraints`,
 `Conformance basis`, and `Verification plan` sections must be kept current
 during delivery.
 
-Status: DRAFT — awaiting explicit approval
+Status: APPROVED — implementation authorized 2026-11-18
 
 ## Purpose / big picture
 
@@ -24,8 +24,9 @@ allowlist without side effects, and return a bounded structured result. A
 deliberately panicking or crashing helper must produce a run failure while a
 subsequent run still succeeds in the same parent process.
 
-This is the proposed design for review, not authorization to implement. The
-plan must be explicitly approved before implementation begins.
+This plan was explicitly approved on 2026-11-18. Implementation proceeds within
+the constraints and tolerances below; a material scope, architecture, trust,
+dependency, or proof-design deviation requires renewed approval.
 
 ## Approval gates
 
@@ -233,6 +234,13 @@ plan must be explicitly approved before implementation begins.
   verify host compatibility and the production/proof compilation bridge;
   installation infrastructure is no longer missing. The pinned Z3 archive
   requires glibc 2.39 or newer. Keep proofs outside ordinary Cargo gates.
+- **Release archives may omit the helper.** Severity medium; likelihood certain
+  until packaging changes. cargo-dist builds the root package only, so a GitHub
+  release carries `axinite` without `axinite-monty-helper`, and `exec_code`
+  then reports the helper as unavailable. `make install`, `make release-monty`,
+  and both container images ship the pair; a release archive needs
+  `AXINITE_MONTY_HELPER` set or an explicit packaging change. ADR 0016 records
+  this under known risks.
 
 ## Progress
 
@@ -245,11 +253,61 @@ plan must be explicitly approved before implementation begins.
   gate with runtime evidence.
 - [x] (2026-11-12) Rebased onto the fetched PR target and reconciled the
   shared prover infrastructure merged in PR #492.
-- [ ] Obtain explicit approval of this plan. No implementation has started.
-- [ ] M1: verify Monty and approval-flow feasibility; update this plan with
-  evidence and final protocol/limits before coding.
-- [ ] M2–M5: implement and validate the approved milestones.
-- [ ] Update docs and mark roadmap 2.2.1 done when the feature is complete.
+- [x] (2026-11-18) The owner approved the plan and instructed implementation
+  to begin. No scope, architecture, trust, dependency, or proof-design change
+  was requested with the approval.
+- [x] (2026-11-18) M1: verified the published Monty release and Rust API,
+  the caller attenuation seam, resource-limit options, and the proof bridge.
+  Evidence and decisions are recorded in "Surprises & discoveries" and
+  "Decision log".
+- [ ] M2: implement the isolated helper and bounded protocol plateau.
+  - [x] (2026-11-18) `crates/monty-protocol` (framing, versioned message
+    types, bounded validation) and `crates/monty-capabilities` (verified
+    kernel body plus drift test) are workspace members and pass their unit
+    and drift tests.
+  - [x] (2026-11-18) `crates/monty-helper` runs the guest, mediates host
+    calls, applies its own address-space ceiling and allocator budget, and
+    passes 17 unit tests and 9 framed end-to-end tests.
+  - [x] (2026-11-18) `make test-monty-helper` runs the out-of-workspace
+    package from its own directory, and `.github/workflows/test.yml` carries a
+    dedicated `monty-helper-tests` lane. The complete suite passes: 26 tests
+    (17 unit and 9 framed end-to-end) at the recursion floor recorded below.
+  - [x] (2026-11-18) Workflow-contract reconciliation: `test-monty-bdd` and
+    `test-monty-e2e` run inside the `monty-helper-tests` lane after the helper
+    suite. Sequential repository gates are recorded under M5.
+- [x] (2026-11-18) M3: the proved capability projection and broker callback
+  gate are implemented.
+  - `crates/monty-capabilities` ships the verified kernel body; the drift test
+    requires it to match `verus/monty_capabilities.rs` byte for byte, and the
+    Verus run reports 19 verified, 0 errors.
+  - `SelectedTools::resolve` pins tool identity, and `BrokerContext::mediate`
+    re-checks membership, identity, approval, hooks and schema before dispatch.
+  - Proptests cover exact intersection, non-widening and the seeded omitted-bit
+    mutation; broker tests cover empty and out-of-set callbacks with zero side
+    effects, redacted hook input, and hook rejection.
+- [x] (2026-11-18) M4: `exec_code` behaviour and caller policy are implemented.
+  - Named unit tests cover request parsing, including the default entrypoint and
+    reserved names; five `rstest-bdd` scenarios cover the caller gate.
+  - Twenty real-process tests cover the happy path, approval denial, remote
+    rejection, redaction, script errors, malformed and stale protocol frames,
+    deadline, memory and recursion limits, cancellation, crash recovery,
+    disjoint concurrent grants, pre-approved tools and admission overload.
+- [ ] M5: documentation, gates, roadmap and delivery plateau.
+  - [x] (2026-11-18) ADR 0016 records the process model, wire protocol,
+    capability projection, caller authority, approval behaviour and known
+    risks; RFC 0005 gained an implementation-status section and `exec_code`
+    limit/contract detail.
+  - [x] (2026-11-18) User and developer guides, `src/tools/README.md`,
+    `docs/tool-calling-architecture.md` (Figure 3), `docs/repository-layout.md`
+    and `docs/formal-verification-methods-in-axinite.md` describe the shipped
+    behaviour and proofs; `FEATURE_PARITY.md` carries the code-mode row.
+  - [x] (2026-11-18) Packaging: `make install` installs both binaries,
+    `make release-monty`/`make test-monty-release` stage and exercise the two
+    release binaries, `rust-audit` covers the helper lock file, and both
+    container images build the helper with the pinned nightly and copy it
+    beside `axinite`.
+  - [ ] Sequential commit gates and delivery to the PR.
+- [x] (2026-11-18) Docs updated; roadmap item 2.2.1 checked.
 
 ## Surprises & discoveries
 
@@ -300,6 +358,110 @@ plan must be explicitly approved before implementation begins.
   Evidence: official Monty Rust quickstart and current API research dated
   2026-10-20. Impact: confirm the pinned release's exact API during M1; do not
   assume callbacks are automatically bounded by a pool.
+- Observation (M1, 2026-11-18): the published crate is `monty` 1.6.0 (MIT,
+  `rust-version = 1.98`), with sibling `monty-types` 1.6.0 and `monty-alloc`
+  1.6.0.
+  `MontyRun::new(code: String, script_name: &str, input_names:
+  Vec<String>, CompileOptions)`
+  compiles;
+  `MontyRun::start(inputs,
+  ResourceTracker, PrintWriter) -> Result<RunProgress, MontyException>`
+  runs;
+  `RunProgress::FunctionCall(FunctionCall { function_name, args: CallArgs,
+  call_id, allow_eager_await, .. })`
+  exposes callbacks; `FunctionCall::resume` accepts a value or a
+  `MontyException`, so a tool failure can be returned as either a catchable
+  guest exception or a typed terminal result. Evidence: local registry sources
+  for `monty-1.6.0` and `monty-types-1.6.0`. Impact: the helper links `monty`
+  and `monty-alloc` only; the parent depends on the protocol crate, never on
+  the interpreter. Monty 1.98 sets the helper crate's MSRV, so the helper is
+  excluded from the 1.95 workspace MSRV build and has its own build/test
+  targets.
+- Observation (M1, 2026-11-18): `ResourceLimits` exposes feed and turn
+  durations, an optional allocator-backed `max_memory`, recursion depth and
+  suspension budgets, but no allocation counter. Evidence:
+  `monty-types/src/resource.rs`. Impact: the provisional "one million
+  allocations" limit is unavailable and is recorded as not implemented; the
+  helper installs `monty-alloc` as its global allocator to make
+  `max_memory = 64 MiB` effective, and the parent also bounds address space.
+- Observation (M1, 2026-11-18): a safe, `unsafe`-free Rust API for
+  `setrlimit(RLIMIT_AS)` is available through `rustix` (already a root
+  dependency) and through `nix` with the `resource` feature. Evidence:
+  `rustix::process::setrlimit` is safe and Linux-scoped. Impact: the helper
+  applies the 512 MiB address-space ceiling to itself at startup, before it
+  reads any source. This is equivalent enforcement to a parent pre-exec hook,
+  avoids `unsafe` in the parent, and is recorded as the M1 design revision.
+- Observation (M1, 2026-11-18): `cargo check --workspace` on the MSRV job uses
+  Rust 1.95 and would reject a workspace member that requires 1.98. Evidence:
+  `.github/workflows/test.yml`, `msrv` job. Impact: `crates/monty-helper`
+  carries an empty `[workspace]` table and is excluded from the root workspace;
+  `make test-monty-helper` builds and tests it explicitly.
+- Observation (M1, 2026-11-18): the shared Verus runner accepts
+  `VERUS_PROOF_FILE`; no production-linkage bridge exists yet. Evidence:
+  `Makefile` and `scripts/prover_cli.py`. Impact: production projection lives in
+  `crates/monty-capabilities`; the Verus file re-states the same executable
+  bodies between body markers, proves them against specifications, and a
+  deterministic test compares the marker-delimited bodies byte for byte after
+  removing proof-only annotations. This is the approved deterministic
+  refinement bridge, not a sampled mirror.
+- Observation (M2, 2026-11-18): the repository standard `-Zthreads=8` lowers
+  rustc's query-depth recursion limit enough that compiling Monty 1.6.0's
+  generated `strum` `from_repr` constant fails with
+  `queries overflow the depth limit!`. Evidence: the first helper test run
+  failed at the default limit; `-Zmin-recursion-limit=256` failed at depth 258,
+  and 512 passed `cargo check` but the test profile still required 514. Impact:
+  `crates/monty-helper/.cargo/config.toml` pins `-Zmin-recursion-limit=1024`
+  for build and Linux target tables. This is a helper-local build setting; the
+  parent workspace keeps the repository standard.
+- Observation (M4, 2026-11-18): the first entrypoint validation reused the
+  reserved *tool*-name list, which contains `main`, so it rejected the default
+  entrypoint the helper itself generates. Evidence:
+  `the_default_entrypoint_is_accepted` failed with `invalid_params` until the
+  rule was single-sourced. Impact: `monty_protocol::is_reserved_entrypoint` is
+  now the one definition (`params`, `state`, and the `__axinite` prefix), used
+  by both the helper's wrapper generation and `exec_code`'s parameter parsing.
+- Observation (M4, 2026-11-18): a deadline wrapped around the whole admitted
+  future released the concurrency permit before the child was killed and
+  reaped, so an overloaded pool could admit a new run beside a live helper.
+  Evidence: review of `Supervisor::run`;
+  `a_dropped_run_future_leaves_no_helper_process` now observes `/proc/<pid>`
+  disappearing. Impact: the deadline moved inside `run_admitted`; termination
+  and reaping complete before the owned permit is dropped. Cancellation of the
+  outer future still relies on `kill_on_drop`.
+- Observation (M3, 2026-11-18): Verus's `by (bit_vector)` tactic does not
+  unfold `open spec fn` hypotheses such as `subset_spec` before deciding the
+  goal, so the monotonicity proofs failed with
+  `bitvector assertion not satisfied` even though the claim was true. Evidence:
+  `make verus` on the first proof draft. Impact: hypotheses are stated bitwise
+  in `requires` (with a comment noting the equivalence) and each implication is
+  asserted on one line; the file now verifies with 19 verified, 0 errors.
+- Observation (M5, 2026-11-18): Whitaker's suite is stricter than the first
+  gate report suggested. Besides `bumpy_road_function`, `make lint` rejects
+  modules over 400 lines (`schema.rs` reached 511), test modules without an
+  inner `//!` comment, `unwrap_or_else` closures that panic, and `std::fs` in
+  any crate not listed in `dylint.toml`. Evidence:
+  `whitaker --all -p monty-protocol` and `-p monty-capabilities` before and
+  after the fixes. Impact: `schema` was split into `schema.rs` plus
+  `schema/arguments.rs`, every new test module gained an inner doc comment, the
+  drift test compares with `match` and `let ... else`, and the new `exec_code`
+  integration-test crates join the sanctioned test-support exclusions.
+- Observation (M5, 2026-11-19): the suite is staged from a mutable
+  `whitaker-tip` cache, so its rule set can tighten under a branch. Clearing
+  this branch's own findings exposed five further `bumpy_road_function` and
+  `conditional_max_n_branches` failures in code the branch never touched
+  (`src/settings/access.rs`, `src/setup/prompts/selection.rs`,
+  `src/tools/builtin/json.rs`, `tests/tools_and_config/wit_compat/harness.rs`).
+  Evidence: successive `whitaker -p axinite` runs, each reporting the next
+  batch once the previous one cleared. Impact: those functions were split into
+  small helpers too, because the gate is `-D warnings` and cannot pass while
+  any of them remains. A sibling branch is fixing the same findings on `main`,
+  so a rebase may conflict and should keep either side's small-helper shape.
+- Observation (M5, 2026-11-19): the root filesystem filled to 15 MB free while
+  a gate was running and one `Edit` failed with `ENOSPC`; the target file was
+  left untouched and space recovered to about 20 GB when another agent's build
+  finished. Impact: no work was lost, but builds on this host can stall for
+  reasons unrelated to the branch, so a transient `ENOSPC` warrants a `df`
+  recheck before it is treated as a code fault.
 
 ## Decision log
 
@@ -343,19 +505,112 @@ plan must be explicitly approved before implementation begins.
   integrations stay in 2.2.2–2.2.5. Rationale: preserve roadmap decomposition
   while delivering a meaningful usable first operation. Date/Author:
   2026-10-20, plan author.
+- Decision (M1): pin `monty` 1.6.0, `monty-types` 1.6.0 (through `monty`) and
+  `monty-alloc` 1.6.0. The helper is an out-of-workspace package with
+  `rust-version = 1.98`; protocol and capability crates stay workspace members
+  at 1.95 with no interpreter dependency. Rationale: the MSRV lane checks the
+  workspace on 1.95, while the pinned nightly (1.101) builds Monty.
+  Date/Author: 2026-11-18, implementation.
+- Decision (M1, revision to the parent limit mechanism): the helper raises its
+  own `RLIMIT_AS` to 512 MiB using safe `rustix` calls before it reads the
+  start message, instead of the parent applying a pre-exec limit. The guest
+  heap additionally uses `monty-alloc` with a 64 MiB soft limit. Rationale:
+  safe, testable, no parent `unsafe`, and still enforced before any guest code
+  is compiled or run. Recorded as an equivalent-enforcement design revision
+  under the plan's resource-limit tolerance. Date/Author: 2026-11-18,
+  implementation.
+- Decision (M1): do not implement the proposed one-million-allocation counter;
+  the pinned API exposes no such counter. Recursion depth 256, suspensions
+  4096, feed and turn durations derived from the run deadline, and output
+  bounded at 64 KiB are enforced. Rationale: honest limits rather than an
+  unenforced claim. Date/Author: 2026-11-18, implementation.
+- Decision (M1): the production proof link is a deterministic body bridge.
+  `crates/monty-capabilities` exposes annotation-free kernel bodies marked by
+  `KERNEL-BODY` comments; `verus/monty_capabilities.rs` repeats those bodies
+  verbatim and proves them against spec functions. A test extracts the marked
+  bodies from both files and requires byte equality, so the verified body is
+  the shipped body. Date/Author: 2026-11-18, implementation.
+- Decision (M1): `exec_code` returns
+  `{"result": <guest result member or null>, "state": <guest state object>}`.
+  The guest must return an object; a missing `state` or a non-object `state` is
+  `script_error`. Rationale: matches RFC 0005's example and the plan's public
+  interface. Date/Author: 2026-11-18, implementation.
+- Decision (M1): only the chat caller adapter supplies `BrokerContext` in
+  2.2.1. Scheduler, container and worker paths supply none and `exec_code`
+  fails closed with a typed `broker_unavailable` denial until a policy adapter
+  for them is designed. Rationale: the plan permits caller adapters and
+  requires unknown contexts to fail closed. Date/Author: 2026-11-18,
+  implementation.
+- Decision (M4): reserve exactly `params`, `state` and the `__axinite` prefix
+  for the generated wrapper, and publish that rule as
+  `monty_protocol::is_reserved_entrypoint`. The default entrypoint `main` stays
+  usable because it is the wrapper's own function name. Rationale: one
+  definition shared by the helper's wrapper generator and `exec_code` parsing
+  prevents the two from drifting. Date/Author: 2026-11-18, implementation.
+- Decision (M4): enforce the run deadline inside `run_admitted` so that
+  terminating and reaping the child precedes release of the concurrency permit,
+  and keep `kill_on_drop(true)` for cancellation of the outer future.
+  Rationale: permit accounting must never claim capacity while a helper is
+  still alive. Date/Author: 2026-11-18, implementation.
+- Decision (M3): state monotonicity hypotheses bitwise in `requires` and assert
+  a single-line implication for `by (bit_vector)`, rather than relying on the
+  tactic to unfold `subset_spec`. Rationale: the tactic reasons over
+  bit-vectors, not transparent spec definitions. Date/Author: 2026-11-18,
+  implementation.
 
 ## Outcomes & retrospective
 
 The 2026-11-12 rebase replayed both plan commits unchanged onto
 `7e1c20528e2b76dd6b7acc126ac4c0de7276680b` without conflicts. The shared proof
-infrastructure from PR #492 removes the installer/bootstrap work from this
-plan. Monty implementation and its substantive production-linked proof remain
-unstarted and approval-gated.
+infrastructure from PR #492 removes the installer/bootstrap work from this plan.
 
-Draft only. No implementation outcome exists yet. At each plateau record the
-observable result, remaining limitations, gate transcripts, deviations, and
-lessons here. At completion reconcile any discoveries against RFC 0005 and
-roadmap 2.2.1 before marking this plan complete.
+Delivered (2026-11-18): roadmap item 2.2.1.
+
+- `crates/monty-protocol` is the shared, bounded wire contract; both the parent
+  supervisor and the helper parse with the same validation.
+- `crates/monty-helper` is an out-of-workspace package that owns the embedded
+  interpreter, the process-wide four-run permit pool, the per-run deadline, the
+  address-space ceiling and the guest wrapper. It is built with its pinned
+  nightly because its `.cargo/config.toml` supplies the recursion floor.
+- `crates/monty-capabilities` projects the caller's authority into the run and
+  carries a kernel body proved against `verus/monty_capabilities.rs`; the drift
+  test makes divergence a test failure, and the Verus run reports 19 verified,
+  0 errors.
+- `src/tools/monty/` provides the supervisor, the caller-pinned broker, the
+  interactive approval refusal, hook re-validation after rewrite, redaction and
+  the `exec_code` tool that only the chat adapter may issue a broker for.
+- Documentation: ADR 0016, RFC 0005 implementation status, user and developer
+  guides, tool-calling architecture, repository layout, formal-verification
+  status, feature parity, and `src/tools/README.md`.
+- Packaging: `make install` installs both binaries; `make release-monty` stages
+  them together and `make test-monty-release` runs the process tests against
+  those staged binaries; `make audit` covers the helper lock file; both
+  container images build the helper with the pinned nightly.
+
+Limitations recorded rather than closed:
+
+- cargo-dist builds root-package archives only, so a GitHub release archive
+  carries `axinite` without `axinite-monty-helper`. Until 2.2.2 or a packaging
+  change addresses it, a released binary needs `AXINITE_MONTY_HELPER` set or a
+  helper installed beside it (`make install`). ADR 0016 lists this under known
+  risks.
+- The container stages were written and reviewed but not built during this
+  delivery: no local or CI automation builds either Dockerfile, so the
+  `podman build`/`docker build` check remains unverified.
+- The helper's allocator budget counts allocations but does not yet enforce a
+  hard ceiling; the deadline, the address-space ceiling and the recursion floor
+  are the enforced bounds.
+
+Lessons: the entrypoint reservation must reuse the one tool-name list, or an
+entrypoint can shadow a tool; a deadline that releases its permit before
+kill/reap admits a replacement process while the old one still runs; and Verus's
+`by (bit_vector)` needs bitwise hypotheses and a single-line implication
+rather than `open spec_fn` unfolding.
+
+At each plateau record the observable result, remaining limitations, gate
+transcripts, deviations, and lessons here. At completion reconcile any
+discoveries against RFC 0005 and roadmap 2.2.1 before marking this plan
+complete.
 
 ## Context and orientation
 

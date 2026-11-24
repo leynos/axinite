@@ -5066,6 +5066,83 @@ and builds under `target/unsafe-boundary-contract/`. `make miri` needs the
 syscall Miri cannot model carries `#[cfg_attr(miri, ignore = "reason")]`, and
 the reason appears in the Miri table of the verification document.
 
+## 42. Monty helper: packaging, protocol, and proofs
+
+`exec_code` runs Monty out of process. Three crates implement it, and only one
+of them is allowed to link the interpreter:
+
+| Path                        | Workspace | Role                                                                   |
+| --------------------------- | --------- | ---------------------------------------------------------------------- |
+| `crates/monty-protocol`     | member    | Framed JSON messages, bounded values, schema validation, denial codes. |
+| `crates/monty-capabilities` | member    | Verified capability-projection kernel and its drift test.              |
+| `crates/monty-helper`       | excluded  | The `axinite-monty-helper` executable that links Monty 1.6.0.          |
+
+*Table: Monty crates and their workspace roles.*
+
+`crates/monty-helper` carries an empty `[workspace]` table and
+`rust-version = "1.98"`, because Monty does not build on the workspace MSRV of
+1.95. It is therefore built and tested from its own directory, and
+`cargo check --workspace` does not cover it. Its `.cargo/config.toml` pins
+`-Zmin-recursion-limit=1024`; the repository-standard `-Zthreads=8` lowers
+rustc's query-depth limit below what Monty's generated `strum` code needs. Do
+not copy that setting into the parent workspace.
+
+The parent never links `monty`. `src/tools/monty/` contains the parent side:
+
+- `capabilities` resolves a request into an immutable, name-sorted table and
+  pins each tool's `Arc` identity.
+- `broker` answers guest callbacks: membership, identity, approval, hooks,
+  schema, dispatch, sanitization, and size limits.
+- `runner` supervises one helper process: admission, framing, deadline,
+  termination, and reaping.
+- `exec_code` is the public native tool.
+
+The supervisor resolves the executable from `AXINITE_MONTY_HELPER`, then from
+the parent executable's directory. `make install` installs both binaries into
+`CARGO_HOME/bin`; the Docker images copy both into `/usr/local/bin`.
+
+### Wire protocol
+
+A frame is a four-byte unsigned big-endian length followed by exactly that many
+bytes of UTF-8 JSON. The 256 KiB ceiling is checked before the payload buffer
+is allocated, and zero-length, oversized, truncated, and trailing data are
+rejected. JSON values are depth- and size-bounded. `PROTOCOL_VERSION` is
+exchanged in `hello` and every `start_run`; a mismatch closes the channel.
+
+Messages are `hello`, `start_run`, `host_call`, `resume_run`, `cancel_run`,
+`guest_output`, and `terminal`. `terminal` carries a tagged outcome:
+`completed`, `script_error`, `tool_error`, `runtime_crash`, `timeout`, or
+`cancelled`. The parent rejects a callback for a foreign run, a replayed call
+id, and a terminal for another run; the helper rejects a reply that does not
+answer its own outstanding call.
+
+### Focused commands
+
+| Target                   | Effect                                                            |
+| ------------------------ | ----------------------------------------------------------------- |
+| `make test-monty-helper` | Unit and framed end-to-end tests inside the helper package.       |
+| `make test-monty-bdd`    | `rstest-bdd` scenarios for `exec_code` parsing and caller gating. |
+| `make test-monty-e2e`    | Real-process tests for execution, limits, and protocol integrity. |
+
+*Table: focused Monty Make targets.*
+
+`make test-monty-e2e` builds the helper first and passes its absolute path
+through `AXINITE_MONTY_HELPER`; the tests never rely on ambient `PATH`.
+`tests/support/monty.rs` holds the shared harness, including the stub tools and
+the fake-helper frame writer used by the protocol tests.
+
+### Proofs
+
+`crates/monty-capabilities/src/lib.rs` marks three shipped bodies with
+`KERNEL-BODY` comments. `verus/monty_capabilities.rs` repeats those bodies
+verbatim and proves them against specifications;
+`crates/monty-capabilities/tests/drift.rs` requires the marked bodies to match
+byte for byte, after removing proof-only annotations. Run `make install-verus`,
+`make install-z3`, and then `make verus`; `VERUS_PROOF_FILES` includes both the
+tooling smoke file and the Monty kernel. A Verus `by (bit_vector)` step does
+not unfold `open spec fn` hypotheses, so a bit-vector proof states its
+hypothesis bitwise and asserts a single-line implication.
+
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
 [actions/runner-images#13518]: https://github.com/actions/runner-images/issues/13518
 [actions/runner-images#13045]: https://github.com/actions/runner-images/issues/13045

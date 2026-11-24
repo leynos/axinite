@@ -89,8 +89,16 @@ KANI_INSTALLATION ?=
 KANI_PROOF_DIR ?= $(CURDIR)/tests/verification/kani-smoke
 VERUS_VERSION_FILE ?= tools/verus/VERSION
 VERUS_CHECKSUM_FILE ?= tools/verus/SHA256SUMS
-VERUS_PROOF_FILE ?= verus/tooling_smoke/main.rs
-VERUS_FLAGS ?=
+# One entry point proves the shared tooling contracts; the other proves the
+# capability projection production ships. Set VERUS_PROOF_FILE to a single
+# path, or VERUS_FLAGS to a full selection, to override the list.
+VERUS_PROOF_FILE ?=
+VERUS_PROOF_FILES ?= verus/tooling_smoke/main.rs verus/monty_capabilities.rs
+# `VERUS_FLAGS` is a shell-quoted list: the prover CLI splits it as one would a
+# command line. A configured path is one argument whatever spaces it holds, so
+# it is quoted as a whole rather than expanded as a Make word list. Iterating
+# the default list is safe because those paths contain no spaces.
+VERUS_FLAGS ?= $(if $(strip $(VERUS_PROOF_FILE)),--proof-file $(call shell_quote,$(VERUS_PROOF_FILE)),$(foreach proof,$(VERUS_PROOF_FILES),--proof-file $(call shell_quote,$(proof))))
 Z3_INSTALL_DIR ?= $(CURDIR)/.cache/z3/4.16.0
 export PROVER_TOOLS KANI_VERSION_FILE KANI_HOME KANI_BIN_DIR KANI_CACHE_DIR KANI_INSTALLATION KANI_PROOF_DIR
 export VERUS_VERSION_FILE VERUS_CHECKSUM_FILE VERUS_PROOF_FILE VERUS_FLAGS Z3_INSTALL_DIR
@@ -99,6 +107,22 @@ WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wa
 LIBSQL_TRANSPORT_TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 KANI_SMOKE_MANIFEST := tests/verification/kani-smoke/Cargo.toml
+# The Monty helper is an out-of-workspace package: Monty 1.6.0 needs Rust 1.98
+# while the workspace MSRV lane checks 1.95. Cargo discovers
+# `crates/monty-helper/.cargo/config.toml` from the working directory, not from
+# `--manifest-path`. Running from the package directory is therefore required,
+# not stylistic: `nextest` does not forward a global `--config` to the Cargo it
+# runs, so a `--config` form would compile Monty without its recursion floor.
+# `tests/workflow_contracts/build_standard_make_test.py` parses this form.
+MONTY_HELPER_DIR := crates/monty-helper
+MONTY_HELPER_MANIFEST := $(MONTY_HELPER_DIR)/Cargo.toml
+MONTY_HELPER_CARGO := cd $(MONTY_HELPER_DIR) && $(CARGO_COMMAND)
+# The recursion floor is a property of compiling Monty, not of the profile, so
+# a release-profile helper build still needs it. Assigning `RUSTFLAGS` is how a
+# release build excludes the development standard (see the comment above), and
+# the assignment carries the floor for this package alone.
+MONTY_HELPER_RELEASE_RUSTFLAGS = RUSTFLAGS="-Zmin-recursion-limit=1024 $${RUSTFLAGS-}"
+
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralized and remove each one as soon as the triggering
 # transitive dependency is upgraded.
@@ -144,7 +168,7 @@ LIBSQL_AUDIT_FLAGS := \
 PDF_EXTRACT_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0192
 
-.PHONY: all build install-build-tools check-build-tools install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-full frontend-stub
+.PHONY: all build install-build-tools check-build-tools install install-monty-helper install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts test-monty-helper test-monty-e2e test-monty-bdd test-monty-release release-monty clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-full frontend-stub
 
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
@@ -223,7 +247,13 @@ frontend-full: frontend-install
 frontend-stub: frontend-install
 	cd $(FRONTEND_DIR) && $(BUN) run dev
 
-install:
+# `exec_code` resolves the helper beside the parent executable, so an install
+# that omitted it would leave the tool unavailable. `MONTY_HELPER_CARGO`
+# names the helper's `.cargo/config.toml`, so the recursion floor applies.
+install-monty-helper:
+	$(MONTY_HELPER_RELEASE_RUSTFLAGS) $(MONTY_HELPER_CARGO) install --path . --locked
+
+install: install-monty-helper
 	./scripts/build-wasm-extensions.sh
 	$(RELEASE_RUSTFLAGS) $(CARGO_COMMAND) install --path .
 
@@ -240,6 +270,7 @@ fmt:
 	$(CARGO_COMMAND) fmt --all
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
 	$(CARGO_COMMAND) fmt --manifest-path $(KANI_SMOKE_MANIFEST) --all
+	$(CARGO_COMMAND) fmt --manifest-path $(MONTY_HELPER_MANIFEST) --all
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 	$(MDLINT) --fix "**/*.md"
 
@@ -247,6 +278,7 @@ check-fmt:
 	$(CARGO_COMMAND) fmt --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(KANI_SMOKE_MANIFEST) --all -- --check
+	$(CARGO_COMMAND) fmt --manifest-path $(MONTY_HELPER_MANIFEST) --all -- --check
 	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 typecheck: check-build-tools
@@ -310,6 +342,8 @@ lint-clippy: check-build-tools
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+	# Name the package config so Cargo reads its recursion floor.
+	$(MONTY_HELPER_CARGO) clippy --all-targets -- -D warnings
 
 # Cover the TLS member's additional feature configuration with strict lints.
 lint-libsql-transport: check-build-tools
@@ -350,6 +384,15 @@ rust-audit:
 				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS)); \
 			fi; \
 		done' sh $(call shell_quote,$(value CARGO_AUDIT_COMMAND)) {} +
+	# The Monty helper is out of workspace and owns its lockfile, so the
+	# recursive scan above prunes it with the other `crates/` entries. It is
+	# audited here, when it is present, under its own lockfile's ignores.
+	@if [ -f $(MONTY_HELPER_MANIFEST) ]; then \
+		cd $(MONTY_HELPER_DIR) && \
+		printf 'Auditing Rust manifest %s\n' '$(MONTY_HELPER_MANIFEST)' && \
+		python3 ../../scripts/verify_audit_ignore_paths.py Cargo.lock && \
+		$(CARGO_AUDIT_COMMAND) $(AUDIT_FLAGS); \
+	fi
 
 # The whole suite, for a developer. CI runs the workspace, GitHub tool, and
 # libSQL TLS suites on separate lanes.
@@ -389,6 +432,47 @@ test-matrix-cargo: check-build-tools
 test-workflow-contracts:
 	$(CV005_CONTRACTS) check --repository .
 	uv run --python '>=3.12' --with 'pytest>=8' --with 'pyyaml>=6' --with 'hypothesis>=6' pytest tests/workflow_contracts -q
+
+test-monty-helper: check-build-tools
+	$(MONTY_HELPER_CARGO) nextest run -p axinite-monty-helper --profile $(NEXTEST_PROFILE)
+
+# The executable `exec_code` launches, built from the helper package.
+MONTY_HELPER_BIN := $(abspath $(CURDIR)/$(MONTY_HELPER_DIR)/target/debug/axinite-monty-helper)
+
+# Real-process tests for `exec_code`. The tests take the helper's absolute path
+# from `AXINITE_MONTY_HELPER`; nothing is discovered from PATH or from the test
+# runner's own directory. Building the helper first keeps them hermetic.
+test-monty-e2e: check-build-tools
+	$(MONTY_HELPER_CARGO) build -p axinite-monty-helper
+	AXINITE_MONTY_HELPER=$(MONTY_HELPER_BIN) $(NEXTEST) run -p axinite \
+		-E 'binary(monty_helper_e2e) | binary(monty_helper_limits) | binary(monty_supervisor_protocol)' \
+		$(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
+
+# Release acceptance stages the parent and helper together in a directory that
+# is not the development build tree, then runs the real-process suite against
+# that installed helper. The parent resolves the helper beside itself, so the
+# staged layout is the deployment contract.
+MONTY_RELEASE_BIN := $(abspath $(CURDIR)/target/monty-release/bin)
+
+release-monty: check-build-tools
+	$(CARGO_COMMAND) build --release --bin axinite
+	$(MONTY_HELPER_RELEASE_RUSTFLAGS) $(MONTY_HELPER_CARGO) build --release -p axinite-monty-helper
+	rm -rf $(MONTY_RELEASE_BIN)
+	mkdir -p $(MONTY_RELEASE_BIN)
+	cp $(CURDIR)/target/release/axinite $(MONTY_RELEASE_BIN)/
+	cp $(CURDIR)/$(MONTY_HELPER_DIR)/target/release/axinite-monty-helper $(MONTY_RELEASE_BIN)/
+
+test-monty-release: release-monty
+	test -x $(MONTY_RELEASE_BIN)/axinite
+	test -x $(MONTY_RELEASE_BIN)/axinite-monty-helper
+	AXINITE_MONTY_HELPER=$(MONTY_RELEASE_BIN)/axinite-monty-helper $(NEXTEST) run -p axinite \
+		-E 'binary(monty_helper_e2e) | binary(monty_helper_limits) | binary(monty_supervisor_protocol)' \
+		$(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
+
+# The behaviour tests use the same feature set as the workspace suite so they
+# reuse its build graph instead of compiling a second one.
+test-monty-bdd: check-build-tools
+	$(NEXTEST) run -p axinite --test monty_exec_code_bdd $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
 
 # Unsafe-boundary verification (docs/adrs/adr-0015-audited-unsafe-boundaries.md).
 #

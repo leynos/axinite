@@ -177,6 +177,57 @@ If a hosted-visible remote tool is selected, the worker sends one generic
 execution request to the orchestrator rather than using tool-family-specific
 proxy routes.
 
+## Python code execution (`exec_code`)
+
+The chat agent can run a short Python program with Monty through the
+`exec_code` tool. The program is scratch work: it is not saved, it has no
+filesystem or network access of its own, and it can reach the host only through
+the tools the caller explicitly allows.
+
+```json
+{
+  "code": "found = await search(query=params[\"topic\"])\nreturn {\"result\": found, \"state\": state}",
+  "allowed_tools": ["search"],
+  "params": {"topic": "release notes"},
+  "state": {}
+}
+```
+
+- `allowed_tools` is required. An empty list means the program cannot call any
+  tool, and a name that the caller's authority does not already cover is
+  refused.
+- `params`, `state`, and `entrypoint` are optional. Omitted inputs become empty
+  objects, and the default entrypoint is `main`.
+- `limits` accepts `deadline_ms` (default 120000), `max_memory_bytes` (default
+  67108864), and `max_recursion_depth` (default 256). A value must lie in
+  `1..=ceiling` — 300000 ms, 67108864 bytes and 256 respectively — so a caller
+  may lower a limit but cannot raise it above its default; anything else is
+  rejected.
+- The code is the body of an async entrypoint that receives `params` and
+  `state`. Each allowed tool is an async function called with keyword
+  arguments, for example `await search(query="...")`; positional arguments are
+  refused.
+- The program must return an object containing an object `state`. The tool
+  returns `{"result": ..., "state": {...}}`.
+
+Monty runs in a separate helper executable. `make install` installs `axinite`
+and `axinite-monty-helper` into the same directory, and the agent looks for the
+helper beside its own executable. To use a different helper, set
+`AXINITE_MONTY_HELPER` to its path. If the helper is missing, `exec_code` fails
+with an execution error rather than falling back to in-process execution.
+
+Nested tool calls pass through the same approval and policy path as ordinary
+tool calls, with two differences. Interactive approval cannot be answered from
+inside a running program, so a tool that would prompt is denied before it runs;
+and `exec_code` cannot be called recursively. Denials are reported to the
+caller as typed failures (`not_allowed`, `approval_required`, `policy_denied`,
+`tool_failed`, `contract_error`, `recursion_denied`, or `broker_unavailable`)
+and are not raised as catchable Python exceptions.
+
+Only the chat caller issues the authority a run needs in this release. Jobs
+started by the scheduler, a container, or a worker cannot use `exec_code`; they
+receive `broker_unavailable` until a policy adapter for those paths is designed.
+
 ## Configuration reload
 
 On Unix, Axinite reloads configuration without a restart when it receives

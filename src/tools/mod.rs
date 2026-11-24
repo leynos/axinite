@@ -11,6 +11,7 @@ pub mod builder;
 pub mod builtin;
 pub mod execute;
 pub mod mcp;
+pub mod monty;
 pub mod rate_limiter;
 pub mod schema_validator;
 pub mod wasm;

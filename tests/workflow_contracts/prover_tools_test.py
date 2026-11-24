@@ -338,9 +338,15 @@ def _verus_inputs(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
 def test_verus_uses_one_configured_proof_file_and_absolute_z3_path(
     make_context: _MakeTestContext,
 ) -> None:
-    """Use exactly the configured entry point and an absolute cached solver."""
+    """Use exactly the configured entry point and an absolute cached solver.
+
+    ``VERUS_PROOF_FILE`` names one path whatever spaces it holds, so it must
+    reach Verus as one argument and must displace the default selection
+    (`VERUS_PROOF_FILES`) rather than join it.
+    """
     harness = _prover_harness(make_context)
     inputs, proof_file, z3_install_dir = _verus_inputs(make_context.tmp_path)
+    inputs["VERUS_FLAGS"] = ""
 
     result = harness.run("verus", CARGO_INCREMENTAL="1", **inputs)
 

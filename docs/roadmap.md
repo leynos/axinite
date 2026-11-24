@@ -296,7 +296,7 @@ Dependencies: benefits from 1.3 if saved scripts are later packaged with richer
 reference material, and provides an automation surface that routines can build
 on after 2.3 and 3.2 settle.
 
-- [ ] 2.2.1. Add a helper subprocess wrapper for Monty and expose `exec_code`.
+- [x] 2.2.1. Add a helper subprocess wrapper for Monty and expose `exec_code`.
   - [RFC 0005 §Summary](./rfcs/rfc-0005-monty-code-execution-environment.md#summary)
     and
     [RFC 0005 §Rollout Plan](./rfcs/rfc-0005-monty-code-execution-environment.md#rollout-plan).

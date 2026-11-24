@@ -110,6 +110,13 @@ pub struct JobContext {
     /// previous results by ID via `$tool_call_id` parameter syntax.
     #[serde(skip)]
     pub tool_output_stash: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
+    /// Caller-issued authority for `exec_code`, when the invocation has one.
+    ///
+    /// Ordinary tools ignore it. `exec_code` requires it and refuses to run
+    /// without it, so a context that never received one fails closed. It is
+    /// never serialized and cannot be constructed by guest code.
+    #[serde(skip)]
+    pub broker: Option<Arc<crate::tools::monty::broker::BrokerContext>>,
     /// User's preferred timezone (IANA name, e.g. "America/New_York"). Defaults to "UTC".
     pub user_timezone: String,
 }
@@ -151,6 +158,7 @@ impl JobContext {
             http_interceptor: None,
             metadata: serde_json::Value::Null,
             tool_output_stash: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            broker: None,
             user_timezone: "UTC".to_string(),
         }
     }

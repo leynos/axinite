@@ -196,12 +196,32 @@ def parse_invocations(lines: Iterable[str]) -> tuple[list[Invocation], list[str]
     return found, unparsed
 
 
+def _split_command_prefixes(words: list[str]) -> tuple[str | None, list[str]]:
+    """Split a recipe's ``cd`` prefix from the command it runs.
+
+    An out-of-workspace package must be built from its own directory: Cargo
+    discovers `.cargo/config.toml` from the working directory, and `nextest`
+    does not forward a global `--config` to the Cargo it runs. Those recipes
+    emit ``cd <dir> && cargo ...``, and the directory is returned so the
+    invocation still says which package it builds.
+    """
+    directory: str | None = None
+    rest = list(words)
+    while len(rest) > 2 and rest[0] == "cd" and rest[2] == "&&":
+        directory = rest[1]
+        rest = rest[3:]
+    return directory, rest
+
+
 def _command_of(
     words: list[str], assignments: dict[str, str], index: int
 ) -> Invocation | None:
     """Return the invocation a command's words describe, or ``None``."""
+    directory, words = _split_command_prefixes(words)
     if not words:
         return None
+    if directory is not None:
+        assignments = {**assignments, "DIRECTORY": directory}
     if words[0] == "probe-whitaker":
         return Invocation("whitaker", "dylint", assignments, tuple(words[1:]), index)
     if words[0] != "probe-cargo":

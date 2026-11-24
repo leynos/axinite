@@ -3,10 +3,35 @@
 ## Preamble
 
 - RFC number: 0005
-- Status: Proposed
+- Status: Proposed; the ephemeral `exec_code` slice is implemented (2026-11-18)
 - Date: 2026-03-11
 - Target: Axinite tool system and worker runtime
 - Authors: Codex draft for review
+
+## Implementation status (2026-11-18)
+
+Roadmap item 2.2.1 delivered the ephemeral codemode runner described here.
+[ADR 0016](../adrs/adr-0016-monty-execution.md) records the accepted design and
+its limitations. The implemented slice differs from this document's first
+sketch in these ways:
+
+- The wire messages are `hello`, `start_run`, `host_call`, `resume_run`,
+  `cancel_run`, `guest_output`, and `terminal`. `compile`, `dump_snapshot`, and
+  `load_snapshot` are not implemented; each helper serves exactly one run and
+  no snapshot is persisted.
+- Frames are a four-byte big-endian length followed by UTF-8 JSON, capped at
+  256 KiB and checked before allocation. `PROTOCOL_VERSION` is exchanged in
+  `hello` and every `start_run`; a mismatch closes the channel.
+- Terminal outcomes are `completed`, `script_error`, `tool_error`,
+  `runtime_crash`, `timeout`, and `cancelled`, each carrying a tagged status
+  rather than relying on the exit signal to classify the failure.
+- The selected-tool projection is the verified kernel from
+  `crates/monty-capabilities`, and the parent re-checks table membership,
+  pinned tool identity, approval, hooks, and schema at every callback.
+- Interactive approval cannot be satisfied from inside a run, so a callback
+  that would need it is denied before dispatch.
+- Saved scripts (`save_script` and `run_script`), durable state, run history,
+  and workflow integration remain future roadmap items (2.2.2–2.2.5).
 
 ## Summary
 
@@ -286,6 +311,14 @@ Behaviour:
   access must pass an empty list so scratch execution also stays fail-closed.
 - Uses the same tool broker and ABI as `run_script`.
 - Returns structured output plus the updated `state`.
+
+As implemented in 2.2.1, `limits` accepts `deadline_ms`, `max_memory_bytes`, and
+`max_recursion_depth`; omitted fields take safe defaults, and every value is
+clamped to a hard ceiling. The tool requires a caller-issued broker and fails
+closed with `broker_unavailable` on callers that do not supply one. It returns
+`{"result": ..., "state": {...}}`, requires the guest to return an object
+containing an object `state`, and reports denials as typed `tool_error`
+outcomes rather than guest exceptions.
 
 This is intentionally scratch-oriented. It should not become the default place
 to hide durable automation logic.

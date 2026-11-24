@@ -3,6 +3,8 @@
 //! Runs the preflight-approved tool calls, batches them where safe, and
 //! captures raw results for the later postflight phase to interpret.
 
+use std::sync::Arc;
+
 use tokio::task::JoinSet;
 
 use crate::agent::dispatcher::delegate::ChatDelegate;
@@ -11,6 +13,7 @@ use crate::context::JobContext;
 use crate::error::Error;
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
+use crate::tools::monty::broker::{BrokerContext, CallerPolicy};
 
 use super::postflight::check_auth_required;
 
@@ -24,12 +27,10 @@ pub(super) async fn run_phase2(
         (0..preflight_len).map(|_| None).collect();
     let mut start = 0;
     while start < runnable.len() {
-        if is_auth_barrier_tool(&runnable[start].1.name) {
+        if runs_alone(&runnable[start].1.name) {
             let batch = &runnable[start..=start];
             run_tool_batch_inline(delegate, batch, &mut exec_results).await;
-            if let Some(result) = &exec_results[runnable[start].0]
-                && check_auth_required(&runnable[start].1.name, result).is_some()
-            {
+            if stops_before_later_calls(&runnable[start], &exec_results) {
                 break;
             }
             start += 1;
@@ -37,7 +38,7 @@ pub(super) async fn run_phase2(
         }
 
         let mut end = start;
-        while end < runnable.len() && !is_auth_barrier_tool(&runnable[end].1.name) {
+        while end < runnable.len() && !runs_alone(&runnable[end].1.name) {
             end += 1;
         }
 
@@ -52,8 +53,82 @@ pub(super) async fn run_phase2(
     exec_results
 }
 
+/// Whether an authentication barrier call ended the turn.
+///
+/// A `tool_auth` or `tool_activate` call that now requires authorization
+/// stops the batch: later calls were planned against credentials the user has
+/// not supplied yet.
+fn stops_before_later_calls(
+    call: &(usize, crate::llm::ToolCall),
+    exec_results: &[Option<Result<String, Error>>],
+) -> bool {
+    let Some(result) = &exec_results[call.0] else {
+        return false;
+    };
+    is_auth_barrier_tool(&call.1.name) && check_auth_required(&call.1.name, result).is_some()
+}
+
 pub(super) fn is_auth_barrier_tool(tool_name: &str) -> bool {
     matches!(tool_name, "tool_auth" | "tool_activate")
+}
+
+/// Whether a call must run on its own rather than in a parallel batch.
+///
+/// `exec_code` builds a caller-issued broker for this specific invocation and
+/// starts a child process; running it beside unrelated calls would give the
+/// guest authority before the caller's decision is complete.
+pub(super) fn runs_alone(tool_name: &str) -> bool {
+    is_auth_barrier_tool(tool_name) || tool_name == "exec_code"
+}
+
+/// Builds the job context for one call, issuing `exec_code` authority when
+/// this is the chat caller.
+///
+/// The broker is built from the call's own `allowed_tools` argument and the
+/// session's current auto-approval snapshot. An unknown or unsupported name
+/// fails here, before the helper starts.
+pub(super) async fn prepare_job_context(
+    delegate: &ChatDelegate<'_>,
+    tc: &crate::llm::ToolCall,
+) -> Result<JobContext, Error> {
+    let mut job_ctx = delegate.job_ctx.clone();
+    if tc.name != "exec_code" {
+        return Ok(job_ctx);
+    }
+    let names: Vec<String> = tc
+        .arguments
+        .get("allowed_tools")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let policy = {
+        let session = delegate.session.lock().await;
+        CallerPolicy {
+            user_id: delegate.message.user_id.clone(),
+            hook_context: "chat".to_string(),
+            auto_approved: session.auto_approved_tools.clone(),
+        }
+    };
+    let broker = BrokerContext::new(
+        delegate.agent.tools().clone(),
+        delegate.agent.safety().clone(),
+        Some(Arc::clone(delegate.agent.hooks())),
+        &names,
+        policy,
+    )
+    .await
+    .map_err(|error| crate::error::ToolError::InvalidParameters {
+        name: "exec_code".to_string(),
+        reason: error.to_string(),
+    })?;
+    job_ctx.broker = Some(Arc::new(broker));
+    Ok(job_ctx)
 }
 
 /// Run a batch of tools inline (sequential execution for small batches).
@@ -163,9 +238,10 @@ pub(super) async fn execute_one_tool(
     tc: &crate::llm::ToolCall,
 ) -> Result<String, Error> {
     send_tool_started(delegate, &tc.name).await;
+    let job_ctx = prepare_job_context(delegate, tc).await?;
     let result = delegate
         .agent
-        .execute_chat_tool(&tc.name, &tc.arguments, &delegate.job_ctx)
+        .execute_chat_tool(&tc.name, &tc.arguments, &job_ctx)
         .await;
     send_tool_completed(delegate, &tc.name, &result, &tc.arguments).await;
     result
