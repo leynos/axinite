@@ -777,10 +777,18 @@ explicit operations; never imply that an error proves no commit occurred.
   30 frontend files unformatted; `bunx biome format --write` repaired them
   mechanically. `uvx semgrep` needs `UV_PYTHON=3.12` on this host because the
   default freethreaded 3.15 cannot build `ruamel-yaml-clib`; that is an
-  environment constraint, not a code failure. Remaining before the M3 commit:
-  `make check-fmt`, `make lint`, `make typecheck`, `make test`,
-  `make markdownlint`, and
-  `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`.
+  environment constraint, not a code failure.
+- [x] 2026-11-24: M3 committed as `9abba98b`, with the mechanical Biome
+  reformat split into `56e9ad5f` so the feature diff stays reviewable. Gates at
+  the committed tree: `make check-fmt`, `make lint` (four Clippy lanes, both
+  Whitaker lanes, Interrogate), `make typecheck`, `make markdownlint`,
+  `make test` (4650 passed, 12 skipped), the endpoint proof (28 verified, 0
+  errors), `make frontend-check`, `make frontend-test` (620 tests),
+  `make frontend-build`, and `make frontend-verify`. Whitaker's 400-line policy
+  forced two extractions: the setup DTOs moved to
+  `src/channels/web/types/setup.rs` and media/credential phase helpers to
+  `src/app/phase_support.rs`. `clippy::result_large_err` required returning the
+  rejection category instead of a whole response from `build_operations`.
 - [ ] M4 E2E and recovery evidence.
 - [ ] M5 documentation, final evidence, and roadmap completion.
 
