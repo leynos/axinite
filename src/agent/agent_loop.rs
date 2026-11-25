@@ -16,7 +16,7 @@ use futures::StreamExt;
 use crate::agent::context_monitor::ContextMonitor;
 use crate::agent::session_manager::SessionManager;
 use crate::agent::{Router, Scheduler};
-use crate::channels::{ChannelManager, OutgoingResponse};
+use crate::channels::{ChannelManager, IncomingMessage, OutgoingResponse};
 use crate::config::{AgentConfig, HeartbeatConfig, RoutineConfig, SkillsConfig};
 use crate::context::ContextManager;
 use crate::db::Database;
@@ -93,6 +93,39 @@ pub struct Agent {
     /// Optional slot to expose the routine engine to the gateway for manual triggering.
     pub(super) routine_engine_slot:
         Option<Arc<tokio::sync::RwLock<Option<Arc<crate::agent::routine_engine::RoutineEngine>>>>>,
+}
+
+/// Wait for the next incoming message, or `None` on Ctrl+C or when every channel stream ends.
+async fn next_message(
+    message_stream: &mut crate::channels::MessageStream,
+) -> Option<IncomingMessage> {
+    tokio::select! {
+        biased;
+        _ = tokio::signal::ctrl_c() => {
+            tracing::debug!("Ctrl+C received, shutting down...");
+            None
+        }
+        msg = message_stream.next() => {
+            if msg.is_none() {
+                tracing::debug!("All channel streams ended, shutting down...");
+            }
+            msg
+        }
+    }
+}
+
+/// Fire routines whose event triggers match the message (cheap in-memory regex, async if matched).
+async fn fire_event_triggers(
+    engine: Option<&crate::agent::routine_engine::RoutineEngine>,
+    message: &IncomingMessage,
+) {
+    let Some(engine) = engine else {
+        return;
+    };
+    let fired = engine.check_event_triggers(message).await;
+    if fired > 0 {
+        tracing::debug!("Fired {} event-triggered routines", fired);
+    }
 }
 
 impl Agent {
@@ -172,102 +205,121 @@ impl Agent {
         // Main message loop
         tracing::debug!("Agent {} ready and listening", self.config.name);
 
-        loop {
-            let message = tokio::select! {
-                biased;
-                _ = tokio::signal::ctrl_c() => {
-                    tracing::debug!("Ctrl+C received, shutting down...");
-                    break;
-                }
-                msg = message_stream.next() => {
-                    match msg {
-                        Some(m) => m,
-                        None => {
-                            tracing::debug!("All channel streams ended, shutting down...");
-                            break;
-                        }
-                    }
-                }
-            };
+        while let Some(mut message) = next_message(&mut message_stream).await {
+            self.preprocess_message(&mut message).await;
 
-            // Apply transcription middleware to audio attachments
-            let mut message = message;
-            if let Some(ref transcription) = self.deps.transcription {
-                transcription.process(&mut message).await;
-            }
-
-            // Apply document extraction middleware to document attachments
-            if let Some(ref doc_extraction) = self.deps.document_extraction {
-                doc_extraction.process(&mut message).await;
-            }
-
-            // Store successfully extracted document text in workspace for indexing
-            if let Some(workspace) = self.workspace() {
-                super::thread_ops::store_extracted_documents(workspace, &message).await;
-            }
-
-            match self.handle_message(&message).await {
-                Ok(Some(response)) if !response.is_empty() => {
-                    if let Some(response) = apply_before_outbound_hooks(
-                        self.hooks(),
-                        notifications::OutboundRoute {
-                            user_id: &message.user_id,
-                            channel: &message.channel,
-                            thread_id: message.thread_id.as_deref(),
-                        },
-                        OutgoingResponse::text(response),
-                    )
-                    .await
-                        && let Err(e) = self.channels.respond(&message, response).await
-                    {
-                        tracing::error!(
-                            channel = %message.channel,
-                            error = %e,
-                            "Failed to send response to channel"
-                        );
-                    }
-                }
-                Ok(Some(empty)) => {
-                    // Empty response, nothing to send (e.g. approval handled via send_status)
-                    tracing::debug!(
-                        channel = %message.channel,
-                        user = %message.user_id,
-                        empty_len = empty.len(),
-                        "Suppressed empty response (not sent to channel)"
-                    );
-                }
-                Ok(None) => {
-                    // Shutdown signal received (/quit, /exit, /shutdown)
-                    tracing::debug!("Shutdown command received, exiting...");
-                    break;
-                }
-                Err(e) => {
-                    tracing::error!("Error handling message: {}", e);
-                    if let Err(send_err) = self
-                        .channels
-                        .respond(&message, OutgoingResponse::text(format!("Error: {}", e)))
-                        .await
-                    {
-                        tracing::error!(
-                            channel = %message.channel,
-                            error = %send_err,
-                            "Failed to send error response to channel"
-                        );
-                    }
-                }
+            if self.respond_to_message(&message).await.is_break() {
+                break;
             }
 
             // Check event triggers (cheap in-memory regex, fires async if matched)
-            if let Some(ref engine) = routine_engine_for_loop {
-                let fired = engine.check_event_triggers(&message).await;
-                if fired > 0 {
-                    tracing::debug!("Fired {} event-triggered routines", fired);
-                }
-            }
+            fire_event_triggers(routine_engine_for_loop.as_deref(), &message).await;
         }
 
         // Cleanup
         tracing::debug!("Agent shutting down...");
+        self.stop_background_tasks(self_repair, pruning_handle, heartbeat_handle, routine)
+            .await;
+        if let Some(ref slot) = self.routine_engine_slot {
+            *slot.write().await = None;
+        }
+        self.scheduler.stop_all().await;
+        self.channels.shutdown_all().await?;
+
+        Ok(())
+    }
+
+    /// Apply the attachment middleware (transcription, document extraction) and index extracted text.
+    async fn preprocess_message(&self, message: &mut IncomingMessage) {
+        // Apply transcription middleware to audio attachments
+        if let Some(ref transcription) = self.deps.transcription {
+            transcription.process(message).await;
+        }
+
+        // Apply document extraction middleware to document attachments
+        if let Some(ref doc_extraction) = self.deps.document_extraction {
+            doc_extraction.process(message).await;
+        }
+
+        // Store successfully extracted document text in workspace for indexing
+        if let Some(workspace) = self.workspace() {
+            super::thread_ops::store_extracted_documents(workspace, message).await;
+        }
+    }
+
+    /// Handle one message and send the outcome to its channel; `Break` means shut down.
+    async fn respond_to_message(&self, message: &IncomingMessage) -> std::ops::ControlFlow<()> {
+        match self.handle_message(message).await {
+            Ok(Some(response)) if !response.is_empty() => {
+                self.send_response_through_hooks(message, response).await;
+            }
+            Ok(Some(empty)) => {
+                // Empty response, nothing to send (e.g. approval handled via send_status)
+                tracing::debug!(
+                    channel = %message.channel,
+                    user = %message.user_id,
+                    empty_len = empty.len(),
+                    "Suppressed empty response (not sent to channel)"
+                );
+            }
+            Ok(None) => {
+                // Shutdown signal received (/quit, /exit, /shutdown)
+                tracing::debug!("Shutdown command received, exiting...");
+                return std::ops::ControlFlow::Break(());
+            }
+            Err(e) => {
+                tracing::error!("Error handling message: {}", e);
+                self.send_error_response(message, &e).await;
+            }
+        }
+        std::ops::ControlFlow::Continue(())
+    }
+
+    /// Run the outbound hooks over a response and send what they allow to the channel.
+    async fn send_response_through_hooks(&self, message: &IncomingMessage, response: String) {
+        if let Some(response) = apply_before_outbound_hooks(
+            self.hooks(),
+            notifications::OutboundRoute {
+                user_id: &message.user_id,
+                channel: &message.channel,
+                thread_id: message.thread_id.as_deref(),
+            },
+            OutgoingResponse::text(response),
+        )
+        .await
+            && let Err(e) = self.channels.respond(message, response).await
+        {
+            tracing::error!(
+                channel = %message.channel,
+                error = %e,
+                "Failed to send response to channel"
+            );
+        }
+    }
+
+    /// Tell the channel that handling its message failed.
+    async fn send_error_response(&self, message: &IncomingMessage, error: &Error) {
+        if let Err(send_err) = self
+            .channels
+            .respond(message, OutgoingResponse::text(format!("Error: {}", error)))
+            .await
+        {
+            tracing::error!(
+                channel = %message.channel,
+                error = %send_err,
+                "Failed to send error response to channel"
+            );
+        }
+    }
+
+    /// Stop the self-repair, pruning, heartbeat and routine tasks started by `run`.
+    async fn stop_background_tasks(
+        &self,
+        self_repair: background_tasks::SelfRepairRuntime,
+        pruning_handle: tokio::task::JoinHandle<()>,
+        heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
+        routine: Option<background_tasks::RoutineHandles>,
+    ) {
         let _ = self_repair.shutdown_tx.send(());
         if let Err(error) = self_repair.repair_handle.await {
             tracing::debug!("Repair task join finished with error: {}", error);
@@ -283,12 +335,5 @@ impl Agent {
             r.notify_forwarder.abort();
             r.cron_handle.abort();
         }
-        if let Some(ref slot) = self.routine_engine_slot {
-            *slot.write().await = None;
-        }
-        self.scheduler.stop_all().await;
-        self.channels.shutdown_all().await?;
-
-        Ok(())
     }
 }
