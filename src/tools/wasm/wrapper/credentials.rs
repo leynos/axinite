@@ -61,7 +61,7 @@ fn refresh_secret_name(config: &OAuthRefreshConfig) -> String {
 
 /// SSRF defence: `token_url` comes from the tool's capabilities file, so it
 /// must be HTTPS and must not point at a private or internal address.
-fn token_url_is_safe(token_url: &str) -> bool {
+pub(super) fn token_url_is_safe(token_url: &str) -> bool {
     if !token_url.starts_with("https://") {
         tracing::warn!(
             token_url = %token_url,

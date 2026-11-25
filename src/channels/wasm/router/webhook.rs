@@ -135,7 +135,7 @@ pub(super) async fn webhook_handler(
 
 /// Find the secret the caller sent: the `secret` query parameter, else the
 /// channel's configured header, else the generic `X-Webhook-Secret` header.
-fn provided_secret(
+pub(super) fn provided_secret(
     query: &HashMap<String, String>,
     headers: &HeaderMap,
     secret_header_name: &str,

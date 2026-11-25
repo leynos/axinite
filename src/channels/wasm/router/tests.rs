@@ -3,5 +3,7 @@
 mod helpers;
 mod keys;
 mod registry;
+mod webhook_combined;
 mod webhook_ed25519;
 mod webhook_hmac;
+mod webhook_secret;
