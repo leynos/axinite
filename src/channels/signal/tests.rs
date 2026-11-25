@@ -9,6 +9,7 @@ mod envelope_content;
 mod envelope_policy;
 mod rpc_params;
 mod sse;
+mod sse_decoding;
 mod targets;
 mod timestamps;
 mod validation;

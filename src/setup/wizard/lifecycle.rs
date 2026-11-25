@@ -94,107 +94,137 @@ impl SetupWizard {
         print_header("Axinite Setup Wizard");
 
         if self.config.channels_only {
-            // Channels-only mode: reconnect to existing DB and load settings
-            // before running the channel step, so secrets and save work.
-            self.reconnect_existing_db().await?;
-            print_step(1, 1, "Channel Configuration");
-            self.step_channels().await?;
+            self.run_channels_only().await?;
         } else if self.config.provider_only {
-            // Provider-only mode: reconnect to existing DB, then run just
-            // inference provider + model selection steps.
-            self.reconnect_existing_db().await?;
-            print_step(1, 2, "Inference Provider");
-            self.step_inference_provider().await?;
-            self.persist_after_step().await;
-            print_step(2, 2, "Model Selection");
-            self.step_model_selection().await?;
-            self.persist_after_step().await;
+            self.run_provider_only().await?;
         } else if self.config.quick {
-            // Quick mode: auto-default database + security, only ask for
-            // LLM provider + model. Designed for first-run experience.
-            self.auto_setup_database().await?;
-
-            // Load existing settings from DB (if any prior partial run)
-            let step1_settings = self.settings.clone();
-            self.try_load_existing_settings().await;
-            self.settings.merge_from(&step1_settings);
-
-            self.auto_setup_security().await?;
-            self.persist_after_step().await;
-
-            print_step(1, 2, "Inference Provider");
-            self.step_inference_provider().await?;
-            self.persist_after_step().await;
-
-            print_step(2, 2, "Model Selection");
-            self.step_model_selection().await?;
-            self.persist_after_step().await;
+            self.run_quick().await?;
         } else {
-            let total_steps = 9;
-
-            // Step 1: Database
-            print_step(1, total_steps, "Database Connection");
-            self.step_database().await?;
-
-            // After establishing a DB connection, load any previously saved
-            // settings so we recover progress from prior partial runs.
-            // We must load BEFORE persisting, otherwise persist_after_step()
-            // would overwrite prior settings with defaults.
-            // Save Step 1 choices first so they aren't clobbered by stale
-            // DB values (merge_from only applies non-default fields).
-            let step1_settings = self.settings.clone();
-            self.try_load_existing_settings().await;
-            self.settings.merge_from(&step1_settings);
-
-            self.persist_after_step().await;
-
-            // Step 2: Security
-            print_step(2, total_steps, "Security");
-            self.step_security().await?;
-            self.persist_after_step().await;
-
-            // Step 3: Inference provider selection (unless skipped)
-            if !self.config.skip_auth {
-                print_step(3, total_steps, "Inference Provider");
-                self.step_inference_provider().await?;
-            } else {
-                print_info("Skipping inference provider setup (using existing config)");
-            }
-            self.persist_after_step().await;
-
-            // Step 4: Model selection
-            print_step(4, total_steps, "Model Selection");
-            self.step_model_selection().await?;
-            self.persist_after_step().await;
-
-            // Step 5: Embeddings
-            print_step(5, total_steps, "Embeddings (Semantic Search)");
-            self.step_embeddings()?;
-            self.persist_after_step().await;
-
-            // Step 6: Channel configuration
-            print_step(6, total_steps, "Channel Configuration");
-            self.step_channels().await?;
-            self.persist_after_step().await;
-
-            // Step 7: Extensions (tools)
-            print_step(7, total_steps, "Extensions");
-            self.step_extensions().await?;
-
-            // Step 8: Docker Sandbox
-            print_step(8, total_steps, "Docker Sandbox");
-            self.step_docker_sandbox().await?;
-            self.persist_after_step().await;
-
-            // Step 9: Heartbeat
-            print_step(9, total_steps, "Background Tasks");
-            self.step_heartbeat()?;
-            self.persist_after_step().await;
+            self.run_full().await?;
         }
 
         // Save settings and print summary
         self.save_and_summarize().await?;
 
+        Ok(())
+    }
+
+    /// Channels-only mode: reconnect to existing DB and load settings
+    /// before running the channel step, so secrets and save work.
+    async fn run_channels_only(&mut self) -> Result<(), SetupError> {
+        self.reconnect_existing_db().await?;
+        print_step(1, 1, "Channel Configuration");
+        self.step_channels().await?;
+        Ok(())
+    }
+
+    /// Provider-only mode: reconnect to existing DB, then run just
+    /// inference provider + model selection steps.
+    async fn run_provider_only(&mut self) -> Result<(), SetupError> {
+        self.reconnect_existing_db().await?;
+        print_step(1, 2, "Inference Provider");
+        self.step_inference_provider().await?;
+        self.persist_after_step().await;
+        print_step(2, 2, "Model Selection");
+        self.step_model_selection().await?;
+        self.persist_after_step().await;
+        Ok(())
+    }
+
+    /// Quick mode: auto-default database + security, only ask for
+    /// LLM provider + model. Designed for first-run experience.
+    async fn run_quick(&mut self) -> Result<(), SetupError> {
+        self.auto_setup_database().await?;
+
+        // Load existing settings from DB (if any prior partial run)
+        self.load_prior_settings_keeping_current().await;
+
+        self.auto_setup_security().await?;
+        self.persist_after_step().await;
+
+        print_step(1, 2, "Inference Provider");
+        self.step_inference_provider().await?;
+        self.persist_after_step().await;
+
+        print_step(2, 2, "Model Selection");
+        self.step_model_selection().await?;
+        self.persist_after_step().await;
+        Ok(())
+    }
+
+    /// Load previously saved settings, then re-apply the choices made so far.
+    ///
+    /// Saving the current choices first keeps them from being clobbered by stale
+    /// DB values (`merge_from` only applies non-default fields).
+    async fn load_prior_settings_keeping_current(&mut self) {
+        let step1_settings = self.settings.clone();
+        self.try_load_existing_settings().await;
+        self.settings.merge_from(&step1_settings);
+    }
+
+    /// Full interactive mode: all nine steps.
+    async fn run_full(&mut self) -> Result<(), SetupError> {
+        let total_steps = 9;
+
+        // Step 1: Database
+        print_step(1, total_steps, "Database Connection");
+        self.step_database().await?;
+
+        // After establishing a DB connection, load any previously saved
+        // settings so we recover progress from prior partial runs.
+        // We must load BEFORE persisting, otherwise persist_after_step()
+        // would overwrite prior settings with defaults.
+        self.load_prior_settings_keeping_current().await;
+
+        self.persist_after_step().await;
+
+        // Step 2: Security
+        print_step(2, total_steps, "Security");
+        self.step_security().await?;
+        self.persist_after_step().await;
+
+        // Step 3: Inference provider selection (unless skipped)
+        if !self.config.skip_auth {
+            print_step(3, total_steps, "Inference Provider");
+            self.step_inference_provider().await?;
+        } else {
+            print_info("Skipping inference provider setup (using existing config)");
+        }
+        self.persist_after_step().await;
+
+        // Step 4: Model selection
+        print_step(4, total_steps, "Model Selection");
+        self.step_model_selection().await?;
+        self.persist_after_step().await;
+
+        // Step 5: Embeddings
+        print_step(5, total_steps, "Embeddings (Semantic Search)");
+        self.step_embeddings()?;
+        self.persist_after_step().await;
+
+        self.run_full_late_steps(total_steps).await
+    }
+
+    /// Steps 6 to 9 of the full wizard: channels, extensions, sandbox and background tasks.
+    async fn run_full_late_steps(&mut self, total_steps: usize) -> Result<(), SetupError> {
+        // Step 6: Channel configuration
+        print_step(6, total_steps, "Channel Configuration");
+        self.step_channels().await?;
+        self.persist_after_step().await;
+
+        // Step 7: Extensions (tools)
+        print_step(7, total_steps, "Extensions");
+        self.step_extensions().await?;
+
+        // Step 8: Docker Sandbox
+        print_step(8, total_steps, "Docker Sandbox");
+        self.step_docker_sandbox().await?;
+        self.persist_after_step().await;
+
+        // Step 9: Heartbeat
+        print_step(9, total_steps, "Background Tasks");
+        self.step_heartbeat()?;
+        self.persist_after_step().await;
         Ok(())
     }
 }
