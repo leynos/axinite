@@ -619,6 +619,13 @@ jobs:
             }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
+      # The helper is its own workspace, so the workspace lane's nextest never
+      # reaches it; this lane needs the runner the same way that lane does.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91  # v2.87.31
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
       - name: Run Monty Helper Tests
         run: make test-monty-helper NEXTEST_PROFILE=ci
       - name: Run Exec Code Behaviour Tests
