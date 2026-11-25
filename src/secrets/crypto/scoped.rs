@@ -185,7 +185,7 @@ mod tests {
             crypto
                 .decrypt_endpoint_binding(&ciphertext, &key_salt, open_aad)
                 .is_err(),
-            "a tampered or mis-scoped envelope must not open"
+            "a tampered envelope or a mismatched scope must not open"
         );
     }
 
