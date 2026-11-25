@@ -78,28 +78,33 @@ fn check_scheme_and_components(url: &Url) -> Result<(), EndpointRejection> {
 
 /// Reject a host that is local-only or not publicly routable.
 fn check_host(url: &Url) -> Result<(), EndpointRejection> {
-    match url.host() {
-        Some(Host::Domain(domain)) => {
-            if is_local_hostname(domain) {
-                return Err(EndpointRejection::LocalHostname);
-            }
-            Ok(())
-        }
-        Some(Host::Ipv4(address)) => {
-            if is_public_ipv4(address) {
-                Ok(())
-            } else {
-                Err(EndpointRejection::NonPublicAddress)
-            }
-        }
-        Some(Host::Ipv6(address)) => {
-            if is_public_ipv6(address) {
-                Ok(())
-            } else {
-                Err(EndpointRejection::NonPublicAddress)
-            }
-        }
-        None => Err(EndpointRejection::MissingHost),
+    let rejection = match url.host() {
+        Some(Host::Domain(domain)) => domain_rejection(domain),
+        Some(Host::Ipv4(address)) => address_rejection(is_public_ipv4(address)),
+        Some(Host::Ipv6(address)) => address_rejection(is_public_ipv6(address)),
+        None => Some(EndpointRejection::MissingHost),
+    };
+    match rejection {
+        Some(rejection) => Err(rejection),
+        None => Ok(()),
+    }
+}
+
+/// The rejection for a hostname, when it names a local-only destination.
+fn domain_rejection(domain: &str) -> Option<EndpointRejection> {
+    if is_local_hostname(domain) {
+        Some(EndpointRejection::LocalHostname)
+    } else {
+        None
+    }
+}
+
+/// The rejection for an address literal that is not publicly routable.
+fn address_rejection(is_public: bool) -> Option<EndpointRejection> {
+    if is_public {
+        None
+    } else {
+        Some(EndpointRejection::NonPublicAddress)
     }
 }
 
