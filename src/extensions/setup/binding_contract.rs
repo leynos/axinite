@@ -157,8 +157,14 @@ where
         SetupField::Endpoint(field) => (&field.name, &field.kind),
         SetupField::Secret(_) => unreachable!("fixture is an endpoint"),
     };
+    let identity = crate::extensions::setup::BindingIdentity {
+        name: name.clone(),
+        kind: kind.clone(),
+        envelope_version: crate::extensions::setup::ENDPOINT_ENVELOPE_VERSION,
+        policy_version: crate::extensions::setup::validation_policy_version(),
+    };
     reloaded
-        .replace(&owner, name, kind, &url(SENTINEL))
+        .replace(&owner, &identity, &url(SENTINEL))
         .await
         .expect("replace after kind change");
     let statuses = reloaded.statuses(&owner, &upgraded).await.expect("status");

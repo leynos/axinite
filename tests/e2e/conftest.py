@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -131,26 +132,39 @@ ENDPOINT_TOOL_MANIFEST = """{
 }"""
 
 
-def _server_env(
-    mock_llm_url,
-    db_path,
-    user_id,
-    auth_token,
-    tools_dir=None,
-    ui_variant=None,
-    home=None,
-):
+@dataclass(frozen=True)
+class ServerSettings:
+    """Everything one axinite test server needs beyond the shared mock LLM.
+
+    Bundling these keeps ``_server_env`` readable and makes the identity and
+    storage a server runs with explicit at every call site.
+    """
+
+    db_path: Path
+    user_id: str
+    auth_token: str
+    home: Path
+    tools_dir: Path | None = None
+    ui_variant: str | None = None
+
+
+def _server_env(mock_llm_url: str, settings: ServerSettings) -> dict[str, str]:
     """Build the deterministic environment for one axinite server process.
 
-    ``home`` defaults to the invoking user's home. Handles that run
-    concurrently must pass a private home: the single-instance guard is a PID
-    file under ``$HOME/.axinite``, and two live servers sharing one home would
-    refuse to start.
+    ``settings.home`` must be private per concurrently running handle: the
+    single-instance guard is a PID file under ``$HOME/.axinite``, and two live
+    servers sharing one home would refuse to start.
     """
+    db_path = settings.db_path
+    user_id = settings.user_id
+    auth_token = settings.auth_token
+    home = settings.home
+    tools_dir = settings.tools_dir
+    ui_variant = settings.ui_variant
     env = {
         # Minimal env: PATH for process spawning, HOME for Rust/cargo defaults
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": str(home) if home is not None else os.environ.get("HOME", "/tmp"),
+        "HOME": str(home),
         "RUST_LOG": "axinite=info",
         "RUST_BACKTRACE": "1",
         "GATEWAY_ENABLED": "true",
@@ -268,29 +282,29 @@ async def endpoint_server_factory(axinite_binary, mock_llm_server, tmp_path_fact
     )
     handles = []
 
-    async def build(
-        user_id="e2e-tester",
-        auth_token=AUTH_TOKEN,
-        db_path=None,
-        ui_variant=None,
-    ):
-        """Start one server and return its handle."""
-        # Each handle gets its own database file by default; libSQL locks the
-        # file, so two live servers cannot share one.
-        # Each handle gets its own database file and home directory by
-        # default: libSQL locks the file, and the PID guard lives under
+    async def build(user_id="e2e-tester", auth_token=AUTH_TOKEN, ui_variant=None):
+        """Start one isolated server and return its handle.
+
+        Every handle gets a private database and home directory, so several
+        can run at once without contending for the libSQL file lock or the
+        single-instance PID guard.
+        """
+        # Each handle gets its own database file and private home: libSQL
+        # locks the file, and the single-instance PID guard lives under
         # `$HOME/.axinite`.
         index = len(handles)
         handle_home = root / f"home-{index}"
         handle_home.mkdir()
         env = _server_env(
             mock_llm_server,
-            db_path or (root / f"endpoint-setup-{index}.db"),
-            user_id,
-            auth_token,
-            tools_dir=tools_dir,
-            ui_variant=ui_variant,
-            home=handle_home,
+            ServerSettings(
+                db_path=root / f"endpoint-setup-{index}.db",
+                user_id=user_id,
+                auth_token=auth_token,
+                home=handle_home,
+                tools_dir=tools_dir,
+                ui_variant=ui_variant,
+            ),
         )
         handle = AxiniteHandle(
             axinite_binary, env, root / f"server-{len(handles)}.log"

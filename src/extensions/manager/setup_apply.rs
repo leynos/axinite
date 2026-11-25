@@ -188,6 +188,8 @@ impl ExtensionManager {
     async fn apply_effect(&self, name: &str, effect: &PlannedEffect, execution: &mut Execution) {
         match effect {
             PlannedEffect::WriteSecret { name: field, value } => {
+                // `name` is the extension under setup; `field` is the
+                // credential destination.
                 self.write_secret(name, field, value, execution).await;
             }
             PlannedEffect::KeepSecret { name: field } => {
@@ -198,8 +200,12 @@ impl ExtensionManager {
                 kind,
                 url,
             } => {
-                self.replace_endpoint(name, field, kind, url, execution)
-                    .await;
+                let target = EndpointEffect {
+                    name: field,
+                    kind,
+                    url,
+                };
+                self.replace_endpoint(name, &target, execution).await;
             }
             PlannedEffect::ClearEndpoint { name: field } => {
                 self.clear_endpoint(name, field, execution).await;
@@ -231,17 +237,22 @@ impl ExtensionManager {
     async fn replace_endpoint(
         &self,
         extension: &str,
-        field: &EndpointName,
-        kind: &EndpointKind,
-        url: &EndpointUrl,
+        target: &EndpointEffect<'_>,
         execution: &mut Execution,
     ) {
+        let field = target.name;
         let Some(service) = &self.endpoint_bindings else {
             execution.record(FieldKey::Endpoint(field.clone()), FieldOutcome::Failed);
             return;
         };
         let scope = BindingScope::new(&self.user_id, extension);
-        let outcome = match service.replace(&scope, field, kind, url).await {
+        let identity = crate::extensions::setup::BindingIdentity {
+            name: field.clone(),
+            kind: target.kind.clone(),
+            envelope_version: crate::extensions::setup::ENDPOINT_ENVELOPE_VERSION,
+            policy_version: crate::extensions::setup::validation_policy_version(),
+        };
+        let outcome = match service.replace(&scope, &identity, target.url).await {
             Ok(_) => FieldOutcome::Stored,
             Err(crate::extensions::setup::BindingServiceError::EncryptionFailed { .. }) => {
                 FieldOutcome::Failed
@@ -272,6 +283,13 @@ impl ExtensionManager {
         };
         execution.record(FieldKey::Endpoint(field.clone()), outcome);
     }
+}
+
+/// One endpoint replacement, borrowed from the planned effect.
+struct EndpointEffect<'a> {
+    name: &'a EndpointName,
+    kind: &'a EndpointKind,
+    url: &'a EndpointUrl,
 }
 
 /// Mark every effect that did not run.

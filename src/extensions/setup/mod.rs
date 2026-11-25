@@ -50,4 +50,6 @@ pub use model::{
     SetupOperation,
 };
 pub use policy::{PlannedEffect, SetupPlan, plan_setup, validate_declarations};
-pub use service::{BindingServiceError, EndpointBindingService, EndpointState, EndpointStatus};
+pub use service::{
+    BindingIdentity, BindingServiceError, EndpointBindingService, EndpointState, EndpointStatus,
+};

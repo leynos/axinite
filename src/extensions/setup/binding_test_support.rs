@@ -202,8 +202,14 @@ pub(crate) async fn configure(
 ) {
     let field = endpoint(name, "jmap", false);
     let (endpoint_name, kind) = endpoint_parts(&field);
+    let identity = crate::extensions::setup::BindingIdentity {
+        name: endpoint_name.clone(),
+        kind: kind.clone(),
+        envelope_version: crate::extensions::setup::ENDPOINT_ENVELOPE_VERSION,
+        policy_version: crate::extensions::setup::validation_policy_version(),
+    };
     service
-        .replace(scope, endpoint_name, kind, &url(raw))
+        .replace(scope, &identity, &url(raw))
         .await
         .expect("replace succeeds");
 }

@@ -124,18 +124,11 @@ impl EndpointBindingService {
     pub async fn replace(
         &self,
         scope: &BindingScope,
-        name: &EndpointName,
-        kind: &EndpointKind,
+        binding: &BindingIdentity,
         url: &EndpointUrl,
     ) -> Result<(), BindingServiceError> {
-        let field = FieldKey::Endpoint(name.clone());
-        let associated_data = associated_data(
-            scope,
-            name.as_str(),
-            kind.as_str(),
-            ENDPOINT_ENVELOPE_VERSION,
-            validation_policy_version(),
-        );
+        let field = FieldKey::Endpoint(binding.name.clone());
+        let associated_data = binding.associated_data(scope);
         let (encrypted_value, key_salt) = self
             .crypto
             .encrypt_endpoint_binding(url.expose().as_bytes(), &associated_data)
@@ -145,8 +138,8 @@ impl EndpointBindingService {
 
         let record = BindingRecord {
             scope: scope.clone(),
-            endpoint_name: name.clone(),
-            endpoint_kind: kind.clone(),
+            endpoint_name: binding.name.clone(),
+            endpoint_kind: binding.kind.clone(),
             envelope_version: ENDPOINT_ENVELOPE_VERSION,
             validation_policy_version: validation_policy_version(),
             encrypted_value,
@@ -244,13 +237,10 @@ fn state_for(
         return EndpointState::Stale;
     }
 
-    let associated_data = associated_data(
-        scope,
-        &row.endpoint_name,
-        &row.endpoint_kind,
-        row.envelope_version,
-        row.validation_policy_version,
-    );
+    let Some(identity) = row.identity() else {
+        return EndpointState::Corrupt;
+    };
+    let associated_data = identity.associated_data(scope);
 
     match crypto.decrypt_endpoint_binding(&row.encrypted_value, &row.key_salt, &associated_data) {
         // The plaintext is dropped here. Only its successful authentication is
@@ -265,22 +255,39 @@ fn state_for(
 /// Every component is length-prefixed with its byte length, so concatenating
 /// `("ab", "c")` can never equal `("a", "bc")`. The domain tag separates this
 /// encoding from any other use of the same master key.
-fn associated_data(
-    scope: &BindingScope,
-    endpoint_name: &str,
-    endpoint_kind: &str,
-    envelope_version: u16,
-    policy_version: u16,
-) -> Vec<u8> {
+fn encode_associated_data(scope: &BindingScope, identity: &BindingIdentity) -> Vec<u8> {
     let mut data = Vec::new();
     push_component(&mut data, BINDING_AAD_DOMAIN);
     push_component(&mut data, scope.user_id().as_bytes());
     push_component(&mut data, scope.extension_name().as_bytes());
-    push_component(&mut data, endpoint_name.as_bytes());
-    push_component(&mut data, endpoint_kind.as_bytes());
-    push_component(&mut data, &envelope_version.to_be_bytes());
-    push_component(&mut data, &policy_version.to_be_bytes());
+    push_component(&mut data, identity.name.as_str().as_bytes());
+    push_component(&mut data, identity.kind.as_str().as_bytes());
+    push_component(&mut data, &identity.envelope_version.to_be_bytes());
+    push_component(&mut data, &identity.policy_version.to_be_bytes());
     data
+}
+
+/// The authenticated identity and format versions of one binding.
+///
+/// Bundling these keeps the sealing calls to a readable arity and makes the
+/// "same identity, same associated data" rule structural: every caller builds
+/// the value from stored or declared fields, never from a mixture.
+pub struct BindingIdentity {
+    /// Endpoint name the row is keyed by.
+    pub name: EndpointName,
+    /// Declared or recorded endpoint kind.
+    pub kind: EndpointKind,
+    /// Envelope format version.
+    pub envelope_version: u16,
+    /// Validation policy version.
+    pub policy_version: u16,
+}
+
+impl BindingIdentity {
+    /// Encode this identity's associated data for `scope`.
+    pub fn associated_data(&self, scope: &BindingScope) -> Vec<u8> {
+        encode_associated_data(scope, self)
+    }
 }
 
 fn push_component(data: &mut Vec<u8>, component: &[u8]) {
@@ -292,39 +299,41 @@ fn push_component(data: &mut Vec<u8>, component: &[u8]) {
 mod tests {
     //! Associated-data encoding is the anti-transplant boundary.
 
-    use super::associated_data;
+    use super::BindingIdentity;
     use crate::extensions::setup::BindingScope;
+    use crate::extensions::setup::{EndpointKind, EndpointName};
+
+    /// Build an identity with the given name and kind.
+    fn identity(name: &str, kind: &str, envelope: u16, policy: u16) -> BindingIdentity {
+        BindingIdentity {
+            name: EndpointName::parse(name).expect("valid endpoint name"),
+            kind: EndpointKind::parse(kind).expect("valid endpoint kind"),
+            envelope_version: envelope,
+            policy_version: policy,
+        }
+    }
 
     #[test]
     fn scope_components_cannot_be_shifted_between_fields() {
-        let left = associated_data(&BindingScope::new("ab", "c"), "endpoint", "jmap", 1, 1);
-        let right = associated_data(&BindingScope::new("a", "bc"), "endpoint", "jmap", 1, 1);
+        let left =
+            identity("endpoint", "jmap", 1, 1).associated_data(&BindingScope::new("ab", "c"));
+        let right =
+            identity("endpoint", "jmap", 1, 1).associated_data(&BindingScope::new("a", "bc"));
 
         assert_ne!(left, right);
     }
 
     #[test]
     fn every_component_changes_the_associated_data() {
-        let base = associated_data(&BindingScope::new("user", "ext"), "calendar", "jmap", 1, 1);
+        let scope = BindingScope::new("user", "ext");
+        let base = identity("calendar", "jmap", 1, 1).associated_data(&scope);
         let variants = [
-            associated_data(&BindingScope::new("other", "ext"), "calendar", "jmap", 1, 1),
-            associated_data(
-                &BindingScope::new("user", "other"),
-                "calendar",
-                "jmap",
-                1,
-                1,
-            ),
-            associated_data(&BindingScope::new("user", "ext"), "other", "jmap", 1, 1),
-            associated_data(
-                &BindingScope::new("user", "ext"),
-                "calendar",
-                "caldav",
-                1,
-                1,
-            ),
-            associated_data(&BindingScope::new("user", "ext"), "calendar", "jmap", 2, 1),
-            associated_data(&BindingScope::new("user", "ext"), "calendar", "jmap", 1, 2),
+            identity("calendar", "jmap", 1, 1).associated_data(&BindingScope::new("other", "ext")),
+            identity("calendar", "jmap", 1, 1).associated_data(&BindingScope::new("user", "other")),
+            identity("other", "jmap", 1, 1).associated_data(&scope),
+            identity("calendar", "caldav", 1, 1).associated_data(&scope),
+            identity("calendar", "jmap", 2, 1).associated_data(&scope),
+            identity("calendar", "jmap", 1, 2).associated_data(&scope),
         ];
 
         for variant in variants {

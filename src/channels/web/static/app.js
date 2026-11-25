@@ -2464,6 +2464,141 @@ function endpointPlaceholder(endpoint) {
   return '';
 }
 
+/**
+ * Build one secret field row, recording it for the submit handler.
+ *
+ * A provided secret shows a stored tick and no echo of the value; a blank
+ * submission keeps the stored value.
+ */
+function renderSecretField(extensionName, secret, fields) {
+  const field = document.createElement('div');
+  field.className = 'configure-field';
+
+  const label = document.createElement('label');
+  label.textContent = secret.prompt;
+  if (secret.optional) {
+    const opt = document.createElement('span');
+    opt.className = 'field-optional';
+    opt.textContent = ' (optional)';
+    label.appendChild(opt);
+  }
+  field.appendChild(label);
+
+  const inputRow = document.createElement('div');
+  inputRow.className = 'configure-input-row';
+
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.name = secret.name;
+  input.placeholder = secret.provided ? '(already set — leave empty to keep)' : '';
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitConfigureModal(extensionName, fields);
+  });
+  inputRow.appendChild(input);
+
+  if (secret.provided) {
+    inputRow.appendChild(providedBadge());
+  }
+  if (secret.auto_generate && !secret.provided) {
+    const hint = document.createElement('span');
+    hint.className = 'field-autogen';
+    hint.textContent = 'Auto-generated if empty';
+    inputRow.appendChild(hint);
+  }
+
+  field.appendChild(inputRow);
+  fields.push({ kind: 'secret', name: secret.name, input: input });
+  return field;
+}
+
+/**
+ * Build one endpoint field row, recording it for the submit handler.
+ *
+ * The stored URL is never rendered: only its state appears, as a provided
+ * tick plus a placeholder describing what a save would do.
+ */
+function renderEndpointField(extensionName, endpoint, fields) {
+  const field = document.createElement('div');
+  field.className = 'configure-field';
+
+  const label = document.createElement('label');
+  label.textContent = endpoint.prompt;
+  if (endpoint.optional) {
+    const opt = document.createElement('span');
+    opt.className = 'field-optional';
+    opt.textContent = ' (optional)';
+    label.appendChild(opt);
+  }
+  field.appendChild(label);
+
+  const inputRow = document.createElement('div');
+  inputRow.className = 'configure-input-row';
+
+  const input = document.createElement('input');
+  input.type = 'url';
+  input.name = 'endpoint:' + endpoint.name;
+  input.autocomplete = 'off';
+  input.placeholder = endpointPlaceholder(endpoint);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitConfigureModal(extensionName, fields);
+  });
+  inputRow.appendChild(input);
+
+  if (endpoint.state === 'configured') {
+    inputRow.appendChild(providedBadge());
+  }
+  field.appendChild(inputRow);
+
+  const clearCheckbox = renderEndpointClear(field, input, endpoint);
+  if (endpoint.state === 'stale' || endpoint.state === 'corrupt') {
+    const warning = document.createElement('p');
+    warning.className = 'configure-warning';
+    warning.textContent = 'Needs attention: replace or clear this value';
+    field.appendChild(warning);
+  }
+
+  fields.push({
+    kind: 'endpoint',
+    name: endpoint.name,
+    input: input,
+    clear: clearCheckbox,
+  });
+  return field;
+}
+
+/** Build the "already configured" tick used by both field kinds. */
+function providedBadge() {
+  const badge = document.createElement('span');
+  badge.className = 'field-provided';
+  badge.textContent = '\u2713';
+  badge.title = 'Already configured';
+  return badge;
+}
+
+/**
+ * Add the explicit-clear control for a stored endpoint.
+ *
+ * Returns the checkbox, or null when there is nothing stored to clear. Ticking
+ * it disables the URL input so the two cannot both be submitted.
+ */
+function renderEndpointClear(field, input, endpoint) {
+  if (endpoint.state === 'missing') {
+    return null;
+  }
+  const clearLabel = document.createElement('label');
+  clearLabel.className = 'configure-check';
+  const clearCheckbox = document.createElement('input');
+  clearCheckbox.type = 'checkbox';
+  clearCheckbox.addEventListener('change', () => {
+    input.disabled = clearCheckbox.checked;
+    if (clearCheckbox.checked) input.value = '';
+  });
+  clearLabel.appendChild(clearCheckbox);
+  clearLabel.appendChild(document.createTextNode(' Clear stored value'));
+  field.appendChild(clearLabel);
+  return clearCheckbox;
+}
+
 function renderConfigureModal(name, setup) {
   const secrets = setup.secrets || [];
   const endpoints = setup.endpoints || [];
@@ -2486,116 +2621,11 @@ function renderConfigureModal(name, setup) {
 
   const fields = [];
   for (const secret of secrets) {
-    const field = document.createElement('div');
-    field.className = 'configure-field';
-
-    const label = document.createElement('label');
-    label.textContent = secret.prompt;
-    if (secret.optional) {
-      const opt = document.createElement('span');
-      opt.className = 'field-optional';
-      opt.textContent = ' (optional)';
-      label.appendChild(opt);
-    }
-    field.appendChild(label);
-
-    const inputRow = document.createElement('div');
-    inputRow.className = 'configure-input-row';
-
-    const input = document.createElement('input');
-    input.type = 'password';
-    input.name = secret.name;
-    input.placeholder = secret.provided ? '(already set — leave empty to keep)' : '';
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') submitConfigureModal(name, fields);
-    });
-    inputRow.appendChild(input);
-
-    if (secret.provided) {
-      const badge = document.createElement('span');
-      badge.className = 'field-provided';
-      badge.textContent = '\u2713';
-      badge.title = 'Already configured';
-      inputRow.appendChild(badge);
-    }
-    if (secret.auto_generate && !secret.provided) {
-      const hint = document.createElement('span');
-      hint.className = 'field-autogen';
-      hint.textContent = 'Auto-generated if empty';
-      inputRow.appendChild(hint);
-    }
-
-    field.appendChild(inputRow);
-    form.appendChild(field);
-    fields.push({ kind: 'secret', name: secret.name, input: input });
+    form.appendChild(renderSecretField(name, secret, fields));
   }
 
   for (const endpoint of endpoints) {
-    const field = document.createElement('div');
-    field.className = 'configure-field';
-
-    const label = document.createElement('label');
-    label.textContent = endpoint.prompt;
-    if (endpoint.optional) {
-      const opt = document.createElement('span');
-      opt.className = 'field-optional';
-      opt.textContent = ' (optional)';
-      label.appendChild(opt);
-    }
-    field.appendChild(label);
-
-    const inputRow = document.createElement('div');
-    inputRow.className = 'configure-input-row';
-
-    const input = document.createElement('input');
-    input.type = 'url';
-    input.name = 'endpoint:' + endpoint.name;
-    input.autocomplete = 'off';
-    input.placeholder = endpointPlaceholder(endpoint);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') submitConfigureModal(name, fields);
-    });
-    inputRow.appendChild(input);
-
-    if (endpoint.state === 'configured') {
-      const badge = document.createElement('span');
-      badge.className = 'field-provided';
-      badge.textContent = '✓';
-      badge.title = 'Already configured';
-      inputRow.appendChild(badge);
-    }
-
-    field.appendChild(inputRow);
-
-    let clearCheckbox = null;
-    if (endpoint.state !== 'missing') {
-      const clearLabel = document.createElement('label');
-      clearLabel.className = 'configure-check';
-      clearCheckbox = document.createElement('input');
-      clearCheckbox.type = 'checkbox';
-      clearCheckbox.addEventListener('change', () => {
-        input.disabled = clearCheckbox.checked;
-        if (clearCheckbox.checked) input.value = '';
-      });
-      clearLabel.appendChild(clearCheckbox);
-      clearLabel.appendChild(document.createTextNode(' Clear stored value'));
-      field.appendChild(clearLabel);
-    }
-
-    if (endpoint.state === 'stale' || endpoint.state === 'corrupt') {
-      const warning = document.createElement('p');
-      warning.className = 'configure-warning';
-      warning.textContent = 'Needs attention: replace or clear this value';
-      field.appendChild(warning);
-    }
-
-    form.appendChild(field);
-    fields.push({
-      kind: 'endpoint',
-      name: endpoint.name,
-      input: input,
-      clear: clearCheckbox,
-    });
+    form.appendChild(renderEndpointField(name, endpoint, fields));
   }
 
   modal.appendChild(form);
@@ -2623,62 +2653,78 @@ function renderConfigureModal(name, setup) {
 }
 
 function submitConfigureModal(name, fields) {
-  const secrets = {};
-  const endpointSet = {};
-  const endpointClear = [];
-  for (const f of fields) {
-    if (f.kind === 'endpoint') {
-      if (f.clear && f.clear.checked) {
-        endpointClear.push(f.name);
-        continue;
-      }
-      const url = f.input.value.trim();
-      if (url) {
-        endpointSet[f.name] = url;
-      }
-      continue;
-    }
-    if (f.input.value.trim()) {
-      secrets[f.name] = f.input.value.trim();
-    }
-  }
-
-  // Disable buttons to prevent double-submit
-  var btns = document.querySelectorAll('.configure-actions button');
-  btns.forEach(function(b) { b.disabled = true; });
+  const payload = collectConfigurePayload(fields);
+  const btns = document.querySelectorAll('.configure-actions button');
+  setConfigureButtonsDisabled(btns, true);
 
   apiFetch('/api/extensions/' + encodeURIComponent(name) + '/setup', {
     method: 'POST',
-    body: {
-      secrets,
-      endpoints: { set: endpointSet, clear: endpointClear },
-    },
+    body: payload,
   })
-    .then((res) => {
-      if (res.success) {
-        closeConfigureModal();
-        if (!res.ready && res.message) {
-          showToast(res.message, 'info');
-        }
-        if (res.auth_url) {
-          // OAuth flow started — open consent popup. The auth_completed SSE will
-          // not arrive immediately (it fires after OAuth callback), so show a toast now.
-          showToast('Opening OAuth authorization for ' + name, 'info');
-          openOAuthUrl(res.auth_url);
-          loadExtensions();
-        }
-        // For non-OAuth success: the server always broadcasts auth_completed SSE,
-        // which will show the toast and refresh extensions — no need to do it here too.
-      } else {
-        // Keep modal open so the user can correct their input and retry.
-        btns.forEach(function(b) { b.disabled = false; });
-        showToast(res.message || 'Configuration failed', 'error');
-      }
-    })
-    .catch((err) => {
-      btns.forEach(function(b) { b.disabled = false; });
-      showToast('Configuration failed: ' + err.message, 'error');
-    });
+    .then((res) => handleConfigureResponse(name, res, btns))
+    .catch((err) => handleConfigureFailure(err, btns));
+}
+
+/** Split the collected fields into secret values and endpoint operations. */
+function collectConfigurePayload(fields) {
+  const secrets = {};
+  const set = {};
+  const clear = [];
+  for (const field of fields) {
+    if (field.kind === 'endpoint') {
+      collectEndpointOperation(field, set, clear);
+      continue;
+    }
+    const value = field.input.value.trim();
+    if (value) {
+      secrets[field.name] = value;
+    }
+  }
+  return { secrets, endpoints: { set: set, clear: clear } };
+}
+
+/** Record one endpoint field as an explicit clear or a replacement. */
+function collectEndpointOperation(field, set, clear) {
+  if (field.clear && field.clear.checked) {
+    clear.push(field.name);
+    return;
+  }
+  const url = field.input.value.trim();
+  if (url) {
+    set[field.name] = url;
+  }
+}
+
+/** Apply the server's verdict: close and continue, or keep the panel open. */
+function handleConfigureResponse(name, res, btns) {
+  if (!res.success) {
+    setConfigureButtonsDisabled(btns, false);
+    showToast(res.message || 'Configuration failed', 'error');
+    return;
+  }
+  closeConfigureModal();
+  if (!res.ready && res.message) {
+    showToast(res.message, 'info');
+  }
+  if (res.auth_url) {
+    // The auth_completed SSE fires only after the OAuth callback, so announce
+    // the popup now rather than waiting for it.
+    showToast('Opening OAuth authorization for ' + name, 'info');
+    openOAuthUrl(res.auth_url);
+    loadExtensions();
+  }
+  // Otherwise the server's auth_completed SSE shows the toast and refreshes.
+}
+
+/** Report a transport failure and let the user retry. */
+function handleConfigureFailure(err, btns) {
+  setConfigureButtonsDisabled(btns, false);
+  showToast('Configuration failed: ' + err.message, 'error');
+}
+
+/** Enable or disable every configure action button. */
+function setConfigureButtonsDisabled(btns, disabled) {
+  btns.forEach(function(b) { b.disabled = disabled; });
 }
 
 function closeConfigureModal() {

@@ -142,10 +142,9 @@ export function isExtensionSetupRequest(
   if (set !== undefined && !isStringRecord(set)) {
     return false;
   }
-  return (
-    clear === undefined ||
-    (Array.isArray(clear) && clear.every((entry) => isString(entry)))
-  );
+  const isStringArray =
+    Array.isArray(clear) && clear.every((entry) => isString(entry));
+  return clear === undefined || isStringArray;
 }
 
 export function isSkillSearchRequest(

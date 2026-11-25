@@ -278,7 +278,22 @@ impl ExtensionManager {
         if declarations.is_empty() {
             return ToolAuthState::NoAuth;
         }
-        let required_destinations: Vec<String> = declarations
+        if !self.required_secrets_present(&declarations, cap_file).await {
+            return ToolAuthState::NeedsSetup;
+        }
+        if declares_endpoint(&declarations) {
+            return self.endpoint_declarations_state(name, cap_file).await;
+        }
+        ToolAuthState::Ready
+    }
+
+    /// Whether every required, non-auto-resolved credential is stored.
+    async fn required_secrets_present(
+        &self,
+        declarations: &[crate::extensions::setup::SetupField],
+        cap_file: &crate::tools::wasm::CapabilitiesFile,
+    ) -> bool {
+        let destinations: Vec<String> = declarations
             .iter()
             .filter_map(|field| match field {
                 crate::extensions::setup::SetupField::Secret(secret)
@@ -290,25 +305,14 @@ impl ExtensionManager {
                 _ => None,
             })
             .collect();
-        let declared_endpoints = declarations
-            .iter()
-            .any(|field| matches!(field, crate::extensions::setup::SetupField::Endpoint(_)));
-        let secrets_ready = futures::future::join_all(
-            required_destinations
+        futures::future::join_all(
+            destinations
                 .iter()
                 .map(|destination| self.secrets.exists(&self.user_id, destination)),
         )
         .await
         .into_iter()
-        .all(|result| result.unwrap_or(false));
-
-        if !secrets_ready {
-            return ToolAuthState::NeedsSetup;
-        }
-        if declared_endpoints {
-            return self.endpoint_declarations_state(name, cap_file).await;
-        }
-        ToolAuthState::Ready
+        .all(|result| result.unwrap_or(false))
     }
 
     /// Endpoint readiness from the declaration set.
@@ -384,4 +388,11 @@ fn required_endpoints_configured(
             })
         })
         .all(|status| status.state().is_configured())
+}
+
+/// Whether the declarations include an endpoint field.
+fn declares_endpoint(declarations: &[crate::extensions::setup::SetupField]) -> bool {
+    declarations
+        .iter()
+        .any(|field| matches!(field, crate::extensions::setup::SetupField::Endpoint(_)))
 }

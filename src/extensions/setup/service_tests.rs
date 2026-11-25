@@ -280,11 +280,17 @@ async fn a_repository_failure_is_not_reported_as_absence() {
     let scope = scope("user", "ext");
     let field = endpoint("calendar", "jmap", false);
     let (name, kind) = endpoint_parts(&field);
+    let identity = crate::extensions::setup::BindingIdentity {
+        name: name.clone(),
+        kind: kind.clone(),
+        envelope_version: crate::extensions::setup::ENDPOINT_ENVELOPE_VERSION,
+        policy_version: crate::extensions::setup::validation_policy_version(),
+    };
 
     repository.fail_operations();
 
     let replace = service
-        .replace(&scope, name, kind, &url("https://mail.example.com/"))
+        .replace(&scope, &identity, &url("https://mail.example.com/"))
         .await;
     assert!(matches!(
         replace,

@@ -22,6 +22,13 @@ use super::model::{ENDPOINT_VALIDATION_POLICY_VERSION, EndpointUrl, MAX_ENDPOINT
 /// The returned value is canonical: parsing its exposed form again yields an
 /// identical value.
 pub fn validate_endpoint_url(raw: &str) -> Result<EndpointUrl, EndpointRejection> {
+    let url = parse_and_check_shape(raw)?;
+    check_host(&url)?;
+    Ok(EndpointUrl::from_canonical(url.to_string()))
+}
+
+/// Reject a value that cannot be a confidential HTTPS endpoint before parsing.
+fn parse_and_check_shape(raw: &str) -> Result<Url, EndpointRejection> {
     if raw.trim().is_empty() {
         return Err(EndpointRejection::Empty);
     }
@@ -39,7 +46,12 @@ pub fn validate_endpoint_url(raw: &str) -> Result<EndpointUrl, EndpointRejection
         url::ParseError::RelativeUrlWithoutBase => EndpointRejection::NotAbsolute,
         _ => EndpointRejection::Malformed,
     })?;
+    check_scheme_and_components(&url)?;
+    Ok(url)
+}
 
+/// Reject a non-HTTPS scheme and any component that could leak or confuse.
+fn check_scheme_and_components(url: &Url) -> Result<(), EndpointRejection> {
     if url.scheme() != "https" {
         return Err(EndpointRejection::InsecureScheme);
     }
@@ -55,27 +67,34 @@ pub fn validate_endpoint_url(raw: &str) -> Result<EndpointUrl, EndpointRejection
     if url.fragment().is_some() {
         return Err(EndpointRejection::FragmentNotAllowed);
     }
+    Ok(())
+}
 
+/// Reject a host that is local-only or not publicly routable.
+fn check_host(url: &Url) -> Result<(), EndpointRejection> {
     match url.host() {
         Some(Host::Domain(domain)) => {
             if is_local_hostname(domain) {
                 return Err(EndpointRejection::LocalHostname);
             }
+            Ok(())
         }
         Some(Host::Ipv4(address)) => {
-            if !is_public_ipv4(address) {
-                return Err(EndpointRejection::NonPublicAddress);
+            if is_public_ipv4(address) {
+                Ok(())
+            } else {
+                Err(EndpointRejection::NonPublicAddress)
             }
         }
         Some(Host::Ipv6(address)) => {
-            if !is_public_ipv6(address) {
-                return Err(EndpointRejection::NonPublicAddress);
+            if is_public_ipv6(address) {
+                Ok(())
+            } else {
+                Err(EndpointRejection::NonPublicAddress)
             }
         }
-        None => return Err(EndpointRejection::MissingHost),
+        None => Err(EndpointRejection::MissingHost),
     }
-
-    Ok(EndpointUrl::from_canonical(url.to_string()))
 }
 
 /// Validation policy version applied to newly stored bindings.

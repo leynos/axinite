@@ -68,15 +68,9 @@ pub struct BindingRecord {
 
 impl fmt::Debug for BindingRecord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BindingRecord")
-            .field("scope", &self.scope)
-            .field("endpoint_name", &self.endpoint_name)
-            .field("endpoint_kind", &self.endpoint_kind)
-            .field("envelope_version", &self.envelope_version)
-            .field("validation_policy_version", &self.validation_policy_version)
-            .field("encrypted_value", &"[REDACTED]")
-            .field("key_salt", &"[REDACTED]")
-            .finish()
+        let mut builder = f.debug_struct("BindingRecord");
+        builder.field("scope", &self.scope);
+        write_redacted_fields(&mut builder, self).finish()
     }
 }
 
@@ -99,17 +93,94 @@ pub struct StoredBinding {
     pub key_salt: Vec<u8>,
 }
 
+impl StoredBinding {
+    /// The identity and format versions recorded with this row.
+    ///
+    /// Parsing cannot fail for rows this crate writes; a name or kind that no
+    /// longer parses is reported as a corrupt row by the caller, so the
+    /// accessor returns `None` rather than inventing a placeholder.
+    pub fn identity(&self) -> Option<crate::extensions::setup::BindingIdentity> {
+        let name = EndpointName::parse(self.endpoint_name.clone()).ok()?;
+        let kind = EndpointKind::parse(self.endpoint_kind.clone()).ok()?;
+        Some(crate::extensions::setup::BindingIdentity {
+            name,
+            kind,
+            envelope_version: self.envelope_version,
+            policy_version: self.validation_policy_version,
+        })
+    }
+}
+
 impl fmt::Debug for StoredBinding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StoredBinding")
-            .field("endpoint_name", &self.endpoint_name)
-            .field("endpoint_kind", &self.endpoint_kind)
-            .field("envelope_version", &self.envelope_version)
-            .field("validation_policy_version", &self.validation_policy_version)
-            .field("encrypted_value", &"[REDACTED]")
-            .field("key_salt", &"[REDACTED]")
-            .finish()
+        let mut builder = f.debug_struct("StoredBinding");
+        write_redacted_fields(&mut builder, self).finish()
     }
+}
+
+/// The redacted fields every ciphertext record prints.
+///
+/// A trait rather than a free function so each `Debug` implementation keeps a
+/// two-argument signature and the redaction rule stays in one place.
+trait RedactedRecord {
+    /// Endpoint name the record is keyed by.
+    fn record_name(&self) -> &str;
+    /// Kind recorded with the record.
+    fn record_kind(&self) -> &str;
+    /// Envelope format version recorded with the record.
+    fn record_envelope_version(&self) -> u16;
+    /// Validation policy version recorded with the record.
+    fn record_policy_version(&self) -> u16;
+}
+
+impl RedactedRecord for BindingRecord {
+    fn record_name(&self) -> &str {
+        self.endpoint_name.as_str()
+    }
+
+    fn record_kind(&self) -> &str {
+        self.endpoint_kind.as_str()
+    }
+
+    fn record_envelope_version(&self) -> u16 {
+        self.envelope_version
+    }
+
+    fn record_policy_version(&self) -> u16 {
+        self.validation_policy_version
+    }
+}
+
+impl RedactedRecord for StoredBinding {
+    fn record_name(&self) -> &str {
+        &self.endpoint_name
+    }
+
+    fn record_kind(&self) -> &str {
+        &self.endpoint_kind
+    }
+
+    fn record_envelope_version(&self) -> u16 {
+        self.envelope_version
+    }
+
+    fn record_policy_version(&self) -> u16 {
+        self.validation_policy_version
+    }
+}
+
+/// Write the shared redacted fields of any record into a debug builder.
+fn write_redacted_fields<'a, 'b>(
+    builder: &'a mut fmt::DebugStruct<'a, 'b>,
+    record: &(impl RedactedRecord + ?Sized),
+) -> &'a mut fmt::DebugStruct<'a, 'b> {
+    builder
+        .field("endpoint_name", &record.record_name())
+        .field("endpoint_kind", &record.record_kind())
+        .field("envelope_version", &record.record_envelope_version())
+        .field("validation_policy_version", &record.record_policy_version())
+        .field("encrypted_value", &"[REDACTED]")
+        .field("key_salt", &"[REDACTED]")
 }
 
 /// A storage failure category that is safe to surface.

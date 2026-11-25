@@ -35,32 +35,41 @@ impl ExtensionManager {
             if snapshot.secret_provided(&field) != Some(false) {
                 continue;
             }
-            self.generate_secret(name, &field, auto.length, execution)
-                .await;
+            let generated = GeneratedSecret {
+                name: &field,
+                length: auto.length,
+            };
+            self.generate_secret(name, &generated, execution).await;
         }
     }
 
     async fn generate_secret(
         &self,
         provider: &str,
-        field: &CredentialName,
-        length: usize,
+        field: &GeneratedSecret<'_>,
         execution: &mut Execution,
     ) {
-        let value = random_hex(length);
+        let name = field.name;
+        let value = random_hex(field.length);
         let params =
-            CreateSecretParams::new(field.as_str(), &value).with_provider(provider.to_string());
+            CreateSecretParams::new(name.as_str(), &value).with_provider(provider.to_string());
         let outcome = match self.secrets.create(&self.user_id, params).await {
             Ok(_) => FieldOutcome::Stored,
             Err(_) => FieldOutcome::Indeterminate,
         };
-        execution.record(FieldKey::Secret(field.clone()), outcome);
+        execution.record(FieldKey::Secret(name.clone()), outcome);
         tracing::info!(
             "Auto-generated secret '{}' for channel '{}'",
-            field.as_str(),
+            name.as_str(),
             provider
         );
     }
+}
+
+/// One auto-generated secret and the manifest's declared byte length.
+struct GeneratedSecret<'a> {
+    name: &'a CredentialName,
+    length: usize,
 }
 
 /// Generate `length` random bytes, hex-encoded.

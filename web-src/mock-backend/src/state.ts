@@ -5,12 +5,18 @@
  * subscribers. Its feature flags mirror the gateway defaults.
  */
 
+import {
+  applyEndpointSubmission,
+  applySecretSubmission,
+} from "./setup-submission";
+import { isNonBlankString } from "./state-helpers";
 import type {
   ActionResponse,
   ApprovalRequest,
   AuthCancelRequest,
   AuthTokenRequest,
   ChatSseEvent,
+  EndpointFieldInfo,
   EndpointOperations,
   ExtensionInfo,
   ExtensionSetupResponse,
@@ -41,6 +47,7 @@ import type {
   RoutineRunsResponse,
   RoutineSummaryResponse,
   SearchHit,
+  SecretFieldInfo,
   SendMessageRequest,
   SendMessageResponse,
   SetupBlockerInfo,
@@ -56,6 +63,8 @@ import type {
   ToolListResponse,
   TurnInfo,
 } from "../../axinite/src/lib/api/contracts";
+
+
 import type { MemoryDocument } from "./fixtures";
 import { isString } from "../../axinite/src/lib/api/json-value";
 import {
@@ -108,11 +117,6 @@ type EventSubscriber<T> = {
   send: (payload: T) => void;
   close: () => void;
 };
-
-// Indexed lookups on a secrets map yield `undefined` for absent keys.
-function isNonBlankString(value: string | undefined): boolean {
-  return value !== undefined && value.trim().length > 0;
-}
 
 /** Only a successful restart tool completion schedules simulated downtime. */
 function isSuccessfulRestartToolCompletion(event: ChatSseEvent): boolean {
@@ -1324,37 +1328,17 @@ export class MockBackendState {
     if (!extension) {
       throw new Error("Extension not found");
     }
-    const set = endpoints.set ?? {};
-    const clear = new Set(endpoints.clear);
     const outcomes: SetupOutcomeInfo[] = [];
-    extension.setupSecrets = extension.setupSecrets.map((field) => {
-      const written = isNonBlankString(secrets[field.name]);
-      outcomes.push({
-        field: field.name,
-        kind: "secret",
-        outcome: written ? "stored" : "kept",
-      });
-      return { ...field, provided: field.provided || written };
-    });
-    extension.setupEndpoints = (extension.setupEndpoints ?? []).map((field) => {
-      if (clear.has(field.name)) {
-        outcomes.push({
-          field: field.name,
-          kind: "endpoint",
-          outcome: "cleared",
-        });
-        return { ...field, state: "missing" as const };
-      }
-      if (isNonBlankString(set[field.name])) {
-        outcomes.push({
-          field: field.name,
-          kind: "endpoint",
-          outcome: "stored",
-        });
-        return { ...field, state: "configured" as const };
-      }
-      return field;
-    });
+    extension.setupSecrets = applySecretSubmission(
+      extension.setupSecrets,
+      secrets,
+      outcomes
+    );
+    extension.setupEndpoints = applyEndpointSubmission(
+      extension.setupEndpoints ?? [],
+      endpoints,
+      outcomes
+    );
 
     const snapshot = this.getExtensionSetup(name);
     extension.info = {
@@ -1374,12 +1358,11 @@ export class MockBackendState {
         : `${extension.info.display_name ?? name} still needs configuration.`,
     });
     this.pushLog(`Stored setup values for ${name}.`, "extensions");
-    const message = snapshot.ready
-      ? "Extension setup saved."
-      : "Configuration saved, but setup is incomplete.";
     return {
       success: true,
-      message,
+      message: snapshot.ready
+        ? "Extension setup saved."
+        : "Configuration saved, but setup is incomplete.",
       activated: snapshot.ready,
       ready: snapshot.ready,
       outcomes,
