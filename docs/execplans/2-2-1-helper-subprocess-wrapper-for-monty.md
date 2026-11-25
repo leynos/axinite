@@ -306,7 +306,15 @@ dependency, or proof-design deviation requires renewed approval.
     release binaries, `rust-audit` covers the helper lock file, and both
     container images build the helper with the pinned nightly and copy it
     beside `axinite`.
-  - [ ] Sequential commit gates and delivery to the PR.
+  - [x] (2026-11-25) Sequential commit gates: all twelve pass at
+    `7c6fe12e`, rebased onto `main` at `a3d837b7`. Evidence is under
+    `/tmp/gates-monty-221/`, with the timeline in `progress.log`.
+    - `check-fmt`, `lint` (Clippy and Whitaker), `test` (workspace 4641/4641,
+      GitHub tool 5/5, libSQL transport), `test-workflow-contracts` (2143),
+      `test-monty-helper` (26), `test-monty-bdd` (5), `test-monty-e2e` (20),
+      `test-monty-release` (20), `verus` (4 and 19 verified, 0 errors),
+      `spelling`, `markdownlint` and `audit` all exit 0.
+  - [ ] Delivery to the PR through the babysitting process.
 - [x] (2026-11-18) Docs updated; roadmap item 2.2.1 checked.
 
 ## Surprises & discoveries
@@ -465,6 +473,30 @@ dependency, or proof-design deviation requires renewed approval.
 
 ## Decision log
 
+- Decision (gate 4 resolution, 2026-11-25): the helper's recipes enter
+  `crates/monty-helper` with `cd` rather than passing `--manifest-path` and a
+  global `--config`. Rationale: Cargo discovers the package's recursion floor
+  from the working directory, and `nextest` does not forward a global
+  `--config` to the Cargo it runs — a `--config` form compiled Monty without
+  the floor and failed with "queries overflow the depth limit". The
+  build-standard contract now parses `cd <dir> && cargo ...`, recording the
+  directory so a helper build is still identifiable, and it promptly caught
+  that the release-profile helper install had been inheriting the development
+  standard. Date/Author: 2026-11-25, implementation.
+- Decision (rebase resolution, 2026-11-25): where `main` had already made the
+  same lint-driven refactors (`src/settings/access.rs`,
+  `src/setup/prompts/selection.rs`, `src/tools/builtin/json.rs`,
+  `tests/tools_and_config/wit_compat/harness.rs`), this branch defers to
+  `main`'s reviewed versions and drops its duplicates. Rationale: the two sides
+  were behaviourally identical, and the rebase's auto-merge spliced both
+  together into code that did not compile. Date/Author: 2026-11-25,
+  implementation.
+- Decision (toolchain policy, 2026-11-25): the policy judges root-workspace
+  members as a group sharing one MSRV, and keeps a separate promise for
+  first-party crates outside the workspace, which some workflow must build.
+  Rationale: `crates/monty-helper` needs Rust 1.98 for Monty while the
+  workspace MSRV is 1.95, so neither "one MSRV everywhere" nor "no rule for the
+  helper" is correct. Date/Author: 2026-11-25, implementation.
 - Decision: isolate all Monty interpreter linkage in a helper executable and
   exchange bounded, versioned JSON frames over stdin/stdout pipes. Rationale: a
   Rust panic is process-local; the parent remains responsible for capabilities
