@@ -805,7 +805,24 @@ explicit operations; never imply that an error proves no commit occurred.
   isolation stays covered by the M2 repository contract. Remaining: the
   agent-browser/`css-view` computed-style pass, a full `scenarios/` regression
   run, and re-running the ordinary gates before the M4 commit.
-- [ ] M5 documentation, final evidence, and roadmap completion.
+- [x] 2026-11-24: M4 committed as `3fdd2e61`, with the clippy fix and the E2E
+  virtualenv relocation in `973d0d13`. The E2E suite is nine scenarios for the
+  endpoint flow; the whole `scenarios/` directory passes (44 passed, 1
+  skipped). agent-browser confirmed the url/password controls, the no-echo
+  reload, a replace, and a clear against a real server; `css-view` confirmed
+  the computed styles of the setup controls. That pass found the new Solid
+  classes had no CSS, which the same commit fixed. A local `.venv` under
+  `tests/` had dropped Interrogate to 44% because it walks the tree regardless
+  of `.gitignore`; moving it out of the worktree restored 1828/1828.
+- [x] 2026-11-25: M5 committed as `0f80b507`. Updated `docs/users-guide.md`,
+  `docs/developers-guide.md` (new §42), `docs/axinite-architecture-overview.md`,
+  `src/tools/README.md`, `src/db/CLAUDE.md`, `src/channels/web/CLAUDE.md`, ADR
+  0016 (now accepted, with its implementation record),
+  `docs/formal-verification-methods-in-axinite.md`, and `FEATURE_PARITY.md`.
+  Roadmap 2.1.1 is checked; 2.1.2-2.1.4 are untouched. The endpoint proof
+  reports 28 verified and 0 errors at the committed tree. The final full gate
+  set (including the ci matrix and both frontend chains) is delegated to the
+  scrutineer; the plan is complete only when that run is green.
 
 ## Surprises & discoveries
 
