@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use axinite::config::SafetyConfig;
 use axinite::context::JobContext;
 use axinite::safety::SafetyLayer;
-use axinite::tools::monty::broker::{BrokerContext, CallerPolicy};
+use axinite::tools::monty::broker::{BrokerContext, BrokerServices, CallerPolicy};
 use axinite::tools::{ApprovalRequirement, ToolError, ToolRegistry};
 use serde_json::{Value, json};
 use support::{context_with, failing_stub, policy, run, skip_without_helper, stub};
@@ -144,18 +144,18 @@ async fn a_missing_broker_rejects_before_spawning() {
 #[tokio::test]
 async fn unknown_allowed_tools_are_rejected_at_setup() {
     let registry = ToolRegistry::new();
-    let error = BrokerContext::new(
-        Arc::new(registry),
-        Arc::new(SafetyLayer::new(&SafetyConfig {
+    let services = BrokerServices {
+        tools: Arc::new(registry),
+        safety: Arc::new(SafetyLayer::new(&SafetyConfig {
             max_output_length: 100_000,
             injection_check_enabled: false,
         })),
-        None,
-        &["missing".to_string()],
-        policy(),
-    )
-    .await
-    .expect_err("unknown");
+        hooks: None,
+        policy: policy(),
+    };
+    let error = BrokerContext::new(services, &["missing".to_string()])
+        .await
+        .expect_err("unknown");
     assert!(error.to_string().contains("unknown tool"), "{error}");
 }
 
@@ -169,18 +169,18 @@ async fn recursion_is_refused_at_selection() {
         ApprovalRequirement::Never,
         Value::Null,
     ));
-    let error = BrokerContext::new(
-        Arc::new(registry),
-        Arc::new(SafetyLayer::new(&SafetyConfig {
+    let services = BrokerServices {
+        tools: Arc::new(registry),
+        safety: Arc::new(SafetyLayer::new(&SafetyConfig {
             max_output_length: 100_000,
             injection_check_enabled: false,
         })),
-        None,
-        &["exec_code".to_string()],
-        CallerPolicy::default(),
-    )
-    .await
-    .expect_err("reserved");
+        hooks: None,
+        policy: CallerPolicy::default(),
+    };
+    let error = BrokerContext::new(services, &["exec_code".to_string()])
+        .await
+        .expect_err("reserved");
     assert!(error.to_string().contains("cannot be exposed"), "{error}");
 }
 

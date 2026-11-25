@@ -13,7 +13,7 @@ use crate::context::JobContext;
 use crate::error::Error;
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
-use crate::tools::monty::broker::{BrokerContext, CallerPolicy};
+use crate::tools::monty::broker::{BrokerContext, BrokerServices, CallerPolicy};
 
 use super::postflight::check_auth_required;
 
@@ -115,18 +115,18 @@ pub(super) async fn prepare_job_context(
             auto_approved: session.auto_approved_tools.clone(),
         }
     };
-    let broker = BrokerContext::new(
-        delegate.agent.tools().clone(),
-        delegate.agent.safety().clone(),
-        Some(Arc::clone(delegate.agent.hooks())),
-        &names,
+    let services = BrokerServices {
+        tools: delegate.agent.tools().clone(),
+        safety: delegate.agent.safety().clone(),
+        hooks: Some(Arc::clone(delegate.agent.hooks())),
         policy,
-    )
-    .await
-    .map_err(|error| crate::error::ToolError::InvalidParameters {
-        name: "exec_code".to_string(),
-        reason: error.to_string(),
-    })?;
+    };
+    let broker = BrokerContext::new(services, &names)
+        .await
+        .map_err(|error| crate::error::ToolError::InvalidParameters {
+            name: "exec_code".to_string(),
+            reason: error.to_string(),
+        })?;
     job_ctx.broker = Some(Arc::new(broker));
     Ok(job_ctx)
 }

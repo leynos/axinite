@@ -233,6 +233,28 @@ def _nextest_invocation(
     )
 
 
+def _with_directory(
+    assignments: dict[str, str], directory: str | None
+) -> dict[str, str]:
+    """Add the ``cd`` directory to an invocation's recorded settings."""
+    if directory is None:
+        return assignments
+    return {**assignments, "DIRECTORY": directory}
+
+
+def _cargo_invocation(
+    rest: list[str], assignments: dict[str, str], index: int
+) -> Invocation | None:
+    """Return the invocation for Cargo's own words, or ``None``."""
+    if not rest:
+        return None
+    if rest[0] == "nextest":
+        return _nextest_invocation(rest, assignments, index)
+    if rest[0] not in CARGO_VERBS:
+        return None
+    return Invocation("cargo", rest[0], assignments, tuple(rest[1:]), index)
+
+
 def _command_of(
     words: list[str], assignments: dict[str, str], index: int
 ) -> Invocation | None:
@@ -240,15 +262,9 @@ def _command_of(
     directory, words = _split_command_prefixes(words)
     if not words:
         return None
-    if directory is not None:
-        assignments = {**assignments, "DIRECTORY": directory}
+    assignments = _with_directory(assignments, directory)
     if words[0] == "probe-whitaker":
         return Invocation("whitaker", "dylint", assignments, tuple(words[1:]), index)
     if words[0] != "probe-cargo":
         return None
-    rest = words[1:]
-    if rest and rest[0] == "nextest":
-        return _nextest_invocation(rest, assignments, index)
-    if not rest or rest[0] not in CARGO_VERBS:
-        return None
-    return Invocation("cargo", rest[0], assignments, tuple(rest[1:]), index)
+    return _cargo_invocation(words[1:], assignments, index)

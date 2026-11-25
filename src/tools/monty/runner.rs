@@ -9,8 +9,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use monty_protocol::{
-    CallOutcome, GuestLimits, HelperToParent, MAX_FRAME_BYTES, PROTOCOL_VERSION, ParentToHelper,
-    ResumeRun, StartRun, TerminalOutcome,
+    CallOutcome, GuestLimits, HelperToParent, HostCall, MAX_FRAME_BYTES, PROTOCOL_VERSION,
+    ParentToHelper, ResumeRun, StartRun, TerminalOutcome,
 };
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -239,7 +239,15 @@ impl Supervisor {
                 limits: guest_limits,
             };
             write_message(&mut stdin, &ParentToHelper::StartRun(start)).await?;
-            drive(&mut stdin, &mut stdout, &request, broker, job_ctx).await
+            Session {
+                stdin: &mut stdin,
+                stdout: &mut stdout,
+                request: &request,
+                broker,
+                job_ctx,
+            }
+            .drive()
+            .await
         })
         .await;
 
@@ -262,63 +270,82 @@ impl Supervisor {
     }
 }
 
-async fn drive<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
-    stdin: &mut W,
-    stdout: &mut R,
-    request: &RunRequest,
-    broker: &Arc<BrokerContext>,
-    job_ctx: &JobContext,
-) -> Result<RunOutcome, RunError> {
-    let mut output = String::new();
-    let mut next_call_id = 0_u64;
-    loop {
-        match read_message(stdout).await? {
-            HelperToParent::GuestOutput(chunk) => {
-                if chunk.run_id != request.run_id {
-                    return Err(RunError::RuntimeCrash("output for another run".to_string()));
+/// The pipes one run talks over, and the authority it talks with.
+struct Session<'a, W, R> {
+    stdin: &'a mut W,
+    stdout: &'a mut R,
+    request: &'a RunRequest,
+    broker: &'a Arc<BrokerContext>,
+    job_ctx: &'a JobContext,
+}
+
+impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
+    /// Drive one run to its terminal message.
+    async fn drive(&mut self) -> Result<RunOutcome, RunError> {
+        let mut output = String::new();
+        let mut next_call_id = 0_u64;
+        loop {
+            match read_message(self.stdout).await? {
+                HelperToParent::GuestOutput(chunk) => {
+                    self.check_run(&chunk.run_id, "output for another run")?;
+                    append_bounded(&mut output, &chunk.text, MAX_CAPTURED_OUTPUT_BYTES);
                 }
-                append_bounded(&mut output, &chunk.text, MAX_CAPTURED_OUTPUT_BYTES);
-            }
-            HelperToParent::HostCall(call) => {
-                // `next_call_id` starts at zero, so `call_id <= next_call_id`
-                // already rejects the reserved id zero as well as any repeat.
-                if call.run_id != request.run_id || call.call_id <= next_call_id {
+                HelperToParent::HostCall(call) => {
+                    // `next_call_id` starts at zero, so `call_id <=
+                    // next_call_id` already rejects the reserved id zero as
+                    // well as any repeat.
+                    if call.call_id <= next_call_id {
+                        return Err(RunError::RuntimeCrash(
+                            "unexpected host callback".to_string(),
+                        ));
+                    }
+                    self.check_run(&call.run_id, "callback for another run")?;
+                    next_call_id = call.call_id;
+                    self.answer(call).await?;
+                }
+                HelperToParent::Terminal(terminal) => {
+                    self.check_run(&terminal.run_id, "terminal for another run")?;
+                    return terminal_outcome(terminal.outcome, output);
+                }
+                HelperToParent::Hello(_) => {
                     return Err(RunError::RuntimeCrash(
-                        "unexpected host callback".to_string(),
+                        "duplicate helper greeting".to_string(),
                     ));
                 }
-                next_call_id = call.call_id;
-                let outcome = match broker.mediate(&call.name, &call.arguments, job_ctx).await {
-                    Ok(value) => CallOutcome::Value { value },
-                    Err(denial) => CallOutcome::Terminate {
-                        code: denial.code,
-                        message: truncate(denial.message),
-                    },
-                };
-                write_message(
-                    stdin,
-                    &ParentToHelper::ResumeRun(ResumeRun {
-                        run_id: request.run_id.clone(),
-                        call_id: call.call_id,
-                        outcome,
-                    }),
-                )
-                .await?;
-            }
-            HelperToParent::Terminal(terminal) => {
-                if terminal.run_id != request.run_id {
-                    return Err(RunError::RuntimeCrash(
-                        "terminal for another run".to_string(),
-                    ));
-                }
-                return terminal_outcome(terminal.outcome, output);
-            }
-            HelperToParent::Hello(_) => {
-                return Err(RunError::RuntimeCrash(
-                    "duplicate helper greeting".to_string(),
-                ));
             }
         }
+    }
+
+    /// Refuse a message that belongs to a different run.
+    fn check_run(&self, run_id: &str, message: &str) -> Result<(), RunError> {
+        if run_id == self.request.run_id {
+            return Ok(());
+        }
+        Err(RunError::RuntimeCrash(message.to_string()))
+    }
+
+    /// Mediate one callback and send the parent's outcome back.
+    async fn answer(&mut self, call: HostCall) -> Result<(), RunError> {
+        let outcome = match self
+            .broker
+            .mediate(&call.name, &call.arguments, self.job_ctx)
+            .await
+        {
+            Ok(value) => CallOutcome::Value { value },
+            Err(denial) => CallOutcome::Terminate {
+                code: denial.code,
+                message: truncate(denial.message),
+            },
+        };
+        write_message(
+            self.stdin,
+            &ParentToHelper::ResumeRun(ResumeRun {
+                run_id: self.request.run_id.clone(),
+                call_id: call.call_id,
+                outcome,
+            }),
+        )
+        .await
     }
 }
 

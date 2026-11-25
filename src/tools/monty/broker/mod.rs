@@ -38,6 +38,31 @@ pub struct CallerPolicy {
     pub auto_approved: HashSet<String>,
 }
 
+/// The immutable services one `exec_code` invocation's broker needs.
+///
+/// Grouping them keeps every `BrokerContext` method to the callback it
+/// mediates, rather than repeating the registry, safety layer and hooks.
+#[derive(Clone)]
+pub struct BrokerServices {
+    /// The registry callbacks resolve against.
+    pub tools: Arc<ToolRegistry>,
+    /// The layer every parameter and result passes through.
+    pub safety: Arc<SafetyLayer>,
+    /// The caller's hook registry, when the caller has one.
+    pub hooks: Option<Arc<crate::hooks::HookRegistry>>,
+    /// The caller's policy snapshot.
+    pub policy: CallerPolicy,
+}
+
+/// One callback being mediated: its name, index in the table, arguments and
+/// the job it runs for.
+struct Callback<'a> {
+    name: &'a str,
+    index: usize,
+    arguments: &'a Value,
+    job_ctx: &'a JobContext,
+}
+
 /// A typed refusal to service a callback.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrokerDenial {
@@ -74,10 +99,7 @@ impl std::fmt::Display for BrokerDenial {
 /// The authority carried by a caller into one `exec_code` invocation.
 pub struct BrokerContext {
     table: SelectedTools,
-    tools: Arc<ToolRegistry>,
-    safety: Arc<SafetyLayer>,
-    hooks: Option<Arc<crate::hooks::HookRegistry>>,
-    policy: CallerPolicy,
+    services: BrokerServices,
 }
 
 impl std::fmt::Debug for BrokerContext {
@@ -85,8 +107,8 @@ impl std::fmt::Debug for BrokerContext {
         formatter
             .debug_struct("BrokerContext")
             .field("table", &self.table)
-            .field("user_id", &self.policy.user_id)
-            .field("hooks", &self.hooks.is_some())
+            .field("user_id", &self.services.policy.user_id)
+            .field("hooks", &self.services.hooks.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -99,20 +121,11 @@ impl BrokerContext {
     /// Returns [`SelectionError`] when the requested names cannot be resolved
     /// into a valid immutable table.
     pub async fn new(
-        tools: Arc<ToolRegistry>,
-        safety: Arc<SafetyLayer>,
-        hooks: Option<Arc<crate::hooks::HookRegistry>>,
+        services: BrokerServices,
         requested: &[String],
-        policy: CallerPolicy,
     ) -> Result<Self, SelectionError> {
-        let table = SelectedTools::resolve(&tools, requested).await?;
-        Ok(Self {
-            table,
-            tools,
-            safety,
-            hooks,
-            policy,
-        })
+        let table = SelectedTools::resolve(&services.tools, requested).await?;
+        Ok(Self { table, services })
     }
 
     /// The selected table, for the start message.
@@ -160,17 +173,22 @@ impl BrokerContext {
         }
 
         let arguments = self.run_hooks(name, arguments).await?;
-        self.check_and_dispatch(name, index, &arguments, job_ctx)
-            .await
+        let callback = Callback {
+            name,
+            index,
+            arguments: &arguments,
+            job_ctx,
+        };
+        self.check_and_dispatch(&callback).await
     }
 
-    async fn check_and_dispatch(
-        &self,
-        name: &str,
-        index: usize,
-        arguments: &Value,
-        job_ctx: &JobContext,
-    ) -> Result<Value, BrokerDenial> {
+    async fn check_and_dispatch(&self, callback: &Callback<'_>) -> Result<Value, BrokerDenial> {
+        let Callback {
+            name,
+            index,
+            arguments,
+            ..
+        } = *callback;
         let entry = self
             .table
             .entries()
@@ -179,7 +197,7 @@ impl BrokerContext {
 
         // A tool replaced after selection is not the tool the caller
         // authorized. Refuse rather than silently run the new implementation.
-        let current = self.tools.get(name).await.ok_or_else(|| {
+        let current = self.services.tools.get(name).await.ok_or_else(|| {
             BrokerDenial::new(DenialCode::PolicyDenied, "tool is no longer registered")
         })?;
         if !Arc::ptr_eq(entry.tool(), &current) {
@@ -189,8 +207,12 @@ impl BrokerContext {
             ));
         }
 
-        if let Some(denial) = approval_denial(entry.tool().as_ref(), name, arguments, &self.policy)
-        {
+        if let Some(denial) = approval_denial(
+            entry.tool().as_ref(),
+            name,
+            arguments,
+            &self.services.policy,
+        ) {
             return Err(denial);
         }
 
@@ -204,12 +226,11 @@ impl BrokerContext {
             )
         })?;
 
-        self.dispatch(entry.tool().as_ref(), name, arguments, job_ctx)
-            .await
+        self.dispatch(entry.tool().as_ref(), callback).await
     }
 
     async fn run_hooks(&self, name: &str, arguments: &Value) -> Result<Value, BrokerDenial> {
-        let Some(hooks) = &self.hooks else {
+        let Some(hooks) = &self.services.hooks else {
             return Ok(arguments.clone());
         };
         let sensitive = self
@@ -228,8 +249,8 @@ impl BrokerContext {
         let event = HookEvent::ToolCall {
             tool_name: name.to_string(),
             parameters: redact_params(arguments, &borrowed),
-            user_id: self.policy.user_id.clone(),
-            context: self.policy.hook_context.clone(),
+            user_id: self.services.policy.user_id.clone(),
+            context: self.services.policy.hook_context.clone(),
         };
         match hooks.run(&event).await {
             Ok(HookOutcome::Continue {
@@ -255,21 +276,27 @@ impl BrokerContext {
     async fn dispatch(
         &self,
         tool: &dyn Tool,
-        name: &str,
-        arguments: &Value,
-        job_ctx: &JobContext,
+        callback: &Callback<'_>,
     ) -> Result<Value, BrokerDenial> {
-        let output = execute_resolved_tool_with_safety(tool, &self.safety, arguments, job_ctx)
-            .await
-            .map_err(|error| {
-                let message = self
-                    .safety
-                    .sanitize_tool_output(name, &error.to_string())
-                    .content;
-                BrokerDenial::new(DenialCode::ToolFailed, message)
-            })?;
+        let Callback {
+            name,
+            arguments,
+            job_ctx,
+            ..
+        } = *callback;
+        let output =
+            execute_resolved_tool_with_safety(tool, &self.services.safety, arguments, job_ctx)
+                .await
+                .map_err(|error| {
+                    let message = self
+                        .services
+                        .safety
+                        .sanitize_tool_output(name, &error.to_string())
+                        .content;
+                    BrokerDenial::new(DenialCode::ToolFailed, message)
+                })?;
 
-        let sanitized = self.safety.sanitize_tool_output(name, &output);
+        let sanitized = self.services.safety.sanitize_tool_output(name, &output);
         let value = serde_json::from_str::<Value>(&sanitized.content)
             .unwrap_or(Value::String(sanitized.content));
         let size = serde_json::to_vec(&value)

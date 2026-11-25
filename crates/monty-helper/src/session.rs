@@ -16,9 +16,10 @@ use monty_protocol::{
     validate_start_run, write_frame,
 };
 use monty_types::{
-    CollectedStreams, CompileOptions, MontyObject, NameLookupResult, PrintStream, PrintWriter,
-    ResourceTracker,
+    CollectedStreams, CompileOptions, MontyObject, NameLookupResult, ObjectRef, PrintStream,
+    PrintWriter, ResourceTracker,
 };
+use serde_json::Value;
 
 use self::failures::{abort, concurrent_denied, os_denied, script_failure};
 use self::output::{OutputBudget, split_prefix, truncate};
@@ -138,29 +139,45 @@ impl<'w, W: Write> Session<'w, W> {
 
     /// Sends all output collected since the last drain, in bounded frames.
     fn drain(&mut self, streams: &mut CollectedStreams) -> Result<(), Fatal> {
-        let entries = mem::take(streams).into_entries();
-        for (stream, text) in entries {
-            let stream = match stream {
-                PrintStream::Stdout => GuestStream::Stdout,
-                PrintStream::Stderr => GuestStream::Stderr,
-            };
-            let mut rest = text.as_str();
-            while !rest.is_empty() && self.budget.remaining() > 0 {
-                let limit = self.budget.remaining().min(OUTPUT_CHUNK_BYTES);
-                let (chunk, tail) = split_prefix(rest, limit);
-                if chunk.is_empty() {
-                    break;
-                }
-                self.budget.consume(chunk.len());
-                self.send(&HelperToParent::GuestOutput(GuestOutput {
-                    run_id: self.run_id.clone(),
-                    stream,
-                    text: chunk.to_owned(),
-                }))?;
-                rest = tail;
-            }
+        for (stream, text) in mem::take(streams).into_entries() {
+            let stream = guest_stream(stream);
+            self.send_text(stream, text.as_str())?;
         }
         Ok(())
+    }
+
+    /// Send one stream's text in chunks that fit the budget and the frame.
+    fn send_text(&mut self, stream: GuestStream, mut rest: &str) -> Result<(), Fatal> {
+        while !rest.is_empty() && self.budget.remaining() > 0 {
+            let limit = self.budget.remaining().min(OUTPUT_CHUNK_BYTES);
+            let Some(chunk) = self.send_chunk(stream, rest, limit)? else {
+                break;
+            };
+            rest = &rest[chunk..];
+        }
+        Ok(())
+    }
+
+    /// Send at most `limit` bytes of `rest`, returning how many were sent.
+    ///
+    /// `None` means nothing could be sent, which ends the chunking loop.
+    fn send_chunk(
+        &mut self,
+        stream: GuestStream,
+        rest: &str,
+        limit: usize,
+    ) -> Result<Option<usize>, Fatal> {
+        let (chunk, _) = split_prefix(rest, limit);
+        if chunk.is_empty() {
+            return Ok(None);
+        }
+        self.budget.consume(chunk.len());
+        self.send(&HelperToParent::GuestOutput(GuestOutput {
+            run_id: self.run_id.clone(),
+            stream,
+            text: chunk.to_owned(),
+        }))?;
+        Ok(Some(chunk.len()))
     }
 
     fn finish(&mut self, outcome: TerminalOutcome) -> Result<(), Fatal> {
@@ -169,6 +186,19 @@ impl<'w, W: Write> Session<'w, W> {
             outcome,
         };
         self.send(&HelperToParent::Terminal(terminal))
+    }
+
+    /// Abort `call` with `message` and report it as the run's terminal state.
+    fn abort_with(
+        &mut self,
+        call: FunctionCall,
+        streams: &mut CollectedStreams,
+        outcome: TerminalOutcome,
+        message: &str,
+    ) -> CallReply {
+        let remaining = self.budget.remaining();
+        abort(call, streams, remaining, message);
+        CallReply::Finished(outcome)
     }
 
     /// Answers one tool callback, reading the parent's reply.
@@ -180,30 +210,22 @@ impl<'w, W: Write> Session<'w, W> {
     ) -> Result<CallReply, Fatal> {
         let name = call.function_name.clone();
         if call.object_id.is_some() || !self.tools.contains(&name) {
+            let message = format!("tool '{name}' is not available to this run");
             let outcome = TerminalOutcome::ToolError {
                 code: DenialCode::NotAllowed,
-                message: format!("tool '{name}' is not available to this run"),
+                message: message.clone(),
             };
-            let remaining = self.budget.remaining();
-            abort(
-                call,
-                streams,
-                remaining,
-                "tool is not available to this run",
-            );
-            return Ok(CallReply::Finished(outcome));
+            return Ok(self.abort_with(call, streams, outcome, &message));
         }
         let arguments = match convert::call_arguments(&call.args) {
             Ok(arguments) => arguments,
             Err(error) => {
                 let message = truncate(error.message());
-                let remaining = self.budget.remaining();
-                abort(call, streams, remaining, &message);
                 let outcome = TerminalOutcome::ToolError {
                     code: DenialCode::ContractError,
-                    message,
+                    message: message.clone(),
                 };
-                return Ok(CallReply::Finished(outcome));
+                return Ok(self.abort_with(call, streams, outcome, &message));
             }
         };
         self.next_call_id = self.next_call_id.checked_add(1).ok_or(EXIT_PROTOCOL)?;
@@ -215,64 +237,100 @@ impl<'w, W: Write> Session<'w, W> {
             arguments,
         }))?;
 
-        let message = read_parent(reader).ok_or(EXIT_PROTOCOL)?;
-        let (run_id, answered, outcome) = match message {
-            ParentToHelper::ResumeRun(ResumeRun {
-                run_id,
-                call_id,
-                outcome,
-            }) => (run_id, call_id, outcome),
-            ParentToHelper::CancelRun(cancel) if cancel.run_id == self.run_id => {
-                let remaining = self.budget.remaining();
-                abort(call, streams, remaining, "run cancelled by the parent");
-                return Ok(CallReply::Cancelled);
-            }
-            _ => return Err(EXIT_PROTOCOL),
-        };
-        if run_id != self.run_id || answered != call_id {
-            return Err(EXIT_PROTOCOL);
-        }
+        let outcome = self.read_reply(reader, call_id)?;
         match outcome {
-            CallOutcome::Value { value } => {
-                let value = match convert::json_to_monty(&value, 0) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        let message = truncate(error.message());
-                        let remaining = self.budget.remaining();
-                        abort(call, streams, remaining, &message);
-                        let outcome = TerminalOutcome::RuntimeCrash { message };
-                        return Ok(CallReply::Finished(outcome));
-                    }
-                };
-                if !call.allow_eager_await {
-                    let remaining = self.budget.remaining();
-                    abort(
-                        call,
-                        streams,
-                        remaining,
-                        "concurrent tool calls are not supported by exec_code",
-                    );
-                    let outcome = TerminalOutcome::ScriptError {
-                        message: "concurrent tool calls are not supported by exec_code".to_owned(),
-                    };
-                    return Ok(CallReply::Finished(outcome));
-                }
-                Ok(CallReply::Resume {
-                    call: Box::new(call),
-                    value,
-                })
+            ReplyOutcome::Cancelled => {
+                Ok(self.abort_with(
+                    call,
+                    streams,
+                    TerminalOutcome::ScriptError {
+                        message: "run cancelled by the parent".to_owned(),
+                    },
+                    "run cancelled by the parent",
+                ))
             }
-            CallOutcome::Terminate { code, message } => {
-                let message = truncate(&message);
-                let remaining = self.budget.remaining();
-                abort(call, streams, remaining, &message);
-                Ok(CallReply::Finished(TerminalOutcome::ToolError {
-                    code,
-                    message,
-                }))
+            ReplyOutcome::Settled(outcome) => {
+                Ok(self.settle(call, streams, *outcome))
             }
         }
     }
+
+    /// Read the parent's answer to `call_id`, refusing any other message.
+    fn read_reply<R: BufRead>(
+        &self,
+        reader: &mut R,
+        call_id: u64,
+    ) -> Result<ReplyOutcome, Fatal> {
+        match read_parent(reader).ok_or(EXIT_PROTOCOL)? {
+            ParentToHelper::ResumeRun(ResumeRun {
+                run_id,
+                call_id: answered,
+                outcome,
+            }) => {
+                if run_id != self.run_id || answered != call_id {
+                    return Err(EXIT_PROTOCOL);
+                }
+                Ok(ReplyOutcome::Settled(Box::new(outcome)))
+            }
+            ParentToHelper::CancelRun(cancel) if cancel.run_id == self.run_id => {
+                Ok(ReplyOutcome::Cancelled)
+            }
+            _ => Err(EXIT_PROTOCOL),
+        }
+    }
+
+    /// Turn the parent's outcome into the next guest state.
+    fn settle(
+        &mut self,
+        call: FunctionCall,
+        streams: &mut CollectedStreams,
+        outcome: CallOutcome,
+    ) -> CallReply {
+        match outcome {
+            CallOutcome::Value { value } => self.resume_with(call, streams, &value),
+            CallOutcome::Terminate { code, message } => {
+                let message = truncate(&message);
+                let outcome = TerminalOutcome::ToolError { code, message: message.clone() };
+                self.abort_with(call, streams, outcome, &message)
+            }
+        }
+    }
+
+    /// Resume the guest with the value the parent returned.
+    fn resume_with(
+        &mut self,
+        call: FunctionCall,
+        streams: &mut CollectedStreams,
+        value: &Value,
+    ) -> CallReply {
+        let value = match convert::json_to_monty(value, 0) {
+            Ok(value) => value,
+            Err(error) => {
+                let message = truncate(error.message());
+                let outcome = TerminalOutcome::RuntimeCrash { message: message.clone() };
+                return self.abort_with(call, streams, outcome, &message);
+            }
+        };
+        if !call.allow_eager_await {
+            let message = "concurrent tool calls are not supported by exec_code";
+            let outcome = TerminalOutcome::ScriptError {
+                message: message.to_owned(),
+            };
+            return self.abort_with(call, streams, outcome, message);
+        }
+        CallReply::Resume {
+            call: Box::new(call),
+            value,
+        }
+    }
+}
+
+/// What the parent did with a callback.
+enum ReplyOutcome {
+    /// The parent answered with an outcome to apply.
+    Settled(Box<CallOutcome>),
+    /// The parent cancelled the run instead of answering.
+    Cancelled,
 }
 
 fn run_session<R: BufRead, W: Write>(
@@ -281,17 +339,9 @@ fn run_session<R: BufRead, W: Write>(
     request: StartRun,
 ) -> Result<(), Fatal> {
     let mut session = Session::new(writer, &request);
-    let wrapped = source::wrapper(&request.code, &request.entrypoint);
-    let mut input_names = vec!["params".to_owned(), "state".to_owned()];
-    input_names.extend(request.tools.iter().map(|tool| tool.name.clone()));
-    let run = match MontyRun::new(
-        wrapped,
-        source::SCRIPT_NAME,
-        input_names,
-        CompileOptions::default(),
-    ) {
+    let run = match compile(&request) {
         Ok(run) => run,
-        Err(error) => return session.finish(script_failure(&error)),
+        Err(outcome) => return session.finish(outcome),
     };
     let inputs = match build_inputs(&request) {
         Ok(inputs) => inputs,
@@ -310,15 +360,7 @@ fn run_session<R: BufRead, W: Write>(
             Err(error) => return session.finish(script_failure(&error)),
         };
         progress = match step {
-            RunProgress::Complete(value) => {
-                let outcome = match convert::completed_members(&value) {
-                    Ok((result, state)) => TerminalOutcome::Completed { result, state },
-                    Err(error) => TerminalOutcome::ScriptError {
-                        message: truncate(error.message()),
-                    },
-                };
-                return session.finish(outcome);
-            }
+            RunProgress::Complete(value) => return session.finish(completed(&value)),
             RunProgress::FunctionCall(call) => {
                 match session.handle_call(reader, &mut streams, call)? {
                     CallReply::Resume { call, value } => {
@@ -348,6 +390,37 @@ fn run_session<R: BufRead, W: Write>(
                 state.abort(concurrent_denied(), print)
             }
         };
+    }
+}
+
+/// Map Monty's print stream to the wire stream the parent reads.
+fn guest_stream(stream: PrintStream) -> GuestStream {
+    match stream {
+        PrintStream::Stdout => GuestStream::Stdout,
+        PrintStream::Stderr => GuestStream::Stderr,
+    }
+}
+
+/// Compile the guest program, or describe why it could not be compiled.
+fn compile(request: &StartRun) -> Result<MontyRun, TerminalOutcome> {
+    let mut input_names = vec!["params".to_owned(), "state".to_owned()];
+    input_names.extend(request.tools.iter().map(|tool| tool.name.clone()));
+    MontyRun::new(
+        source::wrapper(&request.code, &request.entrypoint),
+        source::SCRIPT_NAME,
+        input_names,
+        CompileOptions::default(),
+    )
+    .map_err(|error| script_failure(&error))
+}
+
+/// Describe a completed run, or the contract error in its returned members.
+fn completed(value: &MontyObject) -> TerminalOutcome {
+    match convert::completed_members(value) {
+        Ok((result, state)) => TerminalOutcome::Completed { result, state },
+        Err(error) => TerminalOutcome::ScriptError {
+            message: truncate(error.message()),
+        },
     }
 }
 

@@ -253,28 +253,47 @@ pub enum ParentToHelper {
 /// limits, identifiers, uniqueness, and reserved names.
 pub fn validate_start_run(request: &StartRun) -> Result<(), String> {
     validate_run_id(&request.run_id)?;
-    if !is_python_identifier(&request.entrypoint) {
+    validate_entrypoint(&request.entrypoint)?;
+    validate_object_field(&request.params, "params")?;
+    validate_object_field(&request.state, "state")?;
+    validate_tool_count(request.tools.len())?;
+    validate_limits(&request.limits)?;
+    validate_tools(&request.tools, &request.entrypoint)
+}
+
+/// Require an entrypoint that the wrapper can define and call.
+fn validate_entrypoint(entrypoint: &str) -> Result<(), String> {
+    if !is_python_identifier(entrypoint) {
         return Err(format!(
-            "entrypoint '{}' is not a permitted Python identifier",
-            request.entrypoint
+            "entrypoint '{entrypoint}' is not a permitted Python identifier"
         ));
     }
-    if is_reserved_entrypoint(&request.entrypoint) {
+    if is_reserved_entrypoint(entrypoint) {
         return Err(format!(
-            "entrypoint '{}' is reserved by the exec_code wrapper",
-            request.entrypoint
+            "entrypoint '{entrypoint}' is reserved by the exec_code wrapper"
         ));
     }
-    if !request.params.is_object() {
-        return Err("params must be a JSON object".to_owned());
+    Ok(())
+}
+
+/// Require a JSON object where the ABI passes one.
+fn validate_object_field(value: &Value, name: &str) -> Result<(), String> {
+    if value.is_object() {
+        return Ok(());
     }
-    if !request.state.is_object() {
-        return Err("state must be a JSON object".to_owned());
-    }
-    if request.tools.len() > MAX_TOOLS {
+    Err(format!("{name} must be a JSON object"))
+}
+
+/// Require no more tools than the wire contract carries.
+fn validate_tool_count(count: usize) -> Result<(), String> {
+    if count > MAX_TOOLS {
         return Err(format!("at most {MAX_TOOLS} tools may be selected"));
     }
-    let limits = request.limits;
+    Ok(())
+}
+
+/// Require every limit to be positive and within its ceiling.
+fn validate_limits(limits: &GuestLimits) -> Result<(), String> {
     for (name, value, ceiling) in [
         (
             "max_memory_bytes",
@@ -291,21 +310,32 @@ pub fn validate_start_run(request: &StartRun) -> Result<(), String> {
             return Err(format!("{name} must be between 1 and {ceiling}"));
         }
     }
-    let mut names = std::collections::BTreeSet::new();
-    for tool in &request.tools {
-        validate_identifier("tool name", &tool.name)?;
-        if is_reserved_name(&tool.name) || tool.name == request.entrypoint {
-            return Err(format!("tool name '{}' is reserved", tool.name));
-        }
-        if tool.description.len() > MAX_DESCRIPTION_BYTES {
-            return Err(format!(
-                "description for '{}' exceeds {MAX_DESCRIPTION_BYTES} bytes",
-                tool.name
-            ));
-        }
-        if !names.insert(tool.name.as_str()) {
+    Ok(())
+}
+
+/// Require each tool to be well named, unique, and not the entrypoint.
+fn validate_tools(tools: &[ToolDefinition], entrypoint: &str) -> Result<(), String> {
+    let mut seen = std::collections::BTreeSet::new();
+    for tool in tools {
+        validate_tool(tool, entrypoint)?;
+        if !seen.insert(tool.name.as_str()) {
             return Err(format!("duplicate tool name '{}'", tool.name));
         }
+    }
+    Ok(())
+}
+
+/// Require one tool's name and description to be within contract.
+fn validate_tool(tool: &ToolDefinition, entrypoint: &str) -> Result<(), String> {
+    validate_identifier("tool name", &tool.name)?;
+    if is_reserved_name(&tool.name) || tool.name == entrypoint {
+        return Err(format!("tool name '{}' is reserved", tool.name));
+    }
+    if tool.description.len() > MAX_DESCRIPTION_BYTES {
+        return Err(format!(
+            "description for '{}' exceeds {MAX_DESCRIPTION_BYTES} bytes",
+            tool.name
+        ));
     }
     Ok(())
 }

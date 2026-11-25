@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::context::JobContext;
 use crate::hooks::HookRegistry;
 use crate::safety::SafetyLayer;
-use crate::tools::monty::broker::{BrokerContext, CallerPolicy};
+use crate::tools::monty::broker::{BrokerContext, BrokerServices, CallerPolicy};
 use crate::tools::{ApprovalRequirement, NativeTool, Tool, ToolError, ToolOutput, ToolRegistry};
 
 struct CountingTool {
@@ -97,11 +97,13 @@ async fn broker(
     let names: Vec<String> = requested.iter().map(|name| (*name).to_string()).collect();
     Arc::new(
         BrokerContext::new(
-            Arc::new(registry),
-            Arc::new(test_safety()),
-            hooks,
+            BrokerServices {
+                tools: Arc::new(registry),
+                safety: Arc::new(test_safety()),
+                hooks,
+                policy,
+            },
             &names,
-            policy,
         )
         .await
         .expect("broker"),
@@ -207,11 +209,13 @@ async fn replaced_registration_is_refused() {
     ));
     let broker = Arc::new(
         BrokerContext::new(
-            Arc::clone(&registry),
-            Arc::new(test_safety()),
-            None,
+            BrokerServices {
+                tools: Arc::clone(&registry),
+                safety: Arc::new(test_safety()),
+                hooks: None,
+                policy: policy(),
+            },
             &["alpha".to_string()],
-            policy(),
         )
         .await
         .expect("broker"),

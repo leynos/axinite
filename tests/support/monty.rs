@@ -15,7 +15,7 @@ use std::time::Duration;
 use axinite::config::{EnvContext, SafetyConfig};
 use axinite::context::JobContext;
 use axinite::safety::SafetyLayer;
-use axinite::tools::monty::broker::{BrokerContext, CallerPolicy};
+use axinite::tools::monty::broker::{BrokerContext, BrokerServices, CallerPolicy};
 use axinite::tools::monty::exec_code::ExecCodeTool;
 use axinite::tools::{ApprovalRequirement, NativeTool, Tool, ToolError, ToolOutput, ToolRegistry};
 use serde_json::{Value, json};
@@ -141,18 +141,16 @@ pub async fn context_with_policy(
         registry.register_sync(tool);
     }
     let names: Vec<String> = requested.iter().map(|name| (*name).to_string()).collect();
-    let broker = BrokerContext::new(
-        Arc::new(registry),
-        Arc::new(SafetyLayer::new(&SafetyConfig {
+    let services = BrokerServices {
+        tools: Arc::new(registry),
+        safety: Arc::new(SafetyLayer::new(&SafetyConfig {
             max_output_length: 100_000,
             injection_check_enabled: false,
         })),
-        None,
-        &names,
+        hooks: None,
         policy,
-    )
-    .await
-    .expect("broker");
+    };
+    let broker = BrokerContext::new(services, &names).await.expect("broker");
     JobContext {
         broker: Some(Arc::new(broker)),
         ..JobContext::default()

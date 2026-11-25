@@ -14,7 +14,7 @@ use axinite::hooks::{
     Hook, HookContext, HookEvent, HookFuture, HookOutcome, HookPoint, HookRegistry,
 };
 use axinite::safety::SafetyLayer;
-use axinite::tools::monty::broker::{BrokerContext, BrokerDenial, CallerPolicy};
+use axinite::tools::monty::broker::{BrokerContext, BrokerDenial, BrokerServices, CallerPolicy};
 use axinite::tools::{ApprovalRequirement, NativeTool, Tool, ToolError, ToolOutput, ToolRegistry};
 use monty_protocol::DenialCode;
 use rstest::fixture;
@@ -94,18 +94,20 @@ impl BrokerWorld {
         self.broker = Some(
             self.runtime
                 .block_on(BrokerContext::new(
-                    Arc::new(registry),
-                    Arc::new(SafetyLayer::new(&SafetyConfig {
-                        max_output_length: 100_000,
-                        injection_check_enabled: false,
-                    })),
-                    hooks,
-                    &names,
-                    CallerPolicy {
-                        user_id: "bdd".to_string(),
-                        hook_context: "chat".to_string(),
-                        auto_approved: Default::default(),
+                    BrokerServices {
+                        tools: Arc::new(registry),
+                        safety: Arc::new(SafetyLayer::new(&SafetyConfig {
+                            max_output_length: 100_000,
+                            injection_check_enabled: false,
+                        })),
+                        hooks,
+                        policy: CallerPolicy {
+                            user_id: "bdd".to_string(),
+                            hook_context: "chat".to_string(),
+                            auto_approved: Default::default(),
+                        },
                     },
+                    &names,
                 ))
                 .expect("Given step builds a valid broker"),
         );

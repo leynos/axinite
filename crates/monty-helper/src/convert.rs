@@ -37,27 +37,11 @@ impl fmt::Display for ConvertError {
 
 /// Converts a JSON value into a Monty value.
 pub fn json_to_monty(value: &Value, depth: usize) -> Result<MontyObject, ConvertError> {
-    if depth > MAX_JSON_DEPTH {
-        return Err(ConvertError::new("value exceeds the JSON nesting limit"));
-    }
+    check_depth(depth)?;
     match value {
         Value::Null => Ok(MontyObject::none()),
         Value::Bool(value) => Ok(MontyObject::bool(*value)),
-        Value::Number(number) => {
-            if let Some(value) = number.as_i64() {
-                Ok(MontyObject::int(value))
-            } else if let Some(value) = number.as_f64() {
-                if value.is_finite() {
-                    Ok(MontyObject::float(value))
-                } else {
-                    Err(ConvertError::new("float is not finite"))
-                }
-            } else {
-                Err(ConvertError::new(
-                    "number is outside the signed 64-bit range",
-                ))
-            }
-        }
+        Value::Number(number) => number_to_monty(number),
         Value::String(value) => Ok(MontyObject::string(value.clone())),
         Value::Array(items) => {
             let items = items
@@ -81,60 +65,89 @@ pub fn json_to_monty(value: &Value, depth: usize) -> Result<MontyObject, Convert
     }
 }
 
-/// Converts a Monty value into a JSON value.
-pub fn monty_to_json(value: ObjectRef<'_>, depth: usize) -> Result<Value, ConvertError> {
+/// Refuse a value nested deeper than the JSON ABI allows.
+fn check_depth(depth: usize) -> Result<(), ConvertError> {
     if depth > MAX_JSON_DEPTH {
         return Err(ConvertError::new("value exceeds the JSON nesting limit"));
     }
-    if value == MontyObject::none() {
-        return Ok(Value::Null);
-    }
-    if let Some(value) = value.as_bool() {
-        return Ok(Value::Bool(value));
-    }
-    if let Some(value) = value.as_int() {
-        return Ok(Value::Number(value.into()));
-    }
-    if let Some(value) = value.as_float() {
-        return if value.is_finite() {
-            serde_json::Number::from_f64(value)
-                .map(Value::Number)
-                .ok_or_else(|| ConvertError::new("float is not finite"))
-        } else {
-            Err(ConvertError::new("float is not finite"))
+    Ok(())
+}
+
+/// Convert a JSON number, which is integer, finite float, or refused.
+///
+/// A JSON number that fits neither an `i64` nor a finite `f64` — an unsigned
+/// value above `i64::MAX`, say — has no Monty representation to write.
+fn number_to_monty(number: &serde_json::Number) -> Result<MontyObject, ConvertError> {
+    let Some(integer) = number.as_i64() else {
+        let Some(float) = number.as_f64().filter(|value| value.is_finite()) else {
+            return Err(ConvertError::new(
+                "number is outside the signed 64-bit range, or is not finite",
+            ));
         };
-    }
-    if let Some(value) = value.as_str() {
-        return Ok(Value::String(value.to_owned()));
+        return Ok(MontyObject::float(float));
+    };
+    Ok(MontyObject::int(integer))
+}
+
+/// Converts a Monty value into a JSON value.
+pub fn monty_to_json(value: ObjectRef<'_>, depth: usize) -> Result<Value, ConvertError> {
+    check_depth(depth)?;
+    if let Some(scalar) = monty_scalar_to_json(value)? {
+        return Ok(scalar);
     }
     match value.type_name() {
-        "list" | "tuple" => {
-            let items = value
-                .items()
-                .ok_or_else(|| ConvertError::new("list value has no items"))?;
-            let items = items
-                .into_iter()
-                .map(|item| monty_to_json(item, depth + 1))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::Array(items))
-        }
-        "dict" => {
-            let pairs = value
-                .pairs()
-                .ok_or_else(|| ConvertError::new("dict value has no items"))?;
-            let mut object = Map::new();
-            for (key, item) in pairs {
-                let key = key.as_str().ok_or_else(|| {
-                    ConvertError::new("object keys must be strings in the JSON ABI")
-                })?;
-                object.insert(key.to_owned(), monty_to_json(item, depth + 1)?);
-            }
-            Ok(Value::Object(object))
-        }
+        "list" | "tuple" => monty_list_to_json(value, depth),
+        "dict" => monty_dict_to_json(value, depth),
         other => Err(ConvertError::new(format!(
             "value of type '{other}' has no JSON representation"
         ))),
     }
+}
+
+/// Convert a Monty scalar, or return `None` when the value is a container.
+fn monty_scalar_to_json(value: ObjectRef<'_>) -> Result<Option<Value>, ConvertError> {
+    if value == MontyObject::none() {
+        return Ok(Some(Value::Null));
+    }
+    if let Some(boolean) = value.as_bool() {
+        return Ok(Some(Value::Bool(boolean)));
+    }
+    if let Some(integer) = value.as_int() {
+        return Ok(Some(Value::Number(integer.into())));
+    }
+    if let Some(float) = value.as_float() {
+        let number = serde_json::Number::from_f64(float)
+            .ok_or_else(|| ConvertError::new("float is not finite"))?;
+        return Ok(Some(Value::Number(number)));
+    }
+    Ok(value.as_str().map(|text| Value::String(text.to_owned())))
+}
+
+/// Convert a Monty list or tuple to a JSON array.
+fn monty_list_to_json(value: ObjectRef<'_>, depth: usize) -> Result<Value, ConvertError> {
+    let items = value
+        .items()
+        .ok_or_else(|| ConvertError::new("list value has no items"))?;
+    let items = items
+        .into_iter()
+        .map(|item| monty_to_json(item, depth + 1))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::Array(items))
+}
+
+/// Convert a Monty dict to a JSON object, requiring string keys.
+fn monty_dict_to_json(value: ObjectRef<'_>, depth: usize) -> Result<Value, ConvertError> {
+    let pairs = value
+        .pairs()
+        .ok_or_else(|| ConvertError::new("dict value has no items"))?;
+    let mut object = Map::new();
+    for (key, item) in pairs {
+        let key = key
+            .as_str()
+            .ok_or_else(|| ConvertError::new("object keys must be strings in the JSON ABI"))?;
+        object.insert(key.to_owned(), monty_to_json(item, depth + 1)?);
+    }
+    Ok(Value::Object(object))
 }
 
 /// Converts callback arguments into a JSON object of keyword arguments.
