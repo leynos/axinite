@@ -26,7 +26,7 @@ async fn refresh_oauth_token(
         return false;
     }
 
-    let refresh_name = format!("{}_refresh_token", config.secret_name);
+    let refresh_name = refresh_secret_name(config);
     let refresh_secret = match store.get_decrypted(user_id, &refresh_name).await {
         Ok(s) => s,
         Err(e) => {
@@ -43,7 +43,7 @@ async fn refresh_oauth_token(
         return false;
     };
 
-    if !store_refreshed_tokens(store, user_id, config, &refresh_name, &token_data).await {
+    if !store_refreshed_tokens(store, user_id, config, &token_data).await {
         return false;
     }
 
@@ -52,6 +52,11 @@ async fn refresh_oauth_token(
         "OAuth access token refreshed successfully"
     );
     true
+}
+
+/// Name of the secret that holds the refresh token for `config`'s access token.
+fn refresh_secret_name(config: &OAuthRefreshConfig) -> String {
+    format!("{}_refresh_token", config.secret_name)
 }
 
 /// SSRF defence: `token_url` comes from the tool's capabilities file, so it
@@ -136,7 +141,6 @@ async fn store_refreshed_tokens(
     store: &(dyn SecretsStore + Send + Sync),
     user_id: &str,
     config: &OAuthRefreshConfig,
-    refresh_name: &str,
     token_data: &serde_json::Value,
 ) -> bool {
     let new_access_token = match token_data.get("access_token").and_then(|v| v.as_str()) {
@@ -165,7 +169,8 @@ async fn store_refreshed_tokens(
 
     // Store rotated refresh token if the provider sent a new one
     if let Some(new_refresh) = token_data.get("refresh_token").and_then(|v| v.as_str()) {
-        let mut refresh_params = crate::secrets::CreateSecretParams::new(refresh_name, new_refresh);
+        let mut refresh_params =
+            crate::secrets::CreateSecretParams::new(refresh_secret_name(config), new_refresh);
         if let Some(ref provider) = config.provider {
             refresh_params = refresh_params.with_provider(provider);
         }

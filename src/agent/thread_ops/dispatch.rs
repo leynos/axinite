@@ -156,31 +156,17 @@ impl Agent {
             .await
     }
 
-    /// Route `ExecApproval`, which names the pending request explicitly.
-    async fn dispatch_exec_approval(
+    /// Route an approval decision: `ExecApproval` names the pending request,
+    /// `ApprovalResponse` (`request_id` of `None`) answers the session's pending slot.
+    async fn dispatch_decision(
         &self,
         ctx: &DispatchCtx,
-        request_id: Uuid,
-        approved: bool,
-        always: bool,
+        request_id: Option<Uuid>,
+        decision: (bool, bool),
     ) -> Result<SubmissionResult, Error> {
+        let (approved, always) = decision;
         let params = ApprovalParams {
-            request_id: Some(request_id),
-            approved,
-            always,
-        };
-        self.dispatch_approval(ctx, params).await
-    }
-
-    /// Route `ApprovalResponse`, which answers the session's pending approval slot.
-    async fn dispatch_approval_response(
-        &self,
-        ctx: &DispatchCtx,
-        approved: bool,
-        always: bool,
-    ) -> Result<SubmissionResult, Error> {
-        let params = ApprovalParams {
-            request_id: None,
+            request_id,
             approved,
             always,
         };
@@ -202,12 +188,11 @@ impl Agent {
                 approved,
                 always,
             } => {
-                self.dispatch_exec_approval(&ctx, request_id, approved, always)
+                self.dispatch_decision(&ctx, Some(request_id), (approved, always))
                     .await
             }
             Submission::ApprovalResponse { approved, always } => {
-                self.dispatch_approval_response(&ctx, approved, always)
-                    .await
+                self.dispatch_decision(&ctx, None, (approved, always)).await
             }
             other => self.dispatch_conversation_submission(ctx, other).await,
         }

@@ -200,39 +200,20 @@ async fn check_ed25519_signature(
     router: &WasmChannelRouter,
     channel_name: &str,
     headers: &HeaderMap,
-    body: &Bytes,
+    body: &[u8],
 ) -> Result<(), Reply> {
     let Some(pub_key_hex) = router.get_signature_key(channel_name).await else {
         return Ok(());
     };
-    let (Some(sig), Some(ts)) = (
-        header_text(headers, "x-signature-ed25519"),
-        header_text(headers, "x-signature-timestamp"),
-    ) else {
-        tracing::warn!(
-            channel = %channel_name,
-            "Signature headers missing but key is registered"
-        );
-        return Err(reject(
-            StatusCode::UNAUTHORIZED,
-            "Missing signature headers",
-        ));
-    };
-    if !crate::channels::wasm::signature::verify_discord_signature(
-        &pub_key_hex,
-        sig,
-        ts,
-        body,
-        now_unix_secs(),
-    ) {
-        tracing::warn!(
-            channel = %channel_name,
-            "Ed25519 signature verification failed"
-        );
-        return Err(reject(StatusCode::UNAUTHORIZED, "Invalid signature"));
-    }
-    tracing::debug!(channel = %channel_name, "Ed25519 signature verified");
-    Ok(())
+    apply_scheme(&ED25519, channel_name, headers, |sig, ts| {
+        crate::channels::wasm::signature::verify_discord_signature(
+            &pub_key_hex,
+            sig,
+            ts,
+            body,
+            now_unix_secs(),
+        )
+    })
 }
 
 /// HMAC-SHA256 signature verification (Slack-style), when the channel registered a secret.
@@ -240,38 +221,72 @@ async fn check_hmac_signature(
     router: &WasmChannelRouter,
     channel_name: &str,
     headers: &HeaderMap,
-    body: &Bytes,
+    body: &[u8],
 ) -> Result<(), Reply> {
     let Some(hmac_secret) = router.get_hmac_secret(channel_name).await else {
         return Ok(());
     };
-    let (Some(ts), Some(sig)) = (
-        header_text(headers, "x-slack-request-timestamp"),
-        header_text(headers, "x-slack-signature"),
-    ) else {
-        tracing::warn!(
-            channel = %channel_name,
-            "Slack signature headers missing but secret is registered"
-        );
-        return Err(reject(
-            StatusCode::UNAUTHORIZED,
-            "Missing Slack signature headers",
-        ));
+    apply_scheme(&HMAC_SHA256, channel_name, headers, |ts, sig| {
+        crate::channels::wasm::signature::verify_slack_signature(
+            &hmac_secret,
+            ts,
+            body,
+            sig,
+            now_unix_secs(),
+        )
+    })
+}
+
+/// How one signature scheme reads its two headers and reports each outcome.
+struct SignatureScheme {
+    /// The two header names, in the order `verify` receives their values.
+    headers: [&'static str; 2],
+    missing_log: &'static str,
+    missing_error: &'static str,
+    failed_log: &'static str,
+    failed_error: &'static str,
+    verified_log: &'static str,
+}
+
+/// Discord-style Ed25519: signature header first, then timestamp.
+const ED25519: SignatureScheme = SignatureScheme {
+    headers: ["x-signature-ed25519", "x-signature-timestamp"],
+    missing_log: "Signature headers missing but key is registered",
+    missing_error: "Missing signature headers",
+    failed_log: "Ed25519 signature verification failed",
+    failed_error: "Invalid signature",
+    verified_log: "Ed25519 signature verified",
+};
+
+/// Slack-style HMAC-SHA256: timestamp header first, then signature.
+const HMAC_SHA256: SignatureScheme = SignatureScheme {
+    headers: ["x-slack-request-timestamp", "x-slack-signature"],
+    missing_log: "Slack signature headers missing but secret is registered",
+    missing_error: "Missing Slack signature headers",
+    failed_log: "HMAC-SHA256 signature verification failed",
+    failed_error: "Invalid Slack signature",
+    verified_log: "HMAC-SHA256 signature verified",
+};
+
+/// Read the scheme's headers and run `verify` on their values, rejecting when
+/// a header is missing or the check fails.
+fn apply_scheme(
+    scheme: &SignatureScheme,
+    channel_name: &str,
+    headers: &HeaderMap,
+    verify: impl FnOnce(&str, &str) -> bool,
+) -> Result<(), Reply> {
+    let [first, second] = scheme.headers;
+    let (Some(first), Some(second)) = (header_text(headers, first), header_text(headers, second))
+    else {
+        tracing::warn!(channel = %channel_name, "{}", scheme.missing_log);
+        return Err(reject(StatusCode::UNAUTHORIZED, scheme.missing_error));
     };
-    if !crate::channels::wasm::signature::verify_slack_signature(
-        &hmac_secret,
-        ts,
-        body,
-        sig,
-        now_unix_secs(),
-    ) {
-        tracing::warn!(
-            channel = %channel_name,
-            "HMAC-SHA256 signature verification failed"
-        );
-        return Err(reject(StatusCode::UNAUTHORIZED, "Invalid Slack signature"));
+    if !verify(first, second) {
+        tracing::warn!(channel = %channel_name, "{}", scheme.failed_log);
+        return Err(reject(StatusCode::UNAUTHORIZED, scheme.failed_error));
     }
-    tracing::debug!(channel = %channel_name, "HMAC-SHA256 signature verified");
+    tracing::debug!(channel = %channel_name, "{}", scheme.verified_log);
     Ok(())
 }
 
