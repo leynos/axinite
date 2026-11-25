@@ -76,6 +76,12 @@ pub enum SelectionError {
         /// The first structural problem.
         reason: String,
     },
+    /// The caller's own attenuated authority does not include the name.
+    #[error("tool {name:?} is outside the caller's authority")]
+    OutsideCallerAuthority {
+        /// The name the caller's ceiling refused.
+        name: String,
+    },
 }
 
 /// One selected tool, pinned for a single run.

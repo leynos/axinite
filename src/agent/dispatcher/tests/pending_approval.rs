@@ -47,6 +47,8 @@ fn test_pending_approval_serialization_roundtrip_with_deferred_calls() {
             },
         ],
         user_timezone: None,
+        permitted_tools: Vec::new(),
+        auto_approved_tools: Vec::new(),
     };
 
     let json = serde_json::to_string(&pending).expect("serialize");

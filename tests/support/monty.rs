@@ -122,6 +122,7 @@ pub fn policy() -> CallerPolicy {
         user_id: "e2e".to_string(),
         hook_context: "chat".to_string(),
         auto_approved: Default::default(),
+        permitted: Default::default(),
     }
 }
 

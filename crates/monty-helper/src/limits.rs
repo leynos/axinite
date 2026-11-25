@@ -22,8 +22,9 @@ pub const MAX_GUEST_MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Applies the address-space ceiling to the current process.
 ///
-/// On platforms without `RLIMIT_AS` this is a no-op; the allocator budget and
-/// the tracker still bound guest memory.
+/// The ceiling is the deployment contract for guest isolation, so a platform
+/// that cannot impose it refuses to run rather than starting a guest with no
+/// address-space bound: the plan forbids an unbounded platform fallback.
 pub fn impose_address_space_limit() -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -35,8 +36,16 @@ pub fn impose_address_space_limit() -> io::Result<()> {
                 maximum: Some(ADDRESS_SPACE_LIMIT_BYTES),
             },
         )?;
+        Ok(())
     }
-    Ok(())
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "no address-space ceiling is available on this platform, so the \
+             helper refuses to run a guest",
+        ))
+    }
 }
 
 /// Arms the `monty-alloc` hard ceiling for a guest heap budget.

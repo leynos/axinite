@@ -276,6 +276,8 @@ fn test_pending_approval_flow() {
         context_messages: vec![ChatMessage::user("do it")],
         deferred_tool_calls: vec![],
         user_timezone: None,
+        permitted_tools: Vec::new(),
+        auto_approved_tools: Vec::new(),
     };
 
     thread.await_approval(approval);
@@ -302,6 +304,8 @@ fn test_clear_pending_approval() {
         context_messages: vec![],
         deferred_tool_calls: vec![],
         user_timezone: None,
+        permitted_tools: Vec::new(),
+        auto_approved_tools: Vec::new(),
     };
 
     thread.await_approval(approval);

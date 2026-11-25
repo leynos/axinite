@@ -93,11 +93,17 @@ impl Agent {
     }
 
     /// Build JobContext for approval execution.
-    fn build_job_context_for_approval(
+    ///
+    /// `exec_code` needs the same broker after approval that the dispatcher
+    /// would have issued before it: the pending call carries the caller's
+    /// attenuated ceiling and auto-approval snapshot, so the continuation
+    /// rebuilds the authority from them rather than running with none. Outer
+    /// approval still does not authorize a nested tool.
+    async fn build_job_context_for_approval(
         &self,
         env: &MsgEnv,
         pending: &PendingApproval,
-    ) -> JobContext {
+    ) -> Result<JobContext, Error> {
         let mut job_ctx = JobContext::with_user(&env.user_id, "chat", "Interactive chat session");
         job_ctx.http_interceptor = self.deps.http_interceptor.clone();
         // Prefer a valid timezone from the approval message, fall back to the
@@ -110,7 +116,51 @@ impl Agent {
         if let Some(tz) = tz_candidate {
             job_ctx.user_timezone = tz.to_string();
         }
-        job_ctx
+        if pending.tool_name == "exec_code" {
+            job_ctx.broker = Some(Arc::new(self.approved_broker(env, pending).await?));
+        }
+        Ok(job_ctx)
+    }
+
+    /// Rebuild the authority an approved `exec_code` call runs with.
+    async fn approved_broker(
+        &self,
+        env: &MsgEnv,
+        pending: &PendingApproval,
+    ) -> Result<crate::tools::monty::broker::BrokerContext, Error> {
+        let requested: Vec<String> = pending
+            .parameters
+            .get("allowed_tools")
+            .and_then(serde_json::Value::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let policy = crate::tools::monty::broker::CallerPolicy {
+            user_id: env.user_id.clone(),
+            hook_context: "chat".to_string(),
+            auto_approved: pending.auto_approved_tools.iter().cloned().collect(),
+            permitted: pending.permitted_tools.iter().cloned().collect(),
+        };
+        let services = crate::tools::monty::broker::BrokerServices {
+            tools: self.tools().clone(),
+            safety: self.safety().clone(),
+            hooks: Some(Arc::clone(self.hooks())),
+            policy,
+        };
+        crate::tools::monty::broker::BrokerContext::new(services, &requested)
+            .await
+            .map_err(|error| {
+                crate::error::ToolError::InvalidParameters {
+                    name: "exec_code".to_string(),
+                    reason: error.to_string(),
+                }
+                .into()
+            })
     }
 
     /// Execute primary tool and send notifications.
@@ -307,7 +357,9 @@ impl Agent {
             .await;
 
         // e) Build context and execute primary tool
-        let job_ctx = self.build_job_context_for_approval(&scope.env, &pending);
+        let job_ctx = self
+            .build_job_context_for_approval(&scope.env, &pending)
+            .await?;
         let (tool_result, _) = self
             .execute_primary_tool_and_notify(&scope.env, &pending, &job_ctx)
             .await;

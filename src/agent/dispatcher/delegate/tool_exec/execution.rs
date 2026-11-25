@@ -3,6 +3,7 @@
 //! Runs the preflight-approved tool calls, batches them where safe, and
 //! captures raw results for the later postflight phase to interpret.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use tokio::task::JoinSet;
@@ -84,9 +85,10 @@ pub(super) fn runs_alone(tool_name: &str) -> bool {
 /// Builds the job context for one call, issuing `exec_code` authority when
 /// this is the chat caller.
 ///
-/// The broker is built from the call's own `allowed_tools` argument and the
-/// session's current auto-approval snapshot. An unknown or unsupported name
-/// fails here, before the helper starts.
+/// The broker is built from the call's own `allowed_tools` argument, the
+/// session's current auto-approval snapshot, and the caller's attenuated
+/// ceiling: the names skill attenuation left visible this turn. A requested
+/// name outside any of those fails here, before the helper starts.
 pub(super) async fn prepare_job_context(
     delegate: &ChatDelegate<'_>,
     tc: &crate::llm::ToolCall,
@@ -95,8 +97,21 @@ pub(super) async fn prepare_job_context(
     if tc.name != "exec_code" {
         return Ok(job_ctx);
     }
-    let names: Vec<String> = tc
-        .arguments
+    let names = requested_tools(tc);
+    let policy = caller_policy(delegate).await;
+    let services = BrokerServices {
+        tools: delegate.agent.tools().clone(),
+        safety: delegate.agent.safety().clone(),
+        hooks: Some(Arc::clone(delegate.agent.hooks())),
+        policy,
+    };
+    job_ctx.broker = Some(Arc::new(build_broker(services, &names).await?));
+    Ok(job_ctx)
+}
+
+/// Read the tool names an `exec_code` call asked to expose to its guest.
+fn requested_tools(tc: &crate::llm::ToolCall) -> Vec<String> {
+    tc.arguments
         .get("allowed_tools")
         .and_then(serde_json::Value::as_array)
         .map(|entries| {
@@ -106,29 +121,49 @@ pub(super) async fn prepare_job_context(
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default();
-    let policy = {
-        let session = delegate.session.lock().await;
-        CallerPolicy {
-            user_id: delegate.message.user_id.clone(),
-            hook_context: "chat".to_string(),
-            auto_approved: session.auto_approved_tools.clone(),
-        }
-    };
-    let services = BrokerServices {
-        tools: delegate.agent.tools().clone(),
-        safety: delegate.agent.safety().clone(),
-        hooks: Some(Arc::clone(delegate.agent.hooks())),
-        policy,
-    };
-    let broker = BrokerContext::new(services, &names)
+        .unwrap_or_default()
+}
+
+/// Snapshot the caller's authority for one `exec_code` call.
+async fn caller_policy(delegate: &ChatDelegate<'_>) -> CallerPolicy {
+    let permitted = attenuated_names(delegate).await;
+    let session = delegate.session.lock().await;
+    CallerPolicy {
+        user_id: delegate.message.user_id.clone(),
+        hook_context: "chat".to_string(),
+        auto_approved: session.auto_approved_tools.clone(),
+        permitted,
+    }
+}
+
+/// The tool names the caller may offer, after skill attenuation.
+///
+/// The chat loop advertises the attenuated set to the model; a name the model
+/// was never offered must not become callable by asking `exec_code` for it.
+/// With no active skill the ceiling is empty, which `CallerPolicy::permits`
+/// reads as "no attenuation applies".
+pub(super) async fn attenuated_names(delegate: &ChatDelegate<'_>) -> HashSet<String> {
+    if delegate.active_skills.is_empty() {
+        return HashSet::new();
+    }
+    let definitions = delegate.agent.tools().tool_definitions().await;
+    let attenuation = crate::skills::attenuate_tools(&definitions, &delegate.active_skills);
+    attenuation
+        .tools
+        .iter()
+        .map(|definition| definition.name.clone())
+        .collect()
+}
+
+/// Build the broker, reporting a refusal as an invalid-parameter error.
+async fn build_broker(services: BrokerServices, names: &[String]) -> Result<BrokerContext, Error> {
+    BrokerContext::new(services, names)
         .await
         .map_err(|error| crate::error::ToolError::InvalidParameters {
             name: "exec_code".to_string(),
             reason: error.to_string(),
-        })?;
-    job_ctx.broker = Some(Arc::new(broker));
-    Ok(job_ctx)
+        })
+        .map_err(Error::from)
 }
 
 /// Run a batch of tools inline (sequential execution for small batches).

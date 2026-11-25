@@ -36,6 +36,22 @@ pub struct CallerPolicy {
     pub hook_context: String,
     /// Tools the caller's session has already auto-approved.
     pub auto_approved: HashSet<String>,
+    /// The authority ceiling the caller advertises: the names its own skill
+    /// attenuation left visible. A requested name outside this set is refused
+    /// even when it is registered, so a run cannot widen authority by naming a
+    /// tool the caller was never offered.
+    pub permitted: HashSet<String>,
+}
+
+impl CallerPolicy {
+    /// Report whether the caller's own ceiling admits `name`.
+    ///
+    /// An empty ceiling is a caller that did not advertise one; `exec_code`
+    /// already refuses unknown names at selection, and the registry plus the
+    /// hook and approval checks still apply.
+    pub fn permits(&self, name: &str) -> bool {
+        self.permitted.is_empty() || self.permitted.contains(name)
+    }
 }
 
 /// The immutable services one `exec_code` invocation's broker needs.
@@ -116,14 +132,21 @@ impl std::fmt::Debug for BrokerContext {
 impl BrokerContext {
     /// Builds the authority for one run.
     ///
+    /// The requested names are checked against the caller's own ceiling before
+    /// the registry is consulted, so a run cannot name a tool the caller's
+    /// skill attenuation removed.
+    ///
     /// # Errors
     ///
     /// Returns [`SelectionError`] when the requested names cannot be resolved
-    /// into a valid immutable table.
+    /// into a valid immutable table, or when one lies outside the ceiling.
     pub async fn new(
         services: BrokerServices,
         requested: &[String],
     ) -> Result<Self, SelectionError> {
+        if let Some(name) = requested.iter().find(|name| !services.policy.permits(name)) {
+            return Err(SelectionError::OutsideCallerAuthority { name: name.clone() });
+        }
         let table = SelectedTools::resolve(&services.tools, requested).await?;
         Ok(Self { table, services })
     }
@@ -255,12 +278,7 @@ impl BrokerContext {
         match hooks.run(&event).await {
             Ok(HookOutcome::Continue {
                 modified: Some(rewritten),
-            }) => serde_json::from_str::<Value>(&rewritten).map_err(|_| {
-                BrokerDenial::new(
-                    DenialCode::ContractError,
-                    "hook returned arguments that are not JSON",
-                )
-            }),
+            }) => restore_sensitive(rewritten.as_str(), arguments, &borrowed),
             Ok(HookOutcome::Reject { .. }) => Err(BrokerDenial::new(
                 DenialCode::PolicyDenied,
                 "tool call rejected by hook",
@@ -310,6 +328,35 @@ impl BrokerContext {
         }
         Ok(value)
     }
+}
+
+/// Parse a hook's rewritten arguments and put the redacted values back.
+///
+/// A hook sees `sensitive` fields as `[REDACTED]`, because it must not read a
+/// secret it was not given. Dispatching its rewrite verbatim would therefore
+/// replace the real value with the marker, so the original value is restored
+/// for each sensitive key the caller supplied — the same contract the chat
+/// preflight applies to hook rewrites.
+fn restore_sensitive(
+    rewritten: &str,
+    original: &Value,
+    sensitive: &[&str],
+) -> Result<Value, BrokerDenial> {
+    let mut parsed = serde_json::from_str::<Value>(rewritten).map_err(|_| {
+        BrokerDenial::new(
+            DenialCode::ContractError,
+            "hook returned arguments that are not JSON",
+        )
+    })?;
+    let Some(object) = parsed.as_object_mut() else {
+        return Ok(parsed);
+    };
+    for key in sensitive {
+        if let Some(value) = original.get(*key) {
+            object.insert((*key).to_string(), value.clone());
+        }
+    }
+    Ok(parsed)
 }
 
 fn approval_denial(

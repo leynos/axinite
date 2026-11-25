@@ -279,11 +279,50 @@ struct Session<'a, W, R> {
     job_ctx: &'a JobContext,
 }
 
+/// The run-wide callback budgets the parent enforces itself.
+///
+/// The helper counts suspensions too, but the parent must not rely on a
+/// process it is isolating from: a non-conforming helper could otherwise make
+/// unbounded callbacks and unbounded bytes cross the boundary.
+struct CallbackBudget {
+    remaining_calls: u64,
+    remaining_bytes: u64,
+}
+
+impl CallbackBudget {
+    /// Take one callback and its encoded size out of the budget.
+    fn charge(&mut self, call: &HostCall) -> Result<(), RunError> {
+        if self.remaining_calls == 0 {
+            return Err(RunError::RuntimeCrash(
+                "run exceeded its callback budget".to_string(),
+            ));
+        }
+        let size = serde_json::to_vec(call)
+            .map(|encoded| encoded.len() as u64)
+            .unwrap_or(u64::MAX);
+        if size > self.remaining_bytes {
+            return Err(RunError::RuntimeCrash(
+                "run exceeded its callback byte budget".to_string(),
+            ));
+        }
+        self.remaining_calls -= 1;
+        self.remaining_bytes -= size;
+        Ok(())
+    }
+}
+
 impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
     /// Drive one run to its terminal message.
+    ///
+    /// A refusal sent back to the helper ends the run: continuing to read
+    /// would let a non-conforming helper keep asking after its denial.
     async fn drive(&mut self) -> Result<RunOutcome, RunError> {
         let mut output = String::new();
         let mut next_call_id = 0_u64;
+        let mut budget = CallbackBudget {
+            remaining_calls: self.request.limits.max_suspensions,
+            remaining_bytes: u64::try_from(MAX_FRAME_BYTES).unwrap_or(u64::MAX),
+        };
         loop {
             match read_message(self.stdout).await? {
                 HelperToParent::GuestOutput(chunk) => {
@@ -300,8 +339,11 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
                         ));
                     }
                     self.check_run(&call.run_id, "callback for another run")?;
+                    budget.charge(&call)?;
                     next_call_id = call.call_id;
-                    self.answer(call).await?;
+                    if let Some(denial) = self.answer(call).await? {
+                        return Err(denial);
+                    }
                 }
                 HelperToParent::Terminal(terminal) => {
                     self.check_run(&terminal.run_id, "terminal for another run")?;
@@ -325,17 +367,27 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
     }
 
     /// Mediate one callback and send the parent's outcome back.
-    async fn answer(&mut self, call: HostCall) -> Result<(), RunError> {
-        let outcome = match self
+    ///
+    /// A denial is terminal: the outcome is sent so the guest sees the typed
+    /// refusal, and the run ends there rather than waiting for another
+    /// message. `None` means the callback succeeded and the run continues.
+    async fn answer(&mut self, call: HostCall) -> Result<Option<RunError>, RunError> {
+        let (outcome, denial) = match self
             .broker
             .mediate(&call.name, &call.arguments, self.job_ctx)
             .await
         {
-            Ok(value) => CallOutcome::Value { value },
-            Err(denial) => CallOutcome::Terminate {
-                code: denial.code,
-                message: truncate(denial.message),
-            },
+            Ok(value) => (CallOutcome::Value { value }, None),
+            Err(denial) => {
+                let reported = RunError::ToolDenied(denial.clone());
+                (
+                    CallOutcome::Terminate {
+                        code: denial.code,
+                        message: truncate(denial.message),
+                    },
+                    Some(reported),
+                )
+            }
         };
         write_message(
             self.stdin,
@@ -345,7 +397,8 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
                 outcome,
             }),
         )
-        .await
+        .await?;
+        Ok(denial)
     }
 }
 

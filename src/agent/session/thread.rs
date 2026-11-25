@@ -65,6 +65,22 @@ pub struct PendingApproval {
     /// through the approval flow even if the approval message lacks timezone.
     #[serde(default)]
     pub user_timezone: Option<String>,
+    /// The tool names skill attenuation left visible when approval was asked.
+    ///
+    /// `exec_code` needs it to issue the same broker after approval that it
+    /// would have issued before: the continuation runs outside the dispatcher
+    /// that still holds the delegate. Empty means no skill attenuated this
+    /// turn.
+    #[serde(default)]
+    pub permitted_tools: Vec<String>,
+    /// The session's auto-approval snapshot when approval was asked.
+    ///
+    /// Carried for the same reason as `permitted_tools`: an approved
+    /// `exec_code` rebuilds its nested authority from what the caller held at
+    /// the time of the request, not from whatever the session looks like when
+    /// the user answers.
+    #[serde(default)]
+    pub auto_approved_tools: Vec<String>,
 }
 
 /// A conversation thread within a session.

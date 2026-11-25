@@ -221,6 +221,8 @@ mod tests {
             context_messages: vec![ChatMessage::user("hello")],
             deferred_tool_calls: Vec::new(),
             user_timezone: None,
+            permitted_tools: Vec::new(),
+            auto_approved_tools: Vec::new(),
         }
     }
 

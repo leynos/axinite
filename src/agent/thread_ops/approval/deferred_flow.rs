@@ -167,6 +167,8 @@ impl Agent {
                     context_messages: context_messages.clone(),
                     deferred_tool_calls: Vec::new(),
                     user_timezone: pending.user_timezone.clone(),
+                    permitted_tools: pending.permitted_tools.clone(),
+                    auto_approved_tools: pending.auto_approved_tools.clone(),
                 };
                 self.handle_auth_intercept(AuthInterceptParams {
                     session: &scope.session,
@@ -212,6 +214,8 @@ impl Agent {
             deferred_tool_calls: deferred_tool_calls[approval_idx + 1..].to_vec(),
             // Carry forward the resolved timezone from the original pending approval
             user_timezone: pending.user_timezone.clone(),
+            permitted_tools: pending.permitted_tools.clone(),
+            auto_approved_tools: pending.auto_approved_tools.clone(),
         };
 
         let request_id = new_pending.request_id;

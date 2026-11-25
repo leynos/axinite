@@ -105,6 +105,7 @@ impl BrokerWorld {
                             user_id: "bdd".to_string(),
                             hook_context: "chat".to_string(),
                             auto_approved: Default::default(),
+                            permitted: Default::default(),
                         },
                     },
                     &names,
