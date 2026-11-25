@@ -823,6 +823,21 @@ explicit operations; never imply that an error proves no commit occurred.
   reports 28 verified and 0 errors at the committed tree. The final full gate
   set (including the ci matrix and both frontend chains) is delegated to the
   scrutineer; the plan is complete only when that run is green.
+- [x] 2026-11-25: Final gate set on 7446b01a (0f80b507 plus a docs-only plan
+  commit). Passed: `make check-fmt`, `make lint` (four Clippy lanes, both
+  Whitaker lanes, Interrogate 1828/1828), `make typecheck`, `make markdownlint`
+  (including the spelling prerequisite), `make nixie`, `make test` (4650 run,
+  4650 passed, 12 skipped in 3395 s), `make verus` (4 verified, 0 errors),
+  `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs` (28 verified, 0 errors),
+  `make frontend-check`, `make frontend-test`, `make frontend-verify`, and the
+  full `verify:full` chain. `make test-matrix` lane 1 again reached 4650 of
+  4652 with only `trybuild::db_surface_compile_contracts` terminating at its
+  2400-second bound; the log shows over 2 500 `[build-limits]` admission lines
+  and no fixture diagnostic, which is the scheduling outcome recorded above
+  rather than a contract failure. Lanes 2-4 did not run for that reason. Logs:
+  `/tmp/{check-fmt,lint,typecheck,markdownlint,nixie,test,verus,verus-endpoint_setup,test-matrix,frontend-check,frontend-test,frontend-verify,frontend-full}-2-1-1-m5.out`.
+  The matrix remains the one gate without a local green verdict; hosted CI or
+  a less contended host must produce it, and the repository bound is unchanged.
 
 ## Surprises & discoveries
 
