@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use reqwest::{Client, Url};
 
-use crate::secrets::{CreateSecretParams, CredentialMapping, SecretsStore};
+use crate::secrets::{CreateSecretParams, CredentialLocation, CredentialMapping, SecretsStore};
 use crate::testing::credentials::test_secrets_store;
 use crate::tools::builtin::http::HttpTool;
 use crate::tools::builtin::http::request::{RequestTarget, apply_credentials};
@@ -149,6 +149,39 @@ async fn two_mappings_naming_one_header_both_reach_the_request() {
     let mut leak_scanned: Vec<&str> = mirrored.iter().map(|(_, v)| v.as_str()).collect();
     leak_scanned.sort_unstable();
     assert_eq!(leak_scanned, ["value-a", "value-b"]);
+}
+
+fn query_mapping(secret: &str, param: &str) -> CredentialMapping {
+    CredentialMapping {
+        secret_name: secret.to_string(),
+        location: CredentialLocation::QueryParam {
+            name: param.to_string(),
+        },
+        host_patterns: vec![HOST.to_string()],
+    }
+}
+
+#[tokio::test]
+async fn two_mappings_naming_one_query_parameter_both_reach_the_request_in_order() {
+    let tool = tool_with(
+        vec![
+            query_mapping("key_a", "api_key"),
+            query_mapping("key_b", "api_key"),
+        ],
+        &[("key_a", "value-a"), ("key_b", "value-b")],
+    )
+    .await;
+
+    let (built, mirrored_url, _headers) = inject(&tool, "https://api.example.com/v1").await;
+
+    let values = |url: &Url| -> Vec<String> {
+        url.query_pairs()
+            .filter(|(k, _)| k == "api_key")
+            .map(|(_, v)| v.into_owned())
+            .collect()
+    };
+    assert_eq!(values(built.url()), ["value-a", "value-b"]);
+    assert_eq!(values(&mirrored_url), ["value-a", "value-b"]);
 }
 
 #[tokio::test]
