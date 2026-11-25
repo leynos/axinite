@@ -81,11 +81,7 @@ pub(super) async fn webhook_handler(
     if let Err(reply) = check_secret(&state.router, channel_name, &query, &headers).await {
         return reply;
     }
-    if let Err(reply) = check_ed25519_signature(&state.router, channel_name, &headers, &body).await
-    {
-        return reply;
-    }
-    if let Err(reply) = check_hmac_signature(&state.router, channel_name, &headers, &body).await {
+    if let Err(reply) = check_signatures(&state.router, channel_name, &headers, &body).await {
         return reply;
     }
 
@@ -195,46 +191,37 @@ async fn check_secret(
     Ok(())
 }
 
-/// Ed25519 signature verification (Discord-style), when the channel registered a key.
-async fn check_ed25519_signature(
+/// Run the signature checks the channel registered: Ed25519 (Discord-style)
+/// when it has a key, then HMAC-SHA256 (Slack-style) when it has a secret.
+async fn check_signatures(
     router: &WasmChannelRouter,
     channel_name: &str,
     headers: &HeaderMap,
     body: &[u8],
 ) -> Result<(), Reply> {
-    let Some(pub_key_hex) = router.get_signature_key(channel_name).await else {
-        return Ok(());
-    };
-    apply_scheme(&ED25519, channel_name, headers, |sig, ts| {
-        crate::channels::wasm::signature::verify_discord_signature(
-            &pub_key_hex,
-            sig,
-            ts,
-            body,
-            now_unix_secs(),
-        )
-    })
-}
-
-/// HMAC-SHA256 signature verification (Slack-style), when the channel registered a secret.
-async fn check_hmac_signature(
-    router: &WasmChannelRouter,
-    channel_name: &str,
-    headers: &HeaderMap,
-    body: &[u8],
-) -> Result<(), Reply> {
-    let Some(hmac_secret) = router.get_hmac_secret(channel_name).await else {
-        return Ok(());
-    };
-    apply_scheme(&HMAC_SHA256, channel_name, headers, |ts, sig| {
-        crate::channels::wasm::signature::verify_slack_signature(
-            &hmac_secret,
-            ts,
-            body,
-            sig,
-            now_unix_secs(),
-        )
-    })
+    if let Some(pub_key_hex) = router.get_signature_key(channel_name).await {
+        apply_scheme(&ED25519, channel_name, headers, |sig, ts| {
+            crate::channels::wasm::signature::verify_discord_signature(
+                &pub_key_hex,
+                sig,
+                ts,
+                body,
+                now_unix_secs(),
+            )
+        })?;
+    }
+    if let Some(hmac_secret) = router.get_hmac_secret(channel_name).await {
+        apply_scheme(&HMAC_SHA256, channel_name, headers, |ts, sig| {
+            crate::channels::wasm::signature::verify_slack_signature(
+                &hmac_secret,
+                ts,
+                body,
+                sig,
+                now_unix_secs(),
+            )
+        })?;
+    }
+    Ok(())
 }
 
 /// How one signature scheme reads its two headers and reports each outcome.
