@@ -1,13 +1,19 @@
 //! Tests for a channel that registers both an Ed25519 key and an HMAC secret:
 //! the Ed25519 check runs first, and the HMAC check still gates the request.
 
+use std::sync::Arc;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use ed25519_dalek::Signer;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use super::helpers::{setup_slack_router, slack_signature, test_signing_key};
+use crate::channels::wasm::router::{
+    RegisteredEndpoint, WasmChannelRouter, WebhookSecrets, create_wasm_channel_router,
+};
+
+use super::helpers::{create_test_channel, setup_slack_router, slack_signature, test_signing_key};
 
 const SIGNING_SECRET: &str = "my-signing-secret";
 const PAYLOAD: &str = "payload";
@@ -71,6 +77,48 @@ async fn ed25519_is_checked_before_hmac() {
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(error, "Missing signature headers");
+}
+
+#[tokio::test]
+async fn missing_both_signatures_reports_the_ed25519_headers_first() {
+    let app = router_with_both_checks().await;
+
+    let (status, error) = post_with(app, &[]).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(error, "Missing signature headers");
+}
+
+#[tokio::test]
+async fn the_webhook_secret_is_checked_before_either_signature() {
+    let wasm_router = Arc::new(WasmChannelRouter::new());
+    let endpoints = vec![RegisteredEndpoint {
+        channel_name: "slack".to_string(),
+        path: "/webhook/slack".to_string(),
+        methods: vec!["POST".to_string()],
+        require_secret: true,
+    }];
+    let secrets = WebhookSecrets {
+        secret: Some("my-secret".to_string()),
+        header: None,
+    };
+    wasm_router
+        .register(create_test_channel("slack"), endpoints, secrets)
+        .await;
+    let pub_key_hex = hex::encode(test_signing_key().verifying_key().to_bytes());
+    wasm_router
+        .register_signature_key("slack", &pub_key_hex)
+        .await
+        .expect("key registers");
+    wasm_router
+        .register_hmac_secret("slack", SIGNING_SECRET)
+        .await;
+    let app = create_wasm_channel_router(wasm_router, None);
+
+    let (status, error) = post_with(app, &[]).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(error, "Webhook secret required");
 }
 
 #[tokio::test]
