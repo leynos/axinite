@@ -16,6 +16,63 @@ use tokio::process::{Child, Command};
 
 use super::{HelperProgram, RunError};
 
+/// A spawned child that is killed and reaped even if the run future is dropped.
+///
+/// `kill_on_drop` only asks the runtime to terminate the process; it does not
+/// wait for it. A cancelled run would then return, and a caller that released
+/// an admission permit on return would free the slot while the helper was
+/// still exiting. Dropping this guard hands the child to a blocking thread
+/// that kills it and waits, so the slot is released only once the process has
+/// actually gone.
+pub(super) struct ChildGuard {
+    child: Option<Child>,
+}
+
+impl ChildGuard {
+    /// Take ownership of a spawned child, ready for cancellation-safe cleanup.
+    pub(super) fn new(child: Child) -> Self {
+        Self { child: Some(child) }
+    }
+
+    /// Borrow the child for ordinary run handling.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if called after the guard has been disarmed, which the
+    /// supervisor does once, at the end of the run.
+    pub(super) fn child(&mut self) -> &mut Child {
+        self.child
+            .as_mut()
+            .expect("the child is present until the guard is disarmed")
+    }
+
+    /// Kill and reap the child here, rather than leaving it to `Drop`.
+    pub(super) async fn reap(mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+        }
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
+        let _ = child.start_kill();
+        // `Drop` cannot await, so the reap moves to a detached task on the
+        // current runtime. That task outlives this future's cancellation,
+        // which is what keeps the admission slot honest: it is reclaimed only
+        // once the helper has actually exited.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = child.wait().await;
+            });
+        }
+    }
+}
+
 /// Starts a helper with cleared environment and piped standard streams.
 pub(super) async fn spawn(program: &HelperProgram) -> Result<Child, RunError> {
     Command::new(program.path())
@@ -30,7 +87,18 @@ pub(super) async fn spawn(program: &HelperProgram) -> Result<Child, RunError> {
         .map_err(RunError::Spawn)
 }
 
+/// Gives the cancel write this long before the child is killed outright.
+///
+/// A helper that is not reading its stdin fills the pipe, and an unbounded
+/// write would then outlast the deadline the caller asked for. Kill and reap
+/// take precedence over a polite cancellation notice.
+const CANCEL_GRACE: Duration = Duration::from_millis(100);
+
 /// Asks the helper to cancel, then kills and reaps it.
+///
+/// The reap is unconditional: this returns only once the child has exited, so
+/// a caller that releases an admission permit afterwards is releasing it for a
+/// process that is actually gone.
 pub(super) async fn terminate<W: AsyncWrite + Unpin>(
     child: &mut Child,
     run_id: &str,
@@ -39,8 +107,12 @@ pub(super) async fn terminate<W: AsyncWrite + Unpin>(
     let cancel = CancelRun {
         run_id: run_id.to_string(),
     };
-    let _ = write_message(stdin, &ParentToHelper::CancelRun(cancel)).await;
-    let _ = stdin.shutdown().await;
+    let _ = tokio::time::timeout(
+        CANCEL_GRACE,
+        write_message(stdin, &ParentToHelper::CancelRun(cancel)),
+    )
+    .await;
+    let _ = tokio::time::timeout(CANCEL_GRACE, stdin.shutdown()).await;
     let _ = child.start_kill();
     let _ = child.wait().await;
 }

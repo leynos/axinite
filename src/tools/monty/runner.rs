@@ -17,7 +17,9 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Semaphore;
 
 use self::bounds::{append_bounded, truncate};
-use self::process::{drain_stderr, finish_child, read_message, spawn, terminate, write_message};
+use self::process::{
+    ChildGuard, drain_stderr, finish_child, read_message, spawn, terminate, write_message,
+};
 use crate::context::JobContext;
 use crate::tools::monty::broker::{BrokerContext, BrokerDenial};
 
@@ -205,7 +207,11 @@ impl Supervisor {
     ) -> Result<RunOutcome, RunError> {
         let guest_limits = request.limits.guest();
         let deadline = request.limits.deadline;
-        let mut child = spawn(&self.program).await?;
+        let spawned = spawn(&self.program).await?;
+        // The guard reaps the child if this future is dropped mid-run, so the
+        // permit above is never released while a helper is still exiting.
+        let mut guarded = ChildGuard::new(spawned);
+        let child = guarded.child();
         let mut stdin = child
             .stdin
             .take()
@@ -255,15 +261,15 @@ impl Supervisor {
         match run {
             Ok(Ok(outcome)) => {
                 let _ = stdin.shutdown().await;
-                finish_child(&mut child).await;
+                finish_child(guarded.child()).await;
                 Ok(outcome)
             }
             Ok(Err(error)) => {
-                terminate(&mut child, &request.run_id, &mut stdin).await;
+                terminate(guarded.child(), &request.run_id, &mut stdin).await;
                 Err(error)
             }
             Err(_) => {
-                terminate(&mut child, &request.run_id, &mut stdin).await;
+                terminate(guarded.child(), &request.run_id, &mut stdin).await;
                 Err(RunError::Timeout)
             }
         }

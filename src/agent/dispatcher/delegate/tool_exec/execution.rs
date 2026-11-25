@@ -298,6 +298,11 @@ async fn send_tool_started(delegate: &ChatDelegate<'_>, tool_name: &str) {
 }
 
 /// Send tool_completed status update.
+///
+/// The error text is sanitised first. A tool's own message can quote the data
+/// it was given — for `exec_code`, that is guest-controlled exception text
+/// built from `params`, which may be sensitive — and a status update is a
+/// display sink, not a place for a raw value to surface.
 async fn send_tool_completed(
     delegate: &ChatDelegate<'_>,
     tool_name: &str,
@@ -305,6 +310,18 @@ async fn send_tool_completed(
     arguments: &serde_json::Value,
 ) {
     let disp_tool = delegate.agent.tools().get(tool_name).await;
+    let sanitized = match result {
+        Ok(output) => Ok(output.clone()),
+        Err(error) => Err(crate::error::ToolError::ExecutionFailed {
+            name: tool_name.to_string(),
+            reason: delegate
+                .agent
+                .safety()
+                .sanitize_tool_output(tool_name, &error.to_string())
+                .content,
+        }
+        .into()),
+    };
     let _ = delegate
         .agent
         .channels
@@ -312,7 +329,7 @@ async fn send_tool_completed(
             &delegate.message.channel,
             StatusUpdate::tool_completed(
                 tool_name.to_string(),
-                result,
+                &sanitized,
                 arguments,
                 disp_tool.as_deref(),
             ),
