@@ -147,18 +147,51 @@ mod tests {
         assert_eq!(opened.expose(), "https://mail.example.com/");
     }
 
-    #[test]
-    fn different_associated_data_fails() {
+    /// What a test deliberately damages before attempting to open a seal.
+    enum Tamper {
+        /// Open with a different associated data value.
+        Aad(&'static [u8]),
+        /// Flip one bit of the ciphertext.
+        Ciphertext,
+        /// Substitute an unrelated salt.
+        Salt,
+    }
+
+    /// Seal one value, apply `tamper`, and require the open to fail.
+    ///
+    /// Sharing the seal-and-open shape keeps each test to the single fact it
+    /// asserts, which is what the tamper variant names.
+    fn assert_open_fails(tamper: Tamper) {
         let crypto = crypto();
         let (encrypted, salt) = crypto
             .encrypt_endpoint_binding(b"https://mail.example.com/", AAD)
             .expect("seal");
 
+        let mut ciphertext = encrypted.clone();
+        let mut key_salt = salt.clone();
+        let open_aad = match tamper {
+            Tamper::Aad(aad) => aad,
+            Tamper::Ciphertext => {
+                *ciphertext.last_mut().expect("non-empty envelope") ^= 0x01;
+                AAD
+            }
+            Tamper::Salt => {
+                key_salt = vec![0u8; salt.len()];
+                AAD
+            }
+        };
+
         assert!(
             crypto
-                .decrypt_endpoint_binding(&encrypted, &salt, b"scope-b")
-                .is_err()
+                .decrypt_endpoint_binding(&ciphertext, &key_salt, open_aad)
+                .is_err(),
+            "a tampered or mis-scoped envelope must not open"
         );
+    }
+
+    #[test]
+    fn different_associated_data_fails() {
+        assert_open_fails(Tamper::Aad(b"scope-b"));
     }
 
     #[test]
@@ -185,32 +218,12 @@ mod tests {
 
     #[test]
     fn tampered_ciphertext_fails() {
-        let crypto = crypto();
-        let (mut encrypted, salt) = crypto
-            .encrypt_endpoint_binding(b"https://mail.example.com/", AAD)
-            .expect("seal");
-
-        *encrypted.last_mut().expect("non-empty envelope") ^= 0x01;
-
-        assert!(
-            crypto
-                .decrypt_endpoint_binding(&encrypted, &salt, AAD)
-                .is_err()
-        );
+        assert_open_fails(Tamper::Ciphertext);
     }
 
     #[test]
     fn wrong_salt_fails() {
-        let crypto = crypto();
-        let (encrypted, _) = crypto
-            .encrypt_endpoint_binding(b"https://mail.example.com/", AAD)
-            .expect("seal");
-
-        assert!(
-            crypto
-                .decrypt_endpoint_binding(&encrypted, &[0u8; 32], AAD)
-                .is_err()
-        );
+        assert_open_fails(Tamper::Salt);
     }
 
     #[test]

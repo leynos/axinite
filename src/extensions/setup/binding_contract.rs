@@ -11,7 +11,7 @@ use super::binding::{
     BindingRecord, BindingScope, EndpointBindingRepository, MAX_BINDING_BATCH, StoredBinding,
 };
 use super::binding_test_support::{
-    configure, contains, crypto, endpoint, scope, state, status_of, test_crypto, url,
+    configure, contains, endpoint, scope, state, status_of, test_crypto, test_crypto_with, url,
 };
 use super::model::{
     ENDPOINT_ENVELOPE_VERSION, EndpointKind, EndpointName, SetupField, SetupOperation,
@@ -22,31 +22,59 @@ use super::service::{EndpointBindingService, EndpointState};
 const SENTINEL: &str = "https://sentinel.example.com/private-path";
 
 /// Run the full A2 contract with a factory that reopens the same database.
+///
+/// Each scenario keeps its own repository handle so a persistence defect
+/// cannot hide behind another scenario's in-memory state.
 pub(crate) async fn run_binding_contract<F>(make_repository: F)
 where
     F: Fn() -> Arc<dyn EndpointBindingRepository>,
 {
-    let owner_crypto = test_crypto();
+    let crypto = test_crypto();
     let owner = scope("alice", "calendar-ext");
-    let other_user = scope("bob", "calendar-ext");
-    let other_extension = scope("alice", "other-ext");
+    let scopes = ContractScopes {
+        owner: owner.clone(),
+        other_user: scope("bob", "calendar-ext"),
+        other_extension: scope("alice", "other-ext"),
+        thief: scope("mallory", "calendar-ext"),
+    };
     let calendar = EndpointName::parse("calendar").expect("valid name");
 
     let repository = make_repository();
-    let service = EndpointBindingService::new(repository.clone(), owner_crypto.clone());
+    let service = EndpointBindingService::new(repository.clone(), crypto.clone());
+    let reloaded = EndpointBindingService::new(make_repository(), crypto.clone());
 
-    // Save, then reload through a fresh repository handle.
-    configure(&service, &owner, "calendar", SENTINEL).await;
-    let reloaded = EndpointBindingService::new(make_repository(), owner_crypto.clone());
+    scenario_persists_and_hides(&repository, &service, &reloaded, &owner).await;
+    scenario_isolates_scopes(&reloaded, &scopes, &calendar).await;
+    scenario_replaces_and_clears(&reloaded, &owner, &calendar).await;
+    let damage = DamageInputs {
+        reloaded: &reloaded,
+        owner: &owner,
+        calendar: &calendar,
+        make_repository: &make_repository,
+    };
+    scenario_reports_damage(&repository, &damage).await;
+    scenario_versions_are_stale(&repository, &reloaded, &owner, &calendar).await;
+    scenario_transplant_fails(&repository, &reloaded, &owner, &scopes.thief).await;
+    scenario_uninstall_cleanup(&service, &scopes).await;
+    scenario_concurrent_settles(&make_repository, &owner, &calendar, &crypto).await;
+}
+
+/// A saved binding survives a fresh handle and never stores plaintext.
+async fn scenario_persists_and_hides(
+    repository: &Arc<dyn EndpointBindingRepository>,
+    service: &EndpointBindingService,
+    reloaded: &EndpointBindingService,
+    owner: &BindingScope,
+) {
+    configure(service, owner, "calendar", SENTINEL).await;
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, owner, "calendar").await,
         EndpointState::Configured,
         "a saved binding must survive a fresh repository handle"
     );
 
-    // The stored row holds no plaintext form of the confidential URL.
     let stored_rows = repository
-        .list(&owner, MAX_BINDING_BATCH)
+        .list(owner, MAX_BINDING_BATCH)
         .await
         .expect("raw rows");
     assert_eq!(stored_rows.len(), 1);
@@ -56,37 +84,55 @@ where
     ));
     assert!(!contains(&stored_rows[0].key_salt, SENTINEL.as_bytes()));
     assert!(!format!("{:?}", stored_rows[0]).contains("sentinel"));
+}
 
-    // Another user or extension can neither observe nor mutate the binding.
+/// Another user or extension can neither observe nor mutate the binding.
+async fn scenario_isolates_scopes(
+    reloaded: &EndpointBindingService,
+    scopes: &ContractScopes,
+    calendar: &EndpointName,
+) {
     assert_eq!(
-        status_of(&reloaded, &other_user, "calendar").await,
+        status_of(reloaded, &scopes.other_user, "calendar").await,
         EndpointState::Missing
     );
     assert_eq!(
-        status_of(&reloaded, &other_extension, "calendar").await,
+        status_of(reloaded, &scopes.other_extension, "calendar").await,
         EndpointState::Missing
     );
     assert!(
         !reloaded
-            .clear(&other_user, &calendar)
+            .clear(&scopes.other_user, calendar)
             .await
             .expect("scoped clear")
     );
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, &scopes.owner, "calendar").await,
         EndpointState::Configured,
         "a foreign scope must not clear the owner's binding"
     );
+}
 
-    // Replacement is atomic and unique per scoped name.
-    configure(&reloaded, &owner, "calendar", "https://two.example.com/").await;
-    let rows = repository
-        .list(&owner, MAX_BINDING_BATCH)
-        .await
-        .expect("list");
-    assert_eq!(rows.len(), 1, "replace must update in place");
+/// Replacement updates in place, and a rejected replacement changes nothing.
+async fn scenario_replaces_and_clears(
+    reloaded: &EndpointBindingService,
+    owner: &BindingScope,
+    calendar: &EndpointName,
+) {
+    configure(reloaded, owner, "calendar", "https://two.example.com/").await;
+    assert_eq!(
+        reloaded
+            .statuses(owner, &[])
+            .await
+            .expect("empty declarations")
+            .len(),
+        0
+    );
+    assert_eq!(
+        status_of(reloaded, owner, "calendar").await,
+        EndpointState::Configured
+    );
 
-    // A rejected replacement leaves the previous binding intact.
     let declarations = vec![endpoint("calendar", "jmap", false)];
     let rejected = plan_setup(
         &declarations,
@@ -97,143 +143,156 @@ where
     );
     assert!(rejected.is_err());
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, owner, "calendar").await,
         EndpointState::Configured
     );
 
-    // Clear is atomic and idempotent.
-    assert!(reloaded.clear(&owner, &calendar).await.expect("clear"));
+    assert!(reloaded.clear(owner, calendar).await.expect("clear"));
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, owner, "calendar").await,
         EndpointState::Missing
     );
-    assert!(!reloaded.clear(&owner, &calendar).await.expect("reclear"));
+    assert!(!reloaded.clear(owner, calendar).await.expect("reclear"));
+}
 
-    // Removed and reintroduced declarations leave the stored row alone.
-    configure(&reloaded, &owner, "calendar", SENTINEL).await;
-    assert!(
-        reloaded
-            .statuses(&owner, &[])
-            .await
-            .expect("empty declarations")
-            .is_empty()
-    );
-    assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
-        EndpointState::Configured
-    );
-
-    // Corrupted ciphertext is reported as corrupt, never as absent.
-    tamper(&repository, &owner, "calendar", |record| {
+/// Corruption, a wrong key, and a changed kind are reported, not hidden.
+async fn scenario_reports_damage<F>(
+    repository: &Arc<dyn EndpointBindingRepository>,
+    inputs: &DamageInputs<'_, F>,
+) where
+    F: Fn() -> Arc<dyn EndpointBindingRepository>,
+{
+    let reloaded = inputs.reloaded;
+    let owner = inputs.owner;
+    let calendar = inputs.calendar;
+    let make_repository = inputs.make_repository;
+    configure(reloaded, owner, "calendar", SENTINEL).await;
+    tamper(repository, owner, "calendar", |record| {
         let last = record.encrypted_value.last_mut().expect("non-empty");
         *last ^= 0x01;
     })
     .await;
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, owner, "calendar").await,
         EndpointState::Corrupt
     );
 
-    // A different master key cannot authenticate the same row.
-    let wrong_key = EndpointBindingService::new(make_repository(), crypto(&"b".repeat(32)));
+    let wrong_key =
+        EndpointBindingService::new(make_repository(), test_crypto_with(&"b".repeat(32)));
     assert_eq!(
-        status_of(&wrong_key, &owner, "calendar").await,
+        status_of(&wrong_key, owner, "calendar").await,
         EndpointState::Corrupt
     );
 
-    // A changed manifest kind is stale until replaced or cleared.
-    configure(&reloaded, &owner, "calendar", SENTINEL).await;
-    tamper(&repository, &owner, "calendar", |record| {
+    configure(reloaded, owner, "calendar", SENTINEL).await;
+    tamper(repository, owner, "calendar", |record| {
         record.endpoint_kind = EndpointKind::parse("caldav").expect("valid kind");
     })
     .await;
-    let stale = status_of(&reloaded, &owner, "calendar").await;
+    let stale = status_of(reloaded, owner, "calendar").await;
     assert!(stale.needs_attention());
     assert!(!stale.is_configured());
 
-    assert!(reloaded.clear(&owner, &calendar).await.expect("clear"));
+    assert!(reloaded.clear(owner, calendar).await.expect("clear"));
     let upgraded = vec![endpoint("calendar", "caldav", false)];
-    let (name, kind) = match &upgraded[0] {
-        SetupField::Endpoint(field) => (&field.name, &field.kind),
-        SetupField::Secret(_) => unreachable!("fixture is an endpoint"),
-    };
-    let identity = crate::extensions::setup::BindingIdentity {
-        name: name.clone(),
-        kind: kind.clone(),
-        envelope_version: crate::extensions::setup::ENDPOINT_ENVELOPE_VERSION,
-        policy_version: crate::extensions::setup::validation_policy_version(),
-    };
+    let identity = endpoint_identity(&upgraded[0]);
     reloaded
-        .replace(&owner, &identity, &url(SENTINEL))
+        .replace(owner, &identity, &url(SENTINEL))
         .await
         .expect("replace after kind change");
-    let statuses = reloaded.statuses(&owner, &upgraded).await.expect("status");
+    let statuses = reloaded.statuses(owner, &upgraded).await.expect("status");
     assert_eq!(state(&statuses, "calendar"), EndpointState::Configured);
+    assert!(reloaded.clear(owner, calendar).await.expect("clear"));
+}
 
-    // Unknown envelope and validation-policy versions are stale.
-    tamper(&repository, &owner, "calendar", |record| {
+/// Unknown policy and envelope versions are stale rather than reinterpreted.
+async fn scenario_versions_are_stale(
+    repository: &Arc<dyn EndpointBindingRepository>,
+    reloaded: &EndpointBindingService,
+    owner: &BindingScope,
+    calendar: &EndpointName,
+) {
+    configure(reloaded, owner, "calendar", SENTINEL).await;
+    tamper(repository, owner, "calendar", |record| {
         record.validation_policy_version = record.validation_policy_version.saturating_add(1);
     })
     .await;
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, owner, "calendar").await,
         EndpointState::Stale
     );
 
-    configure(&reloaded, &owner, "calendar", SENTINEL).await;
-    tamper(&repository, &owner, "calendar", |record| {
+    configure(reloaded, owner, "calendar", SENTINEL).await;
+    tamper(repository, owner, "calendar", |record| {
         record.envelope_version = ENDPOINT_ENVELOPE_VERSION.saturating_add(1);
     })
     .await;
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, owner, "calendar").await,
         EndpointState::Stale
     );
+    assert!(reloaded.clear(owner, calendar).await.expect("clear"));
+}
 
-    // A row transplanted into another scope fails authentication there.
-    configure(&reloaded, &owner, "calendar", SENTINEL).await;
-    let thief = scope("mallory", "calendar-ext");
+/// A row transplanted into another scope fails authentication there.
+async fn scenario_transplant_fails(
+    repository: &Arc<dyn EndpointBindingRepository>,
+    reloaded: &EndpointBindingService,
+    owner: &BindingScope,
+    thief: &BindingScope,
+) {
+    configure(reloaded, owner, "calendar", SENTINEL).await;
     let stolen = repository
-        .list(&owner, MAX_BINDING_BATCH)
+        .list(owner, MAX_BINDING_BATCH)
         .await
         .expect("list")
         .into_iter()
         .find(|row| row.endpoint_name == "calendar")
         .expect("stored row");
     repository
-        .upsert(&record_for(&thief, &stolen))
+        .upsert(&record_for(thief, &stolen))
         .await
         .expect("transplant");
     assert_eq!(
-        status_of(&reloaded, &owner, "calendar").await,
+        status_of(reloaded, owner, "calendar").await,
         EndpointState::Configured
     );
     assert_eq!(
-        status_of(&reloaded, &thief, "calendar").await,
+        status_of(reloaded, thief, "calendar").await,
         EndpointState::Corrupt
     );
+}
 
-    // An endpoint-only clear must not remove a same-named secret: secrets live
-    // in a different table, so the owner's endpoint is the only affected row.
-    assert!(reloaded.clear(&owner, &calendar).await.expect("clear"));
-
-    // Uninstall cleanup removes only the target scope.
-    configure(&service, &owner, "calendar", SENTINEL).await;
-    configure(&service, &other_user, "calendar", SENTINEL).await;
-    assert_eq!(service.clear_scope(&owner).await.expect("cleanup"), 1);
+/// Uninstall cleanup removes only the target scope.
+async fn scenario_uninstall_cleanup(service: &EndpointBindingService, scopes: &ContractScopes) {
+    configure(service, &scopes.owner, "calendar", SENTINEL).await;
+    configure(service, &scopes.other_user, "calendar", SENTINEL).await;
     assert_eq!(
-        status_of(&service, &owner, "calendar").await,
+        service.clear_scope(&scopes.owner).await.expect("cleanup"),
+        1
+    );
+    assert_eq!(
+        status_of(service, &scopes.owner, "calendar").await,
         EndpointState::Missing
     );
     assert_eq!(
-        status_of(&service, &other_user, "calendar").await,
+        status_of(service, &scopes.other_user, "calendar").await,
         EndpointState::Configured
     );
+}
 
-    // Concurrent replace and clear settle on a legal commit order.
+/// Concurrent replace and clear settle on a legal commit order.
+async fn scenario_concurrent_settles<F>(
+    make_repository: &F,
+    owner: &BindingScope,
+    calendar: &EndpointName,
+    crypto: &Arc<crate::secrets::SecretsCrypto>,
+) where
+    F: Fn() -> Arc<dyn EndpointBindingRepository>,
+{
     let concurrent = Arc::new(EndpointBindingService::new(
         make_repository(),
-        owner_crypto.clone(),
+        crypto.clone(),
     ));
     let replace_target = concurrent.clone();
     let clear_target = concurrent.clone();
@@ -258,12 +317,41 @@ where
     replace.await.expect("replace task");
     clear.await.expect("clear task");
 
-    let settled = status_of(&concurrent, &owner, "calendar").await;
+    let settled = status_of(&concurrent, owner, "calendar").await;
     assert!(
         matches!(settled, EndpointState::Missing | EndpointState::Configured),
         "concurrent operations must settle on a legal commit order, got {settled:?}"
     );
-    concurrent.clear_scope(&owner).await.expect("cleanup");
+    concurrent.clear_scope(owner).await.expect("cleanup");
+}
+
+/// The scopes one contract run exercises.
+struct ContractScopes {
+    owner: BindingScope,
+    other_user: BindingScope,
+    other_extension: BindingScope,
+    thief: BindingScope,
+}
+
+/// The state and dependencies the damage scenario needs.
+struct DamageInputs<'a, F> {
+    reloaded: &'a EndpointBindingService,
+    owner: &'a BindingScope,
+    calendar: &'a EndpointName,
+    make_repository: &'a F,
+}
+
+/// Build a `BindingIdentity` from a declared endpoint field.
+fn endpoint_identity(field: &SetupField) -> crate::extensions::setup::BindingIdentity {
+    let SetupField::Endpoint(endpoint) = field else {
+        unreachable!("fixture is an endpoint")
+    };
+    crate::extensions::setup::BindingIdentity {
+        name: endpoint.name.clone(),
+        kind: endpoint.kind.clone(),
+        envelope_version: ENDPOINT_ENVELOPE_VERSION,
+        policy_version: crate::extensions::setup::validation_policy_version(),
+    }
 }
 
 fn record_for(scope: &BindingScope, stored: &StoredBinding) -> BindingRecord {

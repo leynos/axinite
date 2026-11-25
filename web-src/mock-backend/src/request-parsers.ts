@@ -20,6 +20,7 @@ import {
   isJsonObject,
   isString,
   type JsonObject,
+  type JsonValue,
 } from "../../axinite/src/lib/api/json-value";
 
 function hasOptionalString(
@@ -138,13 +139,18 @@ export function isExtensionSetupRequest(
     return false;
   }
   const set = endpoints["set"];
-  const clear = endpoints["clear"];
   if (set !== undefined && !isStringRecord(set)) {
     return false;
   }
-  const isStringArray =
-    Array.isArray(clear) && clear.every((entry) => isString(entry));
-  return clear === undefined || isStringArray;
+  return isOptionalStringList(endpoints["clear"]);
+}
+
+/** Whether a value is absent or an array of strings. */
+function isOptionalStringList(value: JsonValue | undefined): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  return Array.isArray(value) && value.every((entry: JsonValue) => isString(entry));
 }
 
 export function isSkillSearchRequest(

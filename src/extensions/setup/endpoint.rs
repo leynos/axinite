@@ -35,10 +35,7 @@ fn parse_and_check_shape(raw: &str) -> Result<Url, EndpointRejection> {
     if raw.len() > MAX_ENDPOINT_URL_BYTES {
         return Err(EndpointRejection::TooLong);
     }
-    if raw
-        .chars()
-        .any(|c| c.is_control() || c.is_whitespace() || c == '\\')
-    {
+    if raw.chars().any(is_forbidden_character) {
         return Err(EndpointRejection::InvalidCharacter);
     }
 
@@ -48,6 +45,15 @@ fn parse_and_check_shape(raw: &str) -> Result<Url, EndpointRejection> {
     })?;
     check_scheme_and_components(&url)?;
     Ok(url)
+}
+
+/// Whether a character cannot appear in a submitted endpoint URL.
+///
+/// Control characters and whitespace could smuggle a second value past a
+/// reviewer, and a backslash is rewritten by some parsers before the host is
+/// examined, so all three are refused before parsing.
+fn is_forbidden_character(character: char) -> bool {
+    character.is_control() || character.is_whitespace() || character == '\\'
 }
 
 /// Reject a non-HTTPS scheme and any component that could leak or confuse.

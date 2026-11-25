@@ -150,6 +150,12 @@ pub(crate) fn crypto(key: &str) -> Arc<SecretsCrypto> {
     Arc::new(SecretsCrypto::new(SecretString::from(key.to_string())).expect("test key"))
 }
 
+/// Build a crypto holder from an explicit key, for tests that need a second
+/// master key to prove a row does not open under it.
+pub(crate) fn test_crypto_with(key: &str) -> Arc<SecretsCrypto> {
+    crypto(key)
+}
+
 /// Build a crypto holder from the repository's standard test key.
 pub(crate) fn test_crypto() -> Arc<SecretsCrypto> {
     crypto(TEST_CRYPTO_KEY)

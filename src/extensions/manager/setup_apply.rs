@@ -188,9 +188,8 @@ impl ExtensionManager {
     async fn apply_effect(&self, name: &str, effect: &PlannedEffect, execution: &mut Execution) {
         match effect {
             PlannedEffect::WriteSecret { name: field, value } => {
-                // `name` is the extension under setup; `field` is the
-                // credential destination.
-                self.write_secret(name, field, value, execution).await;
+                let secret = SecretSubmission { name: field, value };
+                self.write_secret(name, &secret, execution).await;
             }
             PlannedEffect::KeepSecret { name: field } => {
                 execution.record(FieldKey::Secret(field.clone()), FieldOutcome::Kept);
@@ -216,12 +215,12 @@ impl ExtensionManager {
     async fn write_secret(
         &self,
         provider: &str,
-        field: &CredentialName,
-        value: &str,
+        secret: &SecretSubmission<'_>,
         execution: &mut Execution,
     ) {
-        let params =
-            CreateSecretParams::new(field.as_str(), value).with_provider(provider.to_string());
+        let field = secret.name;
+        let params = CreateSecretParams::new(field.as_str(), secret.value)
+            .with_provider(provider.to_string());
         let outcome = match self.secrets.create(&self.user_id, params).await {
             Ok(_) => {
                 execution.wrote_secret = true;
@@ -283,6 +282,12 @@ impl ExtensionManager {
         };
         execution.record(FieldKey::Endpoint(field.clone()), outcome);
     }
+}
+
+/// One submitted credential value, borrowed from the planned effect.
+struct SecretSubmission<'a> {
+    name: &'a CredentialName,
+    value: &'a str,
 }
 
 /// One endpoint replacement, borrowed from the planned effect.
