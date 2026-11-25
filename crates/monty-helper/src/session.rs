@@ -16,8 +16,8 @@ use monty_protocol::{
     validate_start_run, write_frame,
 };
 use monty_types::{
-    CollectedStreams, CompileOptions, MontyObject, NameLookupResult, ObjectRef, PrintStream,
-    PrintWriter, ResourceTracker,
+    CollectedStreams, CompileOptions, MontyException, MontyObject, NameLookupResult, ObjectRef,
+    PrintStream, PrintWriter, ResourceTracker,
 };
 use serde_json::Value;
 
@@ -188,17 +188,66 @@ impl<'w, W: Write> Session<'w, W> {
         self.send(&HelperToParent::Terminal(terminal))
     }
 
-    /// Abort `call` with `message` and report it as the run's terminal state.
+    /// Abort `call` and report the failure as the run's terminal state.
     fn abort_with(
         &mut self,
         call: FunctionCall,
         streams: &mut CollectedStreams,
-        outcome: TerminalOutcome,
-        message: &str,
+        failure: Failure,
     ) -> CallReply {
         let remaining = self.budget.remaining();
-        abort(call, streams, remaining, message);
-        CallReply::Finished(outcome)
+        abort(call, streams, remaining, &failure.message);
+        CallReply::Finished(failure.outcome)
+    }
+
+    /// Advance the run by one progress step.
+    ///
+    /// `None` means the parent cancelled the run, which ends it quietly; the
+    /// caller then finishes without a terminal message of its own.
+    fn step<R: BufRead>(
+        &mut self,
+        reader: &mut R,
+        streams: &mut CollectedStreams,
+        step: RunProgress,
+    ) -> Result<Option<Result<RunProgress, MontyException>>, Fatal> {
+        let print = self.printer(streams);
+        Ok(match step {
+            RunProgress::Complete(value) => {
+                self.finish(completed(&value))?;
+                None
+            }
+            RunProgress::FunctionCall(call) => {
+                self.answer_call(reader, streams, call)?
+            }
+            RunProgress::NameLookup(lookup) => {
+                Some(lookup.resume(NameLookupResult::Undefined, print))
+            }
+            RunProgress::OsCall(call) => Some(call.abort(os_denied(), print)),
+            RunProgress::ResolveFutures(state) => {
+                Some(state.abort(concurrent_denied(), print))
+            }
+        })
+    }
+
+    /// Answer one callback, returning the continuation or ending the run.
+    fn answer_call<R: BufRead>(
+        &mut self,
+        reader: &mut R,
+        streams: &mut CollectedStreams,
+        call: FunctionCall,
+    ) -> Result<Option<Result<RunProgress, MontyException>>, Fatal> {
+        match self.handle_call(reader, streams, call)? {
+            CallReply::Resume { call, value } => {
+                let print = self.printer(streams);
+                Ok(Some(call.resume_eager(Ok(value), print)))
+            }
+            CallReply::Finished(outcome) => {
+                self.drain(streams)?;
+                self.finish(outcome)?;
+                Ok(None)
+            }
+            CallReply::Cancelled => Ok(None),
+        }
     }
 
     /// Answers one tool callback, reading the parent's reply.
@@ -215,7 +264,7 @@ impl<'w, W: Write> Session<'w, W> {
                 code: DenialCode::NotAllowed,
                 message: message.clone(),
             };
-            return Ok(self.abort_with(call, streams, outcome, &message));
+            return Ok(self.abort_with(call, streams, Failure::new(outcome, &message)));
         }
         let arguments = match convert::call_arguments(&call.args) {
             Ok(arguments) => arguments,
@@ -225,7 +274,7 @@ impl<'w, W: Write> Session<'w, W> {
                     code: DenialCode::ContractError,
                     message: message.clone(),
                 };
-                return Ok(self.abort_with(call, streams, outcome, &message));
+                return Ok(self.abort_with(call, streams, Failure::new(outcome, &message)));
             }
         };
         self.next_call_id = self.next_call_id.checked_add(1).ok_or(EXIT_PROTOCOL)?;
@@ -243,10 +292,12 @@ impl<'w, W: Write> Session<'w, W> {
                 Ok(self.abort_with(
                     call,
                     streams,
-                    TerminalOutcome::ScriptError {
-                        message: "run cancelled by the parent".to_owned(),
-                    },
-                    "run cancelled by the parent",
+                    Failure::new(
+                        TerminalOutcome::ScriptError {
+                            message: "run cancelled by the parent".to_owned(),
+                        },
+                        "run cancelled by the parent",
+                    ),
                 ))
             }
             ReplyOutcome::Settled(outcome) => {
@@ -291,7 +342,7 @@ impl<'w, W: Write> Session<'w, W> {
             CallOutcome::Terminate { code, message } => {
                 let message = truncate(&message);
                 let outcome = TerminalOutcome::ToolError { code, message: message.clone() };
-                self.abort_with(call, streams, outcome, &message)
+                self.abort_with(call, streams, Failure::new(outcome, &message))
             }
         }
     }
@@ -308,7 +359,7 @@ impl<'w, W: Write> Session<'w, W> {
             Err(error) => {
                 let message = truncate(error.message());
                 let outcome = TerminalOutcome::RuntimeCrash { message: message.clone() };
-                return self.abort_with(call, streams, outcome, &message);
+                return self.abort_with(call, streams, Failure::new(outcome, &message));
             }
         };
         if !call.allow_eager_await {
@@ -316,7 +367,7 @@ impl<'w, W: Write> Session<'w, W> {
             let outcome = TerminalOutcome::ScriptError {
                 message: message.to_owned(),
             };
-            return self.abort_with(call, streams, outcome, message);
+            return self.abort_with(call, streams, Failure::new(outcome, message));
         }
         CallReply::Resume {
             call: Box::new(call),
@@ -331,6 +382,22 @@ enum ReplyOutcome {
     Settled(Box<CallOutcome>),
     /// The parent cancelled the run instead of answering.
     Cancelled,
+}
+
+/// A terminal outcome together with the message the guest is told about it.
+struct Failure {
+    outcome: TerminalOutcome,
+    message: String,
+}
+
+impl Failure {
+    /// Pair `outcome` with the `message` that explains it.
+    fn new(outcome: TerminalOutcome, message: &str) -> Self {
+        Self {
+            outcome,
+            message: message.to_owned(),
+        }
+    }
 }
 
 fn run_session<R: BufRead, W: Write>(
@@ -359,37 +426,10 @@ fn run_session<R: BufRead, W: Write>(
             Ok(progress) => progress,
             Err(error) => return session.finish(script_failure(&error)),
         };
-        progress = match step {
-            RunProgress::Complete(value) => return session.finish(completed(&value)),
-            RunProgress::FunctionCall(call) => {
-                match session.handle_call(reader, &mut streams, call)? {
-                    CallReply::Resume { call, value } => {
-                        let print = session.printer(&mut streams);
-                        call.resume_eager(Ok(value), print)
-                    }
-                    CallReply::Finished(outcome) => {
-                        session.drain(&mut streams)?;
-                        return session.finish(outcome);
-                    }
-                    CallReply::Cancelled => {
-                        session.drain(&mut streams)?;
-                        return Ok(());
-                    }
-                }
-            }
-            RunProgress::NameLookup(lookup) => {
-                let print = session.printer(&mut streams);
-                lookup.resume(NameLookupResult::Undefined, print)
-            }
-            RunProgress::OsCall(call) => {
-                let print = session.printer(&mut streams);
-                call.abort(os_denied(), print)
-            }
-            RunProgress::ResolveFutures(state) => {
-                let print = session.printer(&mut streams);
-                state.abort(concurrent_denied(), print)
-            }
+        let Some(next) = session.step(reader, &mut streams, step)? else {
+            return Ok(());
         };
+        progress = next;
     }
 }
 

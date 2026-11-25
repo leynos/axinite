@@ -62,8 +62,12 @@ pub async fn execute_resolved_tool_with_safety(
         tool.execute(params.clone(), job_ctx).await
     })
     .await;
-    let elapsed = start.elapsed();
-    trace_outcome(safety, &tool_name, &result, elapsed, timeout);
+    let timing = Timing {
+        tool_name: tool_name.clone(),
+        elapsed: start.elapsed(),
+        timeout,
+    };
+    trace_outcome(safety, &timing, &result);
 
     let result = result
         .map_err(|_| crate::error::ToolError::Timeout {
@@ -107,14 +111,24 @@ fn validate_params(
     .into())
 }
 
+/// One call's timing, for the trace line that records how it ended.
+struct Timing {
+    tool_name: String,
+    elapsed: std::time::Duration,
+    timeout: std::time::Duration,
+}
+
 /// Trace how one call ended, sanitising a tool error before it is logged.
 fn trace_outcome<E: std::fmt::Display>(
     safety: &SafetyLayer,
-    tool_name: &str,
+    timing: &Timing,
     result: &Result<Result<ToolOutput, E>, tokio::time::error::Elapsed>,
-    elapsed: std::time::Duration,
-    timeout: std::time::Duration,
 ) {
+    let Timing {
+        tool_name,
+        elapsed,
+        timeout,
+    } = timing;
     match result {
         Ok(Ok(output)) => {
             let result_size = serde_json::to_string(&output.result)
