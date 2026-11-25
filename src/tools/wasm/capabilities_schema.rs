@@ -40,6 +40,9 @@ mod sections;
 #[cfg(test)]
 mod tests;
 
-pub use auth::{AuthCapabilitySchema, OAuthConfigSchema, ValidationEndpointSchema};
+pub use auth::{
+    AuthCapabilitySchema, OAuthConfigSchema, ToolSecretSetupSchema, ToolSetupFieldSchema,
+    ToolSetupSchema, ValidationEndpointSchema,
+};
 pub use file::CapabilitiesFile;
 pub use http::RateLimitSchema;

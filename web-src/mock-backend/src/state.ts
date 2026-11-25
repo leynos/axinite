@@ -5,14 +5,22 @@
  * subscribers. Its feature flags mirror the gateway defaults.
  */
 
+import {
+  applyEndpointSubmission,
+  applySecretSubmission,
+} from "./setup-submission";
+import { isNonBlankString } from "./state-helpers";
 import type {
   ActionResponse,
   ApprovalRequest,
   AuthCancelRequest,
   AuthTokenRequest,
   ChatSseEvent,
+  EndpointFieldInfo,
+  EndpointOperations,
   ExtensionInfo,
   ExtensionSetupResponse,
+  ExtensionSetupSubmitResponse,
   FeatureFlagsResponse,
   GatewayStatusResponse,
   HistoryResponse,
@@ -39,8 +47,11 @@ import type {
   RoutineRunsResponse,
   RoutineSummaryResponse,
   SearchHit,
+  SecretFieldInfo,
   SendMessageRequest,
   SendMessageResponse,
+  SetupBlockerInfo,
+  SetupOutcomeInfo,
   SkillInstallRequest,
   SkillListResponse,
   SkillSearchRequest,
@@ -52,6 +63,8 @@ import type {
   ToolListResponse,
   TurnInfo,
 } from "../../axinite/src/lib/api/contracts";
+
+
 import type { MemoryDocument } from "./fixtures";
 import { isString } from "../../axinite/src/lib/api/json-value";
 import {
@@ -104,11 +117,6 @@ type EventSubscriber<T> = {
   send: (payload: T) => void;
   close: () => void;
 };
-
-// Indexed lookups on a secrets map yield `undefined` for absent keys.
-function isNonBlankString(value: string | undefined): boolean {
-  return value !== undefined && value.trim().length > 0;
-}
 
 /** Only a successful restart tool completion schedules simulated downtime. */
 function isSuccessfulRestartToolCompletion(event: ChatSseEvent): boolean {
@@ -1273,45 +1281,94 @@ export class MockBackendState {
     if (!extension) {
       throw new Error("Extension not found");
     }
+    const endpoints = extension.setupEndpoints ?? [];
+    const blockers: SetupBlockerInfo[] = [
+      ...extension.setupSecrets
+        .filter((field) => !field.optional && !field.provided)
+        .map((field) => ({
+          field: field.name,
+          kind: "secret" as const,
+          reason: "missing" as const,
+        })),
+      ...endpoints
+        .filter((field) => field.state === "stale" || field.state === "corrupt")
+        .map((field) => ({
+          field: field.name,
+          kind: "endpoint" as const,
+          reason: field.state === "stale" ? ("stale" as const) : ("corrupt" as const),
+        })),
+      ...endpoints
+        .filter((field) => !field.optional && field.state === "missing")
+        .map((field) => ({
+          field: field.name,
+          kind: "endpoint" as const,
+          reason: "missing" as const,
+        })),
+    ];
     return structuredClone({
       name: extension.info.name,
       kind: extension.info.kind,
       secrets: extension.setupSecrets,
+      endpoints,
+      ready: blockers.length === 0,
+      blockers,
     });
   }
 
   /**
-   * Marks non-blank submitted secrets as provided, activates the extension
-   * and publishes auth completion. Throws when the extension is missing.
+   * Applies submitted secrets and endpoint operations, reports per-field
+   * outcomes, and only activates an extension whose setup is complete.
    */
   submitExtensionSetup(
     name: string,
-    secrets: Record<string, string>
-  ): ActionResponse {
+    secrets: Record<string, string>,
+    endpoints: EndpointOperations = {}
+  ): ExtensionSetupSubmitResponse {
     const extension = this.extensions.get(name);
     if (!extension) {
       throw new Error("Extension not found");
     }
-    extension.setupSecrets = extension.setupSecrets.map((field) => ({
-      ...field,
-      provided: field.provided || isNonBlankString(secrets[field.name]),
-    }));
+    const outcomes: SetupOutcomeInfo[] = [];
+    extension.setupSecrets = applySecretSubmission(
+      extension.setupSecrets,
+      secrets,
+      outcomes
+    );
+    extension.setupEndpoints = applyEndpointSubmission(
+      extension.setupEndpoints ?? [],
+      endpoints,
+      outcomes
+    );
+
+    const snapshot = this.getExtensionSetup(name);
     extension.info = {
       ...extension.info,
       authenticated: extension.info.has_auth
         ? true
         : extension.info.authenticated,
-      active: true,
-      activation_status: "active",
+      active: snapshot.ready ? true : extension.info.active,
+      activation_status: snapshot.ready ? "active" : "configured",
     };
     this.publishChatEvent({
       type: "auth_completed",
       extension_name: name,
       success: true,
-      message: `${extension.info.display_name ?? name} is ready to use.`,
+      message: snapshot.ready
+        ? `${extension.info.display_name ?? name} is ready to use.`
+        : `${extension.info.display_name ?? name} still needs configuration.`,
     });
     this.pushLog(`Stored setup values for ${name}.`, "extensions");
-    return createActionResponse("Extension setup saved.", { activated: true });
+    return {
+      success: true,
+      message: snapshot.ready
+        ? "Extension setup saved."
+        : "Configuration saved, but setup is incomplete.",
+      activated: snapshot.ready,
+      ready: snapshot.ready,
+      outcomes,
+      endpoints: snapshot.endpoints,
+      blockers: snapshot.blockers,
+    };
   }
 
   /**

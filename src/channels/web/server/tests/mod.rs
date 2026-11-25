@@ -1,5 +1,6 @@
 //! Split tests for the web gateway HTTP routes and OAuth callbacks.
 
+mod extensions_setup;
 mod fixtures;
 mod memory;
 mod oauth;

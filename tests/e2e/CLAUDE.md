@@ -8,16 +8,17 @@ in PR #553 ("Trajectory benchmarks and e2e trace test rig").
 ```bash
 cd tests/e2e
 
-# Create virtualenv (one-time)
-python -m venv .venv
-source .venv/bin/activate   # or .venv\Scripts\activate on Windows
-
-# Install dependencies
-pip install -e .
+# Create the virtualenv outside the worktree (one-time). It must not live
+# under tests/: `make interrogate` scans that tree and would count every
+# third-party package as undocumented code.
+uv venv --python 3.12 /tmp/axinite-e2e-venv
+uv pip install --python /tmp/axinite-e2e-venv/bin/python -e .
 
 # Install browser binaries (one-time)
-playwright install chromium
+/tmp/axinite-e2e-venv/bin/playwright install chromium
 ```
+
+Run the suite with `/tmp/axinite-e2e-venv/bin/python -m pytest scenarios/`.
 
 Dependencies: `pytest`, `pytest-asyncio`, `pytest-playwright`, `pytest-timeout`,
 `playwright`, `aiohttp`, `httpx`. Optional: `anthropic` (vision extras).

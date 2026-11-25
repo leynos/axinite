@@ -126,6 +126,8 @@
     work to reduce build times and related tooling overhead.
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Typed setup fields and endpoint binding persistence](execplans/2-1-1-typed-setup-fields-and-endpoint-binding-persistence.md)
+    plans roadmap 2.1.1; implementation awaits explicit approval.
   - [Import Kani and Verus support from Netsuke](execplans/import-prover-tools.md)
     records the completed import of pinned Kani and Verus Make targets,
     integration tests, the read-only formal-verification workflow, and their
@@ -279,3 +281,5 @@
   records why the root workspace forbids unsafe code, why the fourteen
   WebAssembly component crates confine generated bindings to one audited
   module, and how the allow-list contract and Miri enforce and verify that.
+- [ADR 0016: Confidential endpoint setup](adrs/adr-0016-confidential-endpoint-setup.md)
+  proposes the scope, encryption, and failure semantics for roadmap 2.1.1.

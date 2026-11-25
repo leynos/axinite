@@ -95,6 +95,25 @@ require `X-Confirm-Action: true`.
 | POST     | `/api/extensions/{name}/remove`   | Remove an extension.          |
 | GET/POST | `/api/extensions/{name}/setup`    | Extension setup wizard.       |
 
+The setup contract is typed and live in `src/channels/web/types/setup.rs`;
+`types/extensions.rs` keeps the listing DTOs.
+
+- `GET` returns `secrets`, `endpoints`, `ready`, and `blockers`. An endpoint
+  entry carries its name, declarative kind, prompt, optional flag, and a
+  `state` of `missing`, `configured`, `stale`, or `corrupt` — never its URL.
+- `POST` takes
+  `{"secrets": {...}, "endpoints": {"set": {...}, "clear": [...]}}`. A blank
+  secret keeps the stored value; a `clear` name is idempotent.
+- The response is `ExtensionSetupSubmitResponse`: per-field `outcomes`
+  (`stored`, `kept`, `cleared`, `failed`, `indeterminate`, `skipped`),
+  recomputed `endpoints`, `blockers`, `ready`, an optional `category` for a
+  rejected batch, and the activation result.
+
+Nothing in this module may serialize an endpoint value. A rejected or failed
+submission reports a stable category and is answered with HTTP 200 and
+`success: false`, matching the rest of the extension actions; a malformed body
+is rejected by extraction.
+
 ### Routines
 
 | Method | Path                         | Description                     |

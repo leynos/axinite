@@ -131,6 +131,15 @@ pub enum ExtensionError {
     #[error("Activation failed: {0}")]
     ActivationFailed(String),
 
+    /// A setup submission was rejected before any effect was produced.
+    #[error("Setup rejected: {category}")]
+    SetupRejected {
+        /// Stable, value-free rejection category.
+        category: &'static str,
+        /// Declared field involved, if the rejection names one.
+        field: Option<String>,
+    },
+
     /// Activation needs credentials that have not been supplied yet.
     #[error("Authentication required")]
     AuthRequired,

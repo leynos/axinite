@@ -251,8 +251,96 @@ impl ExtensionManager {
             return self.auth_section_state(auth).await;
         }
 
-        // No auth section — fall back to checking setup.required_secrets.
-        self.setup_secrets_state(&cap_file).await
+        // No auth section — fall back to the setup declarations. A manifest
+        // may use the legacy secret list or the typed field list; readiness
+        // must consider both, including required endpoints.
+        self.setup_declarations_state(name, &cap_file).await
+    }
+
+    /// Auth readiness from the normalized setup declarations.
+    ///
+    /// The declaration list is the same one the setup service uses, so a
+    /// required endpoint or typed secret blocks readiness exactly as it does
+    /// in the setup panel.
+    async fn setup_declarations_state(
+        &self,
+        name: &str,
+        cap_file: &crate::tools::wasm::CapabilitiesFile,
+    ) -> ToolAuthState {
+        let Some(setup) = &cap_file.setup else {
+            return ToolAuthState::NoAuth;
+        };
+        let Ok(declarations) =
+            crate::extensions::setup::normalize_tool_setup(&setup.required_secrets, &setup.fields)
+        else {
+            return ToolAuthState::NeedsSetup;
+        };
+        if declarations.is_empty() {
+            return ToolAuthState::NoAuth;
+        }
+        if !self.required_secrets_present(&declarations, cap_file).await {
+            return ToolAuthState::NeedsSetup;
+        }
+        if declares_endpoint(&declarations) {
+            return self.endpoint_declarations_state(name, cap_file).await;
+        }
+        ToolAuthState::Ready
+    }
+
+    /// Whether every required, non-auto-resolved credential is stored.
+    async fn required_secrets_present(
+        &self,
+        declarations: &[crate::extensions::setup::SetupField],
+        cap_file: &crate::tools::wasm::CapabilitiesFile,
+    ) -> bool {
+        let destinations: Vec<String> = declarations
+            .iter()
+            .filter_map(|field| match field {
+                crate::extensions::setup::SetupField::Secret(secret)
+                    if !secret.optional
+                        && !Self::is_auto_resolved_oauth_field(secret.name.as_str(), cap_file) =>
+                {
+                    Some(secret.name.destination())
+                }
+                _ => None,
+            })
+            .collect();
+        futures::future::join_all(
+            destinations
+                .iter()
+                .map(|destination| self.secrets.exists(&self.user_id, destination)),
+        )
+        .await
+        .into_iter()
+        .all(|result| result.unwrap_or(false))
+    }
+
+    /// Endpoint readiness from the declaration set.
+    async fn endpoint_declarations_state(
+        &self,
+        name: &str,
+        cap_file: &crate::tools::wasm::CapabilitiesFile,
+    ) -> ToolAuthState {
+        let Some(setup) = &cap_file.setup else {
+            return ToolAuthState::NoAuth;
+        };
+        let Ok(declarations) =
+            crate::extensions::setup::normalize_tool_setup(&setup.required_secrets, &setup.fields)
+        else {
+            return ToolAuthState::NeedsSetup;
+        };
+        let Some(service) = &self.endpoint_bindings else {
+            return ToolAuthState::NeedsSetup;
+        };
+        let scope = crate::extensions::setup::BindingScope::new(&self.user_id, name);
+        let Ok(statuses) = service.statuses(&scope, &declarations).await else {
+            return ToolAuthState::NeedsSetup;
+        };
+        if required_endpoints_configured(&statuses, &declarations) {
+            ToolAuthState::Ready
+        } else {
+            ToolAuthState::NeedsSetup
+        }
     }
 
     /// Auth readiness when the tool declares an auth section: driven by the
@@ -281,36 +369,30 @@ impl ExtensionManager {
             ToolAuthState::NeedsSetup
         }
     }
+}
 
-    /// Auth readiness from `setup.required_secrets`: all mandatory,
-    /// non-auto-resolved secrets must be stored.
-    async fn setup_secrets_state(
-        &self,
-        cap_file: &crate::tools::wasm::CapabilitiesFile,
-    ) -> ToolAuthState {
-        let Some(setup) = &cap_file.setup else {
-            return ToolAuthState::NoAuth;
-        };
-        if setup.required_secrets.is_empty() {
-            return ToolAuthState::NoAuth;
-        }
+/// Whether every required endpoint declaration reports a configured binding.
+fn required_endpoints_configured(
+    statuses: &[crate::extensions::setup::EndpointStatus],
+    declarations: &[crate::extensions::setup::SetupField],
+) -> bool {
+    statuses
+        .iter()
+        .filter(|status| {
+            declarations.iter().any(|field| {
+                matches!(
+                    field,
+                    crate::extensions::setup::SetupField::Endpoint(endpoint)
+                        if !endpoint.optional && endpoint.name == *status.field()
+                )
+            })
+        })
+        .all(|status| status.state().is_configured())
+}
 
-        let all_provided = futures::future::join_all(
-            setup
-                .required_secrets
-                .iter()
-                .filter(|s| !s.optional)
-                .filter(|s| !Self::is_auto_resolved_oauth_field(&s.name, cap_file))
-                .map(|s| self.secrets.exists(&self.user_id, &s.name)),
-        )
-        .await
-        .into_iter()
-        .all(|r| r.unwrap_or(false));
-
-        if all_provided {
-            ToolAuthState::Ready
-        } else {
-            ToolAuthState::NeedsSetup
-        }
-    }
+/// Whether the declarations include an endpoint field.
+fn declares_endpoint(declarations: &[crate::extensions::setup::SetupField]) -> bool {
+    declarations
+        .iter()
+        .any(|field| matches!(field, crate::extensions::setup::SetupField::Endpoint(_)))
 }

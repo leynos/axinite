@@ -28,7 +28,11 @@
       "axinite/src/**",
       "axinite/tests/**",
       "scripts/**",
-      "docs/**",
+      // `docs/**` is governed by markdownlint and mdtablefix through
+      // `make markdownlint` and `make check-fmt`. Biome's Markdown formatter
+      // disagrees with both (it strips the blank line before a list that
+      // MD032 requires and rewrites thematic breaks), so it must not touch
+      // this tree.
       "package.json",
       "tsconfig.json",
       "tsconfig.declarations.json",

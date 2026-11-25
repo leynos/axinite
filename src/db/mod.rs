@@ -23,6 +23,9 @@ pub mod libsql;
 #[cfg(feature = "libsql")]
 pub mod libsql_migrations;
 
+pub mod endpoint_bindings;
+pub use endpoint_bindings::create_endpoint_binding_repository;
+
 pub mod settings;
 
 mod params;

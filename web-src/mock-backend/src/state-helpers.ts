@@ -396,3 +396,12 @@ export function extensionAuthentication(
     instructions: "Provide a token in the setup panel to complete activation.",
   };
 }
+
+/**
+ * Whether a submitted value is present and not only whitespace.
+ *
+ * Indexed lookups on a secrets map yield `undefined` for absent keys.
+ */
+export function isNonBlankString(value: string | undefined): boolean {
+  return value !== undefined && value.trim().length > 0;
+}

@@ -44,27 +44,30 @@ describe("preview static routing", () => {
       "exact",
     ],
     ["/assets/app.js", { "/dist/assets/app.js": "script" }, "script"],
-  ] as const)("serves %s with the expected candidate precedence", async (route, files, content) => {
-    const h = harness(files);
-    const response = await h.request(route);
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe(content);
-    expect(h.upstream).not.toHaveBeenCalled();
-    expect(h.server.timeout).not.toHaveBeenCalled();
-  });
+  ] as const)(
+    "serves %s with the expected candidate precedence",
+    async (route, files, content) => {
+      const h = harness(files);
+      const response = await h.request(route);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(content);
+      expect(h.upstream).not.toHaveBeenCalled();
+      expect(h.server.timeout).not.toHaveBeenCalled();
+    }
+  );
 
-  it.each([
-    "/assets/missing.js",
-    "/unknown",
-  ])("returns static404 for %s without a candidate", async (route) => {
-    const h = harness(
-      route.includes(".") ? { "/dist/index.html": "shell" } : {}
-    );
-    const response = await h.request(route);
-    expect(response.status).toBe(404);
-    expect(await response.text()).toBe("Not found");
-    expect(h.readFile).not.toHaveBeenCalled();
-  });
+  it.each(["/assets/missing.js", "/unknown"])(
+    "returns static404 for %s without a candidate",
+    async (route) => {
+      const h = harness(
+        route.includes(".") ? { "/dist/index.html": "shell" } : {}
+      );
+      const response = await h.request(route);
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe("Not found");
+      expect(h.readFile).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe("preview upstream transport", () => {
@@ -99,33 +102,33 @@ describe("preview upstream transport", () => {
     expect(await response.text()).toBe("upstream error");
   });
 
-  it.each([
-    "GET",
-    "HEAD",
-  ])("forwards %s without a request body and preserves204", async (method) => {
-    const h = harness();
-    h.upstream.mockResolvedValue(new Response(null, { status: 204 }));
-    const response = await h.request("/api/jobs", { method });
-    expect(response.status).toBe(204);
-    expect(h.upstream.mock.calls[0]?.[1].body).toBeNull();
-  });
+  it.each(["GET", "HEAD"])(
+    "forwards %s without a request body and preserves204",
+    async (method) => {
+      const h = harness();
+      h.upstream.mockResolvedValue(new Response(null, { status: 204 }));
+      const response = await h.request("/api/jobs", { method });
+      expect(response.status).toBe(204);
+      expect(h.upstream.mock.calls[0]?.[1].body).toBeNull();
+    }
+  );
 
-  it.each([
-    "/api/chat/events?token=fixture",
-    "/api/logs/events",
-  ])("disables deadlines only for SSE %s", async (route) => {
-    const h = harness();
-    h.upstream.mockResolvedValue(
-      new Response("event: heartbeat\ndata: {}\n\n", {
-        headers: { "content-type": "text/event-stream" },
-      })
-    );
-    const response = await h.request(route);
-    expect(h.server.timeout).toHaveBeenCalledTimes(1);
-    expect(h.server.timeout.mock.calls[0]?.[1]).toBe(0);
-    expect(response.headers.get("content-type")).toBe("text/event-stream");
-    expect(await response.text()).toContain("event: heartbeat");
-  });
+  it.each(["/api/chat/events?token=fixture", "/api/logs/events"])(
+    "disables deadlines only for SSE %s",
+    async (route) => {
+      const h = harness();
+      h.upstream.mockResolvedValue(
+        new Response("event: heartbeat\ndata: {}\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        })
+      );
+      const response = await h.request(route);
+      expect(h.server.timeout).toHaveBeenCalledTimes(1);
+      expect(h.server.timeout.mock.calls[0]?.[1]).toBe(0);
+      expect(response.headers.get("content-type")).toBe("text/event-stream");
+      expect(await response.text()).toContain("event: heartbeat");
+    }
+  );
 
   it("keeps ordinary API deadlines and propagates upstream failures", async () => {
     const h = harness();

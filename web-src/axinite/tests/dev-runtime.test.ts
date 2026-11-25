@@ -22,35 +22,35 @@ const flush = async () => {
 };
 
 describe("nonreserved preview port selection", () => {
-  it.each([
-    "listening",
-    "error",
-  ] as const)("closes the probe before resolving after %s", async (event) => {
-    const listeners = new Map<string, () => void>();
-    let closed: (() => void) | undefined;
-    const probe: PortProbe = {
-      unref: vi.fn(),
-      once: vi.fn((name: "error" | "listening", handler: () => void) => {
-        listeners.set(name, handler);
-      }),
-      listen: vi.fn(),
-      close: vi.fn((callback: () => void) => {
-        closed = callback;
-      }),
-    };
-    let settled = false;
-    const result = isPortAvailable(2020, () => probe).then((value) => {
-      settled = true;
-      return value;
-    });
-    expect(probe.listen).toHaveBeenCalledWith(2020, "127.0.0.1");
-    listeners.get(event)?.();
-    await flush();
-    expect(settled).toBe(false);
-    expect(probe.close).toHaveBeenCalledTimes(1);
-    closed?.();
-    expect(await result).toBe(event === "listening");
-  });
+  it.each(["listening", "error"] as const)(
+    "closes the probe before resolving after %s",
+    async (event) => {
+      const listeners = new Map<string, () => void>();
+      let closed: (() => void) | undefined;
+      const probe: PortProbe = {
+        unref: vi.fn(),
+        once: vi.fn((name: "error" | "listening", handler: () => void) => {
+          listeners.set(name, handler);
+        }),
+        listen: vi.fn(),
+        close: vi.fn((callback: () => void) => {
+          closed = callback;
+        }),
+      };
+      let settled = false;
+      const result = isPortAvailable(2020, () => probe).then((value) => {
+        settled = true;
+        return value;
+      });
+      expect(probe.listen).toHaveBeenCalledWith(2020, "127.0.0.1");
+      listeners.get(event)?.();
+      await flush();
+      expect(settled).toBe(false);
+      expect(probe.close).toHaveBeenCalledTimes(1);
+      closed?.();
+      expect(await result).toBe(event === "listening");
+    }
+  );
 
   it("uses an available default without warnings or extra probes", async () => {
     const isAvailable = vi.fn().mockResolvedValue(true);
@@ -95,14 +95,17 @@ describe("nonreserved preview port selection", () => {
   it.each([
     [2020, 2120, 101],
     [65_534, 65_535, 2],
-  ] as const)("bounds exhaustion from %s at %s", async (defaultPort, lastPort, probes) => {
-    const isAvailable = vi.fn().mockResolvedValue(false);
-    await expect(
-      reservePreviewPort({ defaultPort, wasExplicit: false, isAvailable })
-    ).rejects.toThrow(`${defaultPort}-${lastPort}`);
-    expect(isAvailable).toHaveBeenCalledTimes(probes);
-    expect(isAvailable.mock.calls.at(-1)).toEqual([lastPort]);
-  });
+  ] as const)(
+    "bounds exhaustion from %s at %s",
+    async (defaultPort, lastPort, probes) => {
+      const isAvailable = vi.fn().mockResolvedValue(false);
+      await expect(
+        reservePreviewPort({ defaultPort, wasExplicit: false, isAvailable })
+      ).rejects.toThrow(`${defaultPort}-${lastPort}`);
+      expect(isAvailable).toHaveBeenCalledTimes(probes);
+      expect(isAvailable.mock.calls.at(-1)).toEqual([lastPort]);
+    }
+  );
 });
 
 function supervisorHarness() {
@@ -130,24 +133,25 @@ function supervisorHarness() {
 }
 
 describe("owned development child supervision", () => {
-  it.each([
-    0, 7,
-  ])("propagates unexpected child exit%s after waiting for all owned exits", async (code) => {
-    const h = supervisorHarness();
-    h.children[0]?.exit.resolve(code);
-    await flush();
-    for (const child of h.children)
-      expect(child.process.kill).toHaveBeenCalledTimes(1);
-    expect(h.exit).not.toHaveBeenCalled();
-    for (const child of h.children.slice(1)) child.exit.resolve(0);
-    await h.run;
-    expect(h.exit).toHaveBeenCalledWith(code || 1);
-    expect(h.error).toHaveBeenCalledWith(
-      `[dev] mock-api exited unexpectedly with code ${code}`
-    );
-    expect(h.listeners.size).toBe(0);
-    expect(h.outsider.kill).not.toHaveBeenCalled();
-  });
+  it.each([0, 7])(
+    "propagates unexpected child exit%s after waiting for all owned exits",
+    async (code) => {
+      const h = supervisorHarness();
+      h.children[0]?.exit.resolve(code);
+      await flush();
+      for (const child of h.children)
+        expect(child.process.kill).toHaveBeenCalledTimes(1);
+      expect(h.exit).not.toHaveBeenCalled();
+      for (const child of h.children.slice(1)) child.exit.resolve(0);
+      await h.run;
+      expect(h.exit).toHaveBeenCalledWith(code || 1);
+      expect(h.error).toHaveBeenCalledWith(
+        `[dev] mock-api exited unexpectedly with code ${code}`
+      );
+      expect(h.listeners.size).toBe(0);
+      expect(h.outsider.kill).not.toHaveBeenCalled();
+    }
+  );
 
   it("cleans up owned children when an exit promise rejects", async () => {
     const h = supervisorHarness();
@@ -162,24 +166,24 @@ describe("owned development child supervision", () => {
     expect(h.outsider.kill).not.toHaveBeenCalled();
   });
 
-  it.each([
-    "SIGINT",
-    "SIGTERM",
-  ])("treats %s as clean shutdown and deduplicates repeated signals", async (signal) => {
-    const h = supervisorHarness();
-    h.listeners.get(signal)?.();
-    h.listeners.get(signal)?.();
-    h.listeners.get("SIGTERM")?.();
-    await flush();
-    for (const child of h.children)
-      expect(child.process.kill).toHaveBeenCalledTimes(1);
-    expect(h.exit).not.toHaveBeenCalled();
-    for (const child of h.children) child.exit.resolve(0);
-    await h.run;
-    expect(h.exit).toHaveBeenCalledTimes(1);
-    expect(h.exit).toHaveBeenCalledWith(0);
-    expect(h.error).not.toHaveBeenCalled();
-    expect(h.listeners.size).toBe(0);
-    expect(h.outsider.kill).not.toHaveBeenCalled();
-  });
+  it.each(["SIGINT", "SIGTERM"])(
+    "treats %s as clean shutdown and deduplicates repeated signals",
+    async (signal) => {
+      const h = supervisorHarness();
+      h.listeners.get(signal)?.();
+      h.listeners.get(signal)?.();
+      h.listeners.get("SIGTERM")?.();
+      await flush();
+      for (const child of h.children)
+        expect(child.process.kill).toHaveBeenCalledTimes(1);
+      expect(h.exit).not.toHaveBeenCalled();
+      for (const child of h.children) child.exit.resolve(0);
+      await h.run;
+      expect(h.exit).toHaveBeenCalledTimes(1);
+      expect(h.exit).toHaveBeenCalledWith(0);
+      expect(h.error).not.toHaveBeenCalled();
+      expect(h.listeners.size).toBe(0);
+      expect(h.outsider.kill).not.toHaveBeenCalled();
+    }
+  );
 });

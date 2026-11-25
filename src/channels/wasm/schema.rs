@@ -52,7 +52,7 @@ mod channel_config;
 mod setup;
 
 pub use channel_config::{ChannelConfig, HttpEndpointConfigSchema, PollConfigSchema};
-pub use setup::{SecretSetupSchema, SetupSchema};
+pub use setup::{AutoGenerateSchema, SecretSetupSchema, SetupSchema};
 
 /// Root schema for a channel capabilities JSON file.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

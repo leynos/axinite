@@ -45,19 +45,19 @@ describe("restart fixture timing", () => {
     fixture.dispose();
   });
 
-  it.each([
-    0,
-    RESTART_OUTAGE_DELAY_MS,
-  ])("cancels timers when disposed at %sms", (delay) => {
-    const fixture = new RestartFixture(true, vi.fn());
-    fixture.acknowledge();
-    vi.advanceTimersByTime(delay);
-    fixture.dispose();
-    fixture.acknowledge();
-    expect(vi.getTimerCount()).toBe(0);
-    vi.advanceTimersByTime(10_000);
-    expect(fixture.isUnavailable).toBe(false);
-  });
+  it.each([0, RESTART_OUTAGE_DELAY_MS])(
+    "cancels timers when disposed at %sms",
+    (delay) => {
+      const fixture = new RestartFixture(true, vi.fn());
+      fixture.acknowledge();
+      vi.advanceTimersByTime(delay);
+      fixture.dispose();
+      fixture.acknowledge();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(fixture.isUnavailable).toBe(false);
+    }
+  );
 });
 
 describe("restart fixture transport integration", () => {

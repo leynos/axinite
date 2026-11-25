@@ -8,11 +8,14 @@ import { render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { AppProviders } from "@/app/providers";
 import { ExtensionsPreview } from "@/components/extensions-preview";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
-import { createFirecrawlGateway } from "./support/extension-api-fixtures";
+import {
+  createFirecrawlGateway,
+  createSetupGateway,
+} from "./support/extension-api-fixtures";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
+import { TestProviders } from "./support/test-providers";
 
 let gateway: ReturnType<typeof createFirecrawlGateway>;
 
@@ -35,9 +38,9 @@ describe("extensions preview behaviour", () => {
     const user = userEvent.setup();
 
     render(() => (
-      <AppProviders>
+      <TestProviders>
         <ExtensionsPreview />
-      </AppProviders>
+      </TestProviders>
     ));
 
     expect(
@@ -85,5 +88,51 @@ describe("extensions preview behaviour", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Install" })).toBeEnabled();
     });
+  });
+
+  it("renders endpoint controls and submits replacements and clears", async () => {
+    const user = userEvent.setup();
+    const setup = createSetupGateway();
+    gateway = setup.gateway;
+
+    render(() => (
+      <TestProviders>
+        <ExtensionsPreview />
+      </TestProviders>
+    ));
+
+    await user.click(await screen.findByRole("button", { name: "Configure" }));
+
+    const calendar = await screen.findByLabelText("Calendar endpoint URL");
+    expect(calendar).toHaveAttribute("type", "url");
+    expect(calendar).toHaveAttribute(
+      "placeholder",
+      "(stored — enter a new URL to replace)"
+    );
+    expect(calendar).toHaveValue("");
+
+    const contacts = screen.getByLabelText(/Contacts endpoint URL/u);
+    expect(contacts).toHaveAttribute("placeholder", "Contacts endpoint URL");
+
+    await user.type(calendar, "https://mail.example.com/caldav");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(setup.submissions).toHaveLength(1);
+    });
+    expect(setup.submissions[0]?.endpoints?.set).toEqual({
+      calendar: "https://mail.example.com/caldav",
+    });
+    expect(setup.submissions[0]?.endpoints?.clear ?? []).toEqual([]);
+
+    const clear = screen.getByRole("checkbox", { name: "Clear stored value" });
+    await user.click(clear);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(setup.submissions).toHaveLength(2);
+    });
+    expect(setup.submissions[1]?.endpoints?.clear).toEqual(["calendar"]);
+    expect(setup.submissions[1]?.endpoints?.set ?? {}).toEqual({});
   });
 });

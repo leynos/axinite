@@ -6,6 +6,7 @@
 
 import type {
   CatalogueSkillEntry,
+  EndpointFieldInfo,
   ExtensionInfo,
   JobDetailResponse,
   JobEventInfo,
@@ -44,6 +45,7 @@ export type MockRoutine = {
 export type MockExtension = {
   info: ExtensionInfo;
   setupSecrets: SecretFieldInfo[];
+  setupEndpoints?: EndpointFieldInfo[];
 };
 
 
@@ -865,6 +867,22 @@ const SEED_EXTENSIONS: [string, MockExtension][] = [
             optional: false,
             provided: true,
             auto_generate: false,
+          },
+        ],
+        setupEndpoints: [
+          {
+            name: "calendar",
+            kind: "caldav",
+            prompt: "Calendar endpoint URL",
+            optional: false,
+            state: "configured",
+          },
+          {
+            name: "contacts",
+            kind: "carddav",
+            prompt: "Contacts endpoint URL",
+            optional: true,
+            state: "missing",
           },
         ],
       },

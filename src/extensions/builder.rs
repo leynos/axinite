@@ -65,6 +65,8 @@ pub struct BuildExtensionManagerParams<'a> {
     pub relay_config: Option<crate::config::RelayConfig>,
     /// Gateway token forwarded to the extension manager and channel activation.
     pub gateway_token: Option<String>,
+    /// Confidential endpoint-binding service, when storage and a key exist.
+    pub endpoint_bindings: Option<Arc<crate::extensions::setup::EndpointBindingService>>,
 }
 
 /// Inputs needed to initialize all extension runtime components.
@@ -84,6 +86,8 @@ pub struct BuildExtensionsParams<'a> {
     pub relay_config: Option<crate::config::RelayConfig>,
     /// Gateway token forwarded to the extension manager and channel activation.
     pub gateway_token: Option<String>,
+    /// Confidential endpoint-binding service, when storage and a key exist.
+    pub endpoint_bindings: Option<Arc<crate::extensions::setup::EndpointBindingService>>,
 }
 
 fn build_mcp_activation(
@@ -180,6 +184,7 @@ pub async fn build_extension_manager(
         user_id: "default".to_string(),
         store: params.db.clone(),
         catalog_entries: params.catalog_entries.clone(),
+        endpoint_bindings: params.endpoint_bindings.clone(),
     }));
 
     params.tools.register_extension_tools(Arc::clone(&manager));
@@ -282,6 +287,7 @@ pub async fn build_extensions(
         hooks,
         relay_config,
         gateway_token,
+        endpoint_bindings,
     } = params;
     let (mcp_session_manager, mcp_process_manager, mcp_clients) = init_managers_and_clients();
 
@@ -324,6 +330,7 @@ pub async fn build_extensions(
             mcp_clients: Arc::clone(&mcp_clients),
             relay_config,
             gateway_token,
+            endpoint_bindings,
         })
         .await,
     );

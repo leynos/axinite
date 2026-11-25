@@ -20,6 +20,7 @@ import {
   isJsonObject,
   isString,
   type JsonObject,
+  type JsonValue,
 } from "../../axinite/src/lib/api/json-value";
 
 function hasOptionalString(
@@ -127,7 +128,29 @@ export function isToggleRequest(value: unknown): value is ToggleRequest {
 export function isExtensionSetupRequest(
   value: unknown
 ): value is ExtensionSetupRequest {
-  return isJsonObject(value) && isStringRecord(value["secrets"]);
+  if (!isJsonObject(value) || !isStringRecord(value["secrets"])) {
+    return false;
+  }
+  const endpoints = value["endpoints"];
+  if (endpoints === undefined) {
+    return true;
+  }
+  if (!isJsonObject(endpoints)) {
+    return false;
+  }
+  const set = endpoints["set"];
+  if (set !== undefined && !isStringRecord(set)) {
+    return false;
+  }
+  return isOptionalStringList(endpoints["clear"]);
+}
+
+/** Whether a value is absent or an array of strings. */
+function isOptionalStringList(value: JsonValue | undefined): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  return Array.isArray(value) && value.every((entry: JsonValue) => isString(entry));
 }
 
 export function isSkillSearchRequest(

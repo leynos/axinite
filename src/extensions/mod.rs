@@ -24,6 +24,7 @@ pub mod discovery;
 pub mod manager;
 pub mod registry;
 mod results;
+pub mod setup;
 #[cfg(test)]
 mod tests;
 
@@ -39,7 +40,10 @@ pub use builder::{
 };
 pub use descriptor::{AuthHint, ExtensionKind, ExtensionSource, RegistryEntry, ResultSource};
 pub use discovery::{DiscoveryFuture, DiscoveryPort, NoOpDiscovery, OnlineDiscovery};
-pub use manager::{ExtensionManager, ExtensionManagerConfig, LiveWasmChannelSharedState};
+pub use manager::{
+    BlockerReason, ExtensionManager, ExtensionManagerConfig, FieldOutcome, FieldOutcomeReport,
+    LiveWasmChannelSharedState, SecretStatus, SetupApplication, SetupBlocker, SetupSnapshot,
+};
 pub use registry::ExtensionRegistry;
 pub use results::{
     ActivateResult, ExtensionError, InstallResult, InstalledExtension, SearchResult,

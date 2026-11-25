@@ -128,65 +128,64 @@ describe("restart control", () => {
     expect(await screen.findByText("Gateway restarted.")).toBeVisible();
   });
 
-  it.each([
-    "timeout",
-    "transport",
-    "http",
-  ] as const)("reports %s safely and lets the operator retry", async (category) => {
-    const sendRestart = vi
-      .fn<() => Promise<RestartSendResult>>()
-      .mockResolvedValueOnce({ kind: "failed", category })
-      .mockResolvedValue({ kind: "accepted" });
-    const report = vi.spyOn(console, "error").mockImplementation(() => {});
-    let handlers: RestartStreamHandlers | undefined;
-    const makeDeps = (onPhase: RestartDeps["onPhase"]): RestartDeps => ({
-      sendRestart,
-      onPhase,
-      openStream: (next) => {
-        handlers = next;
-        return { close: () => {} };
-      },
-      checkStatus: () => Promise.resolve(true),
-      scheduleStatusPolls: () => () => {},
-    });
-    render(() => (
-      <AppProviders>
-        <RestartControl makeDeps={makeDeps} restartEnabled={() => true} />
-      </AppProviders>
-    ));
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Restart gateway" })
-    );
-    await screen.findByRole("alertdialog");
-    await userEvent.click(screen.getByRole("button", { name: /^Restart$/ }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The restart request failed. Try again."
-    );
-    const retry = screen.getByRole("button", { name: "Retry restart" });
-    expect(retry).toBeEnabled();
-    expect(report).toHaveBeenCalledWith("[gateway-restart]", {
-      event: "restart_failed",
-      category,
-    });
-    await waitFor(() => {
-      expect(globalThis.getComputedStyle(document.body).pointerEvents).not.toBe(
-        "none"
+  it.each(["timeout", "transport", "http"] as const)(
+    "reports %s safely and lets the operator retry",
+    async (category) => {
+      const sendRestart = vi
+        .fn<() => Promise<RestartSendResult>>()
+        .mockResolvedValueOnce({ kind: "failed", category })
+        .mockResolvedValue({ kind: "accepted" });
+      const report = vi.spyOn(console, "error").mockImplementation(() => {});
+      let handlers: RestartStreamHandlers | undefined;
+      const makeDeps = (onPhase: RestartDeps["onPhase"]): RestartDeps => ({
+        sendRestart,
+        onPhase,
+        openStream: (next) => {
+          handlers = next;
+          return { close: () => {} };
+        },
+        checkStatus: () => Promise.resolve(true),
+        scheduleStatusPolls: () => () => {},
+      });
+      render(() => (
+        <AppProviders>
+          <RestartControl makeDeps={makeDeps} restartEnabled={() => true} />
+        </AppProviders>
+      ));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Restart gateway" })
       );
-    });
-    await userEvent.click(retry);
-    await screen.findByRole("alertdialog");
-    await userEvent.click(screen.getByRole("button", { name: /^Restart$/ }));
-    await waitFor(() => expect(sendRestart).toHaveBeenCalledTimes(2));
-    handlers?.onEvent({
-      type: "tool_completed",
-      name: "restart",
-      success: true,
-    });
-    handlers?.onError();
-    handlers?.onOpen();
-    expect(await screen.findByText("Gateway restarted.")).toBeVisible();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
+      await screen.findByRole("alertdialog");
+      await userEvent.click(screen.getByRole("button", { name: /^Restart$/ }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The restart request failed. Try again."
+      );
+      const retry = screen.getByRole("button", { name: "Retry restart" });
+      expect(retry).toBeEnabled();
+      expect(report).toHaveBeenCalledWith("[gateway-restart]", {
+        event: "restart_failed",
+        category,
+      });
+      await waitFor(() => {
+        expect(
+          globalThis.getComputedStyle(document.body).pointerEvents
+        ).not.toBe("none");
+      });
+      await userEvent.click(retry);
+      await screen.findByRole("alertdialog");
+      await userEvent.click(screen.getByRole("button", { name: /^Restart$/ }));
+      await waitFor(() => expect(sendRestart).toHaveBeenCalledTimes(2));
+      handlers?.onEvent({
+        type: "tool_completed",
+        name: "restart",
+        success: true,
+      });
+      handlers?.onError();
+      handlers?.onOpen();
+      expect(await screen.findByText("Gateway restarted.")).toBeVisible();
+      expect(screen.queryByRole("alert")).toBeNull();
+    }
+  );
 
   it("reports only bounded transport categories in its diagnostic", async () => {
     const report = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -210,37 +209,38 @@ describe("restart control", () => {
     expect(screen.getByRole("button", { name: "Retry restart" })).toBeEnabled();
   });
 
-  it.each([
-    "timeout",
-    "transport",
-    "http",
-  ] as const)("classifies a real browser adapter %s failure without raw details", async (category) => {
-    vi.spyOn(chatApi, "sendMessage").mockRejectedValue(
-      new RequestError(category, "secret-response/token", 503)
-    );
-    const report = vi.spyOn(console, "error").mockImplementation(() => {});
-    render(() => (
-      <AppProviders>
-        <RestartControl restartEnabled={() => true} />
-      </AppProviders>
-    ));
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Restart gateway" })
-    );
-    await screen.findByRole("alertdialog");
-    await userEvent.click(screen.getByRole("button", { name: /^Restart$/ }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The restart request failed. Try again."
-    );
-    expect(report).toHaveBeenCalledWith("[gateway-restart]", {
-      event: "restart_failed",
-      category,
-    });
-    const reportText = JSON.stringify(report.mock.calls);
-    expect(reportText).not.toContain("secret-response");
-    expect(reportText).not.toContain("503");
-    expect(screen.getByRole("button", { name: "Retry restart" })).toBeEnabled();
-  });
+  it.each(["timeout", "transport", "http"] as const)(
+    "classifies a real browser adapter %s failure without raw details",
+    async (category) => {
+      vi.spyOn(chatApi, "sendMessage").mockRejectedValue(
+        new RequestError(category, "secret-response/token", 503)
+      );
+      const report = vi.spyOn(console, "error").mockImplementation(() => {});
+      render(() => (
+        <AppProviders>
+          <RestartControl restartEnabled={() => true} />
+        </AppProviders>
+      ));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Restart gateway" })
+      );
+      await screen.findByRole("alertdialog");
+      await userEvent.click(screen.getByRole("button", { name: /^Restart$/ }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The restart request failed. Try again."
+      );
+      expect(report).toHaveBeenCalledWith("[gateway-restart]", {
+        event: "restart_failed",
+        category,
+      });
+      const reportText = JSON.stringify(report.mock.calls);
+      expect(reportText).not.toContain("secret-response");
+      expect(reportText).not.toContain("503");
+      expect(
+        screen.getByRole("button", { name: "Retry restart" })
+      ).toBeEnabled();
+    }
+  );
 
   it("ignores malformed and application-error frames but completes after transport recovery", async () => {
     vi.spyOn(chatApi, "sendMessage").mockResolvedValue({

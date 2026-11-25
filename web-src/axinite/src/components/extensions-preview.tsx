@@ -21,7 +21,12 @@ import {
 } from "solid-js";
 import { ExtensionPairing } from "@/components/extension-pairing";
 import { WasmChannelStepper } from "@/components/wasm-channel-stepper";
-import type { ExtensionInfo, SecretFieldInfo } from "@/lib/api/contracts";
+import type {
+  EndpointFieldInfo,
+  ExtensionInfo,
+  ExtensionSetupRequest,
+  SecretFieldInfo,
+} from "@/lib/api/contracts";
 import {
   activateExtension,
   fetchExtensionRegistry,
@@ -255,11 +260,173 @@ function InstalledExtensionCard(props: InstalledExtensionCardProps) {
 type ConfigurePanelProps = {
   name: string;
   secrets: SecretFieldInfo[];
+  endpoints: EndpointFieldInfo[];
+  endpointValues: Record<string, string>;
+  endpointClears: Record<string, boolean>;
+  resultMessage: string | undefined;
   t: TranslateFn;
   onSecretChange: (fieldName: string, value: string) => void;
+  onEndpointChange: (fieldName: string, value: string) => void;
+  onEndpointClear: (fieldName: string, checked: boolean) => void;
   onSave: () => void;
   onCancel: () => void;
 };
+
+/** Placeholder that tells the user what the stored endpoint state means. */
+function endpointPlaceholder(field: EndpointFieldInfo, t: TranslateFn): string {
+  if (field.state === "configured") {
+    return t("extensions-setup-endpoint-replace-hint");
+  }
+  if (field.state === "stale" || field.state === "corrupt") {
+    return t("extensions-setup-endpoint-attention");
+  }
+  return field.prompt;
+}
+
+/** Endpoint replacements to submit: non-empty and not marked for clearing. */
+function endpointSetValues(
+  values: Record<string, string>,
+  clears: Record<string, boolean>
+) {
+  const set: Record<string, string> = {};
+  for (const [name, value] of Object.entries(values)) {
+    const trimmed = value.trim();
+    if (trimmed.length > 0 && clears[name] !== true) {
+      set[name] = trimmed;
+    }
+  }
+  return set;
+}
+
+/** Endpoint names marked for an explicit clear. */
+function clearedEndpointNames(clears: Record<string, boolean>): string[] {
+  return Object.entries(clears)
+    .filter(([, cleared]) => cleared)
+    .map(([name]) => name);
+}
+
+type SecretFieldProps = {
+  field: SecretFieldInfo;
+  onSecretChange: (fieldName: string, value: string) => void;
+  t: TranslateFn;
+};
+
+/** One masked credential input with its stored-value indicator. */
+function SecretField(props: SecretFieldProps) {
+  return (
+    <div class="catalogue-form">
+      <label class="catalogue-form__label" for={`setup-${props.field.name}`}>
+        {props.field.prompt}
+      </label>
+      <div class="catalogue-form__row catalogue-form__row--indicator">
+        <input
+          class="catalogue-form__input"
+          id={`setup-${props.field.name}`}
+          onInput={(event) =>
+            props.onSecretChange(props.field.name, event.currentTarget.value)
+          }
+          placeholder={
+            props.field.provided
+              ? props.t("extensions-setup-provided-hint")
+              : props.field.prompt
+          }
+          type="text"
+        />
+        <Show when={props.field.provided}>
+          <span
+            aria-label={props.t("extensions-setup-stored")}
+            class="catalogue-form__provided-icon"
+            role="img"
+          >
+            ✓
+          </span>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+type EndpointFieldProps = {
+  clears: Record<string, boolean>;
+  field: EndpointFieldInfo;
+  onEndpointChange: (fieldName: string, value: string) => void;
+  onEndpointClear: (fieldName: string, checked: boolean) => void;
+  t: TranslateFn;
+  values: Record<string, string>;
+};
+
+/**
+ * One confidential endpoint input with its clear control and status.
+ *
+ * The stored URL is never rendered: only its state appears, so a reload cannot
+ * leak the value back to the browser.
+ */
+function EndpointField(props: EndpointFieldProps) {
+  const cleared = () => props.clears[props.field.name] === true;
+  return (
+    <div class="catalogue-form">
+      <label
+        class="catalogue-form__label"
+        for={`setup-endpoint-${props.field.name}`}
+      >
+        {props.field.prompt}
+        <Show when={props.field.optional}>
+          <span class="catalogue-form__optional">
+            {" "}
+            {props.t("extensions-setup-optional")}
+          </span>
+        </Show>
+      </label>
+      <div class="catalogue-form__row catalogue-form__row--indicator">
+        <input
+          autocomplete="off"
+          class="catalogue-form__input"
+          disabled={cleared()}
+          id={`setup-endpoint-${props.field.name}`}
+          inputmode="url"
+          onInput={(event) =>
+            props.onEndpointChange(props.field.name, event.currentTarget.value)
+          }
+          placeholder={endpointPlaceholder(props.field, props.t)}
+          spellcheck={false}
+          type="url"
+          value={props.values[props.field.name] ?? ""}
+        />
+        <Show when={props.field.state === "configured"}>
+          <span
+            aria-label={props.t("extensions-setup-stored")}
+            class="catalogue-form__provided-icon"
+            role="img"
+          >
+            ✓
+          </span>
+        </Show>
+      </div>
+      <Show when={props.field.state !== "missing"}>
+        <label class="catalogue-form__check">
+          <input
+            checked={cleared()}
+            onChange={(event) =>
+              props.onEndpointClear(
+                props.field.name,
+                event.currentTarget.checked
+              )
+            }
+            type="checkbox"
+          />
+          {props.t("extensions-setup-endpoint-clear")}
+        </label>
+      </Show>
+      <Show
+        when={props.field.state === "stale" || props.field.state === "corrupt"}
+      >
+        <p class="catalogue-form__warning" role="status">
+          {props.t("extensions-setup-endpoint-attention")}
+        </p>
+      </Show>
+    </div>
+  );
+}
 
 function ConfigurePanel(props: ConfigurePanelProps) {
   return (
@@ -272,40 +439,35 @@ function ConfigurePanel(props: ConfigurePanelProps) {
 
       <For each={props.secrets}>
         {(field) => (
-          <div class="catalogue-form">
-            <label class="catalogue-form__label" for={`setup-${field.name}`}>
-              {field.prompt}
-            </label>
-            <div class="catalogue-form__row catalogue-form__row--indicator">
-              <input
-                class="catalogue-form__input"
-                id={`setup-${field.name}`}
-                onInput={(event) =>
-                  props.onSecretChange(field.name, event.currentTarget.value)
-                }
-                placeholder={
-                  field.provided
-                    ? props.t("extensions-setup-provided-hint")
-                    : field.prompt
-                }
-                type="text"
-              />
-              <Show when={field.provided}>
-                <span
-                  class="catalogue-form__provided-icon"
-                  role="img"
-                  aria-label={props.t("extensions-setup-stored")}
-                >
-                  ✓
-                </span>
-              </Show>
-            </div>
-          </div>
+          <SecretField
+            field={field}
+            onSecretChange={props.onSecretChange}
+            t={props.t}
+          />
         )}
       </For>
 
-      <Show when={props.secrets.length === 0}>
+      <For each={props.endpoints}>
+        {(field) => (
+          <EndpointField
+            clears={props.endpointClears}
+            field={field}
+            onEndpointChange={props.onEndpointChange}
+            onEndpointClear={props.onEndpointClear}
+            t={props.t}
+            values={props.endpointValues}
+          />
+        )}
+      </For>
+
+      <Show when={props.secrets.length === 0 && props.endpoints.length === 0}>
         <p class="catalogue-panel__empty">{props.t("extensions-setup-none")}</p>
+      </Show>
+
+      <Show when={props.resultMessage}>
+        <p aria-live="polite" class="catalogue-form__warning" role="status">
+          {props.resultMessage}
+        </p>
       </Show>
 
       <div class="dashboard-detail__actions">
@@ -577,6 +739,13 @@ export const ExtensionsPreview = () => {
   const [setupValues, setSetupValues] = createSignal<Record<string, string>>(
     {}
   );
+  const [endpointValues, setEndpointValues] = createSignal<
+    Record<string, string>
+  >({});
+  const [endpointClears, setEndpointClears] = createSignal<
+    Record<string, boolean>
+  >({});
+  const [setupMessage, setSetupMessage] = createSignal<string>();
   let registryBodyRef: HTMLTableSectionElement | undefined;
   let mcpBodyRef: HTMLTableSectionElement | undefined;
   let toolsBodyRef: HTMLTableSectionElement | undefined;
@@ -645,6 +814,12 @@ export const ExtensionsPreview = () => {
       (setup.data?.secrets ?? []).map((field) => [field.name, ""])
     );
     setSetupValues(nextValues);
+    const nextEndpoints = Object.fromEntries(
+      (setup.data?.endpoints ?? []).map((field) => [field.name, ""])
+    );
+    setEndpointValues(nextEndpoints);
+    setEndpointClears({});
+    setSetupMessage(undefined);
   });
 
   const refresh = () => {
@@ -673,11 +848,25 @@ export const ExtensionsPreview = () => {
   }));
 
   const setupMutation = createMutation(() => ({
-    mutationFn: () =>
-      submitExtensionSetup(configuringName() ?? "", {
+    mutationFn: () => {
+      const request: ExtensionSetupRequest = {
         secrets: setupValues(),
-      }),
-    onSuccess: refresh,
+        endpoints: {
+          set: endpointSetValues(endpointValues(), endpointClears()),
+          clear: clearedEndpointNames(endpointClears()),
+        },
+      };
+      return submitExtensionSetup(configuringName() ?? "", request);
+    },
+    onSuccess: (result) => {
+      setSetupMessage(result.message);
+      refresh();
+    },
+    onError: (error) => {
+      setSetupMessage(
+        error instanceof Error ? error.message : "Failed to save configuration"
+      );
+    },
   }));
 
   const addMcpServer = () => {
@@ -816,8 +1005,23 @@ export const ExtensionsPreview = () => {
           <Show when={activeExtension()}>
             {(extension) => (
               <ConfigurePanel
+                endpointClears={endpointClears()}
+                endpoints={setup.data?.endpoints ?? []}
+                endpointValues={endpointValues()}
                 name={extension().name}
                 onCancel={() => setConfiguringName(undefined)}
+                onEndpointChange={(fieldName, value) =>
+                  setEndpointValues((current) => ({
+                    ...current,
+                    [fieldName]: value,
+                  }))
+                }
+                onEndpointClear={(fieldName, checked) =>
+                  setEndpointClears((current) => ({
+                    ...current,
+                    [fieldName]: checked,
+                  }))
+                }
                 onSave={() => setupMutation.mutate()}
                 onSecretChange={(fieldName, value) =>
                   setSetupValues((current) => ({
@@ -825,6 +1029,7 @@ export const ExtensionsPreview = () => {
                     [fieldName]: value,
                   }))
                 }
+                resultMessage={setupMessage()}
                 secrets={setup.data?.secrets ?? []}
                 t={t}
               />

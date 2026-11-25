@@ -56,6 +56,8 @@ pub struct AppBuilder {
     // Accumulated state
     pub(super) db: Option<Arc<dyn Database>>,
     pub(super) secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// Confidential endpoint bindings, created with the secrets store.
+    pub(super) endpoint_bindings: Option<Arc<crate::extensions::setup::EndpointBindingService>>,
 
     // Test overrides
     pub(super) llm_override: Option<Arc<dyn LlmProvider>>,
@@ -86,6 +88,7 @@ impl AppBuilder {
             log_broadcaster: params.log_broadcaster,
             db: None,
             secrets_store: None,
+            endpoint_bindings: None,
             llm_override: None,
             handles: None,
             relay_config: crate::config::RelayConfig::from_context(&env_context),
@@ -234,4 +237,17 @@ impl AppBuilder {
         side_effects.start()?.wait_until_bootstrapped().await?;
         Ok(components)
     }
+}
+
+/// Build the endpoint-binding service when a database backend is available.
+pub(super) fn build_endpoint_bindings(
+    crypto: &Arc<crate::secrets::SecretsCrypto>,
+    handles: &crate::db::DatabaseHandles,
+) -> Option<Arc<crate::extensions::setup::EndpointBindingService>> {
+    crate::db::create_endpoint_binding_repository(handles).map(|repository| {
+        Arc::new(crate::extensions::setup::EndpointBindingService::new(
+            repository,
+            Arc::clone(crypto),
+        ))
+    })
 }

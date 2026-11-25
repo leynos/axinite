@@ -13,7 +13,7 @@ pub(crate) mod common;
 mod install;
 mod listing;
 mod registry;
-mod setup;
+pub(crate) mod setup;
 
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()

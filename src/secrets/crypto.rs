@@ -23,6 +23,8 @@ use sha2::Sha256;
 
 use crate::secrets::types::{DecryptedSecret, SecretError};
 
+mod scoped;
+
 /// Size of the AES-256 key in bytes.
 const KEY_SIZE: usize = 32;
 

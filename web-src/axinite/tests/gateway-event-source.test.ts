@@ -47,28 +47,27 @@ describe("GatewayEventSource", () => {
     GatewayEventSource.latest = undefined;
   });
 
-  it.each(eventDispatchCases)("calls both $type handlers exactly once", ({
-    type,
-    property,
-    dispatch,
-  }) => {
-    const source = new GatewayEventSource("http://localhost/events");
-    const propertyEvents: Event[] = [];
-    const listenerEvents: Event[] = [];
+  it.each(eventDispatchCases)(
+    "calls both $type handlers exactly once",
+    ({ type, property, dispatch }) => {
+      const source = new GatewayEventSource("http://localhost/events");
+      const propertyEvents: Event[] = [];
+      const listenerEvents: Event[] = [];
 
-    installPropertyHandler(source, property, (event) => {
-      propertyEvents.push(event);
-    });
-    source.addEventListener(type, (event) => {
-      listenerEvents.push(event);
-    });
+      installPropertyHandler(source, property, (event) => {
+        propertyEvents.push(event);
+      });
+      source.addEventListener(type, (event) => {
+        listenerEvents.push(event);
+      });
 
-    dispatch(source);
+      dispatch(source);
 
-    expect(propertyEvents).toHaveLength(1);
-    expect(propertyEvents[0]?.type).toBe(type);
-    expect(listenerEvents).toHaveLength(1);
-    expect(listenerEvents[0]?.type).toBe(type);
-    expect(listenerEvents[0]).toBe(propertyEvents[0]);
-  });
+      expect(propertyEvents).toHaveLength(1);
+      expect(propertyEvents[0]?.type).toBe(type);
+      expect(listenerEvents).toHaveLength(1);
+      expect(listenerEvents[0]?.type).toBe(type);
+      expect(listenerEvents[0]).toBe(propertyEvents[0]);
+    }
+  );
 });

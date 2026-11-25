@@ -108,7 +108,8 @@ pub use router::{
 };
 pub use runtime::{PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeConfig};
 pub use schema::{
-    ChannelCapabilitiesFile, ChannelConfig, SecretSetupSchema, SetupSchema, WebhookSchema,
+    AutoGenerateSchema, ChannelCapabilitiesFile, ChannelConfig, SecretSetupSchema, SetupSchema,
+    WebhookSchema,
 };
 pub use setup::{
     WasmChannelSetup, WasmChannelSetupRequest, inject_channel_credentials,

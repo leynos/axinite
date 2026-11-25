@@ -503,7 +503,11 @@ const routes: readonly Route[] = [
       const body = await parseJsonBody(request, isExtensionSetupRequest);
       if (!body) return errorResponse(400, "Invalid extension setup body.");
       return jsonResponse(
-        state.submitExtensionSetup(firstCapture(match), body.secrets)
+        state.submitExtensionSetup(
+          firstCapture(match),
+          body.secrets,
+          body.endpoints
+        )
       );
     },
   },

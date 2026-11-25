@@ -126,6 +126,7 @@ pub(super) fn build_test_ext_mgr(
             user_id: "test".to_string(),
             store: None,
             catalog_entries: vec![],
+            endpoint_bindings: None,
         },
     ))
 }

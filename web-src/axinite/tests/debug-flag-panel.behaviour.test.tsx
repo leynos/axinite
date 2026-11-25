@@ -135,26 +135,29 @@ describe("debug flag panel with the real runtime", () => {
     }
   });
 
-  it.each(
-    FEATURE_FLAGS
-  )("forces and clears $name and persists each override", async (flag) => {
-    mountPanel();
-    await openPanel();
-    const row = flagRow(flag.name);
-    await userEvent.click(row.getByRole("button", { name: "Force on" }));
-    expect(row.getByText("On")).toBeVisible();
-    expect(row.getByRole("button", { name: "Clear" })).toBeEnabled();
-    expect(storedOverrides()).toEqual({ [flag.name]: true });
+  it.each(FEATURE_FLAGS)(
+    "forces and clears $name and persists each override",
+    async (flag) => {
+      mountPanel();
+      await openPanel();
+      const row = flagRow(flag.name);
+      await userEvent.click(row.getByRole("button", { name: "Force on" }));
+      expect(row.getByText("On")).toBeVisible();
+      expect(row.getByRole("button", { name: "Clear" })).toBeEnabled();
+      expect(storedOverrides()).toEqual({ [flag.name]: true });
 
-    await userEvent.click(row.getByRole("button", { name: "Force off" }));
-    expect(row.getByText("Off")).toBeVisible();
-    expect(storedOverrides()).toEqual({ [flag.name]: false });
+      await userEvent.click(row.getByRole("button", { name: "Force off" }));
+      expect(row.getByText("Off")).toBeVisible();
+      expect(storedOverrides()).toEqual({ [flag.name]: false });
 
-    await userEvent.click(row.getByRole("button", { name: "Clear" }));
-    expect(row.getByText(runtimeFlags[flag.name] ? "On" : "Off")).toBeVisible();
-    expect(row.getByRole("button", { name: "Clear" })).toBeDisabled();
-    expect(storedOverrides()).toEqual({});
-  });
+      await userEvent.click(row.getByRole("button", { name: "Clear" }));
+      expect(
+        row.getByText(runtimeFlags[flag.name] ? "On" : "Off")
+      ).toBeVisible();
+      expect(row.getByRole("button", { name: "Clear" })).toBeDisabled();
+      expect(storedOverrides()).toEqual({});
+    }
+  );
 
   it("hydrates persisted overrides in a new provider and retains unrelated values on clear", async () => {
     const first = mountPanel();

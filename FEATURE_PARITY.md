@@ -311,6 +311,8 @@ ______________________________________________________________________
 | Context-engine plugins         | ✅       | ❌       | Custom context management + subagent/context hooks |
 | Tool plugins                   | ✅       | ✅       | WASM tools                                         |
 | Hook plugins                   | ✅       | ✅       | Declarative hooks from extension capabilities      |
+| Typed setup fields             | ❌       | ✅       | Typed secrets plus confidential endpoint bindings  |
+| Delegated endpoint requests    | ❌       | ❌       | Roadmap 2.1.2-2.1.4; setup storage only            |
 | Provider plugins               | ✅       | ❌       |                                                    |
 | Plugin CLI (`install`, `list`) | ✅       | ✅       | `tool` subcommand                                  |
 | ClawHub registry               | ✅       | ❌       | Discovery                                          |

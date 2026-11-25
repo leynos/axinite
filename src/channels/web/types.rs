@@ -10,6 +10,7 @@ mod jobs;
 mod memory;
 mod routines;
 mod settings;
+mod setup;
 
 pub use chat::*;
 pub use events::*;
@@ -18,6 +19,7 @@ pub use jobs::*;
 pub use memory::*;
 pub use routines::*;
 pub use settings::*;
+pub use setup::*;
 
 #[cfg(test)]
 mod tests;

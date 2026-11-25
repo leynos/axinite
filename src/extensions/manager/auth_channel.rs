@@ -16,7 +16,7 @@ struct ChannelSecretRequest<'a> {
 impl ExtensionManager {
     /// Load a WASM channel's capabilities file, returning `None` when the
     /// channel has no capabilities file at all.
-    async fn load_channel_capabilities(
+    pub(super) async fn load_channel_capabilities(
         &self,
         name: &str,
     ) -> Result<Option<crate::channels::wasm::ChannelCapabilitiesFile>, ExtensionError> {

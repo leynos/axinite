@@ -211,6 +211,7 @@ async fn extension_manager_with_activation_ports_constructs() {
         user_id: "test".to_string(),
         store: None,
         catalog_entries: Vec::new(),
+        endpoint_bindings: None,
     });
 
     // Verify the manager is functional — list returns Ok.

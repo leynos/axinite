@@ -299,6 +299,30 @@ CREATE TABLE IF NOT EXISTS secrets (
 
 CREATE INDEX IF NOT EXISTS idx_secrets_user ON secrets(user_id);
 
+-- ==================== Confidential Endpoint Bindings ====================
+
+-- Encrypted endpoint values, scoped to (user_id, extension_name,
+-- endpoint_name). Envelope, policy, and kind are authenticated by the
+-- application; no plaintext URL columns exist.
+
+CREATE TABLE IF NOT EXISTS endpoint_bindings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    extension_name TEXT NOT NULL,
+    endpoint_name TEXT NOT NULL,
+    endpoint_kind TEXT NOT NULL,
+    envelope_version INTEGER NOT NULL,
+    validation_policy_version INTEGER NOT NULL,
+    encrypted_value BLOB NOT NULL,
+    key_salt BLOB NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (user_id, extension_name, endpoint_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_endpoint_bindings_scope
+    ON endpoint_bindings(user_id, extension_name);
+
 -- ==================== WASM Tools ====================
 
 CREATE TABLE IF NOT EXISTS wasm_tools (
