@@ -5066,6 +5066,69 @@ and builds under `target/unsafe-boundary-contract/`. `make miri` needs the
 syscall Miri cannot model carries `#[cfg_attr(miri, ignore = "reason")]`, and
 the reason appears in the Miri table of the verification document.
 
+## 42. Typed extension setup and endpoint bindings
+
+Setup is split into a pure planner, a sealing service, and a store port, so
+policy stays testable without I/O and both database backends share one contract.
+
+| Layer            | Location                                                                      | Responsibility                                                                                       |
+| ---------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Domain values    | `src/extensions/setup/model.rs`                                               | Declarations, operations, validated URLs. No `Debug` or `Serialize` path prints a value.             |
+| Validation       | `src/extensions/setup/endpoint.rs`                                            | Offline HTTPS URL policy; no DNS and no provider call.                                               |
+| Planner          | `src/extensions/setup/policy.rs`                                              | `plan_setup(declarations, operations)` → ordered effects; rejects an invalid batch before any write. |
+| Manifests        | `src/extensions/setup/manifest.rs`                                            | Normalizes legacy `required_secrets` and typed `fields`; rejects mixing both.                        |
+| Records and port | `src/extensions/setup/binding.rs`                                             | Scoped ciphertext records plus the dyn/native repository pair.                                       |
+| Service          | `src/extensions/setup/service.rs`                                             | Seals with associated data, deletes, and derives `Configured`/`Missing`/`Stale`/`Corrupt`.           |
+| Adapters         | `src/db/endpoint_bindings/`                                                   | PostgreSQL and libSQL implementations and the backend-selecting factory.                             |
+| Manager          | `src/extensions/manager/setup_{schema,apply,activation,generate,provider}.rs` | Reads declarations, executes effects, reports per-field outcomes, and gates activation.              |
+
+`ExtensionManager::apply_setup` returns `SetupApplication`, whose outcomes are
+`Stored`, `Kept`, `Cleared`, `Failed`, `Indeterminate`, or `Skipped`, alongside
+a snapshot re-read from the stores. The transport never echoes an endpoint
+value: `ExtensionSetupSubmitResponse` has no field for one, and the status
+types carry only names and states.
+
+Each record is sealed with AES-256-GCM under a per-record HKDF-SHA256 salt. The
+associated data is length-prefixed over the domain tag, user, extension,
+endpoint name, kind, envelope version, and validation policy version, so a row
+cannot be transplanted between scopes, kinds, or policies. Bumping the envelope
+or policy version reports the stored row as stale rather than silently
+reinterpreting it.
+
+### Reusing the service for a new endpoint kind
+
+1. Declare the field in the manifest with
+   `{"type": "endpoint", "name": …, "kind": …}`; `kind` stays declarative and
+   must not trigger discovery.
+2. Keep validation offline in `endpoint.rs`; a new rule that changes accepted
+   URLs must bump `ENDPOINT_VALIDATION_POLICY_VERSION`.
+3. Reuse `EndpointBindingService` unchanged. The scope, associated data, and
+   status derivation are not per-kind.
+4. Add cases to `src/extensions/setup/binding_contract.rs` so both backends
+   execute the same assertions.
+
+### Tests and fixtures
+
+- `src/extensions/manager/setup_tests.rs` installs a synthetic tool manifest
+  with one credential and two endpoints and never contacts the endpoint.
+- `src/channels/web/server/tests/extensions_setup.rs` drives the HTTP contract
+  through a real router and asserts nothing echoes a submitted URL.
+- `tests/e2e/scenarios/test_endpoint_setup.py` runs the real handlers and a
+  real database, including a restart, for both UI variants. Build its
+  virtualenv outside the worktree (see `tests/e2e/CLAUDE.md`), because
+  `make interrogate` scans `tests/`.
+- `.config/nextest.toml`'s `db_surface_compile_contracts` bound can expire
+  under a saturated compile-admission queue; treat that as a scheduling
+  outcome, not a contract failure.
+
+### Proofs
+
+`verus/endpoint_setup.rs` models the planner's key uniqueness and ordering. Run
+it with `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`; the shared smoke
+proofs stay under `make verus`. The refinement mapping in `verus/README.md` is
+what ties the proof's operations to the production `SetupOperation` and
+`plan_setup`, so a change to either must update the mapping in the same commit.
+
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
 [actions/runner-images#13518]: https://github.com/actions/runner-images/issues/13518
 [actions/runner-images#13045]: https://github.com/actions/runner-images/issues/13045

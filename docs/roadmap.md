@@ -250,7 +250,7 @@ with understandable approvals and useful diagnostics.
 Dependencies: depends on 1.2 for the stricter WASM contract and informs 2.3 by
 establishing host-owned transport assembly for sensitive requests.
 
-- [ ] 2.1.1. Add typed setup fields and delegated endpoint binding persistence.
+- [x] 2.1.1. Add typed setup fields and delegated endpoint binding persistence.
   - [RFC 0004 §Current Surface](./rfcs/rfc-0004-tokenized-delegated-authorized-endpoint-requests.md#current-surface)
     and
     [RFC 0004 §Rollout Plan](./rfcs/rfc-0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).

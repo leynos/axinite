@@ -48,6 +48,28 @@ cargo check --all-features                            # both
 | `libsql/workspace.rs`     | `WorkspaceStore` impl (FTS5 + vector search)                                                                                                      |
 | `libsql_migrations.rs`    | Consolidated libSQL schema (CREATE IF NOT EXISTS, no ALTER TABLE)                                                                                 |
 | `tls.rs`                  | TLS connector factory for PostgreSQL (`rustls` + system root certs)                                                                               |
+| `endpoint_bindings.rs`    | Backend-selecting `create_endpoint_binding_repository` factory for confidential endpoint rows                                                     |
+| `endpoint_bindings/`      | PostgreSQL and libSQL ciphertext adapters, plus shared contract tests                                                                             |
+
+## Confidential endpoint bindings
+
+`migrations/V19__endpoint_bindings.sql` creates `endpoint_bindings`; libSQL
+carries the same table as schema version 19 in `libsql_migrations.rs`. A row is
+`(user_id, extension_name, endpoint_name)` keyed and stores only ciphertext:
+the AES-256-GCM envelope, its per-record HKDF salt, the endpoint kind, and the
+envelope and validation-policy versions.
+
+`create_endpoint_binding_repository(&DatabaseHandles)` picks the adapter for
+the connected backend. The repository never sees a plaintext URL; sealing and
+authenticated reads belong to `EndpointBindingService`
+(`src/extensions/setup/service.rs`). Both adapters satisfy
+`src/extensions/setup/binding_contract.rs`, so a change to one backend's row
+handling must keep that contract green for both.
+
+Each mutation is a single statement — PostgreSQL uses `ON CONFLICT`, libSQL its
+own dialect of the same — so no explicit transaction is needed. A status read
+is one bounded `list` per scope; an unreadable store is reported as an error,
+never as "no binding".
 
 ## Remote libSQL TLS transport
 

@@ -468,6 +468,40 @@ panel is hidden separately by `panel_logs`.
   pending pairing requests for a channel can be approved. Neither has its own
   flag; both follow `route_extensions`.
 
+### Configuring extensions
+
+Configure opens a panel listing every field the extension declares: secret
+fields (masked, and left blank to keep the stored value) and confidential
+endpoint fields. An endpoint field is a URL control; a configured endpoint
+shows only a "stored" tick and describes the stored state in its placeholder,
+never the URL itself. Nothing about a stored endpoint is echoed back to the
+browser, to live events, or to the agent.
+
+- Replacing an endpoint: type a new URL and save. An endpoint that is already
+  stored keeps working until the replacement is accepted.
+- Clearing an endpoint: tick "Clear stored value" and save. Clearing an
+  endpoint that has nothing stored is not an error.
+- Needs attention: an endpoint whose stored binding no longer matches its
+  declaration, or cannot be read back, is shown as needing attention. Replacing
+  or clearing it is the only way to resolve that state; a stale or unreadable
+  binding always blocks setup readiness, even when the field is optional.
+- Validation happens before anything is written. Accepted URLs must be
+  absolute `https` URLs without credentials, query strings, fragments, local
+  hostnames, or non-public addresses; a rejected submission changes nothing.
+- Partial saves: each field's outcome is reported separately. A write whose
+  acknowledgement is lost is reported as indeterminate rather than as success,
+  and the remaining fields are then skipped. Reopening the panel shows the
+  state actually read back from storage.
+- Activation waits for readiness. An extension activates only once every
+  required field is satisfied; a tool's OAuth grant is kept when an
+  endpoint-only edit is saved and is discarded only when a credential changed.
+
+Endpoint bindings are encrypted with the deployment's master key
+(`SECRETS_MASTER_KEY`, or the OS keychain) and stored in the database, so they
+survive a restart. Without a master key the endpoint fields are unavailable:
+the panel reports that binding storage is unavailable rather than pretending
+the fields are empty.
+
 ### Feature flags
 
 The UI reads its flags from `GET /api/features`. Each flag resolves in this

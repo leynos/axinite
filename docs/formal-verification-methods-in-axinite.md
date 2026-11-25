@@ -26,6 +26,33 @@ show how the proof-visible source corresponds to what Axinite compiles, and
 reject stale generated files. Importing these tools or passing the standalone
 smoke model does not discharge any of those requirements.
 
+### Typed setup and endpoint bindings (roadmap 2.1.1)
+
+`verus/endpoint_setup.rs` is the first proof in this repository that is tied to
+production policy rather than to a standalone toy. It models the setup planner
+and proves two obligations:
+
+1. **No aliased destinations.** A plan cannot contain two effects for the same
+   field key, which is what stops a normalized declaration set from writing one
+   stored value twice.
+2. **Order preservation.** The plan preserves the submitted operation order,
+   so execution and reported outcomes line up with what the user submitted.
+
+Run it with `make verus VERUS_PROOF_FILE=verus/endpoint_setup.rs`; `make verus`
+still runs only the shared smoke proofs. Its verification result is 28
+verified, 0 errors.
+
+The production counterpart is `plan_setup` in `src/extensions/setup/policy.rs`.
+`verus/README.md` records the refinement mapping between the proof's operations
+and the production `SetupOperation` and `PlannedEffect` types, so changing
+either side must update the mapping in the same commit. The proof deliberately
+says nothing about the AEAD, the SQL adapters, the URL parser, or information
+flow; the shared backend contract (`src/extensions/setup/binding_contract.rs`),
+the HTTP contract tests, and `tests/e2e/scenarios/test_endpoint_setup.py` cover
+those boundaries. Status projections are payload-independent by construction —
+no status type has a field for a value — and `service.rs` tests that associated
+data cannot collide across scopes.
+
 ## Executive summary
 
 Axinite already does substantially more than basic unit testing. The

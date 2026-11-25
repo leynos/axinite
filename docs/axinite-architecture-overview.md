@@ -376,6 +376,33 @@ outside this overview. New extension work should follow
 `wit/channel.wit` as the host contracts and requires `0.3.0` WIT metadata for
 rebuilt extensions.
 
+#### Setup and confidential endpoint bindings
+
+Setup is its own hexagon inside the extension subsystem. The manifest is the
+driving side: `src/extensions/setup/manifest.rs` normalizes both the legacy
+`required_secrets` form and typed `fields` into declarations. A submission is
+planned by the pure `plan_setup` before anything is written, then executed by
+`ExtensionManager`, which seals endpoint values through
+`EndpointBindingService` and writes them through the
+`EndpointBindingRepository` port. PostgreSQL and libSQL adapters both satisfy
+one contract, so a policy fix cannot land in one backend and be missed in the
+other.
+
+Three ownership rules follow from that shape:
+
+- Endpoint values are write-only. They exist inside the host process only
+  between decryption and the request that needs them; no transport DTO, status
+  type, log line, or event carries one.
+- The stores are the only source of readiness. `SetupSnapshot` re-reads them
+  before reporting, and a store failure is an error rather than an absence.
+- Activation follows readiness. A channel or tool activates only when every
+  required declaration is satisfied, and a tool's OAuth grant survives an
+  endpoint-only edit.
+
+The endpoint-binding service is deliberately kind-agnostic. A future endpoint
+kind adds a declaration and, if it changes what URLs are acceptable, a new
+validation policy version; it does not add a second sealing path.
+
 ### 4.5 Safety and sandbox boundaries
 
 Safety is built into the default runtime path rather than attached as an

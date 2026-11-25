@@ -2,12 +2,13 @@
 
 ## Status
 
-Proposed. Implementation requires explicit approval of the
-[2.1.1 ExecPlan](../execplans/2-1-1-typed-setup-fields-and-endpoint-binding-persistence.md).
+Accepted and implemented. The
+[2.1.1 ExecPlan](../execplans/2-1-1-typed-setup-fields-and-endpoint-binding-persistence.md)
+was approved on 2026-11-18 and records the implementation and its evidence.
 
 ## Date
 
-2026-10-20.
+2026-10-20 (proposed); 2026-11-25 (accepted).
 
 ## Context and problem statement
 
@@ -111,9 +112,48 @@ refinement evidence, negative controls, and an explicit statement of any
 remaining bridge gap. Unsupported proof representations require a reviewed
 deviation rather than an assumed theorem.
 
+## Implementation record
+
+The module layout the implementation settled on:
+
+| Concern                     | Location                                   |
+| --------------------------- | ------------------------------------------ |
+| Domain values               | `src/extensions/setup/model.rs`            |
+| Offline URL policy          | `src/extensions/setup/endpoint.rs`         |
+| Pure planner                | `src/extensions/setup/policy.rs`           |
+| Manifest normalization      | `src/extensions/setup/manifest.rs`         |
+| Records and repository port | `src/extensions/setup/binding.rs`          |
+| Sealing and status          | `src/extensions/setup/service.rs`          |
+| Backend adapters            | `src/db/endpoint_bindings/`                |
+| Manager execution           | `src/extensions/manager/setup_*.rs`        |
+| Shared backend contract     | `src/extensions/setup/binding_contract.rs` |
+| Proof                       | `verus/endpoint_setup.rs`                  |
+
+Migration numbers: PostgreSQL `V19__endpoint_bindings.sql`, libSQL schema
+version 19. Envelope version and validation-policy version both start at 1;
+each is authenticated, so raising either reports stored rows as stale rather
+than reinterpreting them.
+
+Proof-influenced invariants in production code:
+
+- A plan never contains two effects for one field key; the planner rejects the
+  duplicate before producing any effect, which is the property modelled in
+  `verus/endpoint_setup.rs`.
+- Associated data is length-prefixed over every component, so no two distinct
+  scope tuples can produce the same bytes. `service.rs` tests this directly.
+
+The proof covers the planner's key uniqueness and ordering only. It does not
+cover the AEAD, the SQL adapters, URL parsing, or information flow; the shared
+backend contract, the HTTP contract tests, and the E2E scenarios cover those.
+
+Remaining limitations carried forward: offline validation does not establish
+reachability or a safe DNS answer; a compromised host can read a decrypted
+value in memory; concurrent administrators still race under last-commit-wins.
+Delegated request authorization, redaction, and approval paths are roadmap
+2.1.2-2.1.4 and are not implied by setup status.
+
 ## Outstanding decisions
 
-Approval must accept the proposed scope, offline validation meaning, rejection
-of endpoint query strings, partial-save contract, and proof boundary. Concrete
-module splits, migration numbers, pinned proof release/checksum, and test
-fixture identifiers are implementation details to record as work proceeds.
+Closed by approval on 2026-11-18: the proposed scope, offline validation
+meaning, rejection of endpoint query strings, the partial-save contract, and
+the proof boundary. Implementation details above are recorded as settled.

@@ -45,6 +45,45 @@ that declare their requirements through capabilities files.
 - Service-specific configuration handling
 - Hardcoded API URLs or token formats
 
+### Tool Setup Fields
+
+A tool declares what the user must supply under `setup`. Two forms exist and
+must not be mixed in one manifest:
+
+```json
+{
+  "setup": {
+    "required_secrets": [
+      {"name": "api_key", "prompt": "Service API key"}
+    ]
+  }
+}
+```
+
+```json
+{
+  "setup": {
+    "fields": [
+      {"type": "secret", "name": "api_key", "prompt": "Service API key"},
+      {"type": "endpoint", "name": "calendar", "kind": "caldav",
+       "prompt": "Calendar endpoint URL", "optional": false}
+    ]
+  }
+}
+```
+
+The legacy `required_secrets` form and the typed `fields` form are normalized
+to the same declarations; supplying both is rejected. An `endpoint` field is a
+confidential URL the host validates offline and stores encrypted. The tool
+never sees the URL: the host keeps it for the request it will assemble. The
+`kind` is declarative metadata and must not trigger discovery or any network
+call, and the `name` is an opaque key rather than a hostname.
+
+A tool is listed as needing setup until every required declaration is
+satisfied, including required endpoints, and it is only activated once that is
+true. See `docs/developers-guide.md` §42 for the service layout and how to add
+a new endpoint kind.
+
 ### Tool Authentication
 
 Tools declare their auth requirements in `<tool>.capabilities.json` under the
