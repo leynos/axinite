@@ -239,9 +239,13 @@ fn parse_allowed(value: Option<&Value>) -> Result<Vec<String>, ToolError> {
     Ok(names)
 }
 
+/// Parse an optional object field, treating absent and explicit `null` alike.
+///
+/// The plan specifies that `null` normalizes to the empty object: a caller
+/// that serializes an absent optional as `null` should not be refused.
 fn parse_object(value: Option<&Value>, field: &str) -> Result<Value, ToolError> {
     match value {
-        None => Ok(json!({})),
+        None | Some(Value::Null) => Ok(json!({})),
         Some(Value::Object(_)) => Ok(value.cloned().unwrap_or_else(|| json!({}))),
         Some(_) => Err(invalid(format!("{field} must be a JSON object"))),
     }
