@@ -67,7 +67,7 @@ async fn a_callback_for_another_run_is_refused() {
         .expect_err("foreign callback");
 
     assert!(
-        matches!(&error, RunError::RuntimeCrash(message) if message.contains("unexpected host callback")),
+        matches!(&error, RunError::RuntimeCrash(message) if message.contains("callback for another run")),
         "{error:?}"
     );
 }
@@ -80,8 +80,8 @@ async fn a_replayed_callback_id_is_refused() {
         &frames,
         &[
             r#"{"kind":"hello","protocol_version":1}"#,
-            r#"{"kind":"host_call","run_id":"fixed-run","call_id":1,"name":"ghost","arguments":{}}"#,
-            r#"{"kind":"host_call","run_id":"fixed-run","call_id":1,"name":"ghost","arguments":{}}"#,
+            r#"{"kind":"host_call","run_id":"fixed-run","call_id":1,"name":"echo","arguments":{}}"#,
+            r#"{"kind":"host_call","run_id":"fixed-run","call_id":1,"name":"echo","arguments":{}}"#,
         ],
     );
     let script = write_script(
@@ -90,7 +90,16 @@ async fn a_replayed_callback_id_is_refused() {
         &format!("#!/bin/sh\ncat {}\nexec sleep 30\n", frames.display()),
     );
 
-    let ctx = context_with(vec![], &[]).await;
+    // The tool must succeed on its first call, or the denial would end the run
+    // before the replayed id could be read; a replay is what this test refuses.
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tool = support::stub(
+        "echo",
+        &calls,
+        axinite::tools::ApprovalRequirement::Never,
+        json!({"ok": true}),
+    );
+    let ctx = context_with(vec![tool], &["echo"]).await;
     let broker = ctx.broker.clone().expect("broker");
     let error = Supervisor::with_program(HelperProgram::at(&script))
         .run(request("fixed-run"), &broker, &ctx)
