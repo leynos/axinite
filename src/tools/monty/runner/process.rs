@@ -12,7 +12,7 @@ use monty_protocol::{
     validate_json_text,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::process::{Child, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 
 use super::{HelperProgram, RunError};
 
@@ -28,22 +28,53 @@ pub(super) struct ChildGuard {
     child: Option<Child>,
 }
 
+/// The three pipes one run talks over.
+pub(super) struct Pipes<W, R> {
+    /// Frames to the helper.
+    pub(super) stdin: W,
+    /// Frames from the helper.
+    pub(super) stdout: R,
+    /// Diagnostics, drained and discarded.
+    pub(super) stderr: ChildStderr,
+}
+
 impl ChildGuard {
     /// Take ownership of a spawned child, ready for cancellation-safe cleanup.
     pub(super) fn new(child: Child) -> Self {
         Self { child: Some(child) }
     }
 
-    /// Borrow the child for ordinary run handling.
+    /// Take the child's pipes, or report which one was not piped.
+    pub(super) fn take_pipes(&mut self) -> Result<Pipes<ChildStdin, ChildStdout>, RunError> {
+        let child = self.child.as_mut().ok_or_else(|| {
+            RunError::RuntimeCrash("the helper was reaped before its pipes were taken".to_string())
+        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| RunError::RuntimeCrash("helper stdin was not piped".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| RunError::RuntimeCrash("helper stdout was not piped".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| RunError::RuntimeCrash("helper stderr was not piped".to_string()))?;
+        Ok(Pipes {
+            stdin,
+            stdout,
+            stderr,
+        })
+    }
+
+    /// Borrow the child, or `None` once the guard has been reaped.
     ///
-    /// # Panics
-    ///
-    /// Panics only if called after the guard has been disarmed, which the
-    /// supervisor does once, at the end of the run.
-    pub(super) fn child(&mut self) -> &mut Child {
-        self.child
-            .as_mut()
-            .expect("the child is present until the guard is disarmed")
+    /// Returning `Option` keeps the accessor total: the supervisor calls it
+    /// only before `reap`, and a disarmed guard simply yields nothing rather
+    /// than panicking.
+    pub(super) fn child(&mut self) -> Option<&mut Child> {
+        self.child.as_mut()
     }
 
     /// Kill and reap the child here, rather than leaving it to `Drop`.
@@ -103,7 +134,7 @@ const CANCEL_GRACE: Duration = Duration::from_millis(100);
 /// a caller that releases an admission permit afterwards is releasing it for a
 /// process that is actually gone.
 pub(super) async fn terminate<W: AsyncWrite + Unpin>(
-    child: &mut Child,
+    child: Option<&mut Child>,
     run_id: &str,
     stdin: &mut W,
 ) {
@@ -116,12 +147,17 @@ pub(super) async fn terminate<W: AsyncWrite + Unpin>(
     )
     .await;
     let _ = tokio::time::timeout(CANCEL_GRACE, stdin.shutdown()).await;
-    let _ = child.start_kill();
-    let _ = child.wait().await;
+    if let Some(child) = child {
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+    }
 }
 
 /// Gives a finished helper one second to exit, then kills and reaps it.
-pub(super) async fn finish_child(child: &mut Child) {
+pub(super) async fn finish_child(child: Option<&mut Child>) {
+    let Some(child) = child else {
+        return;
+    };
     if tokio::time::timeout(Duration::from_secs(1), child.wait())
         .await
         .is_err()

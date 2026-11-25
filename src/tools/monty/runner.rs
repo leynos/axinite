@@ -6,19 +6,17 @@
 //! it. Side effects already performed by a tool callback are never replayed.
 
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
 
 use monty_protocol::{
-    CallOutcome, GuestLimits, HelperToParent, HostCall, MAX_FRAME_BYTES, PROTOCOL_VERSION,
-    ParentToHelper, ResumeRun, StartRun, TerminalOutcome,
+    CallOutcome, HelperToParent, HostCall, MAX_FRAME_BYTES, PROTOCOL_VERSION, ParentToHelper,
+    ResumeRun, StartRun, TerminalOutcome,
 };
-use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Semaphore;
 
 use self::bounds::{append_bounded, truncate};
 use self::process::{
-    ChildGuard, drain_stderr, finish_child, read_message, spawn, terminate, write_message,
+    ChildGuard, Pipes, drain_stderr, finish_child, read_message, spawn, terminate, write_message,
 };
 use crate::context::JobContext;
 use crate::tools::monty::broker::{BrokerContext, BrokerDenial};
@@ -26,6 +24,9 @@ use crate::tools::monty::broker::{BrokerContext, BrokerDenial};
 mod bounds;
 mod process;
 mod program;
+mod request;
+
+pub use request::{RunError, RunLimits, RunOutcome, RunRequest};
 
 pub use self::program::{HELPER_ENV, HELPER_NAME, HelperProgram};
 
@@ -37,109 +38,6 @@ pub const MAX_CAPTURED_OUTPUT_BYTES: usize = 64 * 1024;
 
 /// The largest result or state value the helper may return.
 const MAX_TERMINAL_BYTES: usize = MAX_FRAME_BYTES;
-
-/// Limits the parent asks the helper to enforce, plus its own deadline.
-#[derive(Debug, Clone, Copy)]
-pub struct RunLimits {
-    /// Guest allocator ceiling.
-    pub max_memory_bytes: u64,
-    /// Python call-stack depth.
-    pub max_recursion_depth: u64,
-    /// Host suspensions the run may service.
-    pub max_suspensions: u64,
-    /// One feed's execution budget.
-    pub max_feed_millis: u64,
-    /// One host turn's execution budget.
-    pub max_turn_millis: u64,
-    /// Cumulative guest output.
-    pub max_output_bytes: u64,
-    /// Total wall-clock budget from admission.
-    pub deadline: Duration,
-}
-
-impl Default for RunLimits {
-    fn default() -> Self {
-        Self {
-            max_memory_bytes: 64 * 1024 * 1024,
-            max_recursion_depth: 256,
-            max_suspensions: 4096,
-            max_feed_millis: 30_000,
-            max_turn_millis: 30_000,
-            max_output_bytes: MAX_CAPTURED_OUTPUT_BYTES as u64,
-            deadline: Duration::from_secs(120),
-        }
-    }
-}
-
-impl RunLimits {
-    fn guest(&self) -> GuestLimits {
-        GuestLimits {
-            max_memory_bytes: self.max_memory_bytes,
-            max_recursion_depth: self.max_recursion_depth,
-            max_suspensions: self.max_suspensions,
-            max_feed_millis: self.max_feed_millis,
-            max_turn_millis: self.max_turn_millis,
-            max_output_bytes: self.max_output_bytes,
-        }
-    }
-}
-
-/// Everything the helper needs to start one run.
-#[derive(Debug, Clone)]
-pub struct RunRequest {
-    /// Parent-issued run identity.
-    pub run_id: String,
-    /// The guest entrypoint body.
-    pub code: String,
-    /// The entrypoint name.
-    pub entrypoint: String,
-    /// Input parameters.
-    pub params: Value,
-    /// Initial state object.
-    pub state: Value,
-    /// Guest-side limits.
-    pub limits: RunLimits,
-}
-
-/// A successful run's observable result.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RunOutcome {
-    /// The guest's result member, or null.
-    pub result: Value,
-    /// The guest's returned state object.
-    pub state: Value,
-    /// Bounded guest print output.
-    pub output: String,
-}
-
-/// Why a run did not produce a result.
-#[derive(Debug, thiserror::Error)]
-pub enum RunError {
-    /// The helper executable could not be found.
-    #[error("the Monty helper is not available")]
-    HelperUnavailable,
-    /// Admission is saturated.
-    #[error("too many code runs are already active")]
-    Overloaded,
-    /// The process could not be started.
-    #[error("cannot start the Monty helper")]
-    Spawn(#[source] std::io::Error),
-    /// The helper broke the protocol or exited unexpectedly.
-    #[error("the Monty helper failed: {0}")]
-    RuntimeCrash(String),
-    /// The guest raised an exception.
-    #[error("the guest script failed: {0}")]
-    ScriptError(String),
-    /// A host callback was refused.
-    #[error("a tool callback was refused: {0}")]
-    ToolDenied(BrokerDenial),
-    /// Monty reported an internal limit.
-    #[error("the guest exceeded a resource limit: {0}")]
-    ResourceLimitExceeded(String),
-    /// The run exceeded its wall-clock budget.
-    #[error("the code run exceeded its deadline")]
-    Timeout,
-}
 
 /// The process-wide admission pool.
 fn permits() -> Arc<Semaphore> {
@@ -211,19 +109,11 @@ impl Supervisor {
         // The guard reaps the child if this future is dropped mid-run, so the
         // permit above is never released while a helper is still exiting.
         let mut guarded = ChildGuard::new(spawned);
-        let child = guarded.child();
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| RunError::RuntimeCrash("helper stdin was not piped".to_string()))?;
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| RunError::RuntimeCrash("helper stdout was not piped".to_string()))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| RunError::RuntimeCrash("helper stderr was not piped".to_string()))?;
+        let Pipes {
+            mut stdin,
+            mut stdout,
+            stderr,
+        } = guarded.take_pipes()?;
         let stderr_task = tokio::spawn(drain_stderr(stderr));
 
         let run = tokio::time::timeout(deadline, async {

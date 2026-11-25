@@ -9,7 +9,7 @@ use crate::agent::Agent;
 use crate::agent::dispatcher::AgenticLoopResult;
 use crate::agent::session::{Session, ThreadState};
 use crate::agent::submission::SubmissionResult;
-use crate::agent::thread_ops::TurnPersistContext;
+use crate::agent::thread_ops::{TurnPersistContext, thread_mut};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 
@@ -54,10 +54,7 @@ impl Agent {
     ) -> Result<SubmissionResult, Error> {
         let interrupted = {
             let mut sess = session.lock().await;
-            let thread = sess
-                .threads
-                .get_mut(&thread_id)
-                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+            let thread = thread_mut(&mut sess, thread_id)?;
             thread.state == ThreadState::Interrupted
         };
 
@@ -74,10 +71,7 @@ impl Agent {
         }
 
         let mut sess = session.lock().await;
-        let thread = sess
-            .threads
-            .get_mut(&thread_id)
-            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+        let thread = thread_mut(&mut sess, thread_id)?;
 
         match result {
             Ok(AgenticLoopResult::Response(response)) => {
@@ -88,9 +82,7 @@ impl Agent {
 
                 let completion = {
                     let mut sess = session.lock().await;
-                    let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
-                        Error::from(crate::error::JobError::NotFound { id: thread_id })
-                    })?;
+                    let thread = thread_mut(&mut sess, thread_id)?;
                     if thread.state == ThreadState::Interrupted {
                         None
                     } else {
@@ -141,7 +133,6 @@ impl Agent {
                 let parameters = pending.display_parameters.clone();
                 thread.await_approval(*pending);
                 drop(sess);
-
                 let _ = self
                     .channels
                     .send_status(
@@ -159,9 +150,7 @@ impl Agent {
             }
             Err(e) => {
                 let error_text = e.to_string();
-                let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
-                    Error::from(crate::error::JobError::NotFound { id: thread_id })
-                })?;
+                let thread = thread_mut(&mut sess, thread_id)?;
                 thread.fail_turn(error_text.clone());
                 drop(sess);
                 self.persist_assistant_response(thread_id, &message.user_id, &error_text)
