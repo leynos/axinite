@@ -262,14 +262,17 @@ impl Supervisor {
             Ok(Ok(outcome)) => {
                 let _ = stdin.shutdown().await;
                 finish_child(guarded.child()).await;
+                let () = guarded.reap().await;
                 Ok(outcome)
             }
             Ok(Err(error)) => {
                 terminate(guarded.child(), &request.run_id, &mut stdin).await;
+                let () = guarded.reap().await;
                 Err(error)
             }
             Err(_) => {
                 terminate(guarded.child(), &request.run_id, &mut stdin).await;
+                let () = guarded.reap().await;
                 Err(RunError::Timeout)
             }
         }

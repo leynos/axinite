@@ -354,7 +354,7 @@ async fn pipeline_blocks_on_approval() {
                 tool_call_id,
                 deferred_tool_calls,
                 ..
-            } = pending;
+            } = *pending;
             assert_eq!(tool_call_id, "call_approval");
             assert_eq!(deferred_tool_calls.len(), 1);
             assert_eq!(deferred_tool_calls[0].id, "call_deferred");

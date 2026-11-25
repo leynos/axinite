@@ -139,7 +139,7 @@ impl Agent {
                 let tool_name = pending.tool_name.clone();
                 let description = pending.description.clone();
                 let parameters = pending.display_parameters.clone();
-                thread.await_approval(pending);
+                thread.await_approval(*pending);
                 drop(sess);
 
                 let _ = self
@@ -312,7 +312,9 @@ mod tests {
                 &incoming_message,
                 &session,
                 thread_id,
-                Ok(AgenticLoopResult::NeedApproval { pending }),
+                Ok(AgenticLoopResult::NeedApproval {
+                    pending: Box::new(pending),
+                }),
             )
             .await
             .expect("approval finalization should succeed");

@@ -47,6 +47,9 @@ impl ChildGuard {
     }
 
     /// Kill and reap the child here, rather than leaving it to `Drop`.
+    ///
+    /// The supervisor calls this on every finished run so the normal path
+    /// reaps inline; `Drop` covers only the cancelled or panicked path.
     pub(super) async fn reap(mut self) {
         if let Some(mut child) = self.child.take() {
             let _ = child.start_kill();

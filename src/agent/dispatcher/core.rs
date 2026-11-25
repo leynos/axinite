@@ -370,7 +370,7 @@ impl Agent {
                 .into())
             }
             crate::agent::agentic_loop::LoopOutcome::NeedApproval(pending) => {
-                Ok(AgenticLoopResult::NeedApproval { pending: *pending })
+                Ok(AgenticLoopResult::NeedApproval { pending })
             }
         }
     }
