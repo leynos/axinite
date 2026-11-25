@@ -2,4 +2,5 @@
 //! grouped by concern.
 
 mod approval;
+mod credential_injection;
 mod validation_tests;

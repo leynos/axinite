@@ -112,7 +112,7 @@ pub(super) struct RequestTarget<'a> {
 }
 
 /// Add injected headers and query parameters to the request and mirror them in the target.
-fn apply_credentials(
+pub(super) fn apply_credentials(
     mut request: RequestBuilder,
     target: &mut RequestTarget<'_>,
     injected: &InjectedCredentials,
