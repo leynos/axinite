@@ -162,38 +162,71 @@ pub(super) async fn install_tool(
     let target_wasm = target_dir.join(format!("{}.wasm", tool_name));
     let target_caps = target_dir.join(format!("{}.capabilities.json", tool_name));
 
-    if fs::try_exists(&target_wasm).await? && !force {
+    refuse_unforced_overwrite(&tool_name, &target_wasm, force).await?;
+    validate_capabilities_file(caps_path.as_deref()).await?;
+
+    println!("Installing {} to {}", tool_name, target_wasm.display());
+    fs::copy(&wasm_path, &target_wasm).await?;
+    install_capabilities(caps_path, &target_caps).await?;
+
+    print_install_summary(&tool_name, &target_wasm, &target_caps).await
+}
+
+/// Fail when the target WASM exists and `--force` was not given.
+async fn refuse_unforced_overwrite(
+    tool_name: &str,
+    target_wasm: &Path,
+    force: bool,
+) -> anyhow::Result<()> {
+    if fs::try_exists(target_wasm).await? && !force {
         anyhow::bail!(
             "Tool '{}' already exists at {}. Use --force to overwrite.",
             tool_name,
             target_wasm.display()
         );
     }
+    Ok(())
+}
 
-    if let Some(ref caps) = caps_path {
-        let content = fs::read_to_string(caps).await?;
-        CapabilitiesFile::from_json(&content)
-            .map_err(|e| anyhow::anyhow!("Invalid capabilities file {}: {}", caps.display(), e))?;
-    }
+/// Parse the capabilities file, when there is one, so a bad file stops the install.
+async fn validate_capabilities_file(caps_path: Option<&Path>) -> anyhow::Result<()> {
+    let Some(caps) = caps_path else {
+        return Ok(());
+    };
+    let content = fs::read_to_string(caps).await?;
+    CapabilitiesFile::from_json(&content)
+        .map_err(|e| anyhow::anyhow!("Invalid capabilities file {}: {}", caps.display(), e))?;
+    Ok(())
+}
 
-    println!("Installing {} to {}", tool_name, target_wasm.display());
-    fs::copy(&wasm_path, &target_wasm).await?;
-
+/// Copy the capabilities file into place, or remove a stale one and warn.
+async fn install_capabilities(
+    caps_path: Option<PathBuf>,
+    target_caps: &Path,
+) -> anyhow::Result<()> {
     if let Some(caps) = caps_path {
         println!("  Copying capabilities from {}", caps.display());
-        fs::copy(&caps, &target_caps).await?;
-    } else {
-        if fs::try_exists(&target_caps).await? {
-            println!(
-                "  Removing stale capabilities from {}",
-                target_caps.display()
-            );
-            fs::remove_file(&target_caps).await?;
-        }
-        println!("  Warning: No capabilities file found. Tool will have no permissions.");
+        fs::copy(&caps, target_caps).await?;
+        return Ok(());
     }
+    if fs::try_exists(target_caps).await? {
+        println!(
+            "  Removing stale capabilities from {}",
+            target_caps.display()
+        );
+        fs::remove_file(target_caps).await?;
+    }
+    println!("  Warning: No capabilities file found. Tool will have no permissions.");
+    Ok(())
+}
 
-    let wasm_bytes = fs::read(&target_wasm).await?;
+/// Print the name, paths, size and hash of the installed tool.
+async fn print_install_summary(
+    tool_name: &str,
+    target_wasm: &Path,
+    target_caps: &Path,
+) -> anyhow::Result<()> {
+    let wasm_bytes = fs::read(target_wasm).await?;
     let hash = compute_binary_hash(&wasm_bytes);
     let hash_hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
 
@@ -203,7 +236,7 @@ pub(super) async fn install_tool(
     println!("  Size: {} bytes", wasm_bytes.len());
     println!("  Hash: {}", &hash_hex[..16]);
 
-    if fs::try_exists(&target_caps).await? {
+    if fs::try_exists(target_caps).await? {
         println!("  Caps: {}", target_caps.display());
     }
 

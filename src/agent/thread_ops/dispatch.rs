@@ -140,6 +140,53 @@ impl Agent {
         self.process_user_input(&ctx.message, req).await
     }
 
+    /// Log and run a `/command`-style system command on the message's channel.
+    async fn dispatch_system_command(
+        &self,
+        ctx: &DispatchCtx,
+        command: &str,
+        args: &[String],
+    ) -> Result<SubmissionResult, Error> {
+        tracing::debug!(
+            "[agent_loop] SystemCommand: command={}, channel={}",
+            command,
+            ctx.message.channel
+        );
+        self.handle_system_command(command, args, &ctx.message.channel)
+            .await
+    }
+
+    /// Route `ExecApproval`, which names the pending request explicitly.
+    async fn dispatch_exec_approval(
+        &self,
+        ctx: &DispatchCtx,
+        request_id: Uuid,
+        approved: bool,
+        always: bool,
+    ) -> Result<SubmissionResult, Error> {
+        let params = ApprovalParams {
+            request_id: Some(request_id),
+            approved,
+            always,
+        };
+        self.dispatch_approval(ctx, params).await
+    }
+
+    /// Route `ApprovalResponse`, which answers the session's pending approval slot.
+    async fn dispatch_approval_response(
+        &self,
+        ctx: &DispatchCtx,
+        approved: bool,
+        always: bool,
+    ) -> Result<SubmissionResult, Error> {
+        let params = ApprovalParams {
+            request_id: None,
+            approved,
+            always,
+        };
+        self.dispatch_approval(ctx, params).await
+    }
+
     pub(super) async fn dispatch_submission(
         &self,
         ctx: DispatchCtx,
@@ -148,23 +195,35 @@ impl Agent {
         match submission {
             Submission::UserInput { content } => self.dispatch_user_input(ctx, content).await,
             Submission::SystemCommand { command, args } => {
-                tracing::debug!(
-                    "[agent_loop] SystemCommand: command={}, channel={}",
-                    command,
-                    ctx.message.channel
-                );
-                self.handle_system_command(&command, &args, &ctx.message.channel)
+                self.dispatch_system_command(&ctx, &command, &args).await
+            }
+            Submission::ExecApproval {
+                request_id,
+                approved,
+                always,
+            } => {
+                self.dispatch_exec_approval(&ctx, request_id, approved, always)
                     .await
             }
-            Submission::Undo => self.process_undo(ctx.session, ctx.thread_id).await,
-            Submission::Redo => self.process_redo(ctx.session, ctx.thread_id).await,
-            Submission::Interrupt => self.process_interrupt(ctx.session, ctx.thread_id).await,
-            Submission::Compact => self.process_compact(ctx.session, ctx.thread_id).await,
-            Submission::Clear => self.process_clear(ctx.session, ctx.thread_id).await,
+            Submission::ApprovalResponse { approved, always } => {
+                self.dispatch_approval_response(&ctx, approved, always)
+                    .await
+            }
+            other => self.dispatch_conversation_submission(ctx, other).await,
+        }
+    }
+
+    /// Route the submissions that address jobs, threads and the heartbeat.
+    ///
+    /// Anything it does not own goes on to [`Agent::dispatch_session_submission`].
+    async fn dispatch_conversation_submission(
+        &self,
+        ctx: DispatchCtx,
+        submission: Submission,
+    ) -> Result<SubmissionResult, Error> {
+        match submission {
             Submission::NewThread => self.process_new_thread(&ctx.message).await,
             Submission::Heartbeat => self.process_heartbeat().await,
-            Submission::Summarize => self.process_summarize(ctx.session, ctx.thread_id).await,
-            Submission::Suggest => self.process_suggest(ctx.session, ctx.thread_id).await,
             Submission::JobStatus { job_id } => {
                 self.process_job_status(&ctx.message.user_id, job_id.as_deref())
                     .await
@@ -176,35 +235,37 @@ impl Agent {
             Submission::SwitchThread { thread_id: target } => {
                 self.process_switch_thread(&ctx.message, target).await
             }
+            other => self.dispatch_session_submission(ctx, other).await,
+        }
+    }
+
+    /// Route the submissions that act on the current session and thread.
+    ///
+    /// [`Agent::dispatch_submission`] and
+    /// [`Agent::dispatch_conversation_submission`] handle every other variant
+    /// first, so reaching the fallback arm is a routing bug, reported as an error.
+    async fn dispatch_session_submission(
+        &self,
+        ctx: DispatchCtx,
+        submission: Submission,
+    ) -> Result<SubmissionResult, Error> {
+        match submission {
+            Submission::Undo => self.process_undo(ctx.session, ctx.thread_id).await,
+            Submission::Redo => self.process_redo(ctx.session, ctx.thread_id).await,
+            Submission::Interrupt => self.process_interrupt(ctx.session, ctx.thread_id).await,
+            Submission::Compact => self.process_compact(ctx.session, ctx.thread_id).await,
+            Submission::Clear => self.process_clear(ctx.session, ctx.thread_id).await,
+            Submission::Summarize => self.process_summarize(ctx.session, ctx.thread_id).await,
+            Submission::Suggest => self.process_suggest(ctx.session, ctx.thread_id).await,
             Submission::Resume { checkpoint_id } => {
                 self.process_resume(ctx.session, ctx.thread_id, checkpoint_id)
                     .await
             }
-            Submission::ExecApproval {
-                request_id,
-                approved,
-                always,
-            } => {
-                self.dispatch_approval(
-                    &ctx,
-                    ApprovalParams {
-                        request_id: Some(request_id),
-                        approved,
-                        always,
-                    },
-                )
-                .await
-            }
-            Submission::ApprovalResponse { approved, always } => {
-                self.dispatch_approval(
-                    &ctx,
-                    ApprovalParams {
-                        request_id: None,
-                        approved,
-                        always,
-                    },
-                )
-                .await
+            other => {
+                tracing::error!("[agent_loop] unrouted submission: {:?}", other);
+                Ok(SubmissionResult::error(
+                    "Internal error: unrouted submission",
+                ))
             }
         }
     }

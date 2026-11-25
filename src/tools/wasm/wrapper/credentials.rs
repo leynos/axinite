@@ -22,20 +22,7 @@ async fn refresh_oauth_token(
     user_id: &str,
     config: &OAuthRefreshConfig,
 ) -> bool {
-    // SSRF defence: token_url comes from the tool's capabilities file.
-    if !config.token_url.starts_with("https://") {
-        tracing::warn!(
-            token_url = %config.token_url,
-            "OAuth token_url must use HTTPS, refusing token refresh"
-        );
-        return false;
-    }
-    if let Err(reason) = reject_private_ip(&config.token_url) {
-        tracing::warn!(
-            token_url = %config.token_url,
-            reason = %reason,
-            "OAuth token_url points to a private/internal IP, refusing token refresh"
-        );
+    if !token_url_is_safe(&config.token_url) {
         return false;
     }
 
@@ -52,6 +39,47 @@ async fn refresh_oauth_token(
         }
     };
 
+    let Some(token_data) = request_token_refresh(config, refresh_secret.expose()).await else {
+        return false;
+    };
+
+    if !store_refreshed_tokens(store, user_id, config, &refresh_name, &token_data).await {
+        return false;
+    }
+
+    tracing::info!(
+        secret_name = %config.secret_name,
+        "OAuth access token refreshed successfully"
+    );
+    true
+}
+
+/// SSRF defence: `token_url` comes from the tool's capabilities file, so it
+/// must be HTTPS and must not point at a private or internal address.
+fn token_url_is_safe(token_url: &str) -> bool {
+    if !token_url.starts_with("https://") {
+        tracing::warn!(
+            token_url = %token_url,
+            "OAuth token_url must use HTTPS, refusing token refresh"
+        );
+        return false;
+    }
+    if let Err(reason) = reject_private_ip(token_url) {
+        tracing::warn!(
+            token_url = %token_url,
+            reason = %reason,
+            "OAuth token_url points to a private/internal IP, refusing token refresh"
+        );
+        return false;
+    }
+    true
+}
+
+/// Post the refresh grant to the token endpoint and return the parsed JSON reply.
+async fn request_token_refresh(
+    config: &OAuthRefreshConfig,
+    refresh_token: &str,
+) -> Option<serde_json::Value> {
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
@@ -60,13 +88,13 @@ async fn refresh_oauth_token(
         Ok(c) => c,
         Err(e) => {
             tracing::warn!(error = %e, "Failed to build HTTP client for token refresh");
-            return false;
+            return None;
         }
     };
 
     let mut params = vec![
         ("grant_type", "refresh_token".to_string()),
-        ("refresh_token", refresh_secret.expose().to_string()),
+        ("refresh_token", refresh_token.to_string()),
         ("client_id", config.client_id.clone()),
     ];
     if let Some(ref secret) = config.client_secret {
@@ -77,7 +105,7 @@ async fn refresh_oauth_token(
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(error = %e, "OAuth token refresh request failed");
-            return false;
+            return None;
         }
     };
 
@@ -89,17 +117,28 @@ async fn refresh_oauth_token(
             body = %body,
             "OAuth token refresh returned non-success status"
         );
-        return false;
+        return None;
     }
 
-    let token_data: serde_json::Value = match response.json().await {
-        Ok(v) => v,
+    match response.json().await {
+        Ok(v) => Some(v),
         Err(e) => {
             tracing::warn!(error = %e, "Failed to parse token refresh response");
-            return false;
+            None
         }
-    };
+    }
+}
 
+/// Store the new access token (with expiry) and any rotated refresh token.
+///
+/// Returns `false` when the reply has no access token or storing it fails.
+async fn store_refreshed_tokens(
+    store: &(dyn SecretsStore + Send + Sync),
+    user_id: &str,
+    config: &OAuthRefreshConfig,
+    refresh_name: &str,
+    token_data: &serde_json::Value,
+) -> bool {
     let new_access_token = match token_data.get("access_token").and_then(|v| v.as_str()) {
         Some(t) => t,
         None => {
@@ -126,8 +165,7 @@ async fn refresh_oauth_token(
 
     // Store rotated refresh token if the provider sent a new one
     if let Some(new_refresh) = token_data.get("refresh_token").and_then(|v| v.as_str()) {
-        let mut refresh_params =
-            crate::secrets::CreateSecretParams::new(&refresh_name, new_refresh);
+        let mut refresh_params = crate::secrets::CreateSecretParams::new(refresh_name, new_refresh);
         if let Some(ref provider) = config.provider {
             refresh_params = refresh_params.with_provider(provider);
         }
@@ -136,10 +174,6 @@ async fn refresh_oauth_token(
         }
     }
 
-    tracing::info!(
-        secret_name = %config.secret_name,
-        "OAuth access token refreshed successfully"
-    );
     true
 }
 
