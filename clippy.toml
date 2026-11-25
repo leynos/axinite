@@ -2,7 +2,9 @@
 # These thresholds prevent new violations while preserving existing code.
 # See: https://github.com/nearai/ironclaw/issues/338
 
-cognitive-complexity-threshold = 15  # default: 25 (only active when lint is enabled)
+# Cognitive complexity is not gated by Clippy: it scores code after macro
+# expansion, so it counts branching a macro generated. Whitaker's
+# `macro_aware_cognitive_complexity` gates it (see `dylint.toml`).
 too-many-lines-threshold = 100      # default: 100 (only active when lint is enabled)
 too-many-arguments-threshold = 7    # default: 7 (keep default, avoids new violations)
 type-complexity-threshold = 250     # default: 250 (keep default, avoids new violations)

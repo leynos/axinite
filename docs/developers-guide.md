@@ -1850,6 +1850,21 @@ run `make lint` or `make lint-whitaker`. CI installs Whitaker through the shared
 `install-whitaker` action and passes `installer-version: '0.2.12'`, so the
 tool's behaviour remains reproducible across workflow runs.
 
+Cognitive complexity is gated by Whitaker, not by Clippy. Clippy's
+`cognitive_complexity` scores code after macro expansion, so it counts
+branching a macro generated, and neither `Cargo.toml` nor `clippy.toml` enables
+it. Whitaker's experimental `macro_aware_cognitive_complexity` gates it, and
+`dylint.toml` opts in with
+`[whitaker] experimental = ["macro_aware_cognitive_complexity"]`. The ceiling
+is a ratchet: `max_complexity` holds the highest score any function had when it
+was set, so no function may grow past it, and it falls as functions are
+refactored until it reaches CodeScene's ceiling of 9. Fix a finding by
+extracting named helpers, never by raising the threshold. A Whitaker suite
+installed before the lint existed does not register it and silently leaves the
+gate inactive, so rerun `whitaker-installer` to refresh the suite after
+updating a checkout. The installer version pin does not choose the suite, which
+follows the default branch.
+
 ## 10. Integration test fixture wiring
 
 Integration test harnesses should load fixture-only helpers at the harness
