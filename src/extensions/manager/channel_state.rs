@@ -329,22 +329,13 @@ impl ExtensionManager {
             return ToolAuthState::NeedsSetup;
         };
         let scope = crate::extensions::setup::BindingScope::new(&self.user_id, name);
-        match service.statuses(&scope, &declarations).await {
-            Ok(statuses) => statuses
-                .iter()
-                .filter(|status| {
-                    declarations.iter().any(|field| {
-                        matches!(
-                            field,
-                            crate::extensions::setup::SetupField::Endpoint(endpoint)
-                                if !endpoint.optional && endpoint.name == *status.field()
-                        )
-                    })
-                })
-                .all(|status| status.state().is_configured())
-                .then_some(ToolAuthState::Ready)
-                .unwrap_or(ToolAuthState::NeedsSetup),
-            Err(_) => ToolAuthState::NeedsSetup,
+        let Ok(statuses) = service.statuses(&scope, &declarations).await else {
+            return ToolAuthState::NeedsSetup;
+        };
+        if required_endpoints_configured(&statuses, &declarations) {
+            ToolAuthState::Ready
+        } else {
+            ToolAuthState::NeedsSetup
         }
     }
 
@@ -374,4 +365,23 @@ impl ExtensionManager {
             ToolAuthState::NeedsSetup
         }
     }
+}
+
+/// Whether every required endpoint declaration reports a configured binding.
+fn required_endpoints_configured(
+    statuses: &[crate::extensions::setup::EndpointStatus],
+    declarations: &[crate::extensions::setup::SetupField],
+) -> bool {
+    statuses
+        .iter()
+        .filter(|status| {
+            declarations.iter().any(|field| {
+                matches!(
+                    field,
+                    crate::extensions::setup::SetupField::Endpoint(endpoint)
+                        if !endpoint.optional && endpoint.name == *status.field()
+                )
+            })
+        })
+        .all(|status| status.state().is_configured())
 }
