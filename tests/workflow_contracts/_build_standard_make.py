@@ -196,6 +196,11 @@ def parse_invocations(lines: Iterable[str]) -> tuple[list[Invocation], list[str]
     return found, unparsed
 
 
+def _is_cd_prefix(word: str, conjunction: str) -> bool:
+    """Report whether two words form the start of a ``cd <dir> &&`` prefix."""
+    return word == "cd" and conjunction == "&&"
+
+
 def _split_command_prefixes(words: list[str]) -> tuple[str | None, list[str]]:
     """Split a recipe's ``cd`` prefix from the command it runs.
 
@@ -207,10 +212,25 @@ def _split_command_prefixes(words: list[str]) -> tuple[str | None, list[str]]:
     """
     directory: str | None = None
     rest = list(words)
-    while len(rest) > 2 and rest[0] == "cd" and rest[2] == "&&":
+    while len(rest) > 2 and _is_cd_prefix(rest[0], rest[2]):
         directory = rest[1]
         rest = rest[3:]
     return directory, rest
+
+
+def _nextest_invocation(
+    rest: list[str],
+    assignments: dict[str, str],
+    index: int,
+) -> Invocation:
+    """Return the invocation for a ``nextest`` command's remaining words."""
+    return Invocation(
+        "nextest",
+        rest[1] if len(rest) > 1 else "",
+        assignments,
+        tuple(rest[2:]),
+        index,
+    )
 
 
 def _command_of(
@@ -228,13 +248,7 @@ def _command_of(
         return None
     rest = words[1:]
     if rest and rest[0] == "nextest":
-        return Invocation(
-            "nextest",
-            rest[1] if len(rest) > 1 else "",
-            assignments,
-            tuple(rest[2:]),
-            index,
-        )
+        return _nextest_invocation(rest, assignments, index)
     if not rest or rest[0] not in CARGO_VERBS:
         return None
     return Invocation("cargo", rest[0], assignments, tuple(rest[1:]), index)

@@ -8,7 +8,7 @@ use crate::context::JobContext;
 use crate::error::Error;
 use crate::llm::ChatMessage;
 use crate::safety::SafetyLayer;
-use crate::tools::{ToolRegistry, redact_params};
+use crate::tools::{ToolOutput, ToolRegistry, redact_params};
 
 /// Execute a tool with safety checks: lookup → validate → timeout → execute → serialize.
 ///
@@ -46,22 +46,7 @@ pub async fn execute_resolved_tool_with_safety(
     job_ctx: &JobContext,
 ) -> Result<String, Error> {
     let tool_name = tool.name().to_string();
-
-    // Validate tool parameters
-    let validation = safety.validator().validate_tool_params(params);
-    if !validation.is_valid {
-        let details = validation
-            .errors
-            .iter()
-            .map(|e| format!("{}: {}", e.field, e.message))
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(crate::error::ToolError::InvalidParameters {
-            name: tool_name.clone(),
-            reason: format!("Invalid tool parameters: {}", details),
-        }
-        .into());
-    }
+    validate_params(safety, params, &tool_name)?;
 
     let safe_params = redact_params(params, tool.sensitive_params());
     tracing::debug!(
@@ -78,40 +63,7 @@ pub async fn execute_resolved_tool_with_safety(
     })
     .await;
     let elapsed = start.elapsed();
-
-    match &result {
-        Ok(Ok(output)) => {
-            let result_size = serde_json::to_string(&output.result)
-                .map(|s| s.len())
-                .unwrap_or(0);
-            tracing::debug!(
-                tool = %tool_name,
-                elapsed_ms = elapsed.as_millis() as u64,
-                result_size_bytes = result_size,
-                "Tool call succeeded"
-            );
-        }
-        Ok(Err(e)) => {
-            // The tool's own message may quote external data or a secret it
-            // was given. Sanitize before it reaches the log, not only before
-            // it reaches the model.
-            let sanitized = safety.sanitize_tool_output(&tool_name, &e.to_string());
-            tracing::debug!(
-                tool = %tool_name,
-                elapsed_ms = elapsed.as_millis() as u64,
-                error = %sanitized.content,
-                "Tool call failed"
-            );
-        }
-        Err(_) => {
-            tracing::debug!(
-                tool = %tool_name,
-                elapsed_ms = elapsed.as_millis() as u64,
-                timeout_secs = timeout.as_secs(),
-                "Tool call timed out"
-            );
-        }
-    }
+    trace_outcome(safety, &tool_name, &result, elapsed, timeout);
 
     let result = result
         .map_err(|_| crate::error::ToolError::Timeout {
@@ -130,6 +82,72 @@ pub async fn execute_resolved_tool_with_safety(
         }
         .into()
     })
+}
+
+/// Refuse a call whose parameters the validator rejects.
+fn validate_params(
+    safety: &SafetyLayer,
+    params: &serde_json::Value,
+    tool_name: &str,
+) -> Result<(), Error> {
+    let validation = safety.validator().validate_tool_params(params);
+    if validation.is_valid {
+        return Ok(());
+    }
+    let details = validation
+        .errors
+        .iter()
+        .map(|e| format!("{}: {}", e.field, e.message))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(crate::error::ToolError::InvalidParameters {
+        name: tool_name.to_string(),
+        reason: format!("Invalid tool parameters: {}", details),
+    }
+    .into())
+}
+
+/// Trace how one call ended, sanitising a tool error before it is logged.
+fn trace_outcome<E: std::fmt::Display>(
+    safety: &SafetyLayer,
+    tool_name: &str,
+    result: &Result<Result<ToolOutput, E>, tokio::time::error::Elapsed>,
+    elapsed: std::time::Duration,
+    timeout: std::time::Duration,
+) {
+    match result {
+        Ok(Ok(output)) => {
+            let result_size = serde_json::to_string(&output.result)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            tracing::debug!(
+                tool = %tool_name,
+                elapsed_ms = elapsed.as_millis() as u64,
+                result_size_bytes = result_size,
+                "Tool call succeeded"
+            );
+        }
+        Ok(Err(error)) => {
+            // The tool's own message may quote external data or a secret it
+            // was given. Sanitize before it reaches the log, not only before
+            // it reaches the model.
+            let sanitized = safety.sanitize_tool_output(tool_name, &error.to_string());
+            tracing::debug!(
+                tool = %tool_name,
+                elapsed_ms = elapsed.as_millis() as u64,
+                error = %sanitized.content,
+                "Tool call failed"
+            );
+        }
+        Err(_) => {
+            tracing::debug!(
+                tool = %tool_name,
+                elapsed_ms = elapsed.as_millis() as u64,
+                timeout_secs = timeout.as_secs(),
+                "Tool call timed out"
+            );
+        }
+    }
 }
 
 /// Process a tool result into a `ChatMessage::tool_result` with safety sanitization.

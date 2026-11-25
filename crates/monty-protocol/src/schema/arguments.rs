@@ -51,20 +51,38 @@ fn check_argument_depth(path: &str, depth: usize) -> Result<(), SchemaError> {
     Ok(())
 }
 
+/// Report the first `offender` that `accepts` refuses, or `Ok(())` when it
+/// accepts them all. Unknown and missing arguments differ only in which side
+/// supplies the names, so both checks are this one.
+fn first_refused<'a, T: AsRef<str> + 'a>(
+    offenders: impl Iterator<Item = T>,
+    accepts: impl Fn(&str) -> bool,
+    path: &str,
+    message: &str,
+) -> Result<(), SchemaError> {
+    for offender in offenders {
+        let name = offender.as_ref();
+        if !accepts(name) {
+            return Err(SchemaError::new(
+                format!("{path}.{name}"),
+                message.to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn reject_unknown_arguments(
     arguments: &serde_json::Map<String, Value>,
     properties: &serde_json::Map<String, Value>,
     path: &str,
 ) -> Result<(), SchemaError> {
-    for key in arguments.keys() {
-        if !properties.contains_key(key) {
-            return Err(SchemaError::new(
-                format!("{path}.{key}"),
-                "unknown keyword argument",
-            ));
-        }
-    }
-    Ok(())
+    first_refused(
+        arguments.keys(),
+        |key| properties.contains_key(key),
+        path,
+        "unknown keyword argument",
+    )
 }
 
 fn check_required_arguments(
@@ -72,15 +90,12 @@ fn check_required_arguments(
     arguments: &serde_json::Map<String, Value>,
     path: &str,
 ) -> Result<(), SchemaError> {
-    for name in required_names(schema) {
-        if !arguments.contains_key(name) {
-            return Err(SchemaError::new(
-                format!("{path}.{name}"),
-                "required argument is missing",
-            ));
-        }
-    }
-    Ok(())
+    first_refused(
+        required_names(schema).into_iter(),
+        |name| arguments.contains_key(name),
+        path,
+        "required argument is missing",
+    )
 }
 
 fn required_names(schema: &serde_json::Map<String, Value>) -> BTreeSet<&str> {
@@ -108,81 +123,112 @@ fn validate_present_arguments(
     Ok(())
 }
 
+/// One value being checked against one schema node, at one path and depth.
+///
+/// Grouping these keeps each check to the schema and the value it judges,
+/// rather than repeating the location on every signature.
+struct Check<'a> {
+    schema: &'a Value,
+    object: &'a serde_json::Map<String, Value>,
+    types: Vec<&'a str>,
+    value: &'a Value,
+    path: &'a str,
+    depth: usize,
+}
+
+impl<'a> Check<'a> {
+    /// Describe one check, reading the declared types from its schema node.
+    fn new(
+        schema: &'a Value,
+        value: &'a Value,
+        path: &'a str,
+        depth: usize,
+    ) -> Result<Self, SchemaError> {
+        let object = schema
+            .as_object()
+            .ok_or_else(|| SchemaError::new(path, "schema must be a JSON object"))?;
+        let types = declared_types(object.get("type"), path)?;
+        Ok(Self {
+            object,
+            types,
+            schema,
+            value,
+            path,
+            depth,
+        })
+    }
+
+    /// Judge the value: declared type first, then enum, then the container.
+    fn run(&self) -> Result<(), SchemaError> {
+        self.check_declared_type()?;
+        self.check_enum()?;
+        self.validate_object()?;
+        self.validate_array()
+    }
+
+    fn check_declared_type(&self) -> Result<(), SchemaError> {
+        let types = &self.types;
+        if types.is_empty()
+            || types
+                .iter()
+                .any(|kind| value_matches(kind, self.value, self.depth))
+        {
+            return Ok(());
+        }
+        Err(SchemaError::new(
+            self.path,
+            format!("value does not match declared type {}", types.join(" or ")),
+        ))
+    }
+
+    fn check_enum(&self) -> Result<(), SchemaError> {
+        match self.object.get("enum").and_then(Value::as_array) {
+            Some(values) if !values.contains(self.value) => Err(SchemaError::new(
+                self.path,
+                "value is not in the declared enum",
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// Recurse into an object value when the schema declares one.
+    fn validate_object(&self) -> Result<(), SchemaError> {
+        if !(self.value.is_object() && self.types.contains(&"object")) {
+            return Ok(());
+        }
+        let arguments = self
+            .value
+            .as_object()
+            .ok_or_else(|| SchemaError::new(self.path, "value must be an object"))?;
+        validate_object(self.schema, arguments, self.path, self.depth)
+    }
+
+    /// Recurse into an array value's items when the schema declares an array.
+    fn validate_array(&self) -> Result<(), SchemaError> {
+        if !(self.value.is_array() && self.types.contains(&"array")) {
+            return Ok(());
+        }
+        let items = self
+            .object
+            .get("items")
+            .ok_or_else(|| SchemaError::new(self.path, "array schema lacks items"))?;
+        for (index, item) in self.value.as_array().into_iter().flatten().enumerate() {
+            validate_value(
+                items,
+                item,
+                &format!("{}[{index}]", self.path),
+                self.depth + 1,
+            )?;
+        }
+        Ok(())
+    }
+}
+
 fn validate_value(
     schema: &Value,
     value: &Value,
     path: &str,
     depth: usize,
 ) -> Result<(), SchemaError> {
-    let object = schema
-        .as_object()
-        .ok_or_else(|| SchemaError::new(path, "schema must be a JSON object"))?;
-    let types = declared_types(object.get("type"), path)?;
-    check_declared_type(&types, value, path, depth)?;
-    check_value_enum(object, value, path)?;
-    validate_object_value(schema, &types, value, path, depth)?;
-    validate_array_value(object, &types, value, path, depth)
-}
-
-fn check_declared_type(
-    types: &[&str],
-    value: &Value,
-    path: &str,
-    depth: usize,
-) -> Result<(), SchemaError> {
-    if types.is_empty() || types.iter().any(|kind| value_matches(kind, value, depth)) {
-        return Ok(());
-    }
-    Err(SchemaError::new(
-        path,
-        format!("value does not match declared type {}", types.join(" or ")),
-    ))
-}
-
-fn check_value_enum(
-    object: &serde_json::Map<String, Value>,
-    value: &Value,
-    path: &str,
-) -> Result<(), SchemaError> {
-    match object.get("enum").and_then(Value::as_array) {
-        Some(values) if !values.contains(value) => {
-            Err(SchemaError::new(path, "value is not in the declared enum"))
-        }
-        _ => Ok(()),
-    }
-}
-
-fn validate_object_value(
-    schema: &Value,
-    types: &[&str],
-    value: &Value,
-    path: &str,
-    depth: usize,
-) -> Result<(), SchemaError> {
-    if !(value.is_object() && types.contains(&"object")) {
-        return Ok(());
-    }
-    let arguments = value
-        .as_object()
-        .ok_or_else(|| SchemaError::new(path, "value must be an object"))?;
-    validate_object(schema, arguments, path, depth)
-}
-
-fn validate_array_value(
-    object: &serde_json::Map<String, Value>,
-    types: &[&str],
-    value: &Value,
-    path: &str,
-    depth: usize,
-) -> Result<(), SchemaError> {
-    if !(value.is_array() && types.contains(&"array")) {
-        return Ok(());
-    }
-    let items = object
-        .get("items")
-        .ok_or_else(|| SchemaError::new(path, "array schema lacks items"))?;
-    for (index, item) in value.as_array().into_iter().flatten().enumerate() {
-        validate_value(items, item, &format!("{path}[{index}]"), depth + 1)?;
-    }
-    Ok(())
+    Check::new(schema, value, path, depth)?.run()
 }

@@ -186,31 +186,31 @@ fn reports_a_script_error() {
     }
 }
 
-#[test]
-fn requires_the_returned_state_object() {
+/// Run `code` with no tools and require its terminal script error to mention
+/// `fragment`. The guest refuses several operations before it can answer, and
+/// every refusal must reach the parent as a script error naming the cause.
+fn assert_script_error_mentions(code: &str, fragment: &str) {
     let mut helper = Helper::start();
-    helper.start_run(&request("return {'result': 1}", Vec::new()));
+    helper.start_run(&request(code, Vec::new()));
     match helper.terminal() {
         TerminalOutcome::ScriptError { message } => {
-            assert!(message.contains("state"), "{message}");
+            assert!(message.contains(fragment), "{message}");
         }
         other => panic!("expected a script error, got {other:?}"),
     }
 }
 
 #[test]
+fn requires_the_returned_state_object() {
+    assert_script_error_mentions("return {'result': 1}", "state");
+}
+
+#[test]
 fn denies_operating_system_access() {
-    let mut helper = Helper::start();
-    helper.start_run(&request(
+    assert_script_error_mentions(
         "open('/etc/passwd')\nreturn {'result': None, 'state': state}",
-        Vec::new(),
-    ));
-    match helper.terminal() {
-        TerminalOutcome::ScriptError { message } => {
-            assert!(message.contains("operating-system"), "{message}");
-        }
-        other => panic!("expected a script error, got {other:?}"),
-    }
+        "operating-system",
+    );
 }
 
 #[test]
