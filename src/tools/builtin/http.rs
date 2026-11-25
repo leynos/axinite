@@ -5,6 +5,7 @@
 //! - [`execute`]: the `NativeTool` implementation (request execution)
 
 mod execute;
+mod request;
 #[cfg(test)]
 mod tests;
 mod validation;

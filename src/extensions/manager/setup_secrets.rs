@@ -101,8 +101,41 @@ impl ExtensionManager {
     ) -> Result<SetupResult, ExtensionError> {
         let kind = self.determine_installed_kind(name).await?;
 
-        // Load allowed secret names from the extension's capabilities file
-        let allowed: std::collections::HashSet<String> = match kind {
+        let allowed = self.allowed_setup_secret_names(name, kind).await?;
+
+        // For Telegram, validate the bot token against the API before storing it.
+        // This catches bad tokens immediately (both on first setup and reconfigure),
+        // before the channel activates and potentially shows as active with a bad token.
+        if name == "telegram"
+            && let Some(token_value) = secrets.get("telegram_bot_token")
+        {
+            validate_telegram_bot_token(token_value.trim()).await?;
+        }
+
+        self.store_submitted_secrets(name, &allowed, secrets)
+            .await?;
+
+        // Auto-generate any missing secrets (channel-only feature)
+        if kind == ExtensionKind::WasmChannel {
+            self.auto_generate_channel_secrets(name, secrets).await?;
+        }
+
+        // For tools, save and attempt auto-activation, then check auth.
+        if kind == ExtensionKind::WasmTool {
+            return Ok(self.finish_tool_setup(name).await);
+        }
+
+        // Try to hot-activate the channel now that secrets are saved
+        Ok(self.finish_channel_setup(name).await)
+    }
+
+    /// Load the secret names an extension's capabilities file allows it to receive.
+    async fn allowed_setup_secret_names(
+        &self,
+        name: &str,
+        kind: ExtensionKind,
+    ) -> Result<std::collections::HashSet<String>, ExtensionError> {
+        match kind {
             ExtensionKind::WasmChannel => {
                 let cap_path = self
                     .wasm_channels_dir
@@ -119,65 +152,38 @@ impl ExtensionManager {
                 let cap_file =
                     crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
                         .map_err(|e| ExtensionError::Other(e.to_string()))?;
-                cap_file
+                Ok(cap_file
                     .setup
                     .required_secrets
                     .iter()
                     .map(|s| s.name.clone())
-                    .collect()
+                    .collect())
             }
             ExtensionKind::WasmTool => {
                 let cap_file = self.load_tool_capabilities(name).await.ok_or_else(|| {
                     ExtensionError::Other(format!("Capabilities file not found for '{}'", name))
                 })?;
                 match cap_file.setup {
-                    Some(s) => s.required_secrets.iter().map(|s| s.name.clone()).collect(),
-                    None => {
-                        return Err(ExtensionError::Other(format!(
-                            "Tool '{}' has no setup schema — no secrets to configure",
-                            name
-                        )));
-                    }
+                    Some(s) => Ok(s.required_secrets.iter().map(|s| s.name.clone()).collect()),
+                    None => Err(ExtensionError::Other(format!(
+                        "Tool '{}' has no setup schema — no secrets to configure",
+                        name
+                    ))),
                 }
             }
-            _ => {
-                return Err(ExtensionError::Other(
-                    "Setup is only supported for WASM channels and tools".to_string(),
-                ));
-            }
-        };
-
-        // For Telegram, validate the bot token against the API before storing it.
-        // This catches bad tokens immediately (both on first setup and reconfigure),
-        // before the channel activates and potentially shows as active with a bad token.
-        if name == "telegram"
-            && let Some(token_value) = secrets.get("telegram_bot_token")
-        {
-            let token = token_value.trim();
-            if !token.is_empty() {
-                let encoded_token =
-                    url::form_urlencoded::byte_serialize(token.as_bytes()).collect::<String>();
-                let url = format!("https://api.telegram.org/bot{}/getMe", encoded_token);
-                let resp = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(10))
-                    .build()
-                    .map_err(|e| ExtensionError::Other(e.to_string()))?
-                    .get(&url)
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        ExtensionError::Other(format!("Failed to validate bot token: {}", e))
-                    })?;
-                if !resp.status().is_success() {
-                    return Err(ExtensionError::Other(format!(
-                        "Invalid bot token (Telegram API returned {})",
-                        resp.status()
-                    )));
-                }
-            }
+            _ => Err(ExtensionError::Other(
+                "Setup is only supported for WASM channels and tools".to_string(),
+            )),
         }
+    }
 
-        // Validate and store each submitted secret
+    /// Validate each submitted secret name against the allowed set and store non-empty values.
+    async fn store_submitted_secrets(
+        &self,
+        name: &str,
+        allowed: &std::collections::HashSet<String>,
+        secrets: &std::collections::HashMap<String, String>,
+    ) -> Result<(), ExtensionError> {
         for (secret_name, secret_value) in secrets {
             if !allowed.contains(secret_name.as_str()) {
                 return Err(ExtensionError::Other(format!(
@@ -195,98 +201,121 @@ impl ExtensionManager {
                 .await
                 .map_err(|e| ExtensionError::AuthFailed(e.to_string()))?;
         }
+        Ok(())
+    }
 
-        // Auto-generate any missing secrets (channel-only feature)
-        if kind == ExtensionKind::WasmChannel {
-            let cap_path = self
-                .wasm_channels_dir
-                .join(format!("{}.capabilities.json", name));
-            if let Ok(cap_bytes) = tokio::fs::read(&cap_path).await
-                && let Ok(cap_file) =
-                    crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
-            {
-                for secret_def in &cap_file.setup.required_secrets {
-                    if let Some(ref auto_gen) = secret_def.auto_generate {
-                        let already_provided = secrets
-                            .get(&secret_def.name)
-                            .is_some_and(|v| !v.trim().is_empty());
-                        let already_stored = self
-                            .secrets
-                            .exists(&self.user_id, &secret_def.name)
-                            .await
-                            .unwrap_or(false);
-                        if !already_provided && !already_stored {
-                            use rand::RngCore;
-                            use rand::rngs::OsRng;
-                            let mut bytes = vec![0u8; auto_gen.length];
-                            OsRng.fill_bytes(&mut bytes);
-                            let hex_value: String =
-                                bytes.iter().map(|b| format!("{b:02x}")).collect();
-                            let params = CreateSecretParams::new(&secret_def.name, &hex_value)
-                                .with_provider(name.to_string());
-                            self.secrets
-                                .create(&self.user_id, params)
-                                .await
-                                .map_err(|e| ExtensionError::AuthFailed(e.to_string()))?;
-                            tracing::info!(
-                                "Auto-generated secret '{}' for channel '{}'",
-                                secret_def.name,
-                                name
-                            );
-                        }
-                    }
+    /// Generate and store every auto-generated channel secret that is neither supplied nor stored.
+    async fn auto_generate_channel_secrets(
+        &self,
+        name: &str,
+        secrets: &std::collections::HashMap<String, String>,
+    ) -> Result<(), ExtensionError> {
+        let cap_path = self
+            .wasm_channels_dir
+            .join(format!("{}.capabilities.json", name));
+        let Ok(cap_bytes) = tokio::fs::read(&cap_path).await else {
+            return Ok(());
+        };
+        let Ok(cap_file) = crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
+        else {
+            return Ok(());
+        };
+        for secret_def in &cap_file.setup.required_secrets {
+            let Some(ref auto_gen) = secret_def.auto_generate else {
+                continue;
+            };
+            let already_provided = secrets
+                .get(&secret_def.name)
+                .is_some_and(|v| !v.trim().is_empty());
+            let already_stored = self
+                .secrets
+                .exists(&self.user_id, &secret_def.name)
+                .await
+                .unwrap_or(false);
+            if already_provided || already_stored {
+                continue;
+            }
+            self.store_generated_secret(name, &secret_def.name, auto_gen.length)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Store a random hex secret of `length` bytes for an extension.
+    async fn store_generated_secret(
+        &self,
+        name: &str,
+        secret_name: &str,
+        length: usize,
+    ) -> Result<(), ExtensionError> {
+        use rand::RngCore;
+        use rand::rngs::OsRng;
+        let mut bytes = vec![0u8; length];
+        OsRng.fill_bytes(&mut bytes);
+        let hex_value: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let params =
+            CreateSecretParams::new(secret_name, &hex_value).with_provider(name.to_string());
+        self.secrets
+            .create(&self.user_id, params)
+            .await
+            .map_err(|e| ExtensionError::AuthFailed(e.to_string()))?;
+        tracing::info!(
+            "Auto-generated secret '{}' for channel '{}'",
+            secret_name,
+            name
+        );
+        Ok(())
+    }
+
+    /// Activate a tool after its secrets are saved and report whether OAuth is still needed.
+    async fn finish_tool_setup(&self, name: &str) -> SetupResult {
+        match self.wasm_tool_activation.activate_wasm_tool(name).await {
+            Ok(result) => {
+                // Delete existing OAuth token so auth() starts a fresh flow.
+                // Done AFTER activation succeeds to avoid losing tokens on failure.
+                // This covers Reconfigure: user wants to re-auth (switch account, update creds).
+                self.purge_tool_oauth_tokens(name).await;
+
+                // Check if auth is needed (OAuth or manual token).
+                // This is safe to call here — cancel-and-retry prevents port conflicts.
+                let mut auth_url = None;
+                if let Ok(auth_result) = self.auth(name, None).await {
+                    auth_url = auth_result.auth_url().map(String::from);
+                }
+                let message = if auth_url.is_some() {
+                    format!(
+                        "Configuration saved and tool '{}' activated. Complete OAuth in your browser.",
+                        name
+                    )
+                } else {
+                    format!(
+                        "Configuration saved and tool '{}' activated. {}",
+                        name, result.message
+                    )
+                };
+                SetupResult {
+                    message,
+                    activated: true,
+                    auth_url,
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "Auto-activation of tool '{}' after setup failed: {}",
+                    name,
+                    e
+                );
+                SetupResult {
+                    message: format!("Configuration saved for '{}'.", name),
+                    activated: false,
+                    auth_url: None,
                 }
             }
         }
+    }
 
-        // For tools, save and attempt auto-activation, then check auth.
-        if kind == ExtensionKind::WasmTool {
-            match self.wasm_tool_activation.activate_wasm_tool(name).await {
-                Ok(result) => {
-                    // Delete existing OAuth token so auth() starts a fresh flow.
-                    // Done AFTER activation succeeds to avoid losing tokens on failure.
-                    // This covers Reconfigure: user wants to re-auth (switch account, update creds).
-                    self.purge_tool_oauth_tokens(name).await;
-
-                    // Check if auth is needed (OAuth or manual token).
-                    // This is safe to call here — cancel-and-retry prevents port conflicts.
-                    let mut auth_url = None;
-                    if let Ok(auth_result) = self.auth(name, None).await {
-                        auth_url = auth_result.auth_url().map(String::from);
-                    }
-                    let message = if auth_url.is_some() {
-                        format!(
-                            "Configuration saved and tool '{}' activated. Complete OAuth in your browser.",
-                            name
-                        )
-                    } else {
-                        format!(
-                            "Configuration saved and tool '{}' activated. {}",
-                            name, result.message
-                        )
-                    };
-                    return Ok(SetupResult {
-                        message,
-                        activated: true,
-                        auth_url,
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        "Auto-activation of tool '{}' after setup failed: {}",
-                        name,
-                        e
-                    );
-                    return Ok(SetupResult {
-                        message: format!("Configuration saved for '{}'.", name),
-                        activated: false,
-                        auth_url: None,
-                    });
-                }
-            }
-        }
-
-        // Try to hot-activate the channel now that secrets are saved
+    /// Hot-activate a channel after its secrets are saved and record the outcome.
+    async fn finish_channel_setup(&self, name: &str) -> SetupResult {
         match self
             .wasm_channel_activation
             .activate_wasm_channel(name)
@@ -295,14 +324,14 @@ impl ExtensionManager {
             Ok(result) => {
                 self.activation_errors.write().await.remove(name);
                 self.broadcast_extension_status(name, "active", None).await;
-                Ok(SetupResult {
+                SetupResult {
                     message: format!(
                         "Configuration saved and channel '{}' activated. {}",
                         name, result.message
                     ),
                     activated: true,
                     auth_url: None,
-                })
+                }
             }
             Err(e) => {
                 let error_msg = e.to_string();
@@ -317,15 +346,39 @@ impl ExtensionManager {
                     .insert(name.to_string(), error_msg.clone());
                 self.broadcast_extension_status(name, "failed", Some(&error_msg))
                     .await;
-                Ok(SetupResult {
+                SetupResult {
                     message: format!(
                         "Configuration saved for '{}'. Activation failed: {}",
                         name, e
                     ),
                     activated: false,
                     auth_url: None,
-                })
+                }
             }
         }
     }
+}
+
+/// Check a Telegram bot token against the API; an empty token is accepted unchecked.
+async fn validate_telegram_bot_token(token: &str) -> Result<(), ExtensionError> {
+    if token.is_empty() {
+        return Ok(());
+    }
+    let encoded_token = url::form_urlencoded::byte_serialize(token.as_bytes()).collect::<String>();
+    let url = format!("https://api.telegram.org/bot{}/getMe", encoded_token);
+    let resp = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| ExtensionError::Other(e.to_string()))?
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| ExtensionError::Other(format!("Failed to validate bot token: {}", e)))?;
+    if !resp.status().is_success() {
+        return Err(ExtensionError::Other(format!(
+            "Invalid bot token (Telegram API returned {})",
+            resp.status()
+        )));
+    }
+    Ok(())
 }

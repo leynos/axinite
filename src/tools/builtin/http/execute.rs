@@ -4,23 +4,22 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use futures::StreamExt;
-
 use crate::context::JobContext;
 use crate::safety::LeakDetector;
 use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput, require_str};
-use crate::tools::wasm::{InjectedCredentials, inject_credential};
 
 #[cfg(feature = "html-to-markdown")]
 use crate::tools::builtin::convert_html_to_markdown;
 
-use super::validation::{declared_content_length, parse_headers_param, validate_url};
+use super::request::{
+    attach_body, read_capped_body, reject_oversized_declared_length, request_builder,
+    save_body_to_file,
+};
+use super::validation::{parse_headers_param, validate_url};
 use super::{HttpTool, MAX_RESPONSE_SIZE, MAX_SAVE_TO_SIZE};
 
 #[cfg(feature = "html-to-markdown")]
 use super::validation::is_html_response;
-
-use super::validation::validate_save_to_path;
 
 impl NativeTool for HttpTool {
     fn name(&self) -> &str {
@@ -91,19 +90,7 @@ impl NativeTool for HttpTool {
         let mut headers_vec = parse_headers_param(params.get("headers"))?;
 
         // Build request
-        let mut request = match method.to_uppercase().as_str() {
-            "GET" => self.client.get(parsed_url.clone()),
-            "POST" => self.client.post(parsed_url.clone()),
-            "PUT" => self.client.put(parsed_url.clone()),
-            "DELETE" => self.client.delete(parsed_url.clone()),
-            "PATCH" => self.client.patch(parsed_url.clone()),
-            _ => {
-                return Err(ToolError::InvalidParameters(format!(
-                    "unsupported method: {}",
-                    method
-                )));
-            }
-        };
+        let mut request = request_builder(&self.client, method, &parsed_url)?;
 
         // Add headers
         for (key, value) in &headers_vec {
@@ -111,64 +98,12 @@ impl NativeTool for HttpTool {
         }
 
         // Add body if present
-        let body_bytes = if let Some(body) = params.get("body") {
-            if let Some(body_str) = body.as_str() {
-                if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(body_str) {
-                    let bytes = serde_json::to_vec(&json_body).map_err(|e| {
-                        ToolError::InvalidParameters(format!("invalid body JSON: {}", e))
-                    })?;
-                    request = request.json(&json_body);
-                    Some(bytes)
-                } else {
-                    let bytes = body_str.as_bytes().to_vec();
-                    request = request.body(body_str.to_string());
-                    Some(bytes)
-                }
-            } else {
-                let bytes = serde_json::to_vec(body).map_err(|e| {
-                    ToolError::InvalidParameters(format!("invalid body JSON: {}", e))
-                })?;
-                request = request.json(body);
-                Some(bytes)
-            }
-        } else {
-            None
-        };
+        let (request, body_bytes) = attach_body(request, params.get("body"))?;
 
         // Credential injection from shared registry
-        if let (Some(registry), Some(store)) = (
-            self.credential_registry.as_ref(),
-            self.secrets_store.as_ref(),
-        ) {
-            let host = parsed_url.host_str().unwrap_or("");
-            let matched: Vec<crate::secrets::CredentialMapping> = registry.find_for_host(host);
-            for mapping in &matched {
-                match store
-                    .get_decrypted(&ctx.user_id, &mapping.secret_name)
-                    .await
-                {
-                    Ok(secret) => {
-                        let mut injected = InjectedCredentials::empty();
-                        inject_credential(&mut injected, &mapping.location, &secret);
-                        for (name, value) in &injected.headers {
-                            request = request.header(name.as_str(), value.as_str());
-                            headers_vec.push((name.clone(), value.clone()));
-                        }
-                        for (name, value) in &injected.query_params {
-                            parsed_url.query_pairs_mut().append_pair(name, value);
-                            request = request.query(&[(name.as_str(), value.as_str())]);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            secret = %mapping.secret_name,
-                            error = %e,
-                            "Failed to inject credential for HTTP tool"
-                        );
-                    }
-                }
-            }
-        }
+        let request = self
+            .inject_registry_credentials(&ctx.user_id, request, &mut parsed_url, &mut headers_vec)
+            .await;
 
         // Leak detection on outbound request (url/headers/body)
         let detector = LeakDetector::new();
@@ -231,53 +166,14 @@ impl NativeTool for HttpTool {
 
         // Pre-check Content-Length header to reject obviously oversized responses
         // before downloading anything, preventing OOM from malicious servers.
-        if let Some(len) = declared_content_length(&response)
-            && len > max_size
-        {
-            tracing::warn!(
-                url = %parsed_url,
-                content_length = len,
-                max = max_size,
-                "Rejected HTTP response: Content-Length exceeds limit"
-            );
-            return Err(ToolError::ExecutionFailed(format!(
-                "Response Content-Length ({} bytes) exceeds maximum allowed size ({} bytes)",
-                len, max_size
-            )));
-        }
+        reject_oversized_declared_length(&response, &parsed_url, max_size)?;
 
-        // Stream the response body with a hard size cap. Even if Content-Length was
-        // absent or lied about the size, we stop reading once we exceed the limit.
-        let mut body = Vec::new();
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = StreamExt::next(&mut stream).await {
-            let chunk = chunk.map_err(|e| {
-                ToolError::ExternalService(format!("failed to read response body: {}", e))
-            })?;
-            if body.len() + chunk.len() > max_size {
-                return Err(ToolError::ExecutionFailed(format!(
-                    "Response body exceeds maximum allowed size ({} bytes)",
-                    max_size
-                )));
-            }
-            body.extend_from_slice(&chunk);
-        }
-        let body_bytes = bytes::Bytes::from(body);
+        // Stream the response body with a hard size cap.
+        let body_bytes = read_capped_body(response, max_size).await?;
 
         // If save_to is specified, write raw bytes to file and return metadata.
         if let Some(save_to) = params.get("save_to").and_then(|v| v.as_str()) {
-            let save_to_owned = save_to.to_string();
-            let bytes_clone = body_bytes.clone();
-            tokio::task::spawn_blocking(move || {
-                let canonical = validate_save_to_path(&save_to_owned)?;
-                ambient_fs::write(&canonical, &bytes_clone).map_err(|e| {
-                    ToolError::ExecutionFailed(format!("failed to write file: {}", e))
-                })?;
-                Ok::<_, ToolError>(canonical)
-            })
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("spawn_blocking failed: {}", e)))?
-            .map_err(|e: ToolError| e)?;
+            save_body_to_file(save_to, &body_bytes).await?;
             let result = serde_json::json!({
                 "status": status,
                 "saved_to": save_to,
