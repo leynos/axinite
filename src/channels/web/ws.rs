@@ -157,6 +157,11 @@ async fn handle_client_message(
     user_id: &str,
     direct_tx: &mpsc::Sender<WsServerMessage>,
 ) {
+    let ctx = WsContext {
+        state,
+        user_id,
+        direct_tx,
+    };
     match msg {
         WsClientMessage::Message {
             content,
@@ -164,154 +169,182 @@ async fn handle_client_message(
             timezone,
             images,
         } => {
-            let mut incoming = IncomingMessage::new("gateway", user_id, &content);
-            if let Some(ref tz) = timezone {
-                incoming = incoming.with_timezone(tz);
-            }
-            if let Some(ref tid) = thread_id {
-                incoming = incoming.with_thread(tid);
-            }
-
-            // Convert uploaded images to IncomingAttachments
-            if !images.is_empty() {
-                let attachments =
-                    crate::channels::web::handlers::chat::images_to_attachments(&images);
-                incoming = incoming.with_attachments(attachments);
-            }
-
-            let tx_guard = state.msg_tx.read().await;
-            if let Some(ref tx) = *tx_guard {
-                if tx.send(incoming).await.is_err() {
-                    let _ = direct_tx
-                        .send(WsServerMessage::Error {
-                            message: "Channel closed".to_string(),
-                        })
-                        .await;
-                }
-            } else {
-                let _ = direct_tx
-                    .send(WsServerMessage::Error {
-                        message: "Channel not started".to_string(),
-                    })
-                    .await;
-            }
+            let chat = ChatMessage {
+                content,
+                thread_id,
+                timezone,
+                images,
+            };
+            forward_chat_message(chat, &ctx).await;
         }
         WsClientMessage::Approval {
             request_id,
             action,
             thread_id,
         } => {
-            let (approved, always) = match action.as_str() {
-                "approve" => (true, false),
-                "always" => (true, true),
-                "deny" => (false, false),
-                other => {
-                    let _ = direct_tx
-                        .send(WsServerMessage::Error {
-                            message: format!("Unknown approval action: {}", other),
-                        })
-                        .await;
-                    return;
-                }
-            };
-
-            let request_uuid = match Uuid::parse_str(&request_id) {
-                Ok(id) => id,
-                Err(_) => {
-                    let _ = direct_tx
-                        .send(WsServerMessage::Error {
-                            message: "Invalid request_id (expected UUID)".to_string(),
-                        })
-                        .await;
-                    return;
-                }
-            };
-
-            let approval = Submission::ExecApproval {
-                request_id: request_uuid,
-                approved,
-                always,
-            };
-            let content = match serde_json::to_string(&approval) {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = direct_tx
-                        .send(WsServerMessage::Error {
-                            message: format!("Failed to serialize approval: {}", e),
-                        })
-                        .await;
-                    return;
-                }
-            };
-
-            let mut msg = IncomingMessage::new("gateway", user_id, content);
-            if let Some(ref tid) = thread_id {
-                msg = msg.with_thread(tid);
-            }
-            let tx_guard = state.msg_tx.read().await;
-            if let Some(ref tx) = *tx_guard {
-                let _ = tx.send(msg).await;
-            }
+            forward_approval(&request_id, &action, thread_id.as_deref(), &ctx).await;
         }
         WsClientMessage::AuthToken {
             extension_name,
             token,
         } => {
-            if let Some(ref ext_mgr) = state.extension_manager {
-                match ext_mgr.auth(&extension_name, Some(&token)).await {
-                    Ok(result) if result.is_authenticated() => {
-                        let msg = match ext_mgr.activate(&extension_name).await {
-                            Ok(r) => format!(
-                                "{} authenticated ({} tools loaded)",
-                                extension_name,
-                                r.tools_loaded.len()
-                            ),
-                            Err(e) => format!(
-                                "{} authenticated but activation failed: {}",
-                                extension_name, e
-                            ),
-                        };
-                        crate::channels::web::server::clear_auth_mode(state, Some(&extension_name))
-                            .await;
-                        state
-                            .sse
-                            .broadcast(crate::channels::web::types::SseEvent::AuthCompleted {
-                                extension_name,
-                                success: true,
-                                message: msg,
-                            });
-                    }
-                    Ok(result) => {
-                        state
-                            .sse
-                            .broadcast(crate::channels::web::types::SseEvent::AuthRequired {
-                                extension_name,
-                                instructions: result.instructions().map(String::from),
-                                auth_url: result.auth_url().map(String::from),
-                                setup_url: result.setup_url().map(String::from),
-                            });
-                    }
-                    Err(e) => {
-                        let _ = direct_tx
-                            .send(WsServerMessage::Error {
-                                message: format!("Auth failed: {}", e),
-                            })
-                            .await;
-                    }
-                }
-            } else {
-                let _ = direct_tx
-                    .send(WsServerMessage::Error {
-                        message: "Extension manager not available".to_string(),
-                    })
-                    .await;
-            }
+            submit_auth_token(extension_name, &token, &ctx).await;
         }
         WsClientMessage::AuthCancel { extension_name } => {
             crate::channels::web::server::clear_auth_mode(state, Some(&extension_name)).await;
         }
         WsClientMessage::Ping => {
             let _ = direct_tx.send(WsServerMessage::Pong).await;
+        }
+    }
+}
+
+/// What a client message handler needs: the gateway, the user and the reply channel.
+struct WsContext<'a> {
+    state: &'a GatewayState,
+    user_id: &'a str,
+    direct_tx: &'a mpsc::Sender<WsServerMessage>,
+}
+
+impl WsContext<'_> {
+    /// Send an error frame straight back to the client, ignoring a closed channel.
+    async fn send_error(&self, message: impl Into<String>) {
+        let _ = self
+            .direct_tx
+            .send(WsServerMessage::Error {
+                message: message.into(),
+            })
+            .await;
+    }
+}
+
+/// The fields of a client chat message.
+struct ChatMessage {
+    content: String,
+    thread_id: Option<String>,
+    timezone: Option<String>,
+    images: Vec<crate::channels::web::types::ImageData>,
+}
+
+/// Forward a chat message to the agent, or tell the client why that is not possible.
+async fn forward_chat_message(chat: ChatMessage, ctx: &WsContext<'_>) {
+    let mut incoming = IncomingMessage::new("gateway", ctx.user_id, &chat.content);
+    if let Some(ref tz) = chat.timezone {
+        incoming = incoming.with_timezone(tz);
+    }
+    if let Some(ref tid) = chat.thread_id {
+        incoming = incoming.with_thread(tid);
+    }
+
+    // Convert uploaded images to IncomingAttachments
+    if !chat.images.is_empty() {
+        let attachments = crate::channels::web::handlers::chat::images_to_attachments(&chat.images);
+        incoming = incoming.with_attachments(attachments);
+    }
+
+    let tx_guard = ctx.state.msg_tx.read().await;
+    if let Some(ref tx) = *tx_guard {
+        if tx.send(incoming).await.is_err() {
+            ctx.send_error("Channel closed").await;
+        }
+    } else {
+        ctx.send_error("Channel not started").await;
+    }
+}
+
+/// Map an approval action to `(approved, always)`.
+fn parse_approval_action(action: &str) -> Option<(bool, bool)> {
+    match action {
+        "approve" => Some((true, false)),
+        "always" => Some((true, true)),
+        "deny" => Some((false, false)),
+        _ => None,
+    }
+}
+
+/// Turn an approval reply into an `ExecApproval` submission and queue it for the agent.
+async fn forward_approval(
+    request_id: &str,
+    action: &str,
+    thread_id: Option<&str>,
+    ctx: &WsContext<'_>,
+) {
+    let Some((approved, always)) = parse_approval_action(action) else {
+        ctx.send_error(format!("Unknown approval action: {}", action))
+            .await;
+        return;
+    };
+
+    let Ok(request_uuid) = Uuid::parse_str(request_id) else {
+        ctx.send_error("Invalid request_id (expected UUID)").await;
+        return;
+    };
+
+    let approval = Submission::ExecApproval {
+        request_id: request_uuid,
+        approved,
+        always,
+    };
+    let content = match serde_json::to_string(&approval) {
+        Ok(c) => c,
+        Err(e) => {
+            ctx.send_error(format!("Failed to serialize approval: {}", e))
+                .await;
+            return;
+        }
+    };
+
+    let mut msg = IncomingMessage::new("gateway", ctx.user_id, content);
+    if let Some(tid) = thread_id {
+        msg = msg.with_thread(tid);
+    }
+    let tx_guard = ctx.state.msg_tx.read().await;
+    if let Some(ref tx) = *tx_guard {
+        let _ = tx.send(msg).await;
+    }
+}
+
+/// Authenticate an extension with a client-supplied token and broadcast the outcome.
+async fn submit_auth_token(extension_name: String, token: &str, ctx: &WsContext<'_>) {
+    let Some(ref ext_mgr) = ctx.state.extension_manager else {
+        ctx.send_error("Extension manager not available").await;
+        return;
+    };
+
+    match ext_mgr.auth(&extension_name, Some(token)).await {
+        Ok(result) if result.is_authenticated() => {
+            let message = match ext_mgr.activate(&extension_name).await {
+                Ok(r) => format!(
+                    "{} authenticated ({} tools loaded)",
+                    extension_name,
+                    r.tools_loaded.len()
+                ),
+                Err(e) => format!(
+                    "{} authenticated but activation failed: {}",
+                    extension_name, e
+                ),
+            };
+            crate::channels::web::server::clear_auth_mode(ctx.state, Some(&extension_name)).await;
+            ctx.state
+                .sse
+                .broadcast(crate::channels::web::types::SseEvent::AuthCompleted {
+                    extension_name,
+                    success: true,
+                    message,
+                });
+        }
+        Ok(result) => {
+            ctx.state
+                .sse
+                .broadcast(crate::channels::web::types::SseEvent::AuthRequired {
+                    extension_name,
+                    instructions: result.instructions().map(String::from),
+                    auth_url: result.auth_url().map(String::from),
+                    setup_url: result.setup_url().map(String::from),
+                });
+        }
+        Err(e) => {
+            ctx.send_error(format!("Auth failed: {}", e)).await;
         }
     }
 }
