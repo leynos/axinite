@@ -118,7 +118,7 @@ struct Timing {
     timeout: std::time::Duration,
 }
 
-/// Trace how one call ended, sanitising a tool error before it is logged.
+/// Trace how one call ended, sanitizing a tool error before it is logged.
 fn trace_outcome<E: std::fmt::Display>(
     safety: &SafetyLayer,
     timing: &Timing,

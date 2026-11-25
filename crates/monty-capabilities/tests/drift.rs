@@ -2,7 +2,7 @@
 //!
 //! `../../verus/monty_capabilities.rs` proves the bodies between `KERNEL-BODY`
 //! markers. This test requires those bodies to be byte-identical to the
-//! shipped bodies in this crate's `src/lib.rs` — no whitespace normalisation,
+//! shipped bodies in this crate's `src/lib.rs` — no whitespace normalization,
 //! so a reformat is a drift too — and separately requires each crate root to
 //! hold nothing but the marked bodies and their documented scaffolding. A
 //! change to either copy without the other fails here, and code added outside
@@ -113,7 +113,7 @@ fn proved_bodies_match_production() {
 /// The negative control: a single mutated byte must be rejected.
 ///
 /// Without this, a comparison that silently compared nothing — or that
-/// normalised away real differences — would pass and prove nothing.
+/// normalized away real differences — would pass and prove nothing.
 #[test]
 fn a_mutated_body_is_rejected() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
