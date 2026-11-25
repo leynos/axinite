@@ -14,9 +14,7 @@ use monty_protocol::{
     CallOutcome, DenialCode, GuestOutput, GuestStream, HelperToParent, HostCall, ParentToHelper,
     ResumeRun, StartRun, Terminal, TerminalOutcome, hello, validate_start_run, write_frame,
 };
-use monty_types::{
-    CollectedStreams, MontyException, MontyObject, NameLookupResult, PrintWriter,
-};
+use monty_types::{CollectedStreams, MontyException, MontyObject, NameLookupResult, PrintWriter};
 use serde_json::Value;
 
 use self::failures::{abort, concurrent_denied, os_denied};
@@ -214,16 +212,12 @@ impl<'w, W: Write> Session<'w, W> {
                 self.finish(completed(&value))?;
                 None
             }
-            RunProgress::FunctionCall(call) => {
-                self.answer_call(reader, streams, call)?
-            }
+            RunProgress::FunctionCall(call) => self.answer_call(reader, streams, call)?,
             RunProgress::NameLookup(lookup) => {
                 Some(lookup.resume(NameLookupResult::Undefined, print))
             }
             RunProgress::OsCall(call) => Some(call.abort(os_denied(), print)),
-            RunProgress::ResolveFutures(state) => {
-                Some(state.abort(concurrent_denied(), print))
-            }
+            RunProgress::ResolveFutures(state) => Some(state.abort(concurrent_denied(), print)),
         })
     }
 
@@ -285,30 +279,22 @@ impl<'w, W: Write> Session<'w, W> {
 
         let outcome = self.read_reply(reader, call_id)?;
         match outcome {
-            ReplyOutcome::Cancelled => {
-                Ok(self.abort_with(
-                    call,
-                    streams,
-                    Failure::new(
-                        TerminalOutcome::ScriptError {
-                            message: "run cancelled by the parent".to_owned(),
-                        },
-                        "run cancelled by the parent",
-                    ),
-                ))
-            }
-            ReplyOutcome::Settled(outcome) => {
-                Ok(self.settle(call, streams, *outcome))
-            }
+            ReplyOutcome::Cancelled => Ok(self.abort_with(
+                call,
+                streams,
+                Failure::new(
+                    TerminalOutcome::ScriptError {
+                        message: "run cancelled by the parent".to_owned(),
+                    },
+                    "run cancelled by the parent",
+                ),
+            )),
+            ReplyOutcome::Settled(outcome) => Ok(self.settle(call, streams, *outcome)),
         }
     }
 
     /// Read the parent's answer to `call_id`, refusing any other message.
-    fn read_reply<R: BufRead>(
-        &self,
-        reader: &mut R,
-        call_id: u64,
-    ) -> Result<ReplyOutcome, Fatal> {
+    fn read_reply<R: BufRead>(&self, reader: &mut R, call_id: u64) -> Result<ReplyOutcome, Fatal> {
         match read_parent(reader).ok_or(EXIT_PROTOCOL)? {
             ParentToHelper::ResumeRun(ResumeRun {
                 run_id,
@@ -338,7 +324,10 @@ impl<'w, W: Write> Session<'w, W> {
             CallOutcome::Value { value } => self.resume_with(call, streams, &value),
             CallOutcome::Terminate { code, message } => {
                 let message = truncate(&message);
-                let outcome = TerminalOutcome::ToolError { code, message: message.clone() };
+                let outcome = TerminalOutcome::ToolError {
+                    code,
+                    message: message.clone(),
+                };
                 self.abort_with(call, streams, Failure::new(outcome, &message))
             }
         }
@@ -355,7 +344,9 @@ impl<'w, W: Write> Session<'w, W> {
             Ok(value) => value,
             Err(error) => {
                 let message = truncate(error.message());
-                let outcome = TerminalOutcome::RuntimeCrash { message: message.clone() };
+                let outcome = TerminalOutcome::RuntimeCrash {
+                    message: message.clone(),
+                };
                 return self.abort_with(call, streams, Failure::new(outcome, &message));
             }
         };
@@ -372,4 +363,3 @@ impl<'w, W: Write> Session<'w, W> {
         }
     }
 }
-

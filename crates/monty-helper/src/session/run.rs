@@ -42,7 +42,6 @@ impl Failure {
     }
 }
 
-
 pub(super) fn run_session<R: BufRead, W: Write>(
     reader: &mut R,
     writer: &mut W,

@@ -115,13 +115,19 @@ mod tests {
     #[test]
     fn accepts_the_plan_acceptance_example() {
         let source = "async def main(params, state):\n    return {\"result\": params[\"value\"], \"state\": state}\n";
-        assert_eq!(wrapper(source, "main"), format!("{source}\nawait main(params, state)\n"));
+        assert_eq!(
+            wrapper(source, "main"),
+            format!("{source}\nawait main(params, state)\n")
+        );
     }
 
     #[test]
     fn accepts_a_complete_function_without_a_trailing_newline() {
         let source = "async def run(params, state):\n    return {'result': None, 'state': state}";
-        assert_eq!(wrapper(source, "run"), format!("{source}\n\nawait run(params, state)\n"));
+        assert_eq!(
+            wrapper(source, "run"),
+            format!("{source}\n\nawait run(params, state)\n")
+        );
     }
 
     /// A body that defines a helper with the entrypoint's name is still a
