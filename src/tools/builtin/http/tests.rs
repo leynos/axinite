@@ -3,4 +3,5 @@
 
 mod approval;
 mod credential_injection;
+mod request_helpers;
 mod validation_tests;

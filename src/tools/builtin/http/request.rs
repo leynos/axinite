@@ -74,8 +74,11 @@ impl HttpTool {
     }
 
     /// Decrypt every credential the shared registry maps to `host`, skipping failures.
-    async fn registry_credentials(&self, user_id: &str, host: &str) -> InjectedCredentials {
-        let mut all = InjectedCredentials::empty();
+    ///
+    /// One entry per mapping, in mapping order, so two mappings that inject the
+    /// same name both reach the request.
+    async fn registry_credentials(&self, user_id: &str, host: &str) -> Vec<InjectedCredentials> {
+        let mut all = Vec::new();
         let (Some(registry), Some(store)) = (
             self.credential_registry.as_ref(),
             self.secrets_store.as_ref(),
@@ -89,8 +92,7 @@ impl HttpTool {
                 Ok(secret) => {
                     let mut injected = InjectedCredentials::empty();
                     inject_credential(&mut injected, &mapping.location, &secret);
-                    all.headers.extend(injected.headers);
-                    all.query_params.extend(injected.query_params);
+                    all.push(injected);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -115,15 +117,17 @@ pub(super) struct RequestTarget<'a> {
 pub(super) fn apply_credentials(
     mut request: RequestBuilder,
     target: &mut RequestTarget<'_>,
-    injected: &InjectedCredentials,
+    injected: &[InjectedCredentials],
 ) -> RequestBuilder {
-    for (name, value) in &injected.headers {
-        request = request.header(name.as_str(), value.as_str());
-        target.headers.push((name.clone(), value.clone()));
-    }
-    for (name, value) in &injected.query_params {
-        target.url.query_pairs_mut().append_pair(name, value);
-        request = request.query(&[(name.as_str(), value.as_str())]);
+    for credentials in injected {
+        for (name, value) in &credentials.headers {
+            request = request.header(name.as_str(), value.as_str());
+            target.headers.push((name.clone(), value.clone()));
+        }
+        for (name, value) in &credentials.query_params {
+            target.url.query_pairs_mut().append_pair(name, value);
+            request = request.query(&[(name.as_str(), value.as_str())]);
+        }
     }
     request
 }
