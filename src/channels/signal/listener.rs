@@ -41,16 +41,16 @@ enum EventOutcome {
 }
 
 /// Accumulated SSE decoding state for one connection.
-struct SseState {
-    buffer: String,
-    current_data: String,
+pub(super) struct SseState {
+    pub(super) buffer: String,
+    pub(super) current_data: String,
     /// Trailing bytes from the previous chunk that form an incomplete multi-byte UTF-8
     /// sequence: at most 3 (the longest incomplete leading sequence of a 4-byte character).
-    utf8_carry: Vec<u8>,
+    pub(super) utf8_carry: Vec<u8>,
 }
 
 impl SseState {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             buffer: String::with_capacity(8192),
             current_data: String::with_capacity(4096),
@@ -59,7 +59,7 @@ impl SseState {
     }
 
     /// Decode a chunk into the line buffer; return `false` when the buffer overflowed and was reset.
-    fn ingest(&mut self, chunk: &[u8]) -> bool {
+    pub(super) fn ingest(&mut self, chunk: &[u8]) -> bool {
         // Prepend any leftover bytes from the previous chunk.
         let decode_buf = if self.utf8_carry.is_empty() {
             chunk.to_vec()
@@ -95,7 +95,7 @@ impl SseState {
     }
 
     /// Accumulate one `data:` line, dropping the event when it grows too large.
-    fn push_data_line(&mut self, data: &str) {
+    pub(super) fn push_data_line(&mut self, data: &str) {
         if self.current_data.len() + data.len() > MAX_SSE_EVENT_SIZE {
             tracing::warn!("Signal SSE event too large, dropping");
             self.current_data.clear();
@@ -109,7 +109,7 @@ impl SseState {
 }
 
 /// Find where the valid UTF-8 prefix ends and where the carried-over tail starts.
-fn utf8_split_points(decode_buf: &[u8]) -> (usize, usize) {
+pub(super) fn utf8_split_points(decode_buf: &[u8]) -> (usize, usize) {
     match std::str::from_utf8(decode_buf) {
         Ok(_) => (decode_buf.len(), decode_buf.len()),
         Err(e) => {
