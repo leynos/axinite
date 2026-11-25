@@ -12,8 +12,8 @@ use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput,
 use crate::tools::builtin::convert_html_to_markdown;
 
 use super::request::{
-    attach_body, read_capped_body, reject_oversized_declared_length, request_builder,
-    save_body_to_file,
+    RequestTarget, attach_body, read_capped_body, reject_oversized_declared_length,
+    request_builder, save_body_to_file,
 };
 use super::validation::{parse_headers_param, validate_url};
 use super::{HttpTool, MAX_RESPONSE_SIZE, MAX_SAVE_TO_SIZE};
@@ -102,7 +102,14 @@ impl NativeTool for HttpTool {
 
         // Credential injection from shared registry
         let request = self
-            .inject_registry_credentials(&ctx.user_id, request, &mut parsed_url, &mut headers_vec)
+            .inject_registry_credentials(
+                &ctx.user_id,
+                request,
+                &mut RequestTarget {
+                    url: &mut parsed_url,
+                    headers: &mut headers_vec,
+                },
+            )
             .await;
 
         // Leak detection on outbound request (url/headers/body)

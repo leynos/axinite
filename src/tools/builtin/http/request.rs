@@ -65,32 +65,32 @@ impl HttpTool {
     pub(super) async fn inject_registry_credentials(
         &self,
         user_id: &str,
-        mut request: RequestBuilder,
-        parsed_url: &mut reqwest::Url,
-        headers_vec: &mut Vec<(String, String)>,
+        request: RequestBuilder,
+        target: &mut RequestTarget<'_>,
     ) -> RequestBuilder {
+        let host = target.url.host_str().unwrap_or("").to_string();
+        let injected = self.registry_credentials(user_id, &host).await;
+        apply_credentials(request, target, &injected)
+    }
+
+    /// Decrypt every credential the shared registry maps to `host`, skipping failures.
+    async fn registry_credentials(&self, user_id: &str, host: &str) -> InjectedCredentials {
+        let mut all = InjectedCredentials::empty();
         let (Some(registry), Some(store)) = (
             self.credential_registry.as_ref(),
             self.secrets_store.as_ref(),
         ) else {
-            return request;
+            return all;
         };
 
-        let host = parsed_url.host_str().unwrap_or("");
         let matched: Vec<crate::secrets::CredentialMapping> = registry.find_for_host(host);
         for mapping in &matched {
             match store.get_decrypted(user_id, &mapping.secret_name).await {
                 Ok(secret) => {
                     let mut injected = InjectedCredentials::empty();
                     inject_credential(&mut injected, &mapping.location, &secret);
-                    for (name, value) in &injected.headers {
-                        request = request.header(name.as_str(), value.as_str());
-                        headers_vec.push((name.clone(), value.clone()));
-                    }
-                    for (name, value) in &injected.query_params {
-                        parsed_url.query_pairs_mut().append_pair(name, value);
-                        request = request.query(&[(name.as_str(), value.as_str())]);
-                    }
+                    all.headers.extend(injected.headers);
+                    all.query_params.extend(injected.query_params);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -101,8 +101,31 @@ impl HttpTool {
                 }
             }
         }
-        request
+        all
     }
+}
+
+/// The URL and header list a request is built from, kept in step with injected credentials.
+pub(super) struct RequestTarget<'a> {
+    pub(super) url: &'a mut reqwest::Url,
+    pub(super) headers: &'a mut Vec<(String, String)>,
+}
+
+/// Add injected headers and query parameters to the request and mirror them in the target.
+fn apply_credentials(
+    mut request: RequestBuilder,
+    target: &mut RequestTarget<'_>,
+    injected: &InjectedCredentials,
+) -> RequestBuilder {
+    for (name, value) in &injected.headers {
+        request = request.header(name.as_str(), value.as_str());
+        target.headers.push((name.clone(), value.clone()));
+    }
+    for (name, value) in &injected.query_params {
+        target.url.query_pairs_mut().append_pair(name, value);
+        request = request.query(&[(name.as_str(), value.as_str())]);
+    }
+    request
 }
 
 /// Reject a response whose declared Content-Length exceeds the limit, before downloading it.
