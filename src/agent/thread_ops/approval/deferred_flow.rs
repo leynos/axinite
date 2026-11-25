@@ -66,6 +66,31 @@ async fn record_tool_error_and_push(
     reason_ctx.push(ChatMessage::tool_result(&tc.id, &tc.name, error_msg));
 }
 
+/// Build the follow-up request that carries a deferred call into auth.
+///
+/// The original request supplies the caller's authority; the live context
+/// supplies the messages, which now include the deferred calls that have
+/// already run. `deferred_tool_calls` is cleared because a partial deferred
+/// batch cannot be resumed.
+fn deferred_auth_pending(
+    pending: &PendingApproval,
+    tool_call: &crate::llm::ToolCall,
+    context_messages: &[ChatMessage],
+) -> PendingApproval {
+    PendingApproval {
+        request_id: pending.request_id,
+        tool_name: tool_call.name.clone(),
+        parameters: tool_call.arguments.clone(),
+        display_parameters: redact_params(&tool_call.arguments, &[]),
+        description: format!("Authenticate to continue with {}", tool_call.name),
+        tool_call_id: tool_call.id.clone(),
+        context_messages: context_messages.to_vec(),
+        deferred_tool_calls: Vec::new(),
+        user_timezone: pending.user_timezone.clone(),
+        ..pending.clone() // the caller's authority carries over
+    }
+}
+
 impl Agent {
     /// Postflight: record results, emit ToolResult previews, check for deferred auth.
     async fn postflight_record_and_maybe_deferred_auth(
@@ -153,23 +178,7 @@ impl Agent {
                 && let Some((ext_name, instructions)) =
                     check_auth_required(&tc.name, &deferred_result)
             {
-                // Build fresh PendingApproval representing the live deferred continuation.
-                // Take the original pending and update it with the current context_messages
-                // (which includes results from deferred calls that have already executed)
-                // and clear deferred_tool_calls since we can't resume partial deferred batches.
-                let fresh_pending = PendingApproval {
-                    request_id: pending.request_id,
-                    tool_name: tc.name.clone(),
-                    parameters: tc.arguments.clone(),
-                    display_parameters: redact_params(&tc.arguments, &[]),
-                    description: format!("Authenticate to continue with {}", tc.name),
-                    tool_call_id: tc.id.clone(),
-                    context_messages: context_messages.clone(),
-                    deferred_tool_calls: Vec::new(),
-                    user_timezone: pending.user_timezone.clone(),
-                    permitted_tools: pending.permitted_tools.clone(),
-                    auto_approved_tools: pending.auto_approved_tools.clone(),
-                };
+                let fresh_pending = deferred_auth_pending(pending, &tc, context_messages);
                 self.handle_auth_intercept(AuthInterceptParams {
                     session: &scope.session,
                     thread_id: scope.thread_id,
@@ -214,8 +223,8 @@ impl Agent {
             deferred_tool_calls: deferred_tool_calls[approval_idx + 1..].to_vec(),
             // Carry forward the resolved timezone from the original pending approval
             user_timezone: pending.user_timezone.clone(),
-            permitted_tools: pending.permitted_tools.clone(),
-            auto_approved_tools: pending.auto_approved_tools.clone(),
+            // The caller's authority snapshot carries over unchanged.
+            ..pending.clone()
         };
 
         let request_id = new_pending.request_id;
