@@ -1,6 +1,7 @@
 //! Tests for private-IP rejection and schema-based parameter coercion.
 
 use super::super::coerce_params_to_schema;
+use super::super::credentials::token_url_is_safe;
 use super::super::http::{is_private_ip, reject_private_ip};
 
 #[test]
@@ -131,4 +132,20 @@ fn test_coerce_params_invalid_string_not_coerced() {
     let result = coerce_params_to_schema(params, &schema);
     // Should remain as string since it can't be parsed
     assert_eq!(result["count"], serde_json::json!("not-a-number"));
+}
+
+#[test]
+fn test_oauth_token_url_must_be_https() {
+    assert!(!token_url_is_safe("http://8.8.8.8/token"));
+}
+
+#[test]
+fn test_oauth_token_url_rejects_private_addresses() {
+    assert!(!token_url_is_safe("https://127.0.0.1/token"));
+    assert!(!token_url_is_safe("https://10.0.0.5/token"));
+}
+
+#[test]
+fn test_oauth_token_url_accepts_a_public_https_address() {
+    assert!(token_url_is_safe("https://8.8.8.8/token"));
 }

@@ -13,7 +13,7 @@
 experimental = ["macro_aware_cognitive_complexity"]
 
 [macro_aware_cognitive_complexity]
-max_complexity = 19
+max_complexity = 16
 
 [no_std_fs_operations]
 excluded_crates = [
