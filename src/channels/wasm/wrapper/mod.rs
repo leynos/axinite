@@ -58,6 +58,7 @@ mod shared;
 mod status;
 mod store;
 mod types;
+mod webhook_log;
 
 use attachments::read_attachments;
 use convert::{

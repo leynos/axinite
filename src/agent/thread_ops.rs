@@ -54,6 +54,35 @@ pub(super) async fn store_extracted_documents(
     store_extracted_documents_impl(workspace, message).await;
 }
 
+/// Claim the thread's pending auth atomically, to prevent concurrent bypass.
+///
+/// `None` when there is no pending auth or another turn already holds it.
+async fn claim_pending_auth(
+    session: &Arc<Mutex<Session>>,
+    thread_id: Uuid,
+) -> Option<crate::agent::session::PendingAuth> {
+    let mut sess = session.lock().await;
+    sess.threads.get_mut(&thread_id).and_then(|t| {
+        if t.in_flight_auth || t.pending_auth.is_none() {
+            return None;
+        }
+        t.in_flight_auth = true;
+        t.pending_auth.clone()
+    })
+}
+
+/// Update the thread's auth markers while holding the session lock.
+async fn set_auth_markers(
+    session: &Arc<Mutex<Session>>,
+    thread_id: Uuid,
+    update: impl FnOnce(&mut crate::agent::session::Thread),
+) {
+    let mut sess = session.lock().await;
+    if let Some(thread) = sess.threads.get_mut(&thread_id) {
+        update(thread);
+    }
+}
+
 impl Agent {
     async fn check_auth_mode_intercept(
         &self,
@@ -62,57 +91,38 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Option<Result<Option<String>, Error>> {
-        // Check for pending auth and claim it atomically to prevent concurrent bypass
-        let pending_auth = {
-            let mut sess = session.lock().await;
-            sess.threads.get_mut(&thread_id).and_then(|t| {
-                if t.in_flight_auth || t.pending_auth.is_none() {
-                    return None;
-                }
-                t.in_flight_auth = true;
-                t.pending_auth.clone()
-            })
-        };
+        let pending = claim_pending_auth(&session, thread_id).await?;
 
-        if let Some(pending) = pending_auth {
-            match submission {
-                Submission::UserInput { content } => {
-                    let scope = crate::agent::thread_ops::approval::TurnScope::new(
-                        session.clone(),
-                        thread_id,
-                        message,
-                    );
-                    let result = match self.process_auth_token(scope, &pending, content).await {
-                        Ok(None) => Ok(Some(String::new())),
-                        Ok(Some(s)) => Ok(Some(s)),
-                        Err(e) => Err(e),
-                    };
+        match submission {
+            Submission::UserInput { content } => {
+                let scope = crate::agent::thread_ops::approval::TurnScope::new(
+                    session.clone(),
+                    thread_id,
+                    message,
+                );
+                let result = match self.process_auth_token(scope, &pending, content).await {
+                    Ok(None) => Ok(Some(String::new())),
+                    Ok(Some(s)) => Ok(Some(s)),
+                    Err(e) => Err(e),
+                };
 
-                    // Clear in_flight_auth after processing; process_auth_token is
-                    // authoritative for clearing or keeping pending_auth.
-                    {
-                        let mut sess = session.lock().await;
-                        if let Some(thread) = sess.threads.get_mut(&thread_id) {
-                            thread.in_flight_auth = false;
-                        }
-                    }
-
-                    return Some(result);
-                }
-                _ => {
-                    // Any control submission (interrupt, undo, etc.) cancels auth mode.
-                    // Clear both auth markers so the next user turn is not intercepted.
-                    let mut sess = session.lock().await;
-                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
-                        thread.in_flight_auth = false;
-                        thread.pending_auth = None;
-                    }
-                    // Fall through to normal handling
-                }
+                // Clear in_flight_auth after processing; process_auth_token is
+                // authoritative for clearing or keeping pending_auth.
+                set_auth_markers(&session, thread_id, |thread| thread.in_flight_auth = false).await;
+                Some(result)
+            }
+            _ => {
+                // Any control submission (interrupt, undo, etc.) cancels auth mode.
+                // Clear both auth markers so the next user turn is not intercepted.
+                set_auth_markers(&session, thread_id, |thread| {
+                    thread.in_flight_auth = false;
+                    thread.pending_auth = None;
+                })
+                .await;
+                // Fall through to normal handling
+                None
             }
         }
-
-        None
     }
 
     async fn set_tool_context_for_message(&self, message: &IncomingMessage) {

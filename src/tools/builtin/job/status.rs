@@ -35,6 +35,16 @@ async fn resolve_job_id_param(
     resolve_job_id(job_id_str, context_manager).await
 }
 
+/// Whether a job in `state` is listed under the `filter` value.
+fn state_matches_filter(filter: &str, state: &JobState) -> bool {
+    match filter {
+        "completed" => *state == JobState::Completed,
+        "failed" => *state == JobState::Failed,
+        "active" => state.is_active(),
+        _ => true,
+    }
+}
+
 /// Tool for listing jobs.
 pub struct ListJobsTool {
     context_manager: Arc<ContextManager>,
@@ -88,22 +98,16 @@ impl NativeTool for ListJobsTool {
 
         let mut jobs = Vec::new();
         for job_id in job_ids {
-            if let Ok(ctx) = self.context_manager.get_context(job_id).await {
-                let include = match filter {
-                    "completed" => ctx.state == JobState::Completed,
-                    "failed" => ctx.state == JobState::Failed,
-                    "active" => ctx.state.is_active(),
-                    _ => true,
-                };
-
-                if include {
-                    jobs.push(serde_json::json!({
-                        "job_id": job_id.to_string(),
-                        "title": ctx.title,
-                        "status": format!("{:?}", ctx.state),
-                        "created_at": ctx.created_at.to_rfc3339()
-                    }));
-                }
+            let Ok(ctx) = self.context_manager.get_context(job_id).await else {
+                continue;
+            };
+            if state_matches_filter(filter, &ctx.state) {
+                jobs.push(serde_json::json!({
+                    "job_id": job_id.to_string(),
+                    "title": ctx.title,
+                    "status": format!("{:?}", ctx.state),
+                    "created_at": ctx.created_at.to_rfc3339()
+                }));
             }
         }
 

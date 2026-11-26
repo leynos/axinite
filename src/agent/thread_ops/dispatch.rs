@@ -235,6 +235,21 @@ impl Agent {
         submission: Submission,
     ) -> Result<SubmissionResult, Error> {
         match submission {
+            Submission::Resume { checkpoint_id } => {
+                self.process_resume(ctx.session, ctx.thread_id, checkpoint_id)
+                    .await
+            }
+            other => self.dispatch_thread_command(ctx, other).await,
+        }
+    }
+
+    /// Route the parameterless thread commands (undo, redo, interrupt and the like).
+    async fn dispatch_thread_command(
+        &self,
+        ctx: DispatchCtx,
+        submission: Submission,
+    ) -> Result<SubmissionResult, Error> {
+        match submission {
             Submission::Undo => self.process_undo(ctx.session, ctx.thread_id).await,
             Submission::Redo => self.process_redo(ctx.session, ctx.thread_id).await,
             Submission::Interrupt => self.process_interrupt(ctx.session, ctx.thread_id).await,
@@ -242,10 +257,6 @@ impl Agent {
             Submission::Clear => self.process_clear(ctx.session, ctx.thread_id).await,
             Submission::Summarize => self.process_summarize(ctx.session, ctx.thread_id).await,
             Submission::Suggest => self.process_suggest(ctx.session, ctx.thread_id).await,
-            Submission::Resume { checkpoint_id } => {
-                self.process_resume(ctx.session, ctx.thread_id, checkpoint_id)
-                    .await
-            }
             other => {
                 tracing::error!("[agent_loop] unrouted submission: {:?}", other);
                 Ok(SubmissionResult::error(

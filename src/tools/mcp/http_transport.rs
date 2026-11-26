@@ -11,6 +11,8 @@ use crate::tools::mcp::session::McpSessionManager;
 use crate::tools::mcp::transport::NativeMcpTransport;
 use crate::tools::tool::ToolError;
 
+mod request;
+
 /// MCP transport that communicates with a server over HTTP.
 ///
 /// Sends JSON-RPC requests as HTTP POST with `Content-Type: application/json`
@@ -77,62 +79,19 @@ impl NativeMcpTransport for HttpMcpTransport {
         request: &McpRequest,
         headers: &HashMap<String, String>,
     ) -> Result<McpResponse, ToolError> {
-        // Build the HTTP request. Surface any deferred client construction
-        // failure as a transport error instead of a constructor panic.
-        let http_client = self.http_client.as_ref().map_err(|e| {
-            ToolError::ExecutionFailed(format!(
-                "[{}] Failed to create HTTP client: {e}",
-                self.server_name
-            ))
-        })?;
-        let mut req_builder = http_client
-            .post(&self.server_url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json, text/event-stream")
-            .json(request);
-
-        // Apply custom headers configured on the transport.
-        for (key, value) in &self.custom_headers {
-            req_builder = req_builder.header(key.as_str(), value.as_str());
-        }
-
-        // Apply per-request headers (e.g. Authorization, Mcp-Session-Id).
-        for (key, value) in headers {
-            req_builder = req_builder.header(key.as_str(), value.as_str());
-        }
+        let req_builder = self.build_request(request, headers)?;
 
         // Send the request.
-        let response = req_builder.send().await.map_err(|e| {
-            let mut chain = format!("[{}] MCP HTTP request failed: {}", self.server_name, e);
-            let mut source = std::error::Error::source(&e);
-            while let Some(cause) = source {
-                chain.push_str(&format!(" -> {}", cause));
-                source = cause.source();
-            }
-            ToolError::ExternalService(chain)
-        })?;
+        let response = req_builder
+            .send()
+            .await
+            .map_err(|e| self.request_failure(&e))?;
 
-        // Extract session ID from response headers before consuming the body.
-        if let Some(ref session_manager) = self.session_manager
-            && let Some(session_id) = response
-                .headers()
-                .get("Mcp-Session-Id")
-                .and_then(|v| v.to_str().ok())
-        {
-            session_manager
-                .update_session_id(&self.server_name, Some(session_id.to_string()))
-                .await;
-        }
+        self.record_session_id(&response).await;
 
         // Handle error status codes.
         if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            let sanitized = sanitize_error_body(&body);
-            return Err(ToolError::ExternalService(format!(
-                "[{}] MCP server returned status: {} - {}",
-                self.server_name, status, sanitized
-            )));
+            return Err(self.status_failure(response).await);
         }
 
         // Determine response format from Content-Type.

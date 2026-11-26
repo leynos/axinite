@@ -112,8 +112,9 @@ pub async fn discover_dev_tools() -> Result<HashMap<String, DiscoveredTool>, std
 
 /// Whether the build artefact should replace the installed copy.
 ///
-/// True when nothing is installed, when either modification time cannot be
-/// read, or when the build artefact is newer.
+/// True when nothing is installed, when either file's metadata cannot be read,
+/// or when the build artefact's modification time is later. A modification
+/// time that cannot be read counts as the Unix epoch.
 async fn is_fresher_than_installed(dev_wasm: &Path, installed_path: &Path) -> bool {
     if !installed_path.exists() {
         return true;

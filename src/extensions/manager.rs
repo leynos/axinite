@@ -17,6 +17,7 @@ mod oauth_launch;
 mod ops;
 mod removal;
 mod setup_secrets;
+mod telegram_validation;
 mod upgrade;
 mod wasm_install;
 

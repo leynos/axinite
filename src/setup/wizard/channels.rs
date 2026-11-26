@@ -10,6 +10,23 @@ use super::*;
 /// CLI/TUI, HTTP webhook, and Signal.
 const NON_WASM_CHANNEL_COUNT: usize = 3;
 
+/// Install the selected channels that are not on disk yet, then return the
+/// channels to configure: re-discovered when anything was installed, so new
+/// capabilities files are picked up, otherwise `discovered` unchanged.
+async fn install_and_rediscover(
+    channels_dir: &std::path::Path,
+    selected_wasm_channels: &[String],
+    installed_names: &HashSet<String>,
+    discovered: Vec<(String, ChannelCapabilitiesFile)>,
+) -> Result<Vec<(String, ChannelCapabilitiesFile)>, SetupError> {
+    let any_installed =
+        install_selected_channels(channels_dir, selected_wasm_channels, installed_names).await?;
+    if any_installed {
+        return Ok(discover_wasm_channels(channels_dir).await);
+    }
+    Ok(discovered)
+}
+
 impl SetupWizard {
     /// Step 6: Channel configuration.
     pub(super) async fn step_channels(&mut self) -> Result<(), SetupError> {
@@ -20,7 +37,7 @@ impl SetupWizard {
         // Discover available WASM channels
         let channels_dir = axinite_base_dir().join("channels");
 
-        let mut discovered_channels = discover_wasm_channels(&channels_dir).await;
+        let discovered_channels = discover_wasm_channels(&channels_dir).await;
         let installed_names: HashSet<String> = discovered_channels
             .iter()
             .map(|(name, _)| name.clone())
@@ -34,12 +51,13 @@ impl SetupWizard {
 
         // Install selected channels that aren't already on disk, then
         // re-discover so newly installed capabilities files are picked up.
-        let any_installed =
-            install_selected_channels(&channels_dir, &selected_wasm_channels, &installed_names)
-                .await?;
-        if any_installed {
-            discovered_channels = discover_wasm_channels(&channels_dir).await;
-        }
+        let discovered_channels = install_and_rediscover(
+            &channels_dir,
+            &selected_wasm_channels,
+            &installed_names,
+            discovered_channels,
+        )
+        .await?;
 
         // Determine if we need secrets context
         let needs_secrets =

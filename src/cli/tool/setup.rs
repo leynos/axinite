@@ -103,6 +103,49 @@ async fn prompt_secret_value(
     .map_err(|e| anyhow::anyhow!("interactive secret input task failed: {e}"))?
 }
 
+/// One secret to request during tool setup.
+struct SecretRequest<'a> {
+    name: &'a str,
+    prompt: &'a str,
+    optional: bool,
+}
+
+/// Prompt for one secret, unless the user keeps an existing value or skips it,
+/// and save it for `tool_name`. Returns whether a value was saved.
+async fn prompt_and_save_secret(
+    secrets_store: &(dyn crate::secrets::SecretsStore + Send + Sync),
+    user_id: &str,
+    tool_name: &str,
+    secret: SecretRequest<'_>,
+) -> anyhow::Result<bool> {
+    let already_exists = secrets_store
+        .exists(user_id, secret.name)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to check whether secret '{}' exists: {e}",
+                secret.name
+            )
+        })?;
+
+    if !should_prompt_for_secret(secret.prompt, already_exists).await? {
+        return Ok(false);
+    }
+    let Some(value) = prompt_secret_value(secret.prompt, secret.optional, secret.name).await?
+    else {
+        return Ok(false);
+    };
+
+    let params = CreateSecretParams::new(secret.name, &value).with_provider(tool_name.to_string());
+    secrets_store
+        .create(user_id, params)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to save secret '{}': {}", secret.name, e))?;
+
+    println!("    ✓ Saved.");
+    Ok(true)
+}
+
 /// Configure required secrets for a tool via its `setup.required_secrets` schema.
 pub(super) async fn setup_tool(
     name: String,
@@ -140,33 +183,13 @@ pub(super) async fn setup_tool(
     let mut any_saved = false;
 
     for secret in &setup.required_secrets {
-        let already_exists = secrets_store
-            .exists(&user_id, &secret.name)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to check whether secret '{}' exists: {e}",
-                    secret.name
-                )
-            })?;
-
-        if !should_prompt_for_secret(&secret.prompt, already_exists).await? {
-            continue;
-        }
-        let Some(value) =
-            prompt_secret_value(&secret.prompt, secret.optional, &secret.name).await?
-        else {
-            continue;
+        let request = SecretRequest {
+            name: &secret.name,
+            prompt: &secret.prompt,
+            optional: secret.optional,
         };
-
-        let params = CreateSecretParams::new(&secret.name, &value).with_provider(name.to_string());
-        secrets_store
-            .create(&user_id, params)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to save secret '{}': {}", secret.name, e))?;
-
-        println!("    ✓ Saved.");
-        any_saved = true;
+        any_saved |=
+            prompt_and_save_secret(secrets_store.as_ref(), &user_id, &name, request).await?;
     }
 
     println!();

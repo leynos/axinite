@@ -41,6 +41,19 @@ enum RepairSeed {
 }
 
 #[cfg(feature = "postgres")]
+impl RepairSeed {
+    /// Seed the temporary refinery history table with this scenario's rows.
+    async fn apply<C: tokio_postgres::GenericClient>(&self, client: &C) {
+        match self {
+            RepairSeed::RenumberedReleaseWindow => {
+                seed_history_rows(client, RENUMBERED_RELEASE_WINDOW_ROWS).await;
+            }
+            RepairSeed::LegacyChecksumOnlyV12 => seed_legacy_released_rows(client).await,
+        }
+    }
+}
+
+#[cfg(feature = "postgres")]
 async fn run_repair_postgres_refinery_history_case(
     seed: RepairSeed,
     expected_rows: Vec<(i32, String, String)>,
@@ -59,14 +72,7 @@ async fn run_repair_postgres_refinery_history_case(
     let mut client = store.conn().await.context("Failed to get connection")?;
     create_temp_refinery_history_table(&client).await;
 
-    match seed {
-        RepairSeed::RenumberedReleaseWindow => {
-            seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS).await;
-        }
-        RepairSeed::LegacyChecksumOnlyV12 => {
-            seed_legacy_released_rows(&**client).await;
-        }
-    }
+    seed.apply(&**client).await;
 
     repair_postgres_refinery_history(&mut client)
         .await

@@ -356,24 +356,34 @@ async fn run_shutdown_sequence(
     let _ = shutdown_tx.send(());
     mcp_process_manager.shutdown_all().await;
 
-    if let Some(recorder) = recording_handle
-        && let Err(e) = recorder.flush().await
-    {
-        tracing::warn!("Failed to write LLM trace: {e}");
-    }
+    flush_recording(recording_handle).await;
 
     if let Some(ws_arc) = webhook_server {
         ws_arc.lock().await.shutdown().await;
     }
 
+    stop_tunnel(active_tunnel).await;
+
+    tracing::debug!("Agent shutdown complete");
+}
+
+/// Write out the LLM trace, if one is being recorded.
+async fn flush_recording(recording_handle: &Option<Arc<axinite::llm::recording::RecordingLlm>>) {
+    if let Some(recorder) = recording_handle
+        && let Err(e) = recorder.flush().await
+    {
+        tracing::warn!("Failed to write LLM trace: {e}");
+    }
+}
+
+/// Stop the active tunnel, if there is one, logging a failure.
+async fn stop_tunnel(active_tunnel: &Option<Box<dyn axinite::tunnel::Tunnel>>) {
     if let Some(tunnel) = active_tunnel {
         tracing::debug!("Stopping {} tunnel...", tunnel.name());
         if let Err(e) = tunnel.stop().await {
             tracing::warn!("Failed to stop tunnel cleanly: {e}");
         }
     }
-
-    tracing::debug!("Agent shutdown complete");
 }
 
 #[cfg(test)]

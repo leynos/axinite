@@ -98,46 +98,56 @@ impl RegistryInstaller {
             }
         }
 
-        // Collect auth hints
-        let mut auth_hints = Vec::new();
-        if let Some(shared) = &bundle.shared_auth {
-            auth_hints.push(format!(
-                "Bundle uses shared auth '{}'. Run `axinite tool auth <any-member>` to authenticate all members.",
-                shared
-            ));
-        }
-
-        // Collect unique auth providers that need setup
-        let mut seen_providers = std::collections::HashSet::new();
-        for manifest in manifests {
-            if let Some(auth) = &manifest.auth_summary {
-                let key = auth
-                    .shared_auth
-                    .as_deref()
-                    .unwrap_or(manifest.name.as_str());
-                if seen_providers.insert(key.to_string())
-                    && let Some(url) = &auth.setup_url
-                {
-                    auth_hints.push(format!(
-                        "  {} ({}): {}",
-                        auth.provider.as_deref().unwrap_or(&manifest.name),
-                        auth.method.as_deref().unwrap_or("manual"),
-                        url
-                    ));
-                }
-            }
-        }
-
-        if !errors.is_empty() {
-            auth_hints.push(format!(
-                "\nFailed to install {} extension(s):",
-                errors.len()
-            ));
-            for err in errors {
-                auth_hints.push(format!("  - {}", err));
-            }
-        }
+        let mut auth_hints = bundle_auth_hints(manifests, bundle);
+        auth_hints.extend(failure_hints(&errors));
 
         (outcomes, auth_hints)
     }
+}
+
+/// Collect the shared-auth note and one setup line per unique auth provider.
+fn bundle_auth_hints(manifests: &[&ExtensionManifest], bundle: &BundleDefinition) -> Vec<String> {
+    let mut auth_hints = Vec::new();
+    if let Some(shared) = &bundle.shared_auth {
+        auth_hints.push(format!(
+            "Bundle uses shared auth '{}'. Run `axinite tool auth <any-member>` to authenticate all members.",
+            shared
+        ));
+    }
+
+    // Collect unique auth providers that need setup
+    let mut seen_providers = std::collections::HashSet::new();
+    for manifest in manifests {
+        let Some(auth) = &manifest.auth_summary else {
+            continue;
+        };
+        let key = auth
+            .shared_auth
+            .as_deref()
+            .unwrap_or(manifest.name.as_str());
+        if seen_providers.insert(key.to_string())
+            && let Some(url) = &auth.setup_url
+        {
+            auth_hints.push(format!(
+                "  {} ({}): {}",
+                auth.provider.as_deref().unwrap_or(&manifest.name),
+                auth.method.as_deref().unwrap_or("manual"),
+                url
+            ));
+        }
+    }
+    auth_hints
+}
+
+/// List the failed installs, if any, as trailing hint lines.
+fn failure_hints(errors: &[String]) -> Vec<String> {
+    if errors.is_empty() {
+        return Vec::new();
+    }
+    let mut hints = vec![format!(
+        "\nFailed to install {} extension(s):",
+        errors.len()
+    )];
+    hints.extend(errors.iter().map(|err| format!("  - {}", err)));
+    hints
 }

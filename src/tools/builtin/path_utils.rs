@@ -58,21 +58,7 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
 
     let path = PathBuf::from(path_str);
 
-    // Resolve to absolute path
-    let resolved = if path.is_absolute() {
-        path.canonicalize()
-            .unwrap_or_else(|_| normalize_lexical(&path))
-    } else if let Some(base) = base_dir {
-        let joined = base.join(&path);
-        joined
-            .canonicalize()
-            .unwrap_or_else(|_| normalize_lexical(&joined))
-    } else {
-        let joined = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(&path);
-        normalize_lexical(&joined)
-    };
+    let resolved = resolve_to_absolute(&path, base_dir);
 
     // If base_dir is set, ensure the resolved path is within it
     if let Some(base) = base_dir {
@@ -80,39 +66,7 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
             .canonicalize()
             .unwrap_or_else(|_| normalize_lexical(base));
 
-        // For existing paths, canonicalize to resolve symlinks.
-        // For non-existent paths, the lexical normalization above already removed
-        // all `..` components, so starts_with is reliable.
-        let check_path = if resolved.exists() {
-            resolved.canonicalize().unwrap_or_else(|_| resolved.clone())
-        } else {
-            // Walk up to the nearest existing ancestor directory, canonicalize it,
-            // then re-append the remaining tail. This handles the case where a
-            // symlink sits above the new file.
-            let mut ancestor = resolved.as_path();
-            let mut tail_parts: Vec<&std::ffi::OsStr> = Vec::new();
-            loop {
-                if ancestor.exists() {
-                    let canonical_ancestor = ancestor
-                        .canonicalize()
-                        .unwrap_or_else(|_| ancestor.to_path_buf());
-                    let mut result = canonical_ancestor;
-                    for part in tail_parts.into_iter().rev() {
-                        result = result.join(part);
-                    }
-                    break result;
-                }
-                if let Some(name) = ancestor.file_name() {
-                    tail_parts.push(name);
-                }
-                match ancestor.parent() {
-                    Some(parent) if parent != ancestor => ancestor = parent,
-                    _ => break resolved.clone(),
-                }
-            }
-        };
-
-        if !check_path.starts_with(&base_canonical) {
+        if !canonical_check_path(&resolved).starts_with(&base_canonical) {
             return Err(ToolError::NotAuthorized(format!(
                 "Path escapes sandbox: {}",
                 path_str
@@ -121,6 +75,65 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
     }
 
     Ok(resolved)
+}
+
+/// Resolve `path` to an absolute path: canonical when it exists, otherwise
+/// lexically normalized against `base_dir` or the current directory.
+fn resolve_to_absolute(path: &Path, base_dir: Option<&Path>) -> PathBuf {
+    if path.is_absolute() {
+        return path
+            .canonicalize()
+            .unwrap_or_else(|_| normalize_lexical(path));
+    }
+    match base_dir {
+        Some(base) => {
+            let joined = base.join(path);
+            joined
+                .canonicalize()
+                .unwrap_or_else(|_| normalize_lexical(&joined))
+        }
+        None => {
+            let joined = std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(path);
+            normalize_lexical(&joined)
+        }
+    }
+}
+
+/// The path to compare against the sandbox root.
+///
+/// For existing paths, canonicalize to resolve symlinks. For non-existent
+/// paths, the lexical normalization already removed all `..` components, so
+/// `starts_with` is reliable: walk up to the nearest existing ancestor,
+/// canonicalize it, then re-append the remaining tail. This handles a symlink
+/// sitting above the new file.
+fn canonical_check_path(resolved: &Path) -> PathBuf {
+    if resolved.exists() {
+        return resolved
+            .canonicalize()
+            .unwrap_or_else(|_| resolved.to_path_buf());
+    }
+    let mut ancestor = resolved;
+    let mut tail_parts: Vec<&std::ffi::OsStr> = Vec::new();
+    loop {
+        if ancestor.exists() {
+            let mut result = ancestor
+                .canonicalize()
+                .unwrap_or_else(|_| ancestor.to_path_buf());
+            for part in tail_parts.into_iter().rev() {
+                result = result.join(part);
+            }
+            return result;
+        }
+        if let Some(name) = ancestor.file_name() {
+            tail_parts.push(name);
+        }
+        match ancestor.parent() {
+            Some(parent) if parent != ancestor => ancestor = parent,
+            _ => return resolved.to_path_buf(),
+        }
+    }
 }
 
 /// Basic path safety check without requiring a base directory.

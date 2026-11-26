@@ -47,6 +47,39 @@ impl CustomTunnel {
     }
 }
 
+impl CustomTunnel {
+    /// When a URL pattern is configured, read the child's stdout for up to 15
+    /// seconds and return the first URL that matches it, if any.
+    async fn scan_for_public_url(&self, child: &mut tokio::process::Child) -> Option<String> {
+        self.url_pattern.as_ref()?;
+        let stdout = child.stdout.take()?;
+        let mut reader = tokio::io::BufReader::new(stdout).lines();
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
+
+        while tokio::time::Instant::now() < deadline {
+            let line =
+                tokio::time::timeout(tokio::time::Duration::from_secs(3), reader.next_line()).await;
+
+            match line {
+                Ok(Ok(Some(l))) => {
+                    tracing::debug!("custom-tunnel: {l}");
+                    let matching = extract_url(&l).filter(|url| {
+                        self.url_pattern
+                            .as_ref()
+                            .is_none_or(|pat| url.contains(pat.as_str()))
+                    });
+                    if matching.is_some() {
+                        return matching;
+                    }
+                }
+                Ok(Ok(None) | Err(_)) => break,
+                Err(_) => {}
+            }
+        }
+        None
+    }
+}
+
 impl NativeTunnel for CustomTunnel {
     fn name(&self) -> &str {
         "custom"
@@ -72,35 +105,8 @@ impl NativeTunnel for CustomTunnel {
 
         let mut public_url = format!("http://{local_host}:{local_port}");
 
-        if self.url_pattern.is_some()
-            && let Some(stdout) = child.stdout.take()
-        {
-            let mut reader = tokio::io::BufReader::new(stdout).lines();
-            let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
-
-            while tokio::time::Instant::now() < deadline {
-                let line =
-                    tokio::time::timeout(tokio::time::Duration::from_secs(3), reader.next_line())
-                        .await;
-
-                match line {
-                    Ok(Ok(Some(l))) => {
-                        tracing::debug!("custom-tunnel: {l}");
-                        if let Some(url) = extract_url(&l) {
-                            let matches_pattern = self
-                                .url_pattern
-                                .as_ref()
-                                .is_none_or(|pat| url.contains(pat.as_str()));
-                            if matches_pattern {
-                                public_url = url;
-                                break;
-                            }
-                        }
-                    }
-                    Ok(Ok(None) | Err(_)) => break,
-                    Err(_) => {}
-                }
-            }
+        if let Some(url) = self.scan_for_public_url(&mut child).await {
+            public_url = url;
         }
 
         if let Ok(mut guard) = self.url.write() {

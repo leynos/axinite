@@ -5,6 +5,7 @@ use crate::secrets::CreateSecretParams;
 
 use super::ExtensionManager;
 use super::SetupResult;
+use super::telegram_validation::validate_telegram_token_if_submitted;
 
 impl ExtensionManager {
     /// Get the setup schema for an extension (secret fields and their status).
@@ -103,30 +104,34 @@ impl ExtensionManager {
 
         let allowed = self.allowed_setup_secret_names(name, kind).await?;
 
-        // For Telegram, validate the bot token against the API before storing it.
-        // This catches bad tokens immediately (both on first setup and reconfigure),
-        // before the channel activates and potentially shows as active with a bad token.
-        if name == "telegram"
-            && let Some(token_value) = secrets.get("telegram_bot_token")
-        {
-            validate_telegram_bot_token(token_value.trim()).await?;
-        }
+        validate_telegram_token_if_submitted(name, secrets).await?;
 
-        self.store_submitted_secrets(name, &allowed, secrets)
+        self.store_and_complete_secrets(name, kind, &allowed, secrets)
             .await?;
+
+        // For tools, save and attempt auto-activation, then check auth.
+        // Otherwise try to hot-activate the channel now that secrets are saved.
+        Ok(match kind {
+            ExtensionKind::WasmTool => self.finish_tool_setup(name).await,
+            _ => self.finish_channel_setup(name).await,
+        })
+    }
+
+    /// Store the submitted secrets, then auto-generate the missing ones (channels only).
+    async fn store_and_complete_secrets(
+        &self,
+        name: &str,
+        kind: ExtensionKind,
+        allowed: &std::collections::HashSet<String>,
+        secrets: &std::collections::HashMap<String, String>,
+    ) -> Result<(), ExtensionError> {
+        self.store_submitted_secrets(name, allowed, secrets).await?;
 
         // Auto-generate any missing secrets (channel-only feature)
         if kind == ExtensionKind::WasmChannel {
             self.auto_generate_channel_secrets(name, secrets).await?;
         }
-
-        // For tools, save and attempt auto-activation, then check auth.
-        if kind == ExtensionKind::WasmTool {
-            return Ok(self.finish_tool_setup(name).await);
-        }
-
-        // Try to hot-activate the channel now that secrets are saved
-        Ok(self.finish_channel_setup(name).await)
+        Ok(())
     }
 
     /// Load the secret names an extension's capabilities file allows it to receive.
@@ -357,28 +362,4 @@ impl ExtensionManager {
             }
         }
     }
-}
-
-/// Check a Telegram bot token against the API; an empty token is accepted unchecked.
-async fn validate_telegram_bot_token(token: &str) -> Result<(), ExtensionError> {
-    if token.is_empty() {
-        return Ok(());
-    }
-    let encoded_token = url::form_urlencoded::byte_serialize(token.as_bytes()).collect::<String>();
-    let url = format!("https://api.telegram.org/bot{}/getMe", encoded_token);
-    let resp = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| ExtensionError::Other(e.to_string()))?
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| ExtensionError::Other(format!("Failed to validate bot token: {}", e)))?;
-    if !resp.status().is_success() {
-        return Err(ExtensionError::Other(format!(
-            "Invalid bot token (Telegram API returned {})",
-            resp.status()
-        )));
-    }
-    Ok(())
 }

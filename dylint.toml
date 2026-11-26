@@ -7,13 +7,13 @@
 # `macro_aware_cognitive_complexity` gates cognitive complexity. It skips
 # branching a macro generated and is experimental, so the suite loads it only
 # on request. The tracker is https://github.com/leynos/whitaker/issues/504.
-# `max_complexity` is a ratchet: it holds the current maximum finding and falls
-# as functions are refactored, until it reaches CodeScene's ceiling of 9.
+# `max_complexity` was a ratchet that fell as functions were refactored; it now
+# sits at CodeScene's ceiling of 9, so no function may score higher.
 [whitaker]
 experimental = ["macro_aware_cognitive_complexity"]
 
 [macro_aware_cognitive_complexity]
-max_complexity = 10
+max_complexity = 9
 
 [no_std_fs_operations]
 excluded_crates = [

@@ -265,6 +265,23 @@ impl super::LiveWasmChannelActivation {
         }
     }
 
+    /// Refresh the signature key and HMAC secret, for whichever the channel declares.
+    async fn refresh_optional_secrets(
+        &self,
+        router: &Arc<crate::channels::wasm::WasmChannelRouter>,
+        name: &str,
+        sig_key_secret_name: Option<&SigKeySecretName>,
+        hmac_secret_name: Option<&HmacSecretName>,
+    ) {
+        if let Some(sig) = sig_key_secret_name {
+            self.refresh_sig_key(router, name, sig.as_ref()).await;
+        }
+
+        if let Some(hmac) = hmac_secret_name {
+            self.refresh_hmac_secret(router, name, hmac.as_ref()).await;
+        }
+    }
+
     /// Refresh credentials and webhook secret on an already-active channel.
     ///
     /// Called when the user saves new secrets via the setup form for a channel
@@ -289,13 +306,13 @@ impl super::LiveWasmChannelActivation {
         self.refresh_webhook_secret(&router, &chan, &webhook_secret_name)
             .await;
 
-        if let Some(ref sig) = sig_key_secret_name {
-            self.refresh_sig_key(&router, name, sig.as_ref()).await;
-        }
-
-        if let Some(ref hmac) = hmac_secret_name {
-            self.refresh_hmac_secret(&router, name, hmac.as_ref()).await;
-        }
+        self.refresh_optional_secrets(
+            &router,
+            name,
+            sig_key_secret_name.as_ref(),
+            hmac_secret_name.as_ref(),
+        )
+        .await;
 
         self.activation_errors.write().await.remove(name);
         self.broadcast_extension_status(name, "active", None).await;

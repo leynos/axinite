@@ -78,39 +78,9 @@ impl Scheduler {
         // Apply metadata and token budget in a single atomic update.
         // This prevents concurrent workers from observing partial state.
         // Cap user-supplied max_tokens at the configured limit (Issue #815).
-        let user_max_tokens = metadata
-            .as_ref()
-            .and_then(|m| m.get("max_tokens"))
-            .and_then(|v| v.as_u64());
-
-        let max_tokens = user_max_tokens
-            .map(|user_val| {
-                if self.config.max_tokens_per_job == 0 {
-                    // Config is "unlimited": use the user-supplied value directly.
-                    user_val
-                } else {
-                    std::cmp::min(user_val, self.config.max_tokens_per_job)
-                }
-            })
-            .unwrap_or(self.config.max_tokens_per_job);
-
-        // Apply both metadata and token budget in one closure (Issue #813: atomic update)
-        if let Some(meta) = metadata {
-            self.context_manager
-                .update_context(job_id, |ctx| {
-                    ctx.metadata = meta;
-                    if max_tokens > 0 {
-                        ctx.max_tokens = max_tokens;
-                    }
-                })
-                .await?;
-        } else if max_tokens > 0 {
-            self.context_manager
-                .update_context(job_id, |ctx| {
-                    ctx.max_tokens = max_tokens;
-                })
-                .await?;
-        }
+        let max_tokens = self.capped_max_tokens(metadata.as_ref());
+        self.apply_metadata_and_budget(job_id, metadata, max_tokens)
+            .await?;
 
         // Persist to DB before scheduling so the worker's FK references are valid
         if let Some(ref store) = self.store {
@@ -123,6 +93,45 @@ impl Scheduler {
 
         self.schedule_with_context(job_id, approval_context).await?;
         Ok(job_id)
+    }
+
+    /// The job's token budget: the user-supplied `max_tokens`, capped at the configured limit.
+    fn capped_max_tokens(&self, metadata: Option<&serde_json::Value>) -> u64 {
+        let limit = self.config.max_tokens_per_job;
+        metadata
+            .and_then(|m| m.get("max_tokens"))
+            .and_then(|v| v.as_u64())
+            .map(|user_val| {
+                if limit == 0 {
+                    // Config is "unlimited": use the user-supplied value directly.
+                    user_val
+                } else {
+                    std::cmp::min(user_val, limit)
+                }
+            })
+            .unwrap_or(limit)
+    }
+
+    /// Apply metadata and token budget in one closure (Issue #813: atomic update).
+    async fn apply_metadata_and_budget(
+        &self,
+        job_id: Uuid,
+        metadata: Option<serde_json::Value>,
+        max_tokens: u64,
+    ) -> Result<(), JobError> {
+        if metadata.is_none() && max_tokens == 0 {
+            return Ok(());
+        }
+        self.context_manager
+            .update_context(job_id, |ctx| {
+                if let Some(meta) = metadata {
+                    ctx.metadata = meta;
+                }
+                if max_tokens > 0 {
+                    ctx.max_tokens = max_tokens;
+                }
+            })
+            .await
     }
 
     /// Schedule a job for execution.

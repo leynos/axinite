@@ -80,6 +80,27 @@ fn extract_utf8(data: &[u8]) -> Result<String, String> {
     }
 }
 
+/// Consume characters while `keep` holds, returning them.
+fn take_while_peek(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    keep: impl Fn(char) -> bool,
+) -> String {
+    let mut taken = String::new();
+    while let Some(next) = chars.next_if(|&c| keep(c)) {
+        taken.push(next);
+    }
+    taken
+}
+
+/// Read the control word after a backslash, skipping its numeric parameter and
+/// one trailing space; returns the word.
+fn read_rtf_control_word(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let word = take_while_peek(chars, |c| c.is_ascii_alphabetic());
+    take_while_peek(chars, |c| c.is_ascii_digit() || c == '-');
+    chars.next_if_eq(&' ');
+    word
+}
+
 fn extract_rtf(data: &[u8]) -> Result<String, String> {
     // Basic RTF text extraction: strip control words and groups
     let text = String::from_utf8_lossy(data);
@@ -92,29 +113,8 @@ fn extract_rtf(data: &[u8]) -> Result<String, String> {
             '{' => depth += 1,
             '}' => depth = (depth - 1).max(0),
             '\\' => {
-                // Skip control word
-                let mut word = String::new();
-                while let Some(&next) = chars.peek() {
-                    if next.is_ascii_alphabetic() {
-                        word.push(chars.next().unwrap());
-                    } else {
-                        break;
-                    }
-                }
-                // Skip optional numeric parameter
-                while let Some(&next) = chars.peek() {
-                    if next.is_ascii_digit() || next == '-' {
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                // Consume trailing space
-                if let Some(&' ') = chars.peek() {
-                    chars.next();
-                }
                 // Convert common control words to text
-                match word.as_str() {
+                match read_rtf_control_word(&mut chars).as_str() {
                     "par" | "line" => result.push('\n'),
                     "tab" => result.push('\t'),
                     _ => {}
