@@ -20,16 +20,13 @@
 mod common;
 mod formatting;
 mod input;
+mod reader;
 mod status_output;
 #[cfg(test)]
 mod tests;
-use std::io::IsTerminal;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use rustyline::config::Config;
-use rustyline::error::ReadlineError;
-use rustyline::{CompletionType, Editor, EventHandler, KeyCode, KeyEvent, Modifiers};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -39,8 +36,8 @@ use crate::channels::{
 };
 use crate::error::ChannelError;
 
-use formatting::{make_skin, print_help};
-use input::{EscInterruptHandler, ReplHelper};
+use formatting::make_skin;
+use reader::ReplReader;
 use status_output::dispatch_status_update;
 
 /// REPL channel with line editing and markdown rendering.
@@ -105,154 +102,14 @@ impl NativeChannel for ReplChannel {
     async fn start(&self) -> Result<MessageStream, ChannelError> {
         let (tx, rx) = mpsc::channel(32);
         let single_message = self.single_message.clone();
-        let debug_mode = Arc::clone(&self.debug_mode);
-        let suppress_banner = Arc::clone(&self.suppress_banner);
-        let esc_interrupt_triggered_for_thread = Arc::new(AtomicBool::new(false));
+        let reader = ReplReader {
+            tx,
+            debug_mode: Arc::clone(&self.debug_mode),
+            suppress_banner: Arc::clone(&self.suppress_banner),
+            esc_interrupt_triggered: Arc::new(AtomicBool::new(false)),
+        };
 
-        std::thread::spawn(move || {
-            let sys_tz = crate::timezone::detect_system_timezone().name().to_string();
-
-            // Single message mode: send it and return
-            if let Some(msg) = single_message {
-                let incoming = IncomingMessage::new("repl", "default", &msg).with_timezone(&sys_tz);
-                let _ = tx.blocking_send(incoming);
-                // Ensure the agent exits after handling exactly one turn in -m mode,
-                // even when other channels (gateway/http) are enabled.
-                let _ = tx.blocking_send(IncomingMessage::new("repl", "default", "/quit"));
-                return;
-            }
-
-            // Set up rustyline
-            //
-            // `history_ignore_dups` returns `Result` (it validates the
-            // underlying config value), while the remaining builder methods
-            // and `.build()` are infallible.
-            let config = match Config::builder().history_ignore_dups(true) {
-                Ok(b) => b
-                    .auto_add_history(true)
-                    .completion_type(CompletionType::List)
-                    .build(),
-                Err(e) => {
-                    eprintln!("Failed to configure line editor: {e}");
-                    return;
-                }
-            };
-
-            let mut rl = match Editor::with_config(config) {
-                Ok(editor) => editor,
-                Err(e) => {
-                    eprintln!("Failed to initialize line editor: {e}");
-                    return;
-                }
-            };
-
-            rl.set_helper(Some(ReplHelper));
-
-            rl.bind_sequence(
-                KeyEvent(KeyCode::Esc, Modifiers::NONE),
-                EventHandler::Conditional(Box::new(EscInterruptHandler {
-                    triggered: Arc::clone(&esc_interrupt_triggered_for_thread),
-                })),
-            );
-
-            // Load history
-            let hist_path = history_path();
-            if let Some(parent) = hist_path.parent() {
-                let _ = ambient_fs::create_dir_all(parent);
-            }
-            let _ = rl.load_history(&hist_path);
-
-            if !suppress_banner.load(Ordering::Relaxed) {
-                println!("\x1b[1mAxinite\x1b[0m  /help for commands, /quit to exit");
-                println!();
-            }
-
-            loop {
-                let prompt = if debug_mode.load(Ordering::Relaxed) {
-                    "\x1b[33m[debug]\x1b[0m \x1b[1;36m\u{203A}\x1b[0m "
-                } else {
-                    "\x1b[1;36m\u{203A}\x1b[0m "
-                };
-
-                match rl.readline(prompt) {
-                    Ok(line) => {
-                        let line = line.trim();
-                        if line.is_empty() {
-                            continue;
-                        }
-
-                        // Handle local REPL commands (only commands that need
-                        // immediate local handling stay here)
-                        match line.to_lowercase().as_str() {
-                            "/quit" | "/exit" => {
-                                // Forward shutdown command so the agent loop exits even
-                                // when other channels (e.g. web gateway) are still active.
-                                let msg = IncomingMessage::new("repl", "default", "/quit")
-                                    .with_timezone(&sys_tz);
-                                let _ = tx.blocking_send(msg);
-                                break;
-                            }
-                            "/help" => {
-                                print_help();
-                                continue;
-                            }
-                            "/debug" => {
-                                let current = debug_mode.load(Ordering::Relaxed);
-                                debug_mode.store(!current, Ordering::Relaxed);
-                                if !current {
-                                    println!("\x1b[90mdebug mode on\x1b[0m");
-                                } else {
-                                    println!("\x1b[90mdebug mode off\x1b[0m");
-                                }
-                                continue;
-                            }
-                            _ => {}
-                        }
-
-                        let msg =
-                            IncomingMessage::new("repl", "default", line).with_timezone(&sys_tz);
-                        if tx.blocking_send(msg).is_err() {
-                            break;
-                        }
-                    }
-                    Err(ReadlineError::Interrupted) => {
-                        if esc_interrupt_triggered_for_thread.swap(false, Ordering::Relaxed) {
-                            // Esc: interrupt current operation and keep REPL open.
-                            let msg = IncomingMessage::new("repl", "default", "/interrupt")
-                                .with_timezone(&sys_tz);
-                            if tx.blocking_send(msg).is_err() {
-                                break;
-                            }
-                        } else {
-                            // Ctrl+C (VINTR): request graceful shutdown.
-                            let msg = IncomingMessage::new("repl", "default", "/quit")
-                                .with_timezone(&sys_tz);
-                            let _ = tx.blocking_send(msg);
-                            break;
-                        }
-                    }
-                    Err(ReadlineError::Eof) => {
-                        // Ctrl+D in interactive mode: graceful shutdown.
-                        // In daemon mode (stdin = /dev/null, no TTY), EOF arrives
-                        // immediately — just drop the REPL thread silently so other
-                        // channels (gateway, telegram, …) keep running.
-                        if std::io::stdin().is_terminal() {
-                            let msg = IncomingMessage::new("repl", "default", "/quit")
-                                .with_timezone(&sys_tz);
-                            let _ = tx.blocking_send(msg);
-                        }
-                        break;
-                    }
-                    Err(e) => {
-                        eprintln!("Input error: {e}");
-                        break;
-                    }
-                }
-            }
-
-            // Save history on exit
-            let _ = rl.save_history(&history_path());
-        });
+        std::thread::spawn(move || reader.run(single_message));
 
         Ok(Box::pin(ReceiverStream::new(rx)))
     }

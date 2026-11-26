@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::agent::submission::Submission;
 use crate::channels::IncomingMessage;
 use crate::channels::web::server::GatewayState;
-use crate::channels::web::types::{WsClientMessage, WsServerMessage};
+use crate::channels::web::types::{SseEvent, WsClientMessage, WsServerMessage};
 
 /// Tracks active WebSocket connections.
 pub struct WsConnectionTracker {
@@ -91,22 +91,7 @@ pub async fn handle_ws_connection(socket: WebSocket, state: Arc<GatewayState>) {
 
     // Sender task: forward broadcast events + direct messages to WS client
     let sender_handle = tokio::spawn(async move {
-        loop {
-            let msg = tokio::select! {
-                event = event_stream.next() => {
-                    match event {
-                        Some(sse_event) => WsServerMessage::from_sse_event(&sse_event),
-                        None => break, // Broadcast channel closed
-                    }
-                }
-                direct = direct_rx.recv() => {
-                    match direct {
-                        Some(msg) => msg,
-                        None => break, // Direct channel closed
-                    }
-                }
-            };
-
+        while let Some(msg) = next_outbound(&mut event_stream, &mut direct_rx).await {
             let json = match serde_json::to_string(&msg) {
                 Ok(j) => j,
                 Err(_) => continue,
@@ -121,25 +106,11 @@ pub async fn handle_ws_connection(socket: WebSocket, state: Arc<GatewayState>) {
     // Receiver task: read client frames and route to agent
     let user_id = state.user_id.clone();
     while let Some(Ok(frame)) = ws_stream.next().await {
-        match frame {
-            Message::Text(text) => {
-                let parsed: Result<WsClientMessage, _> = serde_json::from_str(&text);
-                match parsed {
-                    Ok(client_msg) => {
-                        handle_client_message(client_msg, &state, &user_id, &direct_tx).await;
-                    }
-                    Err(e) => {
-                        let _ = direct_tx
-                            .send(WsServerMessage::Error {
-                                message: format!("Invalid message: {}", e),
-                            })
-                            .await;
-                    }
-                }
-            }
-            Message::Close(_) => break,
-            // Ignore binary, ping/pong (axum handles protocol-level pings)
-            _ => {}
+        if handle_frame(frame, &state, &user_id, &direct_tx)
+            .await
+            .is_break()
+        {
+            break;
         }
     }
 
@@ -147,6 +118,52 @@ pub async fn handle_ws_connection(socket: WebSocket, state: Arc<GatewayState>) {
     sender_handle.abort();
     if let Some(ref tracker) = tracker_for_drop {
         tracker.decrement();
+    }
+}
+
+/// Wait for the next message to send to the client: a broadcast event or a
+/// direct message. `None` means either source closed.
+async fn next_outbound<S>(
+    event_stream: &mut S,
+    direct_rx: &mut mpsc::Receiver<WsServerMessage>,
+) -> Option<WsServerMessage>
+where
+    S: futures::Stream<Item = SseEvent> + Unpin,
+{
+    tokio::select! {
+        event = event_stream.next() => {
+            event.map(|sse_event| WsServerMessage::from_sse_event(&sse_event))
+        }
+        direct = direct_rx.recv() => direct,
+    }
+}
+
+/// Route one client frame; `Break` means the client closed the connection.
+async fn handle_frame(
+    frame: Message,
+    state: &GatewayState,
+    user_id: &str,
+    direct_tx: &mpsc::Sender<WsServerMessage>,
+) -> std::ops::ControlFlow<()> {
+    match frame {
+        Message::Text(text) => {
+            match serde_json::from_str::<WsClientMessage>(&text) {
+                Ok(client_msg) => {
+                    handle_client_message(client_msg, state, user_id, direct_tx).await;
+                }
+                Err(e) => {
+                    let _ = direct_tx
+                        .send(WsServerMessage::Error {
+                            message: format!("Invalid message: {}", e),
+                        })
+                        .await;
+                }
+            }
+            std::ops::ControlFlow::Continue(())
+        }
+        Message::Close(_) => std::ops::ControlFlow::Break(()),
+        // Ignore binary, ping/pong (axum handles protocol-level pings)
+        _ => std::ops::ControlFlow::Continue(()),
     }
 }
 

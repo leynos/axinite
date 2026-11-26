@@ -1,15 +1,16 @@
 //! Hook bootstrap helpers for loading bundled, plugin, and workspace hooks.
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+mod capability_files;
+
+use std::path::Path;
 use std::sync::Arc;
 
-use crate::channels::wasm::discover_channels;
+use capability_files::PluginCapabilitySources;
+
 use crate::hooks::bundled::{
     HookBundleConfig, HookRegistrationSummary, register_bundle, register_bundled_hooks,
 };
 use crate::hooks::registry::HookRegistry;
-use crate::tools::wasm::{discover_dev_tools, discover_tools};
 use crate::workspace::Workspace;
 
 /// Summary of hook bootstrap work done at startup.
@@ -83,13 +84,14 @@ async fn register_plugin_bundles(
     dev_loaded_tool_names: &[String],
 ) -> HookRegistrationSummary {
     let mut summary = HookRegistrationSummary::default();
-    let files = collect_plugin_capability_files(
+    let files = PluginCapabilitySources {
         wasm_tools_dir,
         wasm_channels_dir,
         active_tool_names,
         active_channel_names,
         dev_loaded_tool_names,
-    )
+    }
+    .collect()
     .await;
 
     for (source, path) in files {
@@ -125,122 +127,6 @@ pub async fn register_plugin_bundle_from_capabilities_file(
                 errors: 1,
             }
         }
-    }
-}
-
-/// Whether a tool is active and was loaded from the bundled WASM directory
-/// rather than the dev-tools override.
-fn is_active_bundled_tool(
-    active_tools: &HashSet<&str>,
-    dev_loaded_tools: &HashSet<&str>,
-    name: &str,
-) -> bool {
-    active_tools.contains(name) && !dev_loaded_tools.contains(name)
-}
-
-/// Whether a tool is active and was loaded via the dev-tools override.
-fn is_active_dev_tool(
-    active_tools: &HashSet<&str>,
-    dev_loaded_tools: &HashSet<&str>,
-    name: &str,
-) -> bool {
-    active_tools.contains(name) && dev_loaded_tools.contains(name)
-}
-
-async fn collect_plugin_capability_files(
-    wasm_tools_dir: &Path,
-    wasm_channels_dir: &Path,
-    active_tool_names: &[String],
-    active_channel_names: &[String],
-    dev_loaded_tool_names: &[String],
-) -> Vec<(String, PathBuf)> {
-    let mut files: Vec<(String, PathBuf)> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    let active_tools: HashSet<&str> = active_tool_names.iter().map(String::as_str).collect();
-    let active_channels: HashSet<&str> = active_channel_names.iter().map(String::as_str).collect();
-    let dev_loaded_tools: HashSet<&str> =
-        dev_loaded_tool_names.iter().map(String::as_str).collect();
-
-    if wasm_tools_dir.exists() {
-        match discover_tools(wasm_tools_dir).await {
-            Ok(tools) => {
-                for (name, tool) in tools {
-                    if let Some(path) = tool.capabilities_path
-                        && is_active_bundled_tool(&active_tools, &dev_loaded_tools, name.as_str())
-                    {
-                        insert_unique(&mut files, &mut seen, format!("plugin.tool:{}", name), path);
-                    }
-                }
-            }
-            Err(err) => {
-                tracing::warn!(
-                    path = %wasm_tools_dir.display(),
-                    error = %err,
-                    "Failed to discover WASM tool capabilities for plugin hooks"
-                );
-            }
-        }
-    }
-
-    match discover_dev_tools().await {
-        Ok(dev_tools) => {
-            for (name, tool) in dev_tools {
-                if let Some(path) = tool.capabilities_path
-                    && is_active_dev_tool(&active_tools, &dev_loaded_tools, name.as_str())
-                {
-                    insert_unique(
-                        &mut files,
-                        &mut seen,
-                        format!("plugin.dev_tool:{}", name),
-                        path,
-                    );
-                }
-            }
-        }
-        Err(err) => {
-            tracing::debug!(error = %err, "No dev tool capabilities discovered for plugin hooks");
-        }
-    }
-
-    if wasm_channels_dir.exists() {
-        match discover_channels(wasm_channels_dir).await {
-            Ok(channels) => {
-                for (name, channel) in channels {
-                    if let Some(path) = channel.capabilities_path
-                        && active_channels.contains(name.as_str())
-                    {
-                        insert_unique(
-                            &mut files,
-                            &mut seen,
-                            format!("plugin.channel:{}", name),
-                            path,
-                        );
-                    }
-                }
-            }
-            Err(err) => {
-                tracing::warn!(
-                    path = %wasm_channels_dir.display(),
-                    error = %err,
-                    "Failed to discover WASM channel capabilities for plugin hooks"
-                );
-            }
-        }
-    }
-
-    files.sort_by(|a, b| a.0.cmp(&b.0));
-    files
-}
-
-fn insert_unique(
-    files: &mut Vec<(String, PathBuf)>,
-    seen: &mut HashSet<String>,
-    source: String,
-    path: PathBuf,
-) {
-    let key = path.to_string_lossy().to_string();
-    if seen.insert(key) {
-        files.push((source, path));
     }
 }
 

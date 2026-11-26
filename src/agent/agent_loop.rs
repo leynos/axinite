@@ -202,10 +202,23 @@ impl Agent {
         // Extract engine ref for use in message loop
         let routine_engine_for_loop = routine.as_ref().map(|r| Arc::clone(&r.engine));
 
-        // Main message loop
         tracing::debug!("Agent {} ready and listening", self.config.name);
+        self.run_message_loop(&mut message_stream, routine_engine_for_loop.as_deref())
+            .await;
 
-        while let Some(mut message) = next_message(&mut message_stream).await {
+        tracing::debug!("Agent shutting down...");
+        self.stop_background_tasks(self_repair, pruning_handle, heartbeat_handle, routine)
+            .await;
+        self.shutdown_channels().await
+    }
+
+    /// Handle messages until the stream ends, Ctrl+C arrives or a shutdown command breaks the loop.
+    async fn run_message_loop(
+        &self,
+        message_stream: &mut crate::channels::MessageStream,
+        routine_engine: Option<&crate::agent::routine_engine::RoutineEngine>,
+    ) {
+        while let Some(mut message) = next_message(message_stream).await {
             self.preprocess_message(&mut message).await;
 
             if self.respond_to_message(&message).await.is_break() {
@@ -213,19 +226,17 @@ impl Agent {
             }
 
             // Check event triggers (cheap in-memory regex, fires async if matched)
-            fire_event_triggers(routine_engine_for_loop.as_deref(), &message).await;
+            fire_event_triggers(routine_engine, &message).await;
         }
+    }
 
-        // Cleanup
-        tracing::debug!("Agent shutting down...");
-        self.stop_background_tasks(self_repair, pruning_handle, heartbeat_handle, routine)
-            .await;
+    /// Clear the routine engine slot, stop all scheduled jobs and shut the channels down.
+    async fn shutdown_channels(&self) -> Result<(), Error> {
         if let Some(ref slot) = self.routine_engine_slot {
             *slot.write().await = None;
         }
         self.scheduler.stop_all().await;
         self.channels.shutdown_all().await?;
-
         Ok(())
     }
 

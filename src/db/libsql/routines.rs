@@ -1,5 +1,7 @@
 //! Routine-related RoutineStore implementation for LibSqlBackend.
 
+#[path = "routines/due_cron.rs"]
+mod due_cron;
 #[path = "routines/mapping.rs"]
 mod mapping;
 #[path = "routines/routine_runs.rs"]
@@ -9,7 +11,7 @@ use chrono::Utc;
 use libsql::params;
 use uuid::Uuid;
 
-use super::{LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, get_text, opt_text, opt_text_owned};
+use super::{LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, opt_text, opt_text_owned};
 use crate::agent::routine::{Routine, RoutineRun};
 use crate::db::{NativeRoutineStore, RoutineRunCompletion, RoutineRuntimeUpdate};
 use crate::error::DatabaseError;
@@ -199,56 +201,7 @@ impl NativeRoutineStore for LibSqlBackend {
         conn.execute("BEGIN IMMEDIATE", params![])
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
-        let result: Result<Vec<Routine>, DatabaseError> = async {
-            let mut id_rows = conn
-                .query(
-                    "SELECT id FROM routines WHERE enabled = 1 AND trigger_type = 'cron' AND next_fire_at IS NOT NULL AND next_fire_at <= ?1",
-                    params![now],
-                )
-                .await
-                .map_err(|e| DatabaseError::Query(e.to_string()))?;
-            let mut due_ids = Vec::new();
-            while let Some(row) = id_rows
-                .next()
-                .await
-                .map_err(|e| DatabaseError::Query(e.to_string()))?
-            {
-                due_ids.push(get_text(&row, 0));
-            }
-
-            let mut routines = Vec::new();
-            for due_id in due_ids {
-                let mut rows = conn
-                    .query(
-                        &format!(
-                            "SELECT {} FROM routines WHERE id = ?1",
-                            mapping::ROUTINE_COLUMNS
-                        ),
-                        params![due_id.clone()],
-                    )
-                    .await
-                    .map_err(|e| DatabaseError::Query(e.to_string()))?;
-                let row = rows
-                    .next()
-                    .await
-                    .map_err(|e| DatabaseError::Query(e.to_string()))?
-                    .ok_or_else(|| {
-                        DatabaseError::Query(format!(
-                            "due routine disappeared before it could be claimed: {due_id}"
-                        ))
-                    })?;
-                let routine = mapping::row_to_routine_libsql(&row)?;
-                conn.execute(
-                    "UPDATE routines SET next_fire_at = ?2, updated_at = ?3 WHERE id = ?1",
-                    params![routine.id.to_string(), lease_until.clone(), fmt_ts(&Utc::now())],
-                )
-                .await
-                .map_err(|e| DatabaseError::Query(e.to_string()))?;
-                routines.push(routine);
-            }
-            Ok(routines)
-        }
-        .await;
+        let result = due_cron::claim_due_cron_routines(&conn, &now, &lease_until).await;
 
         match &result {
             Ok(_) => {

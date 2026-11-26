@@ -1,7 +1,7 @@
 //! `WasmToolWrapper` behaviour: builder methods, store configuration,
 //! synchronous execution, and the `NativeTool` trait implementation.
 
-use super::credentials::resolve_host_credentials;
+use super::host_credentials::resolve_host_credentials;
 use super::store::{ResolvedHostCredential, StoreData};
 use super::*;
 

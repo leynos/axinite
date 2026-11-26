@@ -194,54 +194,92 @@ async fn register_channel(
         )
         .await;
 
-    // Register Ed25519 signature key if declared in capabilities.
-    if let Some(key_secret) =
-        resolve_declared_secret(request.secrets_store, sig_key_secret_name.as_deref()).await
+    register_signature_key_if_declared(
+        wasm_router,
+        request,
+        &channel_name,
+        sig_key_secret_name.as_deref(),
+    )
+    .await;
+    register_hmac_secret_if_declared(
+        wasm_router,
+        request,
+        &channel_name,
+        hmac_secret_name.as_deref(),
+    )
+    .await;
+    inject_credentials(&channel_arc, request, &channel_name).await;
+
+    (channel_name, channel_arc)
+}
+
+/// Register the Ed25519 signature key with the router if capabilities declare one.
+async fn register_signature_key_if_declared(
+    wasm_router: &Arc<WasmChannelRouter>,
+    request: &WasmChannelSetupRequest<'_>,
+    channel_name: &str,
+    declared_secret_name: Option<&str>,
+) {
+    let Some(key_secret) =
+        resolve_declared_secret(request.secrets_store, declared_secret_name).await
+    else {
+        return;
+    };
+    match wasm_router
+        .register_signature_key(channel_name, key_secret.expose())
+        .await
     {
-        match wasm_router
-            .register_signature_key(&channel_name, key_secret.expose())
-            .await
-        {
-            Ok(()) => {
-                tracing::info!(channel = %channel_name, "Registered Ed25519 signature key")
-            }
-            Err(e) => {
-                tracing::error!(channel = %channel_name, error = %e, "Invalid signature key in secrets store")
-            }
+        Ok(()) => {
+            tracing::info!(channel = %channel_name, "Registered Ed25519 signature key")
+        }
+        Err(e) => {
+            tracing::error!(channel = %channel_name, error = %e, "Invalid signature key in secrets store")
         }
     }
+}
 
-    // Register HMAC signing secret if declared in capabilities.
-    if let Some(secret) =
-        resolve_declared_secret(request.secrets_store, hmac_secret_name.as_deref()).await
-    {
-        wasm_router
-            .register_hmac_secret(&channel_name, secret.expose())
-            .await;
-        tracing::info!(channel = %channel_name, "Registered HMAC signing secret");
-    }
+/// Register the HMAC signing secret with the router if capabilities declare one.
+async fn register_hmac_secret_if_declared(
+    wasm_router: &Arc<WasmChannelRouter>,
+    request: &WasmChannelSetupRequest<'_>,
+    channel_name: &str,
+    declared_secret_name: Option<&str>,
+) {
+    let Some(secret) = resolve_declared_secret(request.secrets_store, declared_secret_name).await
+    else {
+        return;
+    };
+    wasm_router
+        .register_hmac_secret(channel_name, secret.expose())
+        .await;
+    tracing::info!(channel = %channel_name, "Registered HMAC signing secret");
+}
 
-    // Inject credentials from secrets store / environment.
+/// Inject credentials from the secrets store / environment, logging the outcome.
+async fn inject_credentials(
+    channel: &Arc<WasmChannel>,
+    request: &WasmChannelSetupRequest<'_>,
+    channel_name: &str,
+) {
     match inject_channel_credentials_from_context(
-        &channel_arc,
+        channel,
         request
             .secrets_store
             .as_ref()
             .map(|s| s.as_ref() as &dyn SecretsStore),
-        &channel_name,
+        channel_name,
         request.env_context,
     )
     .await
     {
-        Ok(count) => {
-            if count > 0 {
-                tracing::info!(
-                    channel = %channel_name,
-                    credentials_injected = count,
-                    "Channel credentials injected"
-                );
-            }
+        Ok(count) if count > 0 => {
+            tracing::info!(
+                channel = %channel_name,
+                credentials_injected = count,
+                "Channel credentials injected"
+            );
         }
+        Ok(_) => {}
         Err(e) => {
             tracing::error!(
                 channel = %channel_name,
@@ -250,8 +288,6 @@ async fn register_channel(
             );
         }
     }
-
-    (channel_name, channel_arc)
 }
 
 fn runtime_config_updates(

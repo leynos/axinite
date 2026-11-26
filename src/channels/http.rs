@@ -20,6 +20,7 @@ use crate::channels::{IncomingMessage, MessageStream, NativeChannel, OutgoingRes
 use crate::config::HttpConfig;
 use crate::error::ChannelError;
 
+mod attachments;
 mod handlers;
 
 use handlers::{health_handler, webhook_handler};
