@@ -223,7 +223,7 @@ impl CallbackBudget {
     }
 }
 
-/// The encoded size of a value, saturating so a serialisation failure is
+/// The encoded size of a value, saturating so a serialization failure is
 /// charged as the whole budget rather than silently free.
 fn encoded_size<T: serde::Serialize>(value: &T) -> u64 {
     serde_json::to_vec(value)

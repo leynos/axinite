@@ -147,7 +147,7 @@ impl Agent {
             .await;
 
         let tool_ref = self.tools().get(&pending.tool_name).await;
-        // Sanitise before the display sink: the tool's own message can quote
+        // Sanitize before the display sink: the tool's own message can quote
         // the data it was given.
         let sanitized = match &tool_result {
             Ok(output) => Ok(output.clone()),

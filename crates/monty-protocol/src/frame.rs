@@ -56,7 +56,7 @@ pub enum FrameError {
 
 /// A writer that refuses to grow past a ceiling.
 ///
-/// Serialising first and checking afterwards would let one message allocate
+/// Serializing first and checking afterwards would let one message allocate
 /// far beyond the frame limit before it was refused. Writing through this
 /// wrapper bounds the allocation at the point it happens.
 struct BoundedWriter {
