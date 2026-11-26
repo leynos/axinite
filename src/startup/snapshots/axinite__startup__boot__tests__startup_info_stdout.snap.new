@@ -1,6 +1,0 @@
----
-source: src/startup/boot.rs
-assertion_line: 197
-expression: output
----
-
