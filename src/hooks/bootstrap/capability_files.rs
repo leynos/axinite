@@ -70,6 +70,23 @@ impl CapabilityFiles {
         }
     }
 
+    /// Add each discovered (name, capabilities path) pair whose name is
+    /// active, recording it as `<source_prefix>:<name>`.
+    fn add_discovered(
+        &mut self,
+        source_prefix: &str,
+        discovered: impl IntoIterator<Item = (String, Option<PathBuf>)>,
+        is_active: impl Fn(&str) -> bool,
+    ) {
+        for (name, path) in discovered {
+            if let Some(path) = path
+                && is_active(name.as_str())
+            {
+                self.insert_unique(format!("{source_prefix}:{name}"), path);
+            }
+        }
+    }
+
     /// Add the capability files of active bundled WASM tools.
     async fn add_bundled_tools(
         &mut self,
@@ -81,15 +98,13 @@ impl CapabilityFiles {
             return;
         }
         match discover_tools(wasm_tools_dir).await {
-            Ok(tools) => {
-                for (name, tool) in tools {
-                    if let Some(path) = tool.capabilities_path
-                        && is_active_bundled_tool(active_tools, dev_loaded_tools, name.as_str())
-                    {
-                        self.insert_unique(format!("plugin.tool:{}", name), path);
-                    }
-                }
-            }
+            Ok(tools) => self.add_discovered(
+                "plugin.tool",
+                tools
+                    .into_iter()
+                    .map(|(name, tool)| (name, tool.capabilities_path)),
+                |name| is_active_bundled_tool(active_tools, dev_loaded_tools, name),
+            ),
             Err(err) => {
                 tracing::warn!(
                     path = %wasm_tools_dir.display(),
@@ -107,15 +122,13 @@ impl CapabilityFiles {
         dev_loaded_tools: &HashSet<&str>,
     ) {
         match discover_dev_tools().await {
-            Ok(dev_tools) => {
-                for (name, tool) in dev_tools {
-                    if let Some(path) = tool.capabilities_path
-                        && is_active_dev_tool(active_tools, dev_loaded_tools, name.as_str())
-                    {
-                        self.insert_unique(format!("plugin.dev_tool:{}", name), path);
-                    }
-                }
-            }
+            Ok(dev_tools) => self.add_discovered(
+                "plugin.dev_tool",
+                dev_tools
+                    .into_iter()
+                    .map(|(name, tool)| (name, tool.capabilities_path)),
+                |name| is_active_dev_tool(active_tools, dev_loaded_tools, name),
+            ),
             Err(err) => {
                 tracing::debug!(
                     error = %err,
@@ -131,15 +144,13 @@ impl CapabilityFiles {
             return;
         }
         match discover_channels(wasm_channels_dir).await {
-            Ok(channels) => {
-                for (name, channel) in channels {
-                    if let Some(path) = channel.capabilities_path
-                        && active_channels.contains(name.as_str())
-                    {
-                        self.insert_unique(format!("plugin.channel:{}", name), path);
-                    }
-                }
-            }
+            Ok(channels) => self.add_discovered(
+                "plugin.channel",
+                channels
+                    .into_iter()
+                    .map(|(name, channel)| (name, channel.capabilities_path)),
+                |name| active_channels.contains(name),
+            ),
             Err(err) => {
                 tracing::warn!(
                     path = %wasm_channels_dir.display(),
