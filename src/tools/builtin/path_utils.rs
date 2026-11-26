@@ -58,7 +58,9 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
 
     let path = PathBuf::from(path_str);
 
-    let resolved = resolve_to_absolute(&path, base_dir);
+    let resolved = resolve_to_absolute(&path, base_dir).ok_or_else(|| {
+        ToolError::NotAuthorized(format!("Path has too many symbolic links: {}", path_str))
+    })?;
 
     // If base_dir is set, ensure the resolved path is within it
     if let Some(base) = base_dir {
@@ -66,7 +68,9 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
             .canonicalize()
             .unwrap_or_else(|_| normalize_lexical(base));
 
-        if !canonical_check_path(&resolved).starts_with(&base_canonical) {
+        let inside = canonical_check_path(&resolved)
+            .is_some_and(|checked| checked.starts_with(&base_canonical));
+        if !inside {
             return Err(ToolError::NotAuthorized(format!(
                 "Path escapes sandbox: {}",
                 path_str
@@ -78,50 +82,115 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
 }
 
 /// Resolve `path` to an absolute path: canonical when it exists, otherwise
-/// lexically normalized against `base_dir` or the current directory.
-fn resolve_to_absolute(path: &Path, base_dir: Option<&Path>) -> PathBuf {
-    if path.is_absolute() {
-        return path
-            .canonicalize()
-            .unwrap_or_else(|_| normalize_lexical(path));
-    }
-    match base_dir {
-        Some(base) => {
-            let joined = base.join(path);
-            joined
-                .canonicalize()
-                .unwrap_or_else(|_| normalize_lexical(&joined))
+/// with its symlinks followed component by component ([`resolve_links`]), so a
+/// `..` is never applied before the link in front of it is resolved. Without a
+/// `base_dir` a relative path is lexically normalized against the current
+/// directory. `None` means the links loop or nest too deeply to resolve.
+fn resolve_to_absolute(path: &Path, base_dir: Option<&Path>) -> Option<PathBuf> {
+    let joined = match (path.is_absolute(), base_dir) {
+        (true, _) => path.to_path_buf(),
+        (false, Some(base)) => base.join(path),
+        (false, None) => {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            return Some(normalize_lexical(&cwd.join(path)));
         }
-        None => {
-            let joined = std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(path);
-            normalize_lexical(&joined)
-        }
+    };
+    match joined.canonicalize() {
+        Ok(canonical) => Some(canonical),
+        Err(_) => resolve_links(&joined),
     }
 }
 
 /// The path to compare against the sandbox root.
 ///
-/// For existing paths, canonicalize to resolve symlinks. For non-existent
-/// paths, the lexical normalization already removed all `..` components, so
-/// `starts_with` is reliable: walk up to the nearest existing ancestor,
-/// canonicalize it, then re-append the remaining tail. This handles a symlink
-/// sitting above the new file.
-fn canonical_check_path(resolved: &Path) -> PathBuf {
-    if resolved.exists() {
-        return resolved
-            .canonicalize()
-            .unwrap_or_else(|_| resolved.to_path_buf());
-    }
-    let Some(ancestor) = resolved.ancestors().find(|ancestor| ancestor.exists()) else {
-        return resolved.to_path_buf();
+/// The path is resolved component by component ([`resolve_links`]), so every
+/// symlink, live or dangling, is followed before the next `..` is applied. The
+/// nearest existing prefix of the result is then canonicalized, which keeps
+/// its form (for example a Windows verbatim prefix) consistent with the
+/// canonical sandbox root. `None` means the links loop or nest too deeply to
+/// resolve, which callers treat as an escape.
+fn canonical_check_path(resolved: &Path) -> Option<PathBuf> {
+    let followed = resolve_links(resolved)?;
+    let Some(existing) = followed.ancestors().find(|a| a.exists()) else {
+        return Some(followed);
     };
-    let tail = resolved.strip_prefix(ancestor).unwrap_or(Path::new(""));
-    ancestor
+    let tail = followed.strip_prefix(existing).unwrap_or(Path::new(""));
+    let canonical = existing
         .canonicalize()
-        .unwrap_or_else(|_| ancestor.to_path_buf())
-        .join(tail)
+        .unwrap_or_else(|_| existing.to_path_buf());
+    Some(if tail.as_os_str().is_empty() {
+        canonical
+    } else {
+        canonical.join(tail)
+    })
+}
+
+/// One step of a path being resolved.
+enum Step {
+    /// A root or prefix component: restart from it.
+    Root(PathBuf),
+    /// `..`: drop the last resolved component.
+    Parent,
+    /// A named component, which may be a symlink.
+    Name(std::ffi::OsString),
+}
+
+/// Split `path` into resolution steps, dropping `.`.
+fn steps_of(path: &Path) -> Vec<Step> {
+    use std::path::Component;
+    path.components()
+        .filter_map(|component| match component {
+            Component::Prefix(_) | Component::RootDir => {
+                Some(Step::Root(PathBuf::from(component.as_os_str())))
+            }
+            Component::ParentDir => Some(Step::Parent),
+            Component::Normal(name) => Some(Step::Name(name.to_owned())),
+            Component::CurDir => None,
+        })
+        .collect()
+}
+
+/// Resolve every symlink in `path` in filesystem order, without requiring the
+/// final target (or any later component) to exist.
+///
+/// A symlink's target is spliced in front of the remaining components, so a
+/// `..` is applied only after the component before it has been resolved: the
+/// resolved prefix never contains a link. Returns `None` after 40 link hops,
+/// which covers loops.
+fn resolve_links(path: &Path) -> Option<PathBuf> {
+    const MAX_LINK_HOPS: usize = 40;
+    let mut queue: std::collections::VecDeque<Step> = steps_of(path).into();
+    let mut resolved = PathBuf::new();
+    let mut hops = 0;
+    while let Some(step) = queue.pop_front() {
+        match step {
+            Step::Root(root) => resolved.push(root),
+            Step::Parent => {
+                resolved.pop();
+            }
+            Step::Name(name) => {
+                let candidate = resolved.join(&name);
+                let is_link =
+                    ambient_fs::symlink_metadata(&candidate).is_ok_and(|m| m.is_symlink());
+                if !is_link {
+                    resolved = candidate;
+                    continue;
+                }
+                hops += 1;
+                if hops > MAX_LINK_HOPS {
+                    return None;
+                }
+                let target = ambient_fs::read_link(&candidate).ok()?;
+                if target.is_absolute() {
+                    resolved.clear();
+                }
+                for step in steps_of(&target).into_iter().rev() {
+                    queue.push_front(step);
+                }
+            }
+        }
+    }
+    Some(resolved)
 }
 
 /// Basic path safety check without requiring a base directory.
@@ -245,3 +314,6 @@ mod tests {
         assert!(result.is_ok());
     }
 }
+
+#[cfg(all(test, unix))]
+mod symlink_tests;
