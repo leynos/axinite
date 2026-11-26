@@ -84,6 +84,29 @@ async fn test_apply_patch() {
     assert!(content.contains("println!(\"new\")"));
 }
 
+/// A dangling symlink inside the sandbox that points outside it must not let
+/// `write_file` create the missing target (https://github.com/leynos/axinite/issues/593).
+#[cfg(unix)]
+#[tokio::test]
+async fn test_write_file_rejects_dangling_symlink_to_outside() {
+    let sandbox = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let escape = outside.path().join("created.txt");
+    let link = sandbox.path().join("link.txt");
+    std::os::unix::fs::symlink(&escape, &link).unwrap();
+
+    let tool = WriteFileTool::new().with_base_dir(sandbox.path().to_path_buf());
+    let result = tool
+        .execute(
+            serde_json::json!({"path": link.to_str().unwrap(), "content": "x"}),
+            &JobContext::default(),
+        )
+        .await;
+
+    assert!(result.is_err());
+    assert!(!escape.exists(), "the write followed the link out");
+}
+
 #[tokio::test]
 async fn test_write_file_rejects_workspace_paths() {
     let dir = TempDir::new().unwrap();
