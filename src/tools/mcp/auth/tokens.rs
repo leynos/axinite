@@ -116,6 +116,54 @@ pub async fn is_authenticated(
         .unwrap_or(false)
 }
 
+/// Find the token endpoint: the configured one, else the one the server advertises.
+async fn refresh_token_endpoint(server_config: &McpServerConfig) -> Result<String, AuthError> {
+    // Pre-configured OAuth may name the endpoint; DCR always discovers it.
+    let configured = server_config
+        .oauth
+        .as_ref()
+        .and_then(|oauth| oauth.token_url.clone());
+    match configured {
+        Some(url) => Ok(url),
+        None => Ok(discover_full_oauth_metadata(&server_config.url)
+            .await?
+            .token_endpoint),
+    }
+}
+
+/// POST the refresh grant to `token_url` and parse the token response.
+async fn post_refresh_request(
+    token_url: &str,
+    params: &[(&str, String)],
+) -> Result<TokenResponse, AuthError> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| AuthError::Http(e.to_string()))?;
+
+    let response = client
+        .post(token_url)
+        .form(params)
+        .send()
+        .await
+        .map_err(|e| AuthError::RefreshFailed(e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AuthError::RefreshFailed(format!(
+            "HTTP {} - {}",
+            status, body
+        )));
+    }
+
+    response
+        .json()
+        .await
+        .map_err(|e| AuthError::RefreshFailed(format!("Invalid response: {}", e)))
+}
+
 /// Refresh an access token using the refresh token.
 ///
 /// Works with both pre-configured OAuth and Dynamic Client Registration (DCR).
@@ -134,28 +182,8 @@ pub async fn refresh_access_token(
         .await
         .map_err(|e| AuthError::RefreshFailed(format!("No refresh token: {}", e)))?;
 
-    // Discover the token endpoint
-    let token_url = if let Some(ref oauth) = server_config.oauth {
-        if let Some(ref url) = oauth.token_url {
-            url.clone()
-        } else {
-            // Discover from server
-            let auth_meta = discover_full_oauth_metadata(&server_config.url).await?;
-            auth_meta.token_endpoint
-        }
-    } else {
-        // DCR - always discover
-        let auth_meta = discover_full_oauth_metadata(&server_config.url).await?;
-        auth_meta.token_endpoint
-    };
-
+    let token_url = refresh_token_endpoint(server_config).await?;
     validate_url_safe(&token_url).await?;
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| AuthError::Http(e.to_string()))?;
 
     // Compute canonical resource URI for RFC 8707
     let resource = canonical_resource_uri(&server_config.url);
@@ -167,26 +195,7 @@ pub async fn refresh_access_token(
         ("resource", resource),
     ];
 
-    let response = client
-        .post(&token_url)
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| AuthError::RefreshFailed(e.to_string()))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(AuthError::RefreshFailed(format!(
-            "HTTP {} - {}",
-            status, body
-        )));
-    }
-
-    let token_response: TokenResponse = response
-        .json()
-        .await
-        .map_err(|e| AuthError::RefreshFailed(format!("Invalid response: {}", e)))?;
+    let token_response = post_refresh_request(&token_url, &params).await?;
 
     let token = AccessToken {
         access_token: token_response.access_token,

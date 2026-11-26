@@ -218,6 +218,13 @@ pub fn verify_expects(
         return;
     }
 
+    verify_response_expects(expects, responses, label);
+    verify_tool_expects(expects, started, completed);
+    verify_tool_results(expects, results, label);
+}
+
+/// Verify the response-count and response-text expectations.
+fn verify_response_expects(expects: &TraceExpects, responses: &[String], label: &str) {
     // min_responses
     if let Some(min) = expects.min_responses {
         assert!(
@@ -251,7 +258,10 @@ pub fn verify_expects(
     if let Some(ref pattern) = expects.response_matches {
         assert_response_matches(&joined, pattern);
     }
+}
 
+/// Verify which tools ran, in what order, how often, and whether they succeeded.
+fn verify_tool_expects(expects: &TraceExpects, started: &[String], completed: &[(String, bool)]) {
     // tools_used
     if !expects.tools_used.is_empty() {
         let expected: Vec<&str> = expects.tools_used.iter().map(|s| s.as_str()).collect();
@@ -279,7 +289,10 @@ pub fn verify_expects(
         let expected: Vec<&str> = expects.tools_order.iter().map(|s| s.as_str()).collect();
         assert_tool_order(started, &expected);
     }
+}
 
+/// Verify that each named tool's result preview contains the expected text.
+fn verify_tool_results(expects: &TraceExpects, results: &[(String, String)], label: &str) {
     // tool_results_contain
     for (tool_name, substring) in &expects.tool_results_contain {
         let found = results.iter().find(|(name, _)| name == tool_name);

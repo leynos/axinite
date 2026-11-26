@@ -4,6 +4,7 @@
 //! indexed outcome back into both thread history and the reasoning context.
 
 use crate::agent::dispatcher::delegate::ChatDelegate;
+use crate::agent::dispatcher::{PREVIEW_MAX_CHARS, truncate_for_preview};
 use crate::channels::StatusUpdate;
 use crate::error::Error;
 use crate::llm::{ChatMessage, ReasoningContext};
@@ -155,6 +156,69 @@ pub(super) async fn handle_rejected_tool(
     ));
 }
 
+/// Fold a failed tool call into the context and tell the channel about it.
+async fn report_tool_failure(
+    delegate: &ChatDelegate<'_>,
+    tool: ToolCtx<'_>,
+    error: &Error,
+    reason_ctx: &mut ReasoningContext,
+) {
+    let error_msg = format!("Tool '{}' failed: {}", tool.tc.name, error);
+    let (preview_text, wrapped_text) = sanitize_output(delegate, &tool.tc.name, &error_msg);
+    let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
+    let name = tool.tc.name.clone();
+    fold_into_context(
+        delegate,
+        tool,
+        ToolOutcome {
+            result_content: wrapped_text,
+            is_tool_error: true,
+        },
+        reason_ctx,
+    )
+    .await;
+    if !preview.is_empty() {
+        send_result_preview(delegate, &name, preview).await;
+    }
+}
+
+/// Send a `ToolResult` status update carrying `preview`.
+async fn send_result_preview(delegate: &ChatDelegate<'_>, tool_name: &str, preview: String) {
+    let _ = delegate
+        .agent
+        .channels
+        .send_status(
+            &delegate.message.channel,
+            StatusUpdate::ToolResult {
+                name: tool_name.to_string(),
+                preview,
+            },
+            &delegate.message.metadata,
+        )
+        .await;
+}
+
+/// Sanitize a successful tool output, emitting any image sentinel.
+///
+/// Returns the wrapped content for the model and the preview to show, which is
+/// `None` for image sentinels and empty previews.
+async fn render_tool_output(
+    delegate: &ChatDelegate<'_>,
+    tool_name: &str,
+    output: &str,
+) -> (String, Option<String>) {
+    let is_image_sentinel = maybe_emit_image_sentinel(delegate, tool_name, output).await;
+    let shown = if is_image_sentinel {
+        image_sentinel_summary(output).unwrap_or_else(|| "[Image generated]".to_string())
+    } else {
+        output.to_string()
+    };
+    let (preview_text, wrapped_text) = sanitize_output(delegate, tool_name, &shown);
+    let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
+    let show = !is_image_sentinel && !preview.is_empty();
+    (wrapped_text, show.then_some(preview))
+}
+
 /// Process post-flight for a single runnable tool.
 pub(super) async fn process_runnable_tool(
     delegate: &ChatDelegate<'_>,
@@ -163,71 +227,19 @@ pub(super) async fn process_runnable_tool(
     tool_result: Result<String, Error>,
     reason_ctx: &mut ReasoningContext,
 ) -> Option<String> {
-    use crate::agent::dispatcher::{PREVIEW_MAX_CHARS, truncate_for_preview};
-
     let is_tool_error = tool_result.is_err();
 
     let output = match &tool_result {
         Ok(output) => output,
         Err(e) => {
-            let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
-            let (preview_text, wrapped_text) = sanitize_output(delegate, &tc.name, &error_msg);
-            fold_into_context(
-                delegate,
-                ToolCtx { pf_idx, tc },
-                ToolOutcome {
-                    result_content: wrapped_text,
-                    is_tool_error: true,
-                },
-                reason_ctx,
-            )
-            .await;
-            let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
-            if !preview.is_empty() {
-                let _ = delegate
-                    .agent
-                    .channels
-                    .send_status(
-                        &delegate.message.channel,
-                        StatusUpdate::ToolResult {
-                            name: tc.name.clone(),
-                            preview,
-                        },
-                        &delegate.message.metadata,
-                    )
-                    .await;
-            }
+            report_tool_failure(delegate, ToolCtx { pf_idx, tc }, e, reason_ctx).await;
             return None;
         }
     };
 
-    let is_image_sentinel = maybe_emit_image_sentinel(delegate, &tc.name, output).await;
-    let image_sentinel_summary = image_sentinel_summary(output);
-
-    let (result_content, preview) = if is_image_sentinel {
-        let summary = image_sentinel_summary.unwrap_or_else(|| "[Image generated]".to_string());
-        let (preview_text, wrapped_text) = sanitize_output(delegate, &tc.name, &summary);
-        let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
-        (wrapped_text, preview)
-    } else {
-        let (preview_text, wrapped_text) = sanitize_output(delegate, &tc.name, output);
-        let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
-        (wrapped_text, preview)
-    };
-
-    if !is_image_sentinel && !preview.is_empty() {
-        let _ = delegate
-            .agent
-            .channels
-            .send_status(
-                &delegate.message.channel,
-                StatusUpdate::ToolResult {
-                    name: tc.name.clone(),
-                    preview,
-                },
-                &delegate.message.metadata,
-            )
-            .await;
+    let (result_content, preview) = render_tool_output(delegate, &tc.name, output).await;
+    if let Some(preview) = preview {
+        send_result_preview(delegate, &tc.name, preview).await;
     }
 
     let auth_instructions = handle_auth_barrier(delegate, tc, &tool_result).await;

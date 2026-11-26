@@ -5,7 +5,7 @@
 //! - `<name>.wasm` - The compiled WASM component
 //! - `<name>.capabilities.json` - Channel capabilities and configuration
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::fs;
@@ -221,55 +221,10 @@ impl WasmChannelLoader {
     /// └── telegram.capabilities.json
     /// ```
     pub async fn load_from_dir(&self, dir: &Path) -> Result<LoadResults, WasmChannelError> {
-        match fs::metadata(dir).await.map(ambient_fs::Metadata::from_std) {
-            Ok(meta) if meta.is_dir() => {}
-            Ok(_) => {
-                return Err(WasmChannelError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotADirectory,
-                    format!("{} is not a directory", dir.display()),
-                )));
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(LoadResults::default());
-            }
-            Err(e) => return Err(WasmChannelError::Io(e)),
-        }
-
         let mut results = LoadResults::default();
 
         // Collect all .wasm entries first, then load in parallel
-        let mut channel_entries = Vec::new();
-        // Handle TOCTOU: if read_dir fails with NotFound, treat as empty
-        let mut entries = match fs::read_dir(dir).await {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(LoadResults::default());
-            }
-            Err(e) => return Err(WasmChannelError::Io(e)),
-        };
-
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-
-            if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
-                continue;
-            }
-
-            let name = match path.file_stem().and_then(|s| s.to_str()) {
-                Some(n) => n.to_string(),
-                None => {
-                    results.errors.push((
-                        path.clone(),
-                        WasmChannelError::InvalidName("invalid filename".to_string()),
-                    ));
-                    continue;
-                }
-            };
-
-            let cap_path = path.with_extension("capabilities.json");
-            let has_cap = cap_path.exists();
-            channel_entries.push((name, path, if has_cap { Some(cap_path) } else { None }));
-        }
+        let channel_entries = collect_channel_entries(dir, &mut results).await?;
 
         // Load all channels in parallel (file I/O + WASM compilation)
         let load_futures = channel_entries
@@ -277,23 +232,7 @@ impl WasmChannelLoader {
             .map(|(name, path, cap_path)| self.load_from_files(name, path, cap_path.as_deref()));
 
         let load_results = futures::future::join_all(load_futures).await;
-
-        for ((name, path, _), result) in channel_entries.into_iter().zip(load_results) {
-            match result {
-                Ok(loaded) => {
-                    results.loaded.push(loaded);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        name = name,
-                        path = %path.display(),
-                        error = %e,
-                        "Failed to load WASM channel"
-                    );
-                    results.errors.push((path, e));
-                }
-            }
-        }
+        record_load_outcomes(&mut results, channel_entries, load_results);
 
         if !results.loaded.is_empty() {
             tracing::info!(
@@ -304,6 +243,89 @@ impl WasmChannelLoader {
         }
 
         Ok(results)
+    }
+}
+
+/// A `*.wasm` file with its channel name and optional capabilities sidecar.
+type ChannelEntry = (String, PathBuf, Option<PathBuf>);
+
+/// Check that `dir` is a directory; `Ok(false)` means it does not exist.
+async fn directory_exists(dir: &Path) -> Result<bool, WasmChannelError> {
+    match fs::metadata(dir).await.map(ambient_fs::Metadata::from_std) {
+        Ok(meta) if meta.is_dir() => Ok(true),
+        Ok(_) => Err(WasmChannelError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotADirectory,
+            format!("{} is not a directory", dir.display()),
+        ))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(WasmChannelError::Io(e)),
+    }
+}
+
+/// Resolve one directory entry to a channel entry, if it is a `*.wasm` file.
+fn channel_entry_for(path: PathBuf, results: &mut LoadResults) -> Option<ChannelEntry> {
+    if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
+        return None;
+    }
+    let Some(name) = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+    else {
+        results.errors.push((
+            path.clone(),
+            WasmChannelError::InvalidName("invalid filename".to_string()),
+        ));
+        return None;
+    };
+    let cap_path = path.with_extension("capabilities.json");
+    let cap_path = cap_path.exists().then_some(cap_path);
+    Some((name, path, cap_path))
+}
+
+/// List the channel files in `dir`, recording unusable names in `results`.
+///
+/// A missing directory, including one removed after the existence check,
+/// yields no entries.
+async fn collect_channel_entries(
+    dir: &Path,
+    results: &mut LoadResults,
+) -> Result<Vec<ChannelEntry>, WasmChannelError> {
+    if !directory_exists(dir).await? {
+        return Ok(Vec::new());
+    }
+    // Handle TOCTOU: if read_dir fails with NotFound, treat as empty
+    let mut entries = match fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(WasmChannelError::Io(e)),
+    };
+    let mut channel_entries = Vec::new();
+    while let Some(entry) = entries.next_entry().await? {
+        channel_entries.extend(channel_entry_for(entry.path(), results));
+    }
+    Ok(channel_entries)
+}
+
+/// Sort load outcomes into `results.loaded` and `results.errors`.
+fn record_load_outcomes(
+    results: &mut LoadResults,
+    channel_entries: Vec<ChannelEntry>,
+    load_results: Vec<Result<LoadedChannel, WasmChannelError>>,
+) {
+    for ((name, path, _), result) in channel_entries.into_iter().zip(load_results) {
+        match result {
+            Ok(loaded) => results.loaded.push(loaded),
+            Err(e) => {
+                tracing::error!(
+                    name = name,
+                    path = %path.display(),
+                    error = %e,
+                    "Failed to load WASM channel"
+                );
+                results.errors.push((path, e));
+            }
+        }
     }
 }
 mod discovery;
