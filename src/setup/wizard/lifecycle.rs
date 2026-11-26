@@ -166,6 +166,13 @@ impl SetupWizard {
     async fn run_full(&mut self) -> Result<(), SetupError> {
         let total_steps = 9;
 
+        self.run_full_early_steps(total_steps).await?;
+        self.run_full_model_steps(total_steps).await?;
+        self.run_full_late_steps(total_steps).await
+    }
+
+    /// Steps 1 and 2 of the full wizard: database and security.
+    async fn run_full_early_steps(&mut self, total_steps: usize) -> Result<(), SetupError> {
         // Step 1: Database
         print_step(1, total_steps, "Database Connection");
         self.step_database().await?;
@@ -182,7 +189,11 @@ impl SetupWizard {
         print_step(2, total_steps, "Security");
         self.step_security().await?;
         self.persist_after_step().await;
+        Ok(())
+    }
 
+    /// Steps 3 to 5 of the full wizard: inference provider, model and embeddings.
+    async fn run_full_model_steps(&mut self, total_steps: usize) -> Result<(), SetupError> {
         // Step 3: Inference provider selection (unless skipped)
         if !self.config.skip_auth {
             print_step(3, total_steps, "Inference Provider");
@@ -201,8 +212,7 @@ impl SetupWizard {
         print_step(5, total_steps, "Embeddings (Semantic Search)");
         self.step_embeddings()?;
         self.persist_after_step().await;
-
-        self.run_full_late_steps(total_steps).await
+        Ok(())
     }
 
     /// Steps 6 to 9 of the full wizard: channels, extensions, sandbox and background tasks.

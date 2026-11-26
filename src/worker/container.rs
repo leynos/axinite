@@ -190,17 +190,7 @@ impl WorkerRuntime {
         if let Err(error) = self.hydrate_credentials().await {
             return self.fail_pre_loop("hydrate credentials", error).await;
         }
-        self.toolset_instructions = match self.register_remote_tools().await {
-            Ok(toolset_instructions) => toolset_instructions,
-            Err(error) => {
-                tracing::warn!(
-                    job_id = %self.config.job_id,
-                    error = %error,
-                    "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
-                );
-                Vec::new()
-            }
-        };
+        self.toolset_instructions = self.remote_toolset_instructions_or_empty().await;
         if let Err(error) = self
             .report_worker_status(
                 WorkerState::InProgress,
@@ -212,11 +202,32 @@ impl WorkerRuntime {
             return self.fail_pre_loop("report initial status", error).await;
         }
 
+        self.run_and_report(&job).await
+    }
+
+    /// Fetch the hosted remote-tool catalogue's toolset instructions, falling
+    /// back to none (container-local tools only) when the fetch fails.
+    async fn remote_toolset_instructions_or_empty(&self) -> Vec<String> {
+        match self.register_remote_tools().await {
+            Ok(toolset_instructions) => toolset_instructions,
+            Err(error) => {
+                tracing::warn!(
+                    job_id = %self.config.job_id,
+                    error = %error,
+                    "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// Run the job loop and report how it ended, with the iteration count.
+    async fn run_and_report(
+        &self,
+        job: &crate::worker::api::JobDescription,
+    ) -> Result<(), WorkerError> {
         let iteration_tracker = Arc::new(Mutex::new(0u32));
-        let execution = match self
-            .run_job_loop(&job, Arc::clone(&iteration_tracker))
-            .await
-        {
+        let execution = match self.run_job_loop(job, Arc::clone(&iteration_tracker)).await {
             Ok(Some(outcome)) => WorkerExecutionResult::Outcome(outcome),
             Ok(None) => WorkerExecutionResult::TimedOut,
             Err(error) => WorkerExecutionResult::Failed(error),

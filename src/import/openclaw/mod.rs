@@ -6,7 +6,7 @@ pub mod memory;
 pub mod reader;
 pub mod settings;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::EnvContext;
@@ -186,22 +186,14 @@ impl OpenClawImporter {
         let agent_dbs = reader.list_agent_dbs()?;
 
         // Pre-read all conversation data to validate before writing
-        let mut all_conversations = Vec::new();
-        for (_agent_name, db_path) in &agent_dbs {
-            match reader.read_conversations(db_path) {
-                Ok(convs) => all_conversations.extend(convs),
-                Err(e) => tracing::warn!("Failed to read conversations: {}", e),
-            }
-        }
+        let all_conversations = read_all(&agent_dbs, "conversations", |path| {
+            reader.read_conversations(path)
+        });
 
         // Pre-read all memory chunks
-        let mut all_chunks = Vec::new();
-        for (_agent_name, db_path) in &agent_dbs {
-            match reader.read_memory_chunks(db_path) {
-                Ok(chunks) => all_chunks.extend(chunks),
-                Err(e) => tracing::warn!("Failed to read memory chunks: {}", e),
-            }
-        }
+        let all_chunks = read_all(&agent_dbs, "memory chunks", |path| {
+            reader.read_memory_chunks(path)
+        });
 
         // Prepare all settings and credentials
         let settings_map = settings::map_openclaw_config_to_settings(&config);
@@ -214,15 +206,7 @@ impl OpenClawImporter {
             // DRY RUN: Count only
             stats.settings = settings_map.len();
             stats.secrets = creds.len();
-            match reader.list_workspace_files() {
-                Ok(count) => stats.documents = count,
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to enumerate workspace files for dry-run count: {}",
-                        e
-                    );
-                }
-            }
+            stats.documents = count_workspace_files(&reader).unwrap_or(stats.documents);
             stats.chunks = all_chunks.len();
             stats.conversations = all_conversations.len();
             for conv in &all_conversations {
@@ -239,6 +223,38 @@ impl OpenClawImporter {
         }
 
         Ok(stats)
+    }
+}
+
+/// Read `what` from every agent database with `read`, logging and skipping
+/// databases that fail to read.
+fn read_all<T>(
+    agent_dbs: &[(String, PathBuf)],
+    what: &str,
+    read: impl Fn(&Path) -> Result<Vec<T>, ImportError>,
+) -> Vec<T> {
+    let mut all = Vec::new();
+    for (_agent_name, db_path) in agent_dbs {
+        match read(db_path) {
+            Ok(items) => all.extend(items),
+            Err(e) => tracing::warn!("Failed to read {what}: {e}"),
+        }
+    }
+    all
+}
+
+/// Count the workspace files for a dry run, logging and returning `None` when
+/// they cannot be enumerated.
+fn count_workspace_files(reader: &OpenClawReader) -> Option<usize> {
+    match reader.list_workspace_files() {
+        Ok(count) => Some(count),
+        Err(e) => {
+            tracing::warn!(
+                "Failed to enumerate workspace files for dry-run count: {}",
+                e
+            );
+            None
+        }
     }
 }
 

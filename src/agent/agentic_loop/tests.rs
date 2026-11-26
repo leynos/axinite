@@ -1,7 +1,7 @@
 //! Unit tests for the agentic loop's turn handling and tool dispatch.
 
 use super::*;
-use crate::llm::{RespondOutput, TokenUsage, ToolCall};
+use crate::llm::{ChatMessage, RespondOutput, TokenUsage, ToolCall};
 use crate::testing::StubLlm;
 use rstest::rstest;
 use std::sync::Arc;
@@ -318,6 +318,11 @@ async fn test_tool_intent_nudge_fires_and_caps() {
     assert_eq!(
         nudge_messages, 2,
         "Should have exactly 2 nudge messages in context"
+    );
+    assert_eq!(
+        *delegate.iterations_seen.lock().await,
+        vec![1, 2],
+        "Each nudged iteration must still run the after_iteration hook"
     );
 }
 

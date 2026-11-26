@@ -62,14 +62,7 @@ impl Agent {
         };
 
         if interrupted {
-            let _ = self
-                .channels
-                .send_status(
-                    &message.channel,
-                    StatusUpdate::Status("Interrupted".into()),
-                    &message.metadata,
-                )
-                .await;
+            self.send_status_text(message, "Interrupted").await;
             return Ok(SubmissionResult::Interrupted);
         }
 
@@ -82,57 +75,8 @@ impl Agent {
         match result {
             Ok(AgenticLoopResult::Response(response)) => {
                 drop(sess);
-                let response = self
-                    .apply_response_transform_hook(message, thread_id, response)
-                    .await;
-
-                let completion = {
-                    let mut sess = session.lock().await;
-                    let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
-                        Error::from(crate::error::JobError::NotFound { id: thread_id })
-                    })?;
-                    if thread.state == ThreadState::Interrupted {
-                        None
-                    } else {
-                        thread.complete_turn(&response);
-                        thread
-                            .turns
-                            .last()
-                            .map(|t| (t.turn_number, t.tool_calls.clone()))
-                    }
-                };
-
-                let Some((turn_number, tool_calls)) = completion else {
-                    let _ = self
-                        .channels
-                        .send_status(
-                            &message.channel,
-                            StatusUpdate::Status("Interrupted".into()),
-                            &message.metadata,
-                        )
-                        .await;
-                    return Ok(SubmissionResult::Interrupted);
-                };
-
-                let _ = self
-                    .channels
-                    .send_status(
-                        &message.channel,
-                        StatusUpdate::Status("Done".into()),
-                        &message.metadata,
-                    )
-                    .await;
-
-                let persist_ctx = TurnPersistContext {
-                    thread_id,
-                    user_id: &message.user_id,
-                    turn_number,
-                };
-                self.persist_tool_calls(&persist_ctx, &tool_calls).await;
-                self.persist_assistant_response(thread_id, &message.user_id, &response)
-                    .await;
-
-                Ok(SubmissionResult::response(response))
+                self.finish_response_turn(message, session, thread_id, response)
+                    .await
             }
             Ok(AgenticLoopResult::NeedApproval { pending }) => {
                 let request_id = pending.request_id;
@@ -142,14 +86,7 @@ impl Agent {
                 thread.await_approval(pending);
                 drop(sess);
 
-                let _ = self
-                    .channels
-                    .send_status(
-                        &message.channel,
-                        StatusUpdate::Status("Awaiting approval".into()),
-                        &message.metadata,
-                    )
-                    .await;
+                self.send_status_text(message, "Awaiting approval").await;
                 Ok(SubmissionResult::NeedApproval {
                     request_id,
                     tool_name,
@@ -169,6 +106,68 @@ impl Agent {
                 Ok(SubmissionResult::error(error_text))
             }
         }
+    }
+
+    /// Send a plain status line to the message's channel, ignoring failures.
+    async fn send_status_text(&self, message: &IncomingMessage, text: &str) {
+        let _ = self
+            .channels
+            .send_status(
+                &message.channel,
+                StatusUpdate::Status(text.into()),
+                &message.metadata,
+            )
+            .await;
+    }
+
+    /// Complete the turn with the (hook-transformed) response and persist it.
+    ///
+    /// A thread interrupted in the meantime reports `Interrupted` instead.
+    async fn finish_response_turn(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        response: String,
+    ) -> Result<SubmissionResult, Error> {
+        let response = self
+            .apply_response_transform_hook(message, thread_id, response)
+            .await;
+
+        let completion = {
+            let mut sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get_mut(&thread_id)
+                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+            if thread.state == ThreadState::Interrupted {
+                None
+            } else {
+                thread.complete_turn(&response);
+                thread
+                    .turns
+                    .last()
+                    .map(|t| (t.turn_number, t.tool_calls.clone()))
+            }
+        };
+
+        let Some((turn_number, tool_calls)) = completion else {
+            self.send_status_text(message, "Interrupted").await;
+            return Ok(SubmissionResult::Interrupted);
+        };
+
+        self.send_status_text(message, "Done").await;
+
+        let persist_ctx = TurnPersistContext {
+            thread_id,
+            user_id: &message.user_id,
+            turn_number,
+        };
+        self.persist_tool_calls(&persist_ctx, &tool_calls).await;
+        self.persist_assistant_response(thread_id, &message.user_id, &response)
+            .await;
+
+        Ok(SubmissionResult::response(response))
     }
 }
 

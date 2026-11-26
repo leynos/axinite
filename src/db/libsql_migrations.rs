@@ -168,85 +168,102 @@ use v16_context::apply_agent_jobs_context_fields_migration;
 /// Each migration is wrapped in a transaction. On success the version is
 /// recorded in `_migrations` so it won't run again.
 pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::error::DatabaseError> {
-    use crate::error::DatabaseError;
-
     for &(version, name, sql) in INCREMENTAL_MIGRATIONS {
-        // Check if already applied
-        let mut rows = conn
-            .query(
-                "SELECT 1 FROM _migrations WHERE version = ?1",
-                libsql::params![version],
-            )
-            .await
-            .map_err(|e| {
-                DatabaseError::Migration(format!("Failed to check migration {version}: {e}"))
-            })?;
-
-        if (rows.next().await.map_err(|e| {
-            DatabaseError::Migration(format!(
-                "Failed to read migration {version} application state: {e}"
-            ))
-        })?)
-        .is_some()
-        {
-            continue; // Already applied
+        if migration_applied(conn, version).await? {
+            continue;
         }
 
         tracing::info!(version, name, "libSQL: applying incremental migration");
-
-        // V12 contains its own `BEGIN IMMEDIATE`/`COMMIT` block and sets
-        // PRAGMAs that must execute outside a transaction, so bypass the
-        // outer transaction wrapper.
-        if version == 12 {
-            let sql = v12_wasm_wit_default_migration_sql();
-            apply_non_transactional_migration(conn, MigrationContext { version, name }, &sql)
-                .await?;
-            tracing::info!(version, name, "libSQL: migration applied successfully");
-            continue;
-        }
-
-        if version == 16 {
-            apply_agent_jobs_context_fields_migration(conn, MigrationContext { version, name })
-                .await?;
-            tracing::info!(version, name, "libSQL: migration applied successfully");
-            continue;
-        }
-
-        // Wrap migration + recording in a transaction for atomicity.
-        // If the process crashes mid-migration, the transaction rolls back
-        // and the migration will be retried on next startup.
-        let tx = conn.transaction().await.map_err(|e| {
-            DatabaseError::Migration(format!(
-                "libSQL migration V{version}: failed to start transaction: {e}"
-            ))
-        })?;
-
-        tx.execute_batch(sql).await.map_err(|e| {
-            DatabaseError::Migration(format!("libSQL migration V{version} ({name}) failed: {e}"))
-        })?;
-
-        // Record as applied (inside the same transaction)
-        tx.execute(
-            "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
-            libsql::params![version, name],
-        )
-        .await
-        .map_err(|e| {
-            DatabaseError::Migration(format!(
-                "Failed to record migration V{version} ({name}): {e}"
-            ))
-        })?;
-
-        tx.commit().await.map_err(|e| {
-            DatabaseError::Migration(format!(
-                "libSQL migration V{version} ({name}): commit failed: {e}"
-            ))
-        })?;
-
+        apply_migration(conn, MigrationContext { version, name }, sql).await?;
         tracing::info!(version, name, "libSQL: migration applied successfully");
     }
 
     Ok(())
+}
+
+/// Whether `_migrations` already records `version`.
+async fn migration_applied(
+    conn: &libsql::Connection,
+    version: i64,
+) -> Result<bool, crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    let mut rows = conn
+        .query(
+            "SELECT 1 FROM _migrations WHERE version = ?1",
+            libsql::params![version],
+        )
+        .await
+        .map_err(|e| {
+            DatabaseError::Migration(format!("Failed to check migration {version}: {e}"))
+        })?;
+
+    let row = rows.next().await.map_err(|e| {
+        DatabaseError::Migration(format!(
+            "Failed to read migration {version} application state: {e}"
+        ))
+    })?;
+    Ok(row.is_some())
+}
+
+/// Apply one migration, routing the versions that need special handling.
+async fn apply_migration(
+    conn: &libsql::Connection,
+    ctx: MigrationContext<'_>,
+    sql: &str,
+) -> Result<(), crate::error::DatabaseError> {
+    match ctx.version {
+        // V12 contains its own `BEGIN IMMEDIATE`/`COMMIT` block and sets
+        // PRAGMAs that must execute outside a transaction, so bypass the
+        // outer transaction wrapper.
+        12 => {
+            let sql = v12_wasm_wit_default_migration_sql();
+            apply_non_transactional_migration(conn, ctx, &sql).await
+        }
+        16 => apply_agent_jobs_context_fields_migration(conn, ctx).await,
+        _ => apply_transactional_migration(conn, ctx, sql).await,
+    }
+}
+
+/// Run a migration and record it in one transaction for atomicity.
+///
+/// If the process crashes mid-migration, the transaction rolls back and the
+/// migration will be retried on next startup.
+async fn apply_transactional_migration(
+    conn: &libsql::Connection,
+    ctx: MigrationContext<'_>,
+    sql: &str,
+) -> Result<(), crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    let MigrationContext { version, name } = ctx;
+    let tx = conn.transaction().await.map_err(|e| {
+        DatabaseError::Migration(format!(
+            "libSQL migration V{version}: failed to start transaction: {e}"
+        ))
+    })?;
+
+    tx.execute_batch(sql).await.map_err(|e| {
+        DatabaseError::Migration(format!("libSQL migration V{version} ({name}) failed: {e}"))
+    })?;
+
+    // Record as applied (inside the same transaction)
+    tx.execute(
+        "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
+        libsql::params![version, name],
+    )
+    .await
+    .map_err(|e| {
+        DatabaseError::Migration(format!(
+            "Failed to record migration V{version} ({name}): {e}"
+        ))
+    })?;
+
+    tx.commit().await.map_err(|e| {
+        DatabaseError::Migration(format!(
+            "libSQL migration V{version} ({name}): commit failed: {e}"
+        ))
+    })
 }
 
 async fn apply_non_transactional_migration(

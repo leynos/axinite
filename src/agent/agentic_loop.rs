@@ -8,9 +8,13 @@
 use core::future::Future;
 use core::pin::Pin;
 
+mod iteration;
+
+use iteration::{LoopState, apply_loop_signal};
+
 use crate::agent::session::PendingApproval;
 use crate::error::Error;
-use crate::llm::{ChatMessage, Reasoning, ReasoningContext, RespondResult};
+use crate::llm::{Reasoning, ReasoningContext, RespondResult};
 
 /// Signal from the delegate indicating how the loop should proceed.
 pub enum LoopSignal {
@@ -281,16 +285,15 @@ pub async fn run_agentic_loop(
     reason_ctx: &mut ReasoningContext,
     config: &AgenticLoopConfig,
 ) -> Result<LoopOutcome, Error> {
-    let mut consecutive_tool_intent_nudges: u32 = 0;
+    let mut state = LoopState {
+        delegate,
+        config,
+        consecutive_tool_intent_nudges: 0,
+    };
 
     for iteration in 1..=config.max_iterations {
-        // Check for external signals (stop, cancellation, user messages)
-        match delegate.check_signals().await {
-            LoopSignal::Continue => {}
-            LoopSignal::Stop => return Ok(LoopOutcome::Stopped),
-            LoopSignal::InjectMessage(msg) => {
-                reason_ctx.messages.push(ChatMessage::user(&msg));
-            }
+        if let Some(outcome) = apply_loop_signal(delegate, reason_ctx).await {
+            return Ok(outcome);
         }
 
         // Pre-LLM call hook (cost guard, tool refresh, iteration limit nudge)
@@ -301,53 +304,15 @@ pub async fn run_agentic_loop(
         // Call LLM
         let output = delegate.call_llm(reasoning, reason_ctx, iteration).await?;
 
-        match output.result {
-            RespondResult::Text(text) => {
-                // Tool intent nudge: if the LLM says "let me search..." without
-                // actually calling a tool, inject a nudge message.
-                if should_nudge_tool_intent(
-                    config,
-                    reason_ctx,
-                    consecutive_tool_intent_nudges,
-                    &text,
-                ) {
-                    consecutive_tool_intent_nudges += 1;
-                    tracing::info!(
-                        iteration,
-                        "LLM expressed tool intent without calling a tool, nudging"
-                    );
-                    delegate.on_tool_intent_nudge(&text, reason_ctx).await;
-                    reason_ctx.messages.push(ChatMessage::assistant(&text));
-                    reason_ctx
-                        .messages
-                        .push(ChatMessage::user(crate::llm::TOOL_INTENT_NUDGE));
-                    delegate.after_iteration(iteration).await;
-                    continue;
-                }
-
-                // Reset nudge counter since we got a non-intent text response
-                if !crate::llm::llm_signals_tool_intent(&text) {
-                    consecutive_tool_intent_nudges = 0;
-                }
-
-                match delegate.handle_text_response(&text, reason_ctx).await {
-                    TextAction::Return(outcome) => return Ok(outcome),
-                    TextAction::Continue => {}
-                }
-            }
+        let outcome = match output.result {
+            RespondResult::Text(text) => state.on_text(reason_ctx, iteration, &text).await,
             RespondResult::ToolCalls {
                 tool_calls,
                 content,
-            } => {
-                consecutive_tool_intent_nudges = 0;
-
-                if let Some(outcome) = delegate
-                    .execute_tool_calls(tool_calls, content, reason_ctx)
-                    .await?
-                {
-                    return Ok(outcome);
-                }
-            }
+            } => state.on_tool_calls(reason_ctx, tool_calls, content).await?,
+        };
+        if let Some(outcome) = outcome {
+            return Ok(outcome);
         }
 
         delegate.after_iteration(iteration).await;
