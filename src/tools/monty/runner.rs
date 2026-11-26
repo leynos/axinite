@@ -8,8 +8,8 @@
 use std::sync::{Arc, OnceLock};
 
 use monty_protocol::{
-    CallOutcome, HelperToParent, HostCall, MAX_FRAME_BYTES, PROTOCOL_VERSION, ParentToHelper,
-    ResumeRun, StartRun, TerminalOutcome,
+    CallOutcome, GuestLimits, HelperToParent, HostCall, MAX_FRAME_BYTES, PROTOCOL_VERSION,
+    ParentToHelper, ResumeRun, StartRun, TerminalOutcome,
 };
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -115,31 +115,24 @@ impl Supervisor {
         } = guarded.take_pipes()?;
         let stderr_task = tokio::spawn(drain_stderr(stderr));
 
+        let conversation = Conversation {
+            request: &request,
+            broker,
+            job_ctx,
+        };
         let run = tokio::time::timeout(deadline, async {
-            match read_message(&mut stdout).await? {
-                HelperToParent::Hello(hello) if hello.protocol_version == PROTOCOL_VERSION => {}
-                _ => {
-                    return Err(RunError::RuntimeCrash(
-                        "unexpected helper greeting".to_string(),
-                    ));
-                }
-            }
-            let start = StartRun {
-                run_id: request.run_id.clone(),
-                code: request.code.clone(),
-                entrypoint: request.entrypoint.clone(),
-                params: request.params.clone(),
-                state: request.state.clone(),
-                tools: broker.table().definitions(),
-                limits: guest_limits,
-            };
-            write_message(&mut stdin, &ParentToHelper::StartRun(start)).await?;
+            greet(&mut stdout).await?;
+            write_message(
+                &mut stdin,
+                &ParentToHelper::StartRun(conversation.start(guest_limits)),
+            )
+            .await?;
             Session {
                 stdin: &mut stdin,
                 stdout: &mut stdout,
-                request: &request,
-                broker,
-                job_ctx,
+                request: conversation.request,
+                broker: conversation.broker,
+                job_ctx: conversation.job_ctx,
             }
             .drive()
             .await
@@ -147,21 +140,72 @@ impl Supervisor {
         .await;
 
         stderr_task.abort();
-        match run {
+        let settled = Settled {
+            run,
+            guarded,
+            stdin,
+        };
+        settled.finish(&request.run_id).await
+    }
+}
+
+/// The caller-side values one run's conversation carries.
+struct Conversation<'a> {
+    request: &'a RunRequest,
+    broker: &'a Arc<BrokerContext>,
+    job_ctx: &'a JobContext,
+}
+
+impl Conversation<'_> {
+    /// The start message this run sends.
+    fn start(&self, limits: GuestLimits) -> StartRun {
+        StartRun {
+            run_id: self.request.run_id.clone(),
+            code: self.request.code.clone(),
+            entrypoint: self.request.entrypoint.clone(),
+            params: self.request.params.clone(),
+            state: self.request.state.clone(),
+            tools: self.broker.table().definitions(),
+            limits,
+        }
+    }
+}
+
+/// Refuse a helper that does not greet with this protocol's version.
+async fn greet<R: AsyncRead + Unpin>(stdout: &mut R) -> Result<(), RunError> {
+    match read_message(stdout).await? {
+        HelperToParent::Hello(hello) if hello.protocol_version == PROTOCOL_VERSION => Ok(()),
+        _ => Err(RunError::RuntimeCrash(
+            "unexpected helper greeting".to_string(),
+        )),
+    }
+}
+
+/// Everything one run owns once its conversation has finished.
+struct Settled<W> {
+    run: Result<Result<RunOutcome, RunError>, tokio::time::error::Elapsed>,
+    guarded: ChildGuard,
+    stdin: W,
+}
+
+impl<W: AsyncWrite + Unpin> Settled<W> {
+    /// Close the run out, reaping the child on every path.
+    async fn finish(mut self, run_id: &str) -> Result<RunOutcome, RunError> {
+        match self.run {
             Ok(Ok(outcome)) => {
-                let _ = stdin.shutdown().await;
-                finish_child(guarded.child()).await;
-                let () = guarded.reap().await;
+                let _ = self.stdin.shutdown().await;
+                finish_child(self.guarded.child()).await;
+                self.guarded.reap().await;
                 Ok(outcome)
             }
             Ok(Err(error)) => {
-                terminate(guarded.child(), &request.run_id, &mut stdin).await;
-                let () = guarded.reap().await;
+                terminate(self.guarded.child(), run_id, &mut self.stdin).await;
+                self.guarded.reap().await;
                 Err(error)
             }
             Err(_) => {
-                terminate(guarded.child(), &request.run_id, &mut stdin).await;
-                let () = guarded.reap().await;
+                terminate(self.guarded.child(), run_id, &mut self.stdin).await;
+                self.guarded.reap().await;
                 Err(RunError::Timeout)
             }
         }
