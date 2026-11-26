@@ -200,7 +200,7 @@ fn print_extension_info(manifest: &ExtensionManifest) {
     println!("  Capabilities: {}", manifest.source.capabilities);
 
     if let Some(artefact) = manifest.artifacts.get("wasm32-wasip2") {
-        print_artifact_info(artefact);
+        print_artefact_info(artefact);
     }
 
     if let Some(auth) = &manifest.auth_summary {
@@ -213,7 +213,7 @@ fn print_extension_info(manifest: &ExtensionManifest) {
 }
 
 /// Print the wasm32-wasip2 artefact's URL and digest, or why they are absent.
-fn print_artifact_info(artefact: &ArtifactSpec) {
+fn print_artefact_info(artefact: &ArtifactSpec) {
     println!("\nArtifact (wasm32-wasip2):");
     match &artefact.url {
         Some(url) => println!("  URL: {}", url),
