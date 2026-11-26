@@ -58,7 +58,9 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
 
     let path = PathBuf::from(path_str);
 
-    let resolved = resolve_to_absolute(&path, base_dir);
+    let resolved = resolve_to_absolute(&path, base_dir).ok_or_else(|| {
+        ToolError::NotAuthorized(format!("Path has too many symbolic links: {}", path_str))
+    })?;
 
     // If base_dir is set, ensure the resolved path is within it
     if let Some(base) = base_dir {
@@ -80,26 +82,22 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
 }
 
 /// Resolve `path` to an absolute path: canonical when it exists, otherwise
-/// lexically normalized against `base_dir` or the current directory.
-fn resolve_to_absolute(path: &Path, base_dir: Option<&Path>) -> PathBuf {
-    if path.is_absolute() {
-        return path
-            .canonicalize()
-            .unwrap_or_else(|_| normalize_lexical(path));
-    }
-    match base_dir {
-        Some(base) => {
-            let joined = base.join(path);
-            joined
-                .canonicalize()
-                .unwrap_or_else(|_| normalize_lexical(&joined))
+/// with its symlinks followed component by component ([`resolve_links`]), so a
+/// `..` is never applied before the link in front of it is resolved. Without a
+/// `base_dir` a relative path is lexically normalized against the current
+/// directory. `None` means the links loop or nest too deeply to resolve.
+fn resolve_to_absolute(path: &Path, base_dir: Option<&Path>) -> Option<PathBuf> {
+    let joined = match (path.is_absolute(), base_dir) {
+        (true, _) => path.to_path_buf(),
+        (false, Some(base)) => base.join(path),
+        (false, None) => {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            return Some(normalize_lexical(&cwd.join(path)));
         }
-        None => {
-            let joined = std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(path);
-            normalize_lexical(&joined)
-        }
+    };
+    match joined.canonicalize() {
+        Ok(canonical) => Some(canonical),
+        Err(_) => resolve_links(&joined),
     }
 }
 

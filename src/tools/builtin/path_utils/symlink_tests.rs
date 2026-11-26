@@ -106,6 +106,31 @@ fn test_validate_path_allows_dot_dot_after_inside_link(dirs: Dirs) {
     assert!(validate_path("link", Some(dirs.sandbox.path())).is_ok());
 }
 
+/// The input path itself may hold the link: `pivot/../victim` with `pivot`
+/// pointing outside resolves outside, not to `sandbox/victim`.
+#[rstest]
+fn test_validate_path_applies_dot_dot_after_input_link(dirs: Dirs) {
+    link(&dirs, "pivot", dirs.outside.path().join("deep"));
+    assert!(validate_path("pivot/../victim", Some(dirs.sandbox.path())).is_err());
+}
+
+/// An input link to an inside directory resolves, and the returned path no
+/// longer holds the link, so a write lands where the check looked.
+#[rstest]
+fn test_validate_path_returns_a_link_free_path_for_input_links(dirs: Dirs) {
+    link(&dirs, "pivot", dirs.sandbox.path().join("inside"));
+    let resolved = validate_path("pivot/../new.txt", Some(dirs.sandbox.path())).unwrap();
+    let expected = dirs.sandbox.path().canonicalize().unwrap().join("new.txt");
+    assert_eq!(resolved, expected);
+}
+
+/// An input loop followed by `..` is rejected, not erased.
+#[rstest]
+fn test_validate_path_rejects_input_loop_before_dot_dot(dirs: Dirs) {
+    link(&dirs, "loop", "loop");
+    assert!(validate_path("loop/../victim", Some(dirs.sandbox.path())).is_err());
+}
+
 /// Loops, including one hidden behind a `..`, are rejected.
 #[rstest]
 fn test_validate_path_rejects_symlink_loops(dirs: Dirs) {
