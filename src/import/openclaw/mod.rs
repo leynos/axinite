@@ -6,7 +6,7 @@ pub mod memory;
 pub mod reader;
 pub mod settings;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::EnvContext;
@@ -186,10 +186,14 @@ impl OpenClawImporter {
         let agent_dbs = reader.list_agent_dbs()?;
 
         // Pre-read all conversation data to validate before writing
-        let all_conversations = read_all_conversations(&reader, &agent_dbs);
+        let all_conversations = read_all(&agent_dbs, "conversations", |path| {
+            reader.read_conversations(path)
+        });
 
         // Pre-read all memory chunks
-        let all_chunks = read_all_chunks(&reader, &agent_dbs);
+        let all_chunks = read_all(&agent_dbs, "memory chunks", |path| {
+            reader.read_memory_chunks(path)
+        });
 
         // Prepare all settings and credentials
         let settings_map = settings::map_openclaw_config_to_settings(&config);
@@ -222,36 +226,21 @@ impl OpenClawImporter {
     }
 }
 
-/// Read the conversations of every agent database, logging and skipping
+/// Read `what` from every agent database with `read`, logging and skipping
 /// databases that fail to read.
-fn read_all_conversations(
-    reader: &OpenClawReader,
+fn read_all<T>(
     agent_dbs: &[(String, PathBuf)],
-) -> Vec<reader::OpenClawConversation> {
-    let mut all_conversations = Vec::new();
+    what: &str,
+    read: impl Fn(&Path) -> Result<Vec<T>, ImportError>,
+) -> Vec<T> {
+    let mut all = Vec::new();
     for (_agent_name, db_path) in agent_dbs {
-        match reader.read_conversations(db_path) {
-            Ok(convs) => all_conversations.extend(convs),
-            Err(e) => tracing::warn!("Failed to read conversations: {}", e),
+        match read(db_path) {
+            Ok(items) => all.extend(items),
+            Err(e) => tracing::warn!("Failed to read {what}: {e}"),
         }
     }
-    all_conversations
-}
-
-/// Read the memory chunks of every agent database, logging and skipping
-/// databases that fail to read.
-fn read_all_chunks(
-    reader: &OpenClawReader,
-    agent_dbs: &[(String, PathBuf)],
-) -> Vec<reader::OpenClawMemoryChunk> {
-    let mut all_chunks = Vec::new();
-    for (_agent_name, db_path) in agent_dbs {
-        match reader.read_memory_chunks(db_path) {
-            Ok(chunks) => all_chunks.extend(chunks),
-            Err(e) => tracing::warn!("Failed to read memory chunks: {}", e),
-        }
-    }
-    all_chunks
+    all
 }
 
 /// Count the workspace files for a dry run, logging and returning `None` when
