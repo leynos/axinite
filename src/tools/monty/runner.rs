@@ -8,25 +8,26 @@
 use std::sync::{Arc, OnceLock};
 
 use monty_protocol::{
-    CallOutcome, GuestLimits, HelperToParent, HostCall, MAX_FRAME_BYTES, PROTOCOL_VERSION,
-    ParentToHelper, ResumeRun, StartRun, TerminalOutcome,
+    CallOutcome, HelperToParent, HostCall, MAX_FRAME_BYTES, ParentToHelper, ResumeRun,
+    TerminalOutcome,
 };
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use self::bounds::{append_bounded, truncate};
-use self::process::{
-    ChildGuard, Pipes, drain_stderr, finish_child, read_message, spawn, terminate, write_message,
-};
+use self::process::{ChildGuard, Pipes, drain_stderr, read_message, spawn, write_message};
 use crate::context::JobContext;
 use crate::tools::monty::broker::{BrokerContext, BrokerDenial};
 
 mod bounds;
+mod converse;
 mod process;
 mod program;
 mod request;
 
 pub use request::{RunError, RunLimits, RunOutcome, RunRequest};
+
+use self::converse::{Conversation, Settled, greet};
 
 pub use self::program::{HELPER_ENV, HELPER_NAME, HelperProgram};
 
@@ -147,69 +148,6 @@ impl Supervisor {
             stdin,
         };
         settled.finish(&request.run_id).await
-    }
-}
-
-/// The caller-side values one run's conversation carries.
-struct Conversation<'a> {
-    request: &'a RunRequest,
-    broker: &'a Arc<BrokerContext>,
-    job_ctx: &'a JobContext,
-}
-
-impl Conversation<'_> {
-    /// The start message this run sends.
-    fn start(&self, limits: GuestLimits) -> StartRun {
-        StartRun {
-            run_id: self.request.run_id.clone(),
-            code: self.request.code.clone(),
-            entrypoint: self.request.entrypoint.clone(),
-            params: self.request.params.clone(),
-            state: self.request.state.clone(),
-            tools: self.broker.table().definitions(),
-            limits,
-        }
-    }
-}
-
-/// Refuse a helper that does not greet with this protocol's version.
-async fn greet<R: AsyncRead + Unpin>(stdout: &mut R) -> Result<(), RunError> {
-    match read_message(stdout).await? {
-        HelperToParent::Hello(hello) if hello.protocol_version == PROTOCOL_VERSION => Ok(()),
-        _ => Err(RunError::RuntimeCrash(
-            "unexpected helper greeting".to_string(),
-        )),
-    }
-}
-
-/// Everything one run owns once its conversation has finished.
-struct Settled<W> {
-    run: Result<Result<RunOutcome, RunError>, tokio::time::error::Elapsed>,
-    guarded: ChildGuard,
-    stdin: W,
-}
-
-impl<W: AsyncWrite + Unpin> Settled<W> {
-    /// Close the run out, reaping the child on every path.
-    async fn finish(mut self, run_id: &str) -> Result<RunOutcome, RunError> {
-        match self.run {
-            Ok(Ok(outcome)) => {
-                let _ = self.stdin.shutdown().await;
-                finish_child(self.guarded.child()).await;
-                self.guarded.reap().await;
-                Ok(outcome)
-            }
-            Ok(Err(error)) => {
-                terminate(self.guarded.child(), run_id, &mut self.stdin).await;
-                self.guarded.reap().await;
-                Err(error)
-            }
-            Err(_) => {
-                terminate(self.guarded.child(), run_id, &mut self.stdin).await;
-                self.guarded.reap().await;
-                Err(RunError::Timeout)
-            }
-        }
     }
 }
 
