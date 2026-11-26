@@ -1,6 +1,6 @@
 //! Discovery of the capability files that plugin hooks are loaded from.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::channels::wasm::discover_channels;
@@ -46,16 +46,20 @@ impl PluginCapabilitySources<'_> {
         collected
             .add_outcome(
                 &TOOLS,
-                self.wasm_tools_dir,
-                discover_tool_paths(self.wasm_tools_dir).await,
+                discover_paths(self.wasm_tools_dir, discover_tools, |tool| {
+                    tool.capabilities_path
+                })
+                .await,
                 |name| is_active_bundled_tool(&active_tools, &dev_loaded_tools, name),
             )
             .add_dev_tools(&active_tools, &dev_loaded_tools)
             .await
             .add_outcome(
                 &CHANNELS,
-                self.wasm_channels_dir,
-                discover_channel_paths(self.wasm_channels_dir).await,
+                discover_paths(self.wasm_channels_dir, discover_channels, |channel| {
+                    channel.capabilities_path
+                })
+                .await,
                 |name| active_channels.contains(name),
             );
 
@@ -70,7 +74,13 @@ fn name_set(names: &[String]) -> HashSet<&str> {
 }
 
 /// What discovery found: (name, capabilities path) pairs, or why it failed.
-type Discovered = Result<Vec<(String, Option<PathBuf>)>, String>;
+type Discovered = Result<Vec<(String, Option<PathBuf>)>, DiscoveryFailure>;
+
+/// Why discovery failed in `dir`.
+struct DiscoveryFailure {
+    dir: PathBuf,
+    error: String,
+}
 
 /// How one kind of plugin is labelled in sources and failure logs.
 struct DiscoveryKind {
@@ -90,40 +100,30 @@ const CHANNELS: DiscoveryKind = DiscoveryKind {
     prefix: "plugin.channel",
 };
 
-/// Discover bundled WASM tools; `None` when the directory does not exist.
-async fn discover_tool_paths(dir: &Path) -> Option<Discovered> {
+/// Run `discover` on `dir` and reduce each entry to its capabilities path.
+///
+/// `None` when the directory does not exist, so nothing is discovered or logged.
+async fn discover_paths<T, E: std::fmt::Display>(
+    dir: &Path,
+    discover: impl AsyncFnOnce(&Path) -> Result<HashMap<String, T>, E>,
+    capabilities_path: impl Fn(T) -> Option<PathBuf>,
+) -> Option<Discovered> {
     if !dir.exists() {
         return None;
     }
-    Some(
-        discover_tools(dir)
-            .await
-            .map(|tools| {
-                tools
-                    .into_iter()
-                    .map(|(name, tool)| (name, tool.capabilities_path))
-                    .collect()
-            })
-            .map_err(|err| err.to_string()),
-    )
-}
-
-/// Discover WASM channels; `None` when the directory does not exist.
-async fn discover_channel_paths(dir: &Path) -> Option<Discovered> {
-    if !dir.exists() {
-        return None;
-    }
-    Some(
-        discover_channels(dir)
-            .await
-            .map(|channels| {
-                channels
-                    .into_iter()
-                    .map(|(name, channel)| (name, channel.capabilities_path))
-                    .collect()
-            })
-            .map_err(|err| err.to_string()),
-    )
+    let outcome = discover(dir)
+        .await
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|(name, entry)| (name, capabilities_path(entry)))
+                .collect()
+        })
+        .map_err(|err| DiscoveryFailure {
+            dir: dir.to_path_buf(),
+            error: err.to_string(),
+        });
+    Some(outcome)
 }
 
 /// Capability files gathered for plugin hooks, de-duplicated by path.
@@ -164,16 +164,15 @@ impl CapabilityFiles {
     fn add_outcome(
         &mut self,
         kind: &DiscoveryKind,
-        dir: &Path,
         outcome: Option<Discovered>,
         is_active: impl Fn(&str) -> bool,
     ) -> &mut Self {
         match outcome {
             Some(Ok(discovered)) => self.add_discovered(kind.prefix, discovered, is_active),
-            Some(Err(error)) => {
+            Some(Err(failure)) => {
                 tracing::warn!(
-                    path = %dir.display(),
-                    error = %error,
+                    path = %failure.dir.display(),
+                    error = %failure.error,
                     "Failed to discover {} capabilities for plugin hooks",
                     kind.label
                 );
@@ -248,16 +247,13 @@ mod tests {
             ("off".to_string(), Some(PathBuf::from("/p/off.json"))),
             ("bare".to_string(), None),
         ];
-        collected.add_outcome(&TOOLS, Path::new("/p"), Some(Ok(found)), |name| {
-            name != "off"
-        });
-        collected.add_outcome(
-            &TOOLS,
-            Path::new("/p"),
-            Some(Err("boom".to_string())),
-            |_| true,
-        );
-        collected.add_outcome(&CHANNELS, Path::new("/p"), None, |_| true);
+        collected.add_outcome(&TOOLS, Some(Ok(found)), |name| name != "off");
+        let failure = DiscoveryFailure {
+            dir: PathBuf::from("/p"),
+            error: "boom".to_string(),
+        };
+        collected.add_outcome(&TOOLS, Some(Err(failure)), |_| true);
+        collected.add_outcome(&CHANNELS, None, |_| true);
 
         let sources: Vec<&str> = collected.files.iter().map(|(s, _)| s.as_str()).collect();
         assert_eq!(sources, ["plugin.tool:on"]);

@@ -23,36 +23,48 @@ pub(super) async fn resolve_host_credentials(
     user_id: &str,
     oauth_refresh: Option<&OAuthRefreshConfig>,
 ) -> Vec<ResolvedHostCredential> {
-    let store = match store {
-        Some(s) => s,
-        None => return Vec::new(),
+    let Some(store) = store else {
+        return Vec::new();
     };
 
     // Check if the access token needs refreshing before resolving credentials.
     // This runs once per tool execution, keeping the hot path (credential injection
     // inside WASM) synchronous and allocation-free.
-    if let Some(config) = oauth_refresh
-        && access_token_needs_refresh(store, user_id, config).await
-    {
-        tracing::debug!(
-            secret_name = %config.secret_name,
-            "Access token expired or near expiry, attempting refresh"
-        );
-        refresh_oauth_token(store, user_id, config).await;
+    if let Some(config) = oauth_refresh {
+        refresh_if_needed(store, user_id, config).await;
     }
 
-    let http_cap = match &capabilities.http {
-        Some(cap) => cap,
-        None => return Vec::new(),
-    };
-
-    if http_cap.credentials.is_empty() {
+    let Some(http_cap) = &capabilities.http else {
         return Vec::new();
-    }
+    };
+    resolve_mappings(store, user_id, http_cap.credentials.values()).await
+}
 
+/// Refresh the OAuth access token when it is expired or near expiry.
+async fn refresh_if_needed(
+    store: &(dyn SecretsStore + Send + Sync),
+    user_id: &str,
+    config: &OAuthRefreshConfig,
+) {
+    if !access_token_needs_refresh(store, user_id, config).await {
+        return;
+    }
+    tracing::debug!(
+        secret_name = %config.secret_name,
+        "Access token expired or near expiry, attempting refresh"
+    );
+    refresh_oauth_token(store, user_id, config).await;
+}
+
+/// Resolve every mapping, keeping the ones that yield credentials.
+async fn resolve_mappings<'a>(
+    store: &(dyn SecretsStore + Send + Sync),
+    user_id: &str,
+    mappings: impl Iterator<Item = &'a CredentialMapping>,
+) -> Vec<ResolvedHostCredential> {
     let mut resolved = Vec::new();
 
-    for mapping in http_cap.credentials.values() {
+    for mapping in mappings {
         if let Some(credential) = resolve_mapping_credential(store, user_id, mapping).await {
             resolved.push(credential);
         }
