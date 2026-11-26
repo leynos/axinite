@@ -66,7 +66,9 @@ pub fn validate_path(path_str: &str, base_dir: Option<&Path>) -> Result<PathBuf,
             .canonicalize()
             .unwrap_or_else(|_| normalize_lexical(base));
 
-        if !canonical_check_path(&resolved).starts_with(&base_canonical) {
+        let inside = canonical_check_path(&resolved)
+            .is_some_and(|checked| checked.starts_with(&base_canonical));
+        if !inside {
             return Err(ToolError::NotAuthorized(format!(
                 "Path escapes sandbox: {}",
                 path_str
@@ -108,20 +110,42 @@ fn resolve_to_absolute(path: &Path, base_dir: Option<&Path>) -> PathBuf {
 /// `starts_with` is reliable: walk up to the nearest existing ancestor,
 /// canonicalize it, then re-append the remaining tail. This handles a symlink
 /// sitting above the new file.
-fn canonical_check_path(resolved: &Path) -> PathBuf {
-    if resolved.exists() {
-        return resolved
-            .canonicalize()
-            .unwrap_or_else(|_| resolved.to_path_buf());
+///
+/// The nearest ancestor is found with `symlink_metadata`, so a dangling
+/// symlink counts as existing. Its target is followed by hand (a dangling link
+/// cannot be canonicalized), so a link that leaves the sandbox is caught
+/// whether or not its target exists. `None` means the links loop or nest too
+/// deeply to resolve, which callers treat as an escape.
+fn canonical_check_path(resolved: &Path) -> Option<PathBuf> {
+    const MAX_LINK_HOPS: usize = 40;
+    let mut current = resolved.to_path_buf();
+    for _ in 0..MAX_LINK_HOPS {
+        let Some(ancestor) = current
+            .ancestors()
+            .find(|a| std::fs::symlink_metadata(a).is_ok())
+        else {
+            return Some(current);
+        };
+        let tail = current.strip_prefix(ancestor).unwrap_or(Path::new(""));
+        if let Ok(canonical) = ancestor.canonicalize() {
+            return Some(join_tail(canonical, tail));
+        }
+        // Existing but not canonicalizable: a dangling symlink. Follow it.
+        let target = std::fs::read_link(ancestor).ok()?;
+        let parent = ancestor.parent().unwrap_or(Path::new("/"));
+        current = join_tail(normalize_lexical(&parent.join(target)), tail);
     }
-    let Some(ancestor) = resolved.ancestors().find(|ancestor| ancestor.exists()) else {
-        return resolved.to_path_buf();
-    };
-    let tail = resolved.strip_prefix(ancestor).unwrap_or(Path::new(""));
-    ancestor
-        .canonicalize()
-        .unwrap_or_else(|_| ancestor.to_path_buf())
-        .join(tail)
+    None
+}
+
+/// Append `tail` to `base`, leaving `base` as it is when `tail` is empty (a
+/// trailing slash would make the OS follow a final symlink).
+fn join_tail(base: PathBuf, tail: &Path) -> PathBuf {
+    if tail.as_os_str().is_empty() {
+        base
+    } else {
+        base.join(tail)
+    }
 }
 
 /// Basic path safety check without requiring a base directory.
@@ -243,5 +267,60 @@ mod tests {
         // This should be allowed as it stays within the sandbox
         let result = validate_path("a/b/../c.txt", Some(dir.path()));
         assert!(result.is_ok());
+    }
+
+    /// A sandbox, a directory outside it, and a symlink `sandbox/link` to `target`.
+    #[cfg(unix)]
+    fn link_in_sandbox(
+        target: impl FnOnce(&Path, &Path) -> PathBuf,
+    ) -> (tempfile::TempDir, tempfile::TempDir) {
+        let sandbox = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let target = target(sandbox.path(), outside.path());
+        std::os::unix::fs::symlink(target, sandbox.path().join("link")).unwrap();
+        (sandbox, outside)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_path_rejects_dangling_symlink_to_outside() {
+        let (sandbox, _outside) = link_in_sandbox(|_, outside| outside.join("missing"));
+        let result = validate_path("link", Some(sandbox.path()));
+        assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_path_allows_dangling_symlink_to_inside() {
+        let (sandbox, _outside) = link_in_sandbox(|inside, _| inside.join("missing"));
+        let result = validate_path("link", Some(sandbox.path()));
+        assert!(result.is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_path_rejects_live_symlink_to_outside() {
+        let (sandbox, outside) = link_in_sandbox(|_, outside| outside.to_path_buf());
+        std::fs::write(outside.path().join("file.txt"), b"x").unwrap();
+        let result = validate_path("link/file.txt", Some(sandbox.path()));
+        assert!(result.is_err());
+        assert!(validate_path("link", Some(sandbox.path())).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_path_allows_live_symlink_to_inside() {
+        let (sandbox, _outside) = link_in_sandbox(|inside, _| inside.to_path_buf());
+        let result = validate_path("link/new.txt", Some(sandbox.path()));
+        assert!(result.is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_path_rejects_symlink_loops() {
+        let sandbox = tempdir().unwrap();
+        std::os::unix::fs::symlink("b", sandbox.path().join("a")).unwrap();
+        std::os::unix::fs::symlink("a", sandbox.path().join("b")).unwrap();
+        assert!(validate_path("a", Some(sandbox.path())).is_err());
     }
 }
