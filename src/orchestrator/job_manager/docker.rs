@@ -206,54 +206,60 @@ impl ContainerJobManager {
         self.registry.set_completion(job_id, result).await;
 
         if let Some(container_id) = self.registry.container_id(job_id).await {
-            match self.docker().await {
-                Ok(docker) => {
-                    if let Err(e) = docker
-                        .stop_container(
-                            container_id.as_str(),
-                            Some(bollard::query_parameters::StopContainerOptions {
-                                t: Some(5),
-                                ..Default::default()
-                            }),
-                        )
-                        .await
-                    {
-                        tracing::warn!(
-                            job_id = %job_id,
-                            error = %e,
-                            "Failed to stop completed container"
-                        );
-                    }
-                    if let Err(e) = docker
-                        .remove_container(
-                            container_id.as_str(),
-                            Some(bollard::query_parameters::RemoveContainerOptions {
-                                force: true,
-                                ..Default::default()
-                            }),
-                        )
-                        .await
-                    {
-                        tracing::warn!(
-                            job_id = %job_id,
-                            error = %e,
-                            "Failed to remove completed container"
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        job_id = %job_id,
-                        error = %e,
-                        "Failed to connect to Docker for container cleanup"
-                    );
-                }
-            }
+            self.stop_and_remove_completed(job_id, container_id.as_str())
+                .await;
         }
 
         self.token_store.revoke(job_id).await;
 
         tracing::info!(job_id = %job_id, "Completed worker container");
         Ok(())
+    }
+
+    /// Best-effort stop and removal of a finished job's container, logging failures.
+    async fn stop_and_remove_completed(&self, job_id: Uuid, container_id: &str) {
+        let docker = match self.docker().await {
+            Ok(docker) => docker,
+            Err(e) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    error = %e,
+                    "Failed to connect to Docker for container cleanup"
+                );
+                return;
+            }
+        };
+        if let Err(e) = docker
+            .stop_container(
+                container_id,
+                Some(bollard::query_parameters::StopContainerOptions {
+                    t: Some(5),
+                    ..Default::default()
+                }),
+            )
+            .await
+        {
+            tracing::warn!(
+                job_id = %job_id,
+                error = %e,
+                "Failed to stop completed container"
+            );
+        }
+        if let Err(e) = docker
+            .remove_container(
+                container_id,
+                Some(bollard::query_parameters::RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+        {
+            tracing::warn!(
+                job_id = %job_id,
+                error = %e,
+                "Failed to remove completed container"
+            );
+        }
     }
 }

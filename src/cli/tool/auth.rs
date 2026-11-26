@@ -181,6 +181,30 @@ async fn auth_tool_manual(
 ) -> anyhow::Result<()> {
     let display_name = auth.display_name.as_deref().unwrap_or(&auth.secret_name);
 
+    print_setup_guidance(auth)?;
+
+    print!("  Paste your token: ");
+    std::io::stdout().flush()?;
+
+    let token = read_hidden_input()?;
+    println!();
+
+    if token.is_empty() {
+        println!("  No token provided. Aborting.");
+        return Ok(());
+    }
+
+    if !validate_or_confirm_save(&token, auth).await? {
+        return Ok(());
+    }
+
+    save_token(store, user_id, auth, &token, None, None).await?;
+    print_success(display_name);
+    Ok(())
+}
+
+/// Print the setup instructions, offer to open the setup page, and show the token hint.
+fn print_setup_guidance(auth: &AuthCapabilitySchema) -> anyhow::Result<()> {
     if let Some(ref instructions) = auth.instructions {
         println!("  Setup instructions:");
         println!();
@@ -212,45 +236,39 @@ async fn auth_tool_manual(
         println!("  Token format: {}", hint);
         println!();
     }
+    Ok(())
+}
 
-    print!("  Paste your token: ");
+/// Validate the token if an endpoint is configured; on failure ask whether to
+/// save anyway. Returns `false` when the user aborts.
+async fn validate_or_confirm_save(
+    token: &str,
+    auth: &AuthCapabilitySchema,
+) -> anyhow::Result<bool> {
+    let Some(ref validation) = auth.validation_endpoint else {
+        return Ok(true);
+    };
+    print!("  Validating token...");
     std::io::stdout().flush()?;
 
-    let token = read_hidden_input()?;
+    let Err(e) = validate_token(token, validation, &auth.secret_name).await else {
+        println!(" ✓");
+        return Ok(true);
+    };
+    println!(" ✗");
+    println!("  Validation failed: {}", e);
     println!();
+    print!("  Save anyway? [y/N]: ");
+    std::io::stdout().flush()?;
 
-    if token.is_empty() {
-        println!("  No token provided. Aborting.");
-        return Ok(());
+    let mut confirm = String::new();
+    std::io::stdin().read_line(&mut confirm)?;
+
+    if confirm.trim().eq_ignore_ascii_case("y") {
+        return Ok(true);
     }
-
-    if let Some(ref validation) = auth.validation_endpoint {
-        print!("  Validating token...");
-        std::io::stdout().flush()?;
-
-        match validate_token(&token, validation, &auth.secret_name).await {
-            Ok(()) => println!(" ✓"),
-            Err(e) => {
-                println!(" ✗");
-                println!("  Validation failed: {}", e);
-                println!();
-                print!("  Save anyway? [y/N]: ");
-                std::io::stdout().flush()?;
-
-                let mut confirm = String::new();
-                std::io::stdin().read_line(&mut confirm)?;
-
-                if !confirm.trim().eq_ignore_ascii_case("y") {
-                    println!("  Aborting.");
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    save_token(store, user_id, auth, &token, None, None).await?;
-    print_success(display_name);
-    Ok(())
+    println!("  Aborting.");
+    Ok(false)
 }
 
 /// Read input with hidden characters.

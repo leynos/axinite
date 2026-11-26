@@ -19,7 +19,48 @@ use super::auth::AuthInterceptParams;
 use super::context::{ApprovalParams, MsgEnv, TurnScope};
 use super::deferred_flow::DeferredFlow;
 
+/// Whether an approval request settles at once or proceeds to execution.
+enum ApprovalClaim {
+    /// The request was settled (nothing pending, a stale request ID, or a rejection).
+    Finished(SubmissionResult),
+    /// The pending tool call was approved and should now run.
+    Approved(PendingApproval),
+}
+
 impl Agent {
+    /// Claim the pending approval and settle every case that needs no execution.
+    async fn claim_approved_pending(
+        &self,
+        scope: &TurnScope,
+        params: &ApprovalParams,
+    ) -> Result<ApprovalClaim, Error> {
+        // a) Get pending approval
+        let Some(pending) = self
+            .take_pending_approval_if_awaiting(&scope.session, scope.thread_id)
+            .await?
+        else {
+            return Ok(ApprovalClaim::Finished(SubmissionResult::ok_with_message(
+                "",
+            )));
+        };
+
+        // b) Check request ID mismatch
+        if let Some(res) = self
+            .restage_on_request_id_mismatch(scope, params.request_id, &pending)
+            .await?
+        {
+            return Ok(ApprovalClaim::Finished(res));
+        }
+
+        // c) Handle rejection
+        if !params.approved {
+            let res = self.complete_rejection_and_persist(scope, &pending).await?;
+            return Ok(ApprovalClaim::Finished(res));
+        }
+
+        Ok(ApprovalClaim::Approved(pending))
+    }
+
     /// Take pending approval if thread is in AwaitingApproval state.
     async fn take_pending_approval_if_awaiting(
         &self,
@@ -280,27 +321,10 @@ impl Agent {
         scope: TurnScope,
         params: ApprovalParams,
     ) -> Result<SubmissionResult, Error> {
-        // a) Get pending approval
-        let pending = match self
-            .take_pending_approval_if_awaiting(&scope.session, scope.thread_id)
-            .await?
-        {
-            Some(p) => p,
-            None => return Ok(SubmissionResult::ok_with_message("")),
+        let pending = match self.claim_approved_pending(&scope, &params).await? {
+            ApprovalClaim::Finished(result) => return Ok(result),
+            ApprovalClaim::Approved(pending) => pending,
         };
-
-        // b) Check request ID mismatch
-        if let Some(res) = self
-            .restage_on_request_id_mismatch(&scope, params.request_id, &pending)
-            .await?
-        {
-            return Ok(res);
-        }
-
-        // c) Handle rejection
-        if !params.approved {
-            return self.complete_rejection_and_persist(&scope, &pending).await;
-        }
 
         // d) Auto-approve (thread already transitioned to Processing in take_pending_approval_if_awaiting)
         self.auto_approve_if_always(&scope.session, params.always, &pending.tool_name)

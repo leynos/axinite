@@ -131,20 +131,7 @@ impl ChunkEmitter {
         let _ = self.send_chunk(role_chunk).await;
 
         match llm_result {
-            LlmResult::WithTools(resp) => {
-                // Stream content chunks
-                if let Some(ref content) = resp.content {
-                    self.stream_content_chunks(content).await;
-                }
-
-                // Stream tool calls
-                if !resp.tool_calls.is_empty() {
-                    self.send_tool_call_chunk(&resp.tool_calls).await;
-                }
-
-                // Final chunk with finish_reason
-                self.send_finish_chunk(resp.finish_reason).await;
-            }
+            LlmResult::WithTools(resp) => self.emit_tool_response(resp).await,
             LlmResult::Simple(resp) => {
                 self.stream_content_chunks(&resp.content).await;
                 self.send_finish_chunk(resp.finish_reason).await;
@@ -153,6 +140,22 @@ impl ChunkEmitter {
 
         // Send [DONE] sentinel
         let _ = self.tx.send(Ok(Event::default().data("[DONE]"))).await;
+    }
+
+    /// Stream content, tool calls and the finish reason of a tool-capable response.
+    async fn emit_tool_response(&self, resp: crate::llm::ToolCompletionResponse) {
+        // Stream content chunks
+        if let Some(ref content) = resp.content {
+            self.stream_content_chunks(content).await;
+        }
+
+        // Stream tool calls
+        if !resp.tool_calls.is_empty() {
+            self.send_tool_call_chunk(&resp.tool_calls).await;
+        }
+
+        // Final chunk with finish_reason
+        self.send_finish_chunk(resp.finish_reason).await;
     }
 
     /// Split content into word-boundary chunks (~20 chars) and send them.

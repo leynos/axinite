@@ -66,7 +66,81 @@ async fn record_tool_error_and_push(
     reason_ctx.push(ChatMessage::tool_result(&tc.id, &tc.name, error_msg));
 }
 
+/// Take the next executed result, or an error if the executor returned too few.
+fn next_executed_result(
+    exec_results: &mut std::collections::VecDeque<(crate::llm::ToolCall, Result<String, Error>)>,
+    tc: &crate::llm::ToolCall,
+) -> Result<String, Error> {
+    exec_results
+        .pop_front()
+        .map(|(_executed_tc, result)| result)
+        .unwrap_or_else(|| {
+            Err(crate::error::ToolError::ExecutionFailed {
+                name: tc.name.clone(),
+                reason: "No result available".to_string(),
+            }
+            .into())
+        })
+}
+
+/// Record a sanitized tool result on the thread's last turn.
+async fn record_sanitized_result(scope: &TurnScope, content: &str, is_error: bool) {
+    let mut sess = scope.session.lock().await;
+    if let Some(thread) = sess.threads.get_mut(&scope.thread_id)
+        && let Some(turn) = thread.last_turn_mut()
+    {
+        if is_error {
+            turn.record_tool_error(content.to_string());
+        } else {
+            turn.record_tool_result_content(content);
+        }
+    }
+}
+
+/// Build the fresh `PendingApproval` representing the live deferred continuation.
+///
+/// It takes the original pending approval, carries the current
+/// `context_messages` (which include results from deferred calls that have
+/// already executed), and clears `deferred_tool_calls` since partial deferred
+/// batches cannot be resumed.
+fn live_continuation(
+    pending: &PendingApproval,
+    tc: &crate::llm::ToolCall,
+    context_messages: &[ChatMessage],
+) -> PendingApproval {
+    PendingApproval {
+        request_id: pending.request_id,
+        tool_name: tc.name.clone(),
+        parameters: tc.arguments.clone(),
+        display_parameters: redact_params(&tc.arguments, &[]),
+        description: format!("Authenticate to continue with {}", tc.name),
+        tool_call_id: tc.id.clone(),
+        context_messages: context_messages.to_vec(),
+        deferred_tool_calls: Vec::new(),
+        user_timezone: pending.user_timezone.clone(),
+    }
+}
+
 impl Agent {
+    /// Send a `ToolResult` preview of sanitized, non-empty `content`.
+    async fn send_result_preview(&self, scope: &TurnScope, tool_name: &str, content: &str) {
+        let preview = crate::agent::dispatcher::truncate_for_preview(
+            content,
+            crate::agent::dispatcher::PREVIEW_MAX_CHARS,
+        );
+        let _ = self
+            .channels
+            .send_status(
+                &scope.env.channel,
+                StatusUpdate::ToolResult {
+                    name: tool_name.to_string(),
+                    preview,
+                },
+                &scope.env.metadata,
+            )
+            .await;
+    }
+
     /// Postflight: record results, emit ToolResult previews, check for deferred auth.
     async fn postflight_record_and_maybe_deferred_auth(
         &self,
@@ -84,26 +158,13 @@ impl Agent {
         };
 
         for (tc, outcome) in preflight {
-            let Some(deferred_result) = (match outcome {
+            let deferred_result = match outcome {
                 DeferredPreflightOutcome::Rejected(error_msg) => {
                     record_tool_error_and_push(&turn_write_ctx, context_messages, &tc, error_msg)
                         .await;
-                    None
+                    continue;
                 }
-                DeferredPreflightOutcome::Runnable => Some(
-                    exec_results
-                        .pop_front()
-                        .map(|(_executed_tc, result)| result)
-                        .unwrap_or_else(|| {
-                            Err(crate::error::ToolError::ExecutionFailed {
-                                name: tc.name.clone(),
-                                reason: "No result available".to_string(),
-                            }
-                            .into())
-                        }),
-                ),
-            }) else {
-                continue;
+                DeferredPreflightOutcome::Runnable => next_executed_result(&mut exec_results, &tc),
             };
 
             // Sanitize first before any use of the output
@@ -117,57 +178,19 @@ impl Agent {
 
             // Send ToolResult preview using sanitized content (only on success and non-empty)
             if !is_deferred_error && !deferred_content.is_empty() {
-                let preview = crate::agent::dispatcher::truncate_for_preview(
-                    &deferred_content,
-                    crate::agent::dispatcher::PREVIEW_MAX_CHARS,
-                );
-                let _ = self
-                    .channels
-                    .send_status(
-                        &scope.env.channel,
-                        StatusUpdate::ToolResult {
-                            name: tc.name.clone(),
-                            preview,
-                        },
-                        &scope.env.metadata,
-                    )
+                self.send_result_preview(scope, &tc.name, &deferred_content)
                     .await;
             }
 
             // Record sanitized result in thread
-            {
-                let mut sess = scope.session.lock().await;
-                if let Some(thread) = sess.threads.get_mut(&scope.thread_id)
-                    && let Some(turn) = thread.last_turn_mut()
-                {
-                    if is_deferred_error {
-                        turn.record_tool_error(deferred_content.clone());
-                    } else {
-                        turn.record_tool_result_content(&deferred_content);
-                    }
-                }
-            }
+            record_sanitized_result(scope, &deferred_content, is_deferred_error).await;
 
             // Auth detection — defer return until all results are recorded
             if deferred_auth.is_none()
                 && let Some((ext_name, instructions)) =
                     check_auth_required(&tc.name, &deferred_result)
             {
-                // Build fresh PendingApproval representing the live deferred continuation.
-                // Take the original pending and update it with the current context_messages
-                // (which includes results from deferred calls that have already executed)
-                // and clear deferred_tool_calls since we can't resume partial deferred batches.
-                let fresh_pending = PendingApproval {
-                    request_id: pending.request_id,
-                    tool_name: tc.name.clone(),
-                    parameters: tc.arguments.clone(),
-                    display_parameters: redact_params(&tc.arguments, &[]),
-                    description: format!("Authenticate to continue with {}", tc.name),
-                    tool_call_id: tc.id.clone(),
-                    context_messages: context_messages.clone(),
-                    deferred_tool_calls: Vec::new(),
-                    user_timezone: pending.user_timezone.clone(),
-                };
+                let fresh_pending = live_continuation(pending, &tc, context_messages);
                 self.handle_auth_intercept(AuthInterceptParams {
                     session: &scope.session,
                     thread_id: scope.thread_id,

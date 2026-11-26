@@ -87,17 +87,7 @@ async fn resolve_directory_install(
         Some(name) => name,
         None => extract_crate_name(&cargo_toml).await?,
     };
-    let profile = if release { "release" } else { "debug" };
-    let wasm_path = if skip_build {
-        find_existing_wasm_artefact(path, &tool_name, profile).await?
-    } else {
-        let source_dir = path.to_path_buf();
-        tokio::task::spawn_blocking(move || {
-            crate::registry::artifacts::build_wasm_component_sync(&source_dir, release)
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("tool build task failed: {e}"))??
-    };
+    let wasm_path = build_or_find_wasm(path, &tool_name, release, skip_build).await?;
     let caps_path = match capabilities {
         Some(path) => Some(path),
         None => {
@@ -110,6 +100,25 @@ async fn resolve_directory_install(
     };
 
     Ok((wasm_path, tool_name, caps_path))
+}
+
+/// Locate the existing WASM artefact, or build the tool, for a source directory.
+async fn build_or_find_wasm(
+    path: &Path,
+    tool_name: &str,
+    release: bool,
+    skip_build: bool,
+) -> anyhow::Result<PathBuf> {
+    if skip_build {
+        let profile = if release { "release" } else { "debug" };
+        return find_existing_wasm_artefact(path, tool_name, profile).await;
+    }
+    let source_dir = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        crate::registry::artifacts::build_wasm_component_sync(&source_dir, release)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("tool build task failed: {e}"))?
 }
 
 async fn resolve_wasm_install(
@@ -135,6 +144,23 @@ async fn resolve_wasm_install(
     Ok((path.to_path_buf(), tool_name, caps_path))
 }
 
+/// Classify `path` and resolve its WASM file, tool name and capabilities file.
+async fn resolve_install_source(
+    path: &Path,
+    name: Option<String>,
+    capabilities: Option<PathBuf>,
+    release: bool,
+    skip_build: bool,
+) -> anyhow::Result<(PathBuf, String, Option<PathBuf>)> {
+    let metadata = ambient_fs::Metadata::from_std(fs::metadata(path).await?);
+    match classify_install_source(path, &metadata)? {
+        InstallSourceKind::SourceDirectory => {
+            resolve_directory_install(path, name, capabilities, release, skip_build).await
+        }
+        InstallSourceKind::WasmFile => resolve_wasm_install(path, name, capabilities).await,
+    }
+}
+
 /// Install a WASM tool.
 pub(super) async fn install_tool(
     path: PathBuf,
@@ -147,15 +173,8 @@ pub(super) async fn install_tool(
 ) -> anyhow::Result<()> {
     let target_dir = target.unwrap_or_else(default_tools_dir);
 
-    let metadata = ambient_fs::Metadata::from_std(fs::metadata(&path).await?);
-    let source_kind = classify_install_source(&path, &metadata)?;
-
-    let (wasm_path, tool_name, caps_path) = match source_kind {
-        InstallSourceKind::SourceDirectory => {
-            resolve_directory_install(&path, name, capabilities, release, skip_build).await?
-        }
-        InstallSourceKind::WasmFile => resolve_wasm_install(&path, name, capabilities).await?,
-    };
+    let (wasm_path, tool_name, caps_path) =
+        resolve_install_source(&path, name, capabilities, release, skip_build).await?;
 
     fs::create_dir_all(&target_dir).await?;
 

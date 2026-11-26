@@ -96,31 +96,12 @@ impl HotReloadManager {
         async {
             let _reload_guard = self.reload_lock.lock().await;
 
-            let mut env_context = self.env_context.clone();
-
-            // Step 1: Inject secrets into this reload's configuration snapshot.
-            // Errors are logged internally by the injector; we continue regardless.
-            if let Some(ref injector) = self.secret_injector {
-                injector.inject(&mut env_context).await;
-            }
-
-            // Step 2: Load new configuration from this cycle's immutable snapshot.
-            let new_config = self.config_loader.load(env_context).await.map_err(|e| {
-                tracing::error!("Config reload failed: {}", e);
-                super::telemetry::reload_outcome("config_error");
-                ReloadError::from(e)
-            })?;
+            let new_config = self.load_reloaded_config().await?;
 
             // Step 3: Parse HTTP config and restart listener if address changed
             let Some(new_http) = new_config.channels.http else {
                 tracing::warn!("HTTP channel no longer configured, shutting down listener");
-                // Teardown the existing HTTP listener and clear secrets
-                if let Some(ref controller) = self.listener_controller {
-                    controller.shutdown().await;
-                }
-                for updater in &self.secret_updaters {
-                    updater.update_secret(None).await;
-                }
+                self.teardown_http().await;
                 super::telemetry::reload_outcome("http_removed");
                 return Ok(());
             };
@@ -140,6 +121,34 @@ impl HotReloadManager {
         }
         .instrument(tracing::info_span!("reload.cycle"))
         .await
+    }
+
+    /// Steps 1 and 2: inject secrets into a fresh environment snapshot, then load the config.
+    async fn load_reloaded_config(&self) -> Result<crate::config::Config, ReloadError> {
+        let mut env_context = self.env_context.clone();
+
+        // Step 1: Inject secrets into this reload's configuration snapshot.
+        // Errors are logged internally by the injector; we continue regardless.
+        if let Some(ref injector) = self.secret_injector {
+            injector.inject(&mut env_context).await;
+        }
+
+        // Step 2: Load new configuration from this cycle's immutable snapshot.
+        self.config_loader.load(env_context).await.map_err(|e| {
+            tracing::error!("Config reload failed: {}", e);
+            super::telemetry::reload_outcome("config_error");
+            ReloadError::from(e)
+        })
+    }
+
+    /// Tear down the existing HTTP listener and clear the channel secrets.
+    async fn teardown_http(&self) {
+        if let Some(ref controller) = self.listener_controller {
+            controller.shutdown().await;
+        }
+        for updater in &self.secret_updaters {
+            updater.update_secret(None).await;
+        }
     }
 
     async fn resolve_http_addrs<L, Fut, I>(
