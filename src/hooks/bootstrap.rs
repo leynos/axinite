@@ -5,7 +5,7 @@ mod capability_files;
 use std::path::Path;
 use std::sync::Arc;
 
-use capability_files::collect_plugin_capability_files;
+use capability_files::PluginCapabilitySources;
 
 use crate::hooks::bundled::{
     HookBundleConfig, HookRegistrationSummary, register_bundle, register_bundled_hooks,
@@ -84,13 +84,14 @@ async fn register_plugin_bundles(
     dev_loaded_tool_names: &[String],
 ) -> HookRegistrationSummary {
     let mut summary = HookRegistrationSummary::default();
-    let files = collect_plugin_capability_files(
+    let files = PluginCapabilitySources {
         wasm_tools_dir,
         wasm_channels_dir,
         active_tool_names,
         active_channel_names,
         dev_loaded_tool_names,
-    )
+    }
+    .collect()
     .await;
 
     for (source, path) in files {

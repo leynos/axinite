@@ -25,33 +25,105 @@ fn is_active_dev_tool(
     active_tools.contains(name) && dev_loaded_tools.contains(name)
 }
 
-/// Collect the (source, path) pairs of every capability file of an active
-/// bundled tool, dev-override tool or channel, sorted by source.
-pub(super) async fn collect_plugin_capability_files(
-    wasm_tools_dir: &Path,
-    wasm_channels_dir: &Path,
-    active_tool_names: &[String],
-    active_channel_names: &[String],
-    dev_loaded_tool_names: &[String],
-) -> Vec<(String, PathBuf)> {
-    let mut collected = CapabilityFiles::default();
-    let active_tools: HashSet<&str> = active_tool_names.iter().map(String::as_str).collect();
-    let active_channels: HashSet<&str> = active_channel_names.iter().map(String::as_str).collect();
-    let dev_loaded_tools: HashSet<&str> =
-        dev_loaded_tool_names.iter().map(String::as_str).collect();
+/// Where plugin capability files are discovered and which plugins are active.
+pub(super) struct PluginCapabilitySources<'a> {
+    pub(super) wasm_tools_dir: &'a Path,
+    pub(super) wasm_channels_dir: &'a Path,
+    pub(super) active_tool_names: &'a [String],
+    pub(super) active_channel_names: &'a [String],
+    pub(super) dev_loaded_tool_names: &'a [String],
+}
 
-    collected
-        .add_bundled_tools(wasm_tools_dir, &active_tools, &dev_loaded_tools)
-        .await;
-    collected
-        .add_dev_tools(&active_tools, &dev_loaded_tools)
-        .await;
-    collected
-        .add_channels(wasm_channels_dir, &active_channels)
-        .await;
+impl PluginCapabilitySources<'_> {
+    /// Collect the (source, path) pairs of every capability file of an active
+    /// bundled tool, dev-override tool or channel, sorted by source.
+    pub(super) async fn collect(&self) -> Vec<(String, PathBuf)> {
+        let mut collected = CapabilityFiles::default();
+        let active_tools = name_set(self.active_tool_names);
+        let active_channels = name_set(self.active_channel_names);
+        let dev_loaded_tools = name_set(self.dev_loaded_tool_names);
 
-    collected.files.sort_by(|a, b| a.0.cmp(&b.0));
-    collected.files
+        collected
+            .add_outcome(
+                &TOOLS,
+                self.wasm_tools_dir,
+                discover_tool_paths(self.wasm_tools_dir).await,
+                |name| is_active_bundled_tool(&active_tools, &dev_loaded_tools, name),
+            )
+            .add_dev_tools(&active_tools, &dev_loaded_tools)
+            .await
+            .add_outcome(
+                &CHANNELS,
+                self.wasm_channels_dir,
+                discover_channel_paths(self.wasm_channels_dir).await,
+                |name| active_channels.contains(name),
+            );
+
+        collected.files.sort_by(|a, b| a.0.cmp(&b.0));
+        collected.files
+    }
+}
+
+/// The names as a set of string slices.
+fn name_set(names: &[String]) -> HashSet<&str> {
+    names.iter().map(String::as_str).collect()
+}
+
+/// What discovery found: (name, capabilities path) pairs, or why it failed.
+type Discovered = Result<Vec<(String, Option<PathBuf>)>, String>;
+
+/// How one kind of plugin is labelled in sources and failure logs.
+struct DiscoveryKind {
+    /// Human-readable label for the failure log.
+    label: &'static str,
+    /// Prefix of the recorded source, followed by `:<name>`.
+    prefix: &'static str,
+}
+
+const TOOLS: DiscoveryKind = DiscoveryKind {
+    label: "WASM tool",
+    prefix: "plugin.tool",
+};
+
+const CHANNELS: DiscoveryKind = DiscoveryKind {
+    label: "WASM channel",
+    prefix: "plugin.channel",
+};
+
+/// Discover bundled WASM tools; `None` when the directory does not exist.
+async fn discover_tool_paths(dir: &Path) -> Option<Discovered> {
+    if !dir.exists() {
+        return None;
+    }
+    Some(
+        discover_tools(dir)
+            .await
+            .map(|tools| {
+                tools
+                    .into_iter()
+                    .map(|(name, tool)| (name, tool.capabilities_path))
+                    .collect()
+            })
+            .map_err(|err| err.to_string()),
+    )
+}
+
+/// Discover WASM channels; `None` when the directory does not exist.
+async fn discover_channel_paths(dir: &Path) -> Option<Discovered> {
+    if !dir.exists() {
+        return None;
+    }
+    Some(
+        discover_channels(dir)
+            .await
+            .map(|channels| {
+                channels
+                    .into_iter()
+                    .map(|(name, channel)| (name, channel.capabilities_path))
+                    .collect()
+            })
+            .map_err(|err| err.to_string()),
+    )
 }
 
 /// Capability files gathered for plugin hooks, de-duplicated by path.
@@ -87,32 +159,28 @@ impl CapabilityFiles {
         }
     }
 
-    /// Add the capability files of active bundled WASM tools.
-    async fn add_bundled_tools(
+    /// Add the active entries of one discovery outcome, or log why discovery
+    /// failed. `None` (no such directory) adds nothing.
+    fn add_outcome(
         &mut self,
-        wasm_tools_dir: &Path,
-        active_tools: &HashSet<&str>,
-        dev_loaded_tools: &HashSet<&str>,
-    ) {
-        if !wasm_tools_dir.exists() {
-            return;
-        }
-        match discover_tools(wasm_tools_dir).await {
-            Ok(tools) => self.add_discovered(
-                "plugin.tool",
-                tools
-                    .into_iter()
-                    .map(|(name, tool)| (name, tool.capabilities_path)),
-                |name| is_active_bundled_tool(active_tools, dev_loaded_tools, name),
-            ),
-            Err(err) => {
+        kind: &DiscoveryKind,
+        dir: &Path,
+        outcome: Option<Discovered>,
+        is_active: impl Fn(&str) -> bool,
+    ) -> &mut Self {
+        match outcome {
+            Some(Ok(discovered)) => self.add_discovered(kind.prefix, discovered, is_active),
+            Some(Err(error)) => {
                 tracing::warn!(
-                    path = %wasm_tools_dir.display(),
-                    error = %err,
-                    "Failed to discover WASM tool capabilities for plugin hooks"
+                    path = %dir.display(),
+                    error = %error,
+                    "Failed to discover {} capabilities for plugin hooks",
+                    kind.label
                 );
             }
+            None => {}
         }
+        self
     }
 
     /// Add the capability files of active dev-override tools.
@@ -120,7 +188,7 @@ impl CapabilityFiles {
         &mut self,
         active_tools: &HashSet<&str>,
         dev_loaded_tools: &HashSet<&str>,
-    ) {
+    ) -> &mut Self {
         match discover_dev_tools().await {
             Ok(dev_tools) => self.add_discovered(
                 "plugin.dev_tool",
@@ -136,29 +204,7 @@ impl CapabilityFiles {
                 );
             }
         }
-    }
-
-    /// Add the capability files of active WASM channels.
-    async fn add_channels(&mut self, wasm_channels_dir: &Path, active_channels: &HashSet<&str>) {
-        if !wasm_channels_dir.exists() {
-            return;
-        }
-        match discover_channels(wasm_channels_dir).await {
-            Ok(channels) => self.add_discovered(
-                "plugin.channel",
-                channels
-                    .into_iter()
-                    .map(|(name, channel)| (name, channel.capabilities_path)),
-                |name| active_channels.contains(name),
-            ),
-            Err(err) => {
-                tracing::warn!(
-                    path = %wasm_channels_dir.display(),
-                    error = %err,
-                    "Failed to discover WASM channel capabilities for plugin hooks"
-                );
-            }
-        }
+        self
     }
 }
 
@@ -192,5 +238,28 @@ mod tests {
         assert!(is_active_dev_tool(&active, &dev, "b"));
         assert!(!is_active_dev_tool(&active, &dev, "a"));
         assert!(!is_active_bundled_tool(&active, &dev, "inactive"));
+    }
+
+    #[test]
+    fn add_outcome_skips_inactive_names_and_missing_paths() {
+        let mut collected = CapabilityFiles::default();
+        let found = vec![
+            ("on".to_string(), Some(PathBuf::from("/p/on.json"))),
+            ("off".to_string(), Some(PathBuf::from("/p/off.json"))),
+            ("bare".to_string(), None),
+        ];
+        collected.add_outcome(&TOOLS, Path::new("/p"), Some(Ok(found)), |name| {
+            name != "off"
+        });
+        collected.add_outcome(
+            &TOOLS,
+            Path::new("/p"),
+            Some(Err("boom".to_string())),
+            |_| true,
+        );
+        collected.add_outcome(&CHANNELS, Path::new("/p"), None, |_| true);
+
+        let sources: Vec<&str> = collected.files.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(sources, ["plugin.tool:on"]);
     }
 }

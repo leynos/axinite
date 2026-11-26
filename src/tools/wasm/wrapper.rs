@@ -30,13 +30,14 @@ use crate::tools::wasm::runtime::{EPOCH_TICK_INTERVAL, PreparedModule, WasmToolR
 
 mod credentials;
 mod host_api;
+mod host_credentials;
 mod http;
 pub(crate) mod metadata;
 mod store;
 mod tool_impl;
 
 #[cfg(test)]
-use credentials::resolve_host_credentials;
+use host_credentials::resolve_host_credentials;
 #[cfg(test)]
 use http::extract_host_from_url;
 #[cfg(test)]
