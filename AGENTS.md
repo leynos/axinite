@@ -135,7 +135,8 @@ management.
       - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests \
         -- -D warnings`
     - `make lint-whitaker` (the Whitaker Dylint suite with warnings denied)
-      - `RUSTFLAGS="-D warnings" whitaker --all -- --all-targets --all-features`
+      - `RUSTFLAGS="-D warnings" whitaker --all -- --workspace --all-targets \
+        --all-features`
       - `RUSTFLAGS="-D warnings" whitaker --all \
         --manifest-path tools-src/github/Cargo.toml -- --tests`
   - `make test` (runs `make test-workspace`, `make test-github-tool`,

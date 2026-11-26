@@ -322,7 +322,7 @@ lint-libsql-transport: check-build-tools
 # it. `RUSTFLAGS` is assigned to deny warnings, as the other gates do through
 # Clippy's `-- -D warnings`.
 lint-whitaker: check-build-tools
-	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
+	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --workspace --all-targets --all-features
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
 
 markdownlint: spelling
