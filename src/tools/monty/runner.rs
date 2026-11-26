@@ -92,16 +92,23 @@ impl Supervisor {
         // The permit moves into the guard, so it is released by the same
         // cleanup that reaps the child — including when this future is
         // cancelled. `run_admitted` therefore cannot release it early.
-        self.run_admitted(request, broker, job_ctx, permit).await
+        self.run_admitted(
+            Conversation {
+                request: &request,
+                broker,
+                job_ctx,
+            },
+            permit,
+        )
+        .await
     }
 
     async fn run_admitted(
         &self,
-        request: RunRequest,
-        broker: &Arc<BrokerContext>,
-        job_ctx: &JobContext,
+        conversation: Conversation<'_>,
         permit: OwnedSemaphorePermit,
     ) -> Result<RunOutcome, RunError> {
+        let request = conversation.request;
         let guest_limits = request.limits.guest();
         let deadline = request.limits.deadline;
         let spawned = spawn(&self.program).await?;
@@ -114,12 +121,6 @@ impl Supervisor {
             stderr,
         } = guarded.take_pipes()?;
         let stderr_task = tokio::spawn(drain_stderr(stderr));
-
-        let conversation = Conversation {
-            request: &request,
-            broker,
-            job_ctx,
-        };
         let run = tokio::time::timeout(deadline, async {
             greet(&mut stdout).await?;
             write_message(

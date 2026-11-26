@@ -164,6 +164,29 @@ fn trace_outcome<E: std::fmt::Display>(
     }
 }
 
+/// Rewrite a tool result's error text through the safety layer.
+///
+/// Status updates and logs are display sinks: a tool's own message can quote
+/// the data it was given, and for `exec_code` that text is guest-controlled.
+/// Callers that surface a result outside the model's channel use this so the
+/// redaction happens once, identically, on every path.
+pub fn sanitized_status_result(
+    safety: &SafetyLayer,
+    tool_name: &str,
+    result: &Result<String, Error>,
+) -> Result<String, Error> {
+    match result {
+        Ok(output) => Ok(output.clone()),
+        Err(error) => Err(crate::error::ToolError::ExecutionFailed {
+            name: tool_name.to_string(),
+            reason: safety
+                .sanitize_tool_output(tool_name, &error.to_string())
+                .content,
+        }
+        .into()),
+    }
+}
+
 /// Process a tool result into a `ChatMessage::tool_result` with safety sanitization.
 ///
 /// On success: sanitize → wrap → ChatMessage::tool_result.

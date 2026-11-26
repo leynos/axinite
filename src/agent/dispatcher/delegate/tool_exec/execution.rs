@@ -308,18 +308,8 @@ async fn send_tool_completed(
     arguments: &serde_json::Value,
 ) {
     let disp_tool = delegate.agent.tools().get(tool_name).await;
-    let sanitized = match result {
-        Ok(output) => Ok(output.clone()),
-        Err(error) => Err(crate::error::ToolError::ExecutionFailed {
-            name: tool_name.to_string(),
-            reason: delegate
-                .agent
-                .safety()
-                .sanitize_tool_output(tool_name, &error.to_string())
-                .content,
-        }
-        .into()),
-    };
+    let sanitized =
+        crate::tools::execute::sanitized_status_result(delegate.agent.safety(), tool_name, result);
     let _ = delegate
         .agent
         .channels

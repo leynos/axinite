@@ -147,19 +147,13 @@ impl Agent {
             .await;
 
         let tool_ref = self.tools().get(&pending.tool_name).await;
-        // Sanitize before the display sink: the tool's own message can quote
-        // the data it was given.
-        let sanitized = match &tool_result {
-            Ok(output) => Ok(output.clone()),
-            Err(error) => Err(crate::error::ToolError::ExecutionFailed {
-                name: pending.tool_name.clone(),
-                reason: self
-                    .safety()
-                    .sanitize_tool_output(&pending.tool_name, &error.to_string())
-                    .content,
-            }
-            .into()),
-        };
+        // Status is a display sink: the tool's own message can quote the data
+        // it was given.
+        let sanitized = crate::tools::execute::sanitized_status_result(
+            self.safety(),
+            &pending.tool_name,
+            &tool_result,
+        );
         let _ = self
             .channels
             .send_status(
