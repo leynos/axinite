@@ -179,6 +179,35 @@ impl super::LiveWasmChannelActivation {
         })
     }
 
+    /// Fail unless the channel's credentials are in place (or it needs none).
+    async fn require_channel_configured(&self, name: &str) -> Result<(), ExtensionError> {
+        let auth_state = self.check_channel_auth_status(name).await?;
+        if auth_state != ToolAuthState::Ready && auth_state != ToolAuthState::NoAuth {
+            return Err(ExtensionError::ActivationFailed(format!(
+                "Channel '{}' requires configuration. Use the setup form to provide credentials.",
+                name
+            )));
+        }
+        Ok(())
+    }
+
+    /// Check the channel is configured, load it from disk, and resolve its webhook secret.
+    async fn load_configured_channel(
+        &self,
+        name: &str,
+        channel_runtime: &Arc<WasmChannelRuntime>,
+        pairing_store: &Arc<PairingStore>,
+    ) -> Result<(crate::channels::wasm::LoadedChannel, Option<String>), ExtensionError> {
+        self.require_channel_configured(name).await?;
+        let loaded = self
+            .load_wasm_channel_from_disk(name, channel_runtime, pairing_store)
+            .await?;
+        let webhook_secret = self
+            .resolve_webhook_secret(loaded.name(), &loaded.webhook_secret_name())
+            .await?;
+        Ok((loaded, webhook_secret))
+    }
+
     /// Activate a WASM channel at runtime without restarting.
     ///
     /// Loads the channel from its WASM file, injects credentials and config,
@@ -206,25 +235,11 @@ impl super::LiveWasmChannelActivation {
             wasm_channel_owner_ids,
         ) = self.resolve_runtime_state().await?;
 
-        let auth_state = self.check_channel_auth_status(name).await?;
-        if auth_state != ToolAuthState::Ready && auth_state != ToolAuthState::NoAuth {
-            return Err(ExtensionError::ActivationFailed(format!(
-                "Channel '{}' requires configuration. Use the setup form to provide credentials.",
-                name
-            )));
-        }
-
-        let loaded = self
-            .load_wasm_channel_from_disk(name, &channel_runtime, &pairing_store)
+        let (loaded, webhook_secret) = self
+            .load_configured_channel(name, &channel_runtime, &pairing_store)
             .await?;
         let channel_name = loaded.name().to_string();
-        let webhook_secret_name = loaded.webhook_secret_name();
-        let secret_header = loaded.webhook_secret_header().map(|s| s.to_string());
-        let sig_key_secret_name = loaded.signature_key_secret_name();
-        let hmac_secret_name = loaded.hmac_secret_name();
-        let webhook_secret = self
-            .resolve_webhook_secret(&channel_name, &webhook_secret_name)
-            .await?;
+        let endpoint_params = webhook_endpoint_params(&loaded, webhook_secret.clone());
         let channel_arc = Arc::new(loaded.channel);
 
         self.inject_runtime_config(
@@ -237,19 +252,31 @@ impl super::LiveWasmChannelActivation {
         self.register_webhook_router_endpoints(
             &wasm_channel_router,
             Arc::clone(&channel_arc),
-            RegisterWebhookEndpointsParams {
-                channel_name: super::channel_refresh::ChannelName(channel_name.clone()),
-                webhook_secret: webhook_secret.map(super::channel_refresh::WebhookSecretName),
-                secret_header: secret_header.map(super::channel_refresh::SecretHeader),
-                sig_key_secret_name: sig_key_secret_name
-                    .map(super::channel_refresh::SigKeySecretName),
-                hmac_secret_name: hmac_secret_name.map(super::channel_refresh::HmacSecretName),
-            },
+            endpoint_params,
         )
         .await;
         self.inject_and_log_credentials(&channel_arc, &channel_name)
             .await;
         self.complete_channel_activation(channel_arc, &channel_name, &channel_manager)
             .await
+    }
+}
+
+/// Collect the webhook secret names a loaded channel declares for router registration.
+fn webhook_endpoint_params(
+    loaded: &crate::channels::wasm::LoadedChannel,
+    webhook_secret: Option<String>,
+) -> RegisterWebhookEndpointsParams {
+    use super::channel_refresh::{
+        ChannelName, HmacSecretName, SecretHeader, SigKeySecretName, WebhookSecretName,
+    };
+    RegisterWebhookEndpointsParams {
+        channel_name: ChannelName(loaded.name().to_string()),
+        webhook_secret: webhook_secret.map(WebhookSecretName),
+        secret_header: loaded
+            .webhook_secret_header()
+            .map(|s| SecretHeader(s.to_string())),
+        sig_key_secret_name: loaded.signature_key_secret_name().map(SigKeySecretName),
+        hmac_secret_name: loaded.hmac_secret_name().map(HmacSecretName),
     }
 }

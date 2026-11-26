@@ -17,22 +17,7 @@ impl ExtensionManager {
         include_available: bool,
     ) -> Result<Vec<InstalledExtension>, ExtensionError> {
         let mut extensions = Vec::new();
-
-        if Self::kind_selected(kind_filter, ExtensionKind::McpServer) {
-            self.list_mcp_servers_into(&mut extensions).await;
-        }
-        if Self::kind_selected(kind_filter, ExtensionKind::WasmTool) && self.wasm_tools_dir.exists()
-        {
-            self.list_wasm_tools_into(&mut extensions).await;
-        }
-        if Self::kind_selected(kind_filter, ExtensionKind::WasmChannel)
-            && self.wasm_channels_dir.exists()
-        {
-            self.list_wasm_channels_into(&mut extensions).await;
-        }
-        if Self::kind_selected(kind_filter, ExtensionKind::ChannelRelay) {
-            self.list_relay_extensions_into(&mut extensions).await;
-        }
+        self.list_installed_into(kind_filter, &mut extensions).await;
 
         // Append available-but-not-installed registry entries
         if include_available {
@@ -41,6 +26,29 @@ impl ExtensionManager {
         }
 
         Ok(extensions)
+    }
+
+    /// Append every installed extension of the selected kinds.
+    async fn list_installed_into(
+        &self,
+        kind_filter: Option<ExtensionKind>,
+        extensions: &mut Vec<InstalledExtension>,
+    ) {
+        if Self::kind_selected(kind_filter, ExtensionKind::McpServer) {
+            self.list_mcp_servers_into(extensions).await;
+        }
+        if Self::kind_selected(kind_filter, ExtensionKind::WasmTool) && self.wasm_tools_dir.exists()
+        {
+            self.list_wasm_tools_into(extensions).await;
+        }
+        if Self::kind_selected(kind_filter, ExtensionKind::WasmChannel)
+            && self.wasm_channels_dir.exists()
+        {
+            self.list_wasm_channels_into(extensions).await;
+        }
+        if Self::kind_selected(kind_filter, ExtensionKind::ChannelRelay) {
+            self.list_relay_extensions_into(extensions).await;
+        }
     }
 
     /// Append installed MCP servers with auth/active state.

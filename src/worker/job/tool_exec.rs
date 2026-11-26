@@ -22,6 +22,21 @@ pub(super) struct ToolExecResult {
     pub(super) result: Result<String, Error>,
 }
 
+/// Save `action` to the store without waiting; failures are logged.
+fn persist_action_in_background(
+    deps: &WorkerDeps,
+    job_id: Uuid,
+    action: Option<crate::context::ActionRecord>,
+) {
+    if let (Some(action), Some(store)) = (action, deps.store.clone()) {
+        tokio::spawn(async move {
+            if let Err(e) = store.save_action(job_id, &action).await {
+                tracing::warn!("Failed to persist action for job {}: {}", job_id, e);
+            }
+        });
+    }
+}
+
 impl Worker {
     /// Execute multiple tools in parallel using a JoinSet.
     ///
@@ -175,13 +190,7 @@ impl Worker {
             elapsed,
         })
         .await;
-        if let (Some(action), Some(store)) = (action, deps.store.clone()) {
-            tokio::spawn(async move {
-                if let Err(e) = store.save_action(job_id, &action).await {
-                    tracing::warn!("Failed to persist action for job {}: {}", job_id, e);
-                }
-            });
-        }
+        persist_action_in_background(deps, job_id, action);
 
         tool_pipeline::finalize_output(tool_name, result, tool_timeout)
     }

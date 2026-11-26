@@ -215,13 +215,7 @@ impl Agent {
 
         match ext_mgr.auth(&pending.extension_name, Some(token)).await {
             Ok(result) if result.is_authenticated() => {
-                {
-                    let mut sess = scope.session.lock().await;
-                    if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
-                        thread.pending_auth = None;
-                        thread.clear_pending_approval();
-                    }
-                }
+                clear_auth_state(&scope).await;
                 tracing::info!(
                     "Extension '{}' authenticated via auth mode",
                     pending.extension_name
@@ -234,43 +228,63 @@ impl Agent {
             }
             Ok(result) => {
                 // Invalid token, re-enter auth mode
-                let instructions = result
-                    .instructions()
-                    .map(String::from)
-                    .unwrap_or_else(|| "Invalid token. Please try again.".to_string());
-                let auth_url = result.auth_url().map(String::from);
-                let setup_url = result.setup_url().map(String::from);
-                let reentry = AuthReentry {
-                    ext_name: pending.extension_name.clone(),
-                    instructions,
-                    auth_url,
-                    setup_url,
-                };
+                let reentry = AuthReentry::rejected(&pending.extension_name, &result);
                 let _ = self.reenter_auth_mode_and_notify(&scope, reentry).await;
                 Ok(None)
             }
             Err(e) => {
-                let msg = format!(
-                    "Authentication failed for {}: {}",
-                    pending.extension_name, e
-                );
                 // Restore pending_auth so the next user message is still intercepted
-                {
-                    let mut sess = scope.session.lock().await;
-                    if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
-                        thread.pending_auth = Some(pending.clone());
-                    }
-                }
+                restore_pending_auth(&scope, pending).await;
                 // Re-enter auth mode to allow retry
-                let reentry = AuthReentry {
-                    ext_name: pending.extension_name.clone(),
-                    instructions: format!("{} Please try again.", msg),
-                    auth_url: None,
-                    setup_url: None,
-                };
+                let reentry = AuthReentry::failed(&pending.extension_name, &e);
                 let _ = self.reenter_auth_mode_and_notify(&scope, reentry).await;
                 Ok(None)
             }
         }
+    }
+}
+
+impl AuthReentry {
+    /// Re-entry after the extension rejected the submitted token.
+    fn rejected(ext_name: &str, result: &crate::extensions::AuthResult) -> Self {
+        Self {
+            ext_name: ext_name.to_string(),
+            instructions: result
+                .instructions()
+                .map(String::from)
+                .unwrap_or_else(|| "Invalid token. Please try again.".to_string()),
+            auth_url: result.auth_url().map(String::from),
+            setup_url: result.setup_url().map(String::from),
+        }
+    }
+
+    /// Re-entry after the authentication call itself failed.
+    fn failed(ext_name: &str, error: &crate::extensions::ExtensionError) -> Self {
+        Self {
+            ext_name: ext_name.to_string(),
+            instructions: format!(
+                "Authentication failed for {}: {} Please try again.",
+                ext_name, error
+            ),
+            auth_url: None,
+            setup_url: None,
+        }
+    }
+}
+
+/// Leave auth mode: drop the pending auth and any pending approval.
+async fn clear_auth_state(scope: &TurnScope) {
+    let mut sess = scope.session.lock().await;
+    if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
+        thread.pending_auth = None;
+        thread.clear_pending_approval();
+    }
+}
+
+/// Put `pending` back so the next user message is still intercepted.
+async fn restore_pending_auth(scope: &TurnScope, pending: &crate::agent::session::PendingAuth) {
+    let mut sess = scope.session.lock().await;
+    if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
+        thread.pending_auth = Some(pending.clone());
     }
 }

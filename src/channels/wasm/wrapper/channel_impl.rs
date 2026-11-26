@@ -49,45 +49,10 @@ impl NativeChannel for WasmChannel {
         *self.channel_config.write().await = Some(config.clone());
 
         // Register HTTP endpoints
-        let mut endpoints = Vec::new();
-        for endpoint in &config.http_endpoints {
-            // Validate path is allowed
-            if !self.capabilities.is_path_allowed(&endpoint.path) {
-                tracing::warn!(
-                    channel = %self.name,
-                    path = %endpoint.path,
-                    "HTTP endpoint path not allowed by capabilities"
-                );
-                continue;
-            }
-
-            endpoints.push(RegisteredEndpoint {
-                channel_name: self.name.clone(),
-                path: endpoint.path.clone(),
-                methods: endpoint.methods.clone(),
-                require_secret: endpoint.require_secret,
-            });
-        }
-        *self.endpoints.write().await = endpoints;
+        *self.endpoints.write().await = self.allowed_endpoints(&config);
 
         // Start polling if configured
-        if let Some(poll_config) = &config.poll
-            && poll_config.enabled
-        {
-            let interval = self
-                .capabilities
-                .validate_poll_interval(poll_config.interval_ms)
-                .map_err(|e| ChannelError::StartupFailed {
-                    name: self.name.clone(),
-                    reason: e,
-                })?;
-
-            // Create shutdown channel for polling and store the sender to keep it alive
-            let (poll_shutdown_tx, poll_shutdown_rx) = oneshot::channel();
-            *self.poll_shutdown_tx.write().await = Some(poll_shutdown_tx);
-
-            self.start_polling(Duration::from_millis(interval as u64), poll_shutdown_rx);
-        }
+        self.start_polling_if_enabled(&config).await?;
 
         tracing::info!(
             channel = %self.name,
@@ -194,6 +159,59 @@ impl NativeChannel for WasmChannel {
             "WASM channel shut down"
         );
 
+        Ok(())
+    }
+}
+
+impl WasmChannel {
+    /// The configured HTTP endpoints whose paths the capabilities allow.
+    fn allowed_endpoints(
+        &self,
+        config: &crate::channels::wasm::schema::ChannelConfig,
+    ) -> Vec<RegisteredEndpoint> {
+        let mut endpoints = Vec::new();
+        for endpoint in &config.http_endpoints {
+            // Validate path is allowed
+            if !self.capabilities.is_path_allowed(&endpoint.path) {
+                tracing::warn!(
+                    channel = %self.name,
+                    path = %endpoint.path,
+                    "HTTP endpoint path not allowed by capabilities"
+                );
+                continue;
+            }
+
+            endpoints.push(RegisteredEndpoint {
+                channel_name: self.name.clone(),
+                path: endpoint.path.clone(),
+                methods: endpoint.methods.clone(),
+                require_secret: endpoint.require_secret,
+            });
+        }
+        endpoints
+    }
+
+    /// Start the polling task when the configuration enables it.
+    async fn start_polling_if_enabled(
+        &self,
+        config: &crate::channels::wasm::schema::ChannelConfig,
+    ) -> Result<(), ChannelError> {
+        let Some(poll_config) = config.poll.as_ref().filter(|poll| poll.enabled) else {
+            return Ok(());
+        };
+        let interval = self
+            .capabilities
+            .validate_poll_interval(poll_config.interval_ms)
+            .map_err(|e| ChannelError::StartupFailed {
+                name: self.name.clone(),
+                reason: e,
+            })?;
+
+        // Create shutdown channel for polling and store the sender to keep it alive
+        let (poll_shutdown_tx, poll_shutdown_rx) = oneshot::channel();
+        *self.poll_shutdown_tx.write().await = Some(poll_shutdown_tx);
+
+        self.start_polling(Duration::from_millis(interval as u64), poll_shutdown_rx);
         Ok(())
     }
 }

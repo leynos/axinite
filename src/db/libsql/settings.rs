@@ -31,6 +31,55 @@ impl LibSqlBackend {
     }
 }
 
+/// Delete the user's settings whose keys are not in `settings`.
+async fn delete_unlisted_settings(
+    conn: &libsql::Connection,
+    user_id: &UserId,
+    settings: &HashMap<String, serde_json::Value>,
+) -> Result<u64, libsql::Error> {
+    if settings.is_empty() {
+        return conn
+            .execute(
+                "DELETE FROM settings WHERE user_id = ?1",
+                params![user_id.as_str()],
+            )
+            .await;
+    }
+    let placeholders = (0..settings.len())
+        .map(|index| format!("?{}", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!("DELETE FROM settings WHERE user_id = ?1 AND key NOT IN ({placeholders})");
+    let mut values = Vec::with_capacity(settings.len() + 1);
+    values.push(user_id.as_str().into());
+    values.extend(settings.keys().map(|key| key.as_str().into()));
+    conn.execute(&sql, libsql::params::Params::Positional(values))
+        .await
+}
+
+/// Insert or update every entry of `settings` for the user, stamping `now`.
+async fn upsert_settings(
+    conn: &libsql::Connection,
+    user_id: &UserId,
+    settings: &HashMap<String, serde_json::Value>,
+    now: &str,
+) -> Result<(), libsql::Error> {
+    for (key, value) in settings {
+        conn.execute(
+            r#"
+            INSERT INTO settings (user_id, key, value, updated_at)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT (user_id, key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = ?4
+            "#,
+            params![user_id.as_str(), key.as_str(), value.to_string(), now],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 impl NativeSettingsStore for LibSqlBackend {
     async fn get_setting(
         &self,
@@ -179,52 +228,14 @@ impl NativeSettingsStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        let delete_result = if settings.is_empty() {
-            conn.execute(
-                "DELETE FROM settings WHERE user_id = ?1",
-                params![user_id.as_str()],
-            )
-            .await
-        } else {
-            let placeholders = (0..settings.len())
-                .map(|index| format!("?{}", index + 2))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let sql =
-                format!("DELETE FROM settings WHERE user_id = ?1 AND key NOT IN ({placeholders})");
-            let mut values = Vec::with_capacity(settings.len() + 1);
-            values.push(user_id.as_str().into());
-            values.extend(settings.keys().map(|key| key.as_str().into()));
-            conn.execute(&sql, libsql::params::Params::Positional(values))
-                .await
-        };
-        if let Err(e) = delete_result {
+        let write_result = async {
+            delete_unlisted_settings(&conn, &user_id, settings).await?;
+            upsert_settings(&conn, &user_id, settings, &now).await
+        }
+        .await;
+        if let Err(e) = write_result {
             let _ = conn.execute("ROLLBACK", ()).await;
             return Err(DatabaseError::Query(e.to_string()));
-        }
-
-        for (key, value) in settings {
-            if let Err(e) = conn
-                .execute(
-                    r#"
-                    INSERT INTO settings (user_id, key, value, updated_at)
-                    VALUES (?1, ?2, ?3, ?4)
-                    ON CONFLICT (user_id, key) DO UPDATE SET
-                        value = excluded.value,
-                        updated_at = ?4
-                    "#,
-                    params![
-                        user_id.as_str(),
-                        key.as_str(),
-                        value.to_string(),
-                        now.as_str()
-                    ],
-                )
-                .await
-            {
-                let _ = conn.execute("ROLLBACK", ()).await;
-                return Err(DatabaseError::Query(e.to_string()));
-            }
         }
 
         conn.execute("COMMIT", ())

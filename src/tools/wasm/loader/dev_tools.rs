@@ -110,6 +110,32 @@ pub async fn discover_dev_tools() -> Result<HashMap<String, DiscoveredTool>, std
     Ok(tools)
 }
 
+/// Whether the build artefact should replace the installed copy.
+///
+/// True when nothing is installed, when either modification time cannot be
+/// read, or when the build artefact is newer.
+async fn is_fresher_than_installed(dev_wasm: &Path, installed_path: &Path) -> bool {
+    if !installed_path.exists() {
+        return true;
+    }
+    // Compare modification times: prefer fresher build artefact
+    match (
+        fs::metadata(dev_wasm)
+            .await
+            .map(ambient_fs::Metadata::from_std),
+        fs::metadata(installed_path)
+            .await
+            .map(ambient_fs::Metadata::from_std),
+    ) {
+        (Ok(dev_meta), Ok(inst_meta)) => {
+            let dev_modified = dev_meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            let inst_modified = inst_meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            dev_modified > inst_modified
+        }
+        _ => true,
+    }
+}
+
 /// Load WASM tools from build artefacts in `tools-src/`.
 ///
 /// In dev mode, tools can be loaded directly from their build output without
@@ -131,28 +157,7 @@ pub async fn load_dev_tools(
     for (name, discovered) in &dev_tools {
         // Check if the build artefact is newer than the installed copy
         let installed_path = install_dir.join(format!("{}.wasm", name));
-        let should_load = if installed_path.exists() {
-            // Compare modification times: prefer fresher build artefact
-            match (
-                fs::metadata(&discovered.wasm_path)
-                    .await
-                    .map(ambient_fs::Metadata::from_std),
-                fs::metadata(&installed_path)
-                    .await
-                    .map(ambient_fs::Metadata::from_std),
-            ) {
-                (Ok(dev_meta), Ok(inst_meta)) => {
-                    let dev_modified = dev_meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-                    let inst_modified = inst_meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-                    dev_modified > inst_modified
-                }
-                _ => true,
-            }
-        } else {
-            true
-        };
-
-        if !should_load {
+        if !is_fresher_than_installed(&discovered.wasm_path, &installed_path).await {
             continue;
         }
 

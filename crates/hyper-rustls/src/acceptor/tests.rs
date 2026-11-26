@@ -14,7 +14,7 @@ use hyper::{client::HttpConnector, Uri};
 use rstest::{fixture, rstest};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use rustls::{ClientConfig, RootCertStore};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::TlsAcceptor;
@@ -147,15 +147,8 @@ async fn acceptor_io_exchange(
     );
 
     match driver {
-        HandshakeDriver::Read => {
-            let mut request = [0];
-            tokio::time::timeout(IO_TIMEOUT, stream.read_exact(&mut request)).await??;
-            ensure!(request == [42], "unexpected client payload: {request:?}");
-        }
-        HandshakeDriver::Write => {
-            tokio::time::timeout(IO_TIMEOUT, stream.write_all(&[42])).await??;
-            tokio::time::timeout(IO_TIMEOUT, stream.flush()).await??;
-        }
+        HandshakeDriver::Read => expect_byte(&mut stream, 42, "client payload").await?,
+        HandshakeDriver::Write => send_byte(&mut stream, 42).await?,
     }
 
     ensure!(
@@ -172,17 +165,25 @@ async fn acceptor_io_exchange(
     );
 
     match driver {
-        HandshakeDriver::Read => {
-            tokio::time::timeout(IO_TIMEOUT, stream.write_all(&[43])).await??;
-            tokio::time::timeout(IO_TIMEOUT, stream.flush()).await??;
-        }
-        HandshakeDriver::Write => {
-            let mut response = [0];
-            tokio::time::timeout(IO_TIMEOUT, stream.read_exact(&mut response)).await??;
-            ensure!(response == [43], "unexpected client response: {response:?}");
-        }
+        HandshakeDriver::Read => send_byte(&mut stream, 43).await?,
+        HandshakeDriver::Write => expect_byte(&mut stream, 43, "client response").await?,
     }
     tokio::time::timeout(IO_TIMEOUT, stream.shutdown()).await??;
+    Ok(())
+}
+
+/// Write one byte and flush it, bounding each wait.
+async fn send_byte<S: AsyncWrite + Unpin>(stream: &mut S, byte: u8) -> Result<()> {
+    tokio::time::timeout(IO_TIMEOUT, stream.write_all(&[byte])).await??;
+    tokio::time::timeout(IO_TIMEOUT, stream.flush()).await??;
+    Ok(())
+}
+
+/// Read one byte, bounding the wait, and require it to equal `expected`.
+async fn expect_byte<S: AsyncRead + Unpin>(stream: &mut S, expected: u8, what: &str) -> Result<()> {
+    let mut received = [0];
+    tokio::time::timeout(IO_TIMEOUT, stream.read_exact(&mut received)).await??;
+    ensure!(received == [expected], "unexpected {what}: {received:?}");
     Ok(())
 }
 
@@ -209,19 +210,13 @@ async fn connector_io_exchange(
 
     match driver {
         HandshakeDriver::Read => {
-            tokio::time::timeout(IO_TIMEOUT, stream.write_all(&[42])).await??;
-            tokio::time::timeout(IO_TIMEOUT, stream.flush()).await??;
+            send_byte(&mut stream, 42).await?;
             tokio::time::timeout(IO_TIMEOUT, stream.shutdown()).await??;
-            let mut response = [0];
-            tokio::time::timeout(IO_TIMEOUT, stream.read_exact(&mut response)).await??;
-            ensure!(response == [43], "unexpected server payload: {response:?}");
+            expect_byte(&mut stream, 43, "server payload").await?;
         }
         HandshakeDriver::Write => {
-            let mut request = [0];
-            tokio::time::timeout(IO_TIMEOUT, stream.read_exact(&mut request)).await??;
-            ensure!(request == [42], "unexpected server payload: {request:?}");
-            tokio::time::timeout(IO_TIMEOUT, stream.write_all(&[43])).await??;
-            tokio::time::timeout(IO_TIMEOUT, stream.flush()).await??;
+            expect_byte(&mut stream, 42, "server payload").await?;
+            send_byte(&mut stream, 43).await?;
             tokio::time::timeout(IO_TIMEOUT, stream.shutdown()).await??;
         }
     }

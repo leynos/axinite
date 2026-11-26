@@ -300,16 +300,10 @@ impl super::LiveWasmChannelActivation {
         self.activation_errors.write().await.remove(name);
         self.broadcast_extension_status(name, "active", None).await;
 
-        let message = if cred_count > 0 {
-            format!(
-                "Channel '{}' is active (refreshed {} credentials)",
-                name, cred_count
-            )
-        } else {
-            format!("Channel '{}' is already active", name)
-        };
-
-        Ok(already_active_result(name, message))
+        Ok(already_active_result(
+            name,
+            refresh_message(name, cred_count),
+        ))
     }
 
     /// Look up the router and the registered channel for an active channel.
@@ -331,6 +325,18 @@ impl super::LiveWasmChannelActivation {
         let webhook_path = format!("/webhook/{}", name);
         let existing_channel = router.get_channel_for_path(&webhook_path).await?;
         Some((router, existing_channel))
+    }
+}
+
+/// Describe a refresh of an active channel by how many credentials it reinjected.
+fn refresh_message(name: &str, cred_count: usize) -> String {
+    if cred_count > 0 {
+        format!(
+            "Channel '{}' is active (refreshed {} credentials)",
+            name, cred_count
+        )
+    } else {
+        format!("Channel '{}' is already active", name)
     }
 }
 
