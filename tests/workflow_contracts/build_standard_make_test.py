@@ -305,8 +305,8 @@ MUTATIONS: dict[str, tuple[str, cabc.Callable[[str], str]]] = {
     "whitaker-has-no-boundary": (
         "lint-whitaker",
         lambda t: t.replace(
-            '\tRUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets',
-            "\t$(WHITAKER) --all -- --all-targets",
+            '\tRUSTFLAGS="-D warnings" $(WHITAKER) --all -- --workspace --all-targets',
+            "\t$(WHITAKER) --all -- --workspace --all-targets",
             1,
         ),
     ),
