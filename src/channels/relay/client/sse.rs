@@ -187,7 +187,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn unparseable_data_and_unknown_fields_yield_no_event() {
+    fn unparsable_data_and_unknown_fields_yield_no_event() {
         let mut parser = SseParser::default();
         let events = feed(&mut parser, ": comment\nid: 7\ndata: not json\n\n");
         assert!(events.is_empty());
