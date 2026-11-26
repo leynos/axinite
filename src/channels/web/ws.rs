@@ -68,19 +68,15 @@ pub async fn handle_ws_connection(socket: WebSocket, state: Arc<GatewayState>) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
     // Track connection
-    if let Some(ref tracker) = state.ws_tracker {
-        tracker.increment();
-    }
     let tracker_for_drop = state.ws_tracker.clone();
+    adjust_tracker(tracker_for_drop.as_deref(), WsTrackerChange::Opened);
 
     // Subscribe to broadcast events (same source as SSE).
     // Reject if we've hit the connection limit.
     let Some(raw_stream) = state.sse.subscribe_raw() else {
         tracing::warn!("WebSocket rejected: too many connections");
         // Decrement the WS tracker we already incremented above.
-        if let Some(ref tracker) = tracker_for_drop {
-            tracker.decrement();
-        }
+        adjust_tracker(tracker_for_drop.as_deref(), WsTrackerChange::Closed);
         return;
     };
     let mut event_stream = Box::pin(raw_stream);
@@ -116,8 +112,23 @@ pub async fn handle_ws_connection(socket: WebSocket, state: Arc<GatewayState>) {
 
     // Clean up: abort sender, decrement counter
     sender_handle.abort();
-    if let Some(ref tracker) = tracker_for_drop {
-        tracker.decrement();
+    adjust_tracker(tracker_for_drop.as_deref(), WsTrackerChange::Closed);
+}
+
+/// A change to the open-connection count.
+enum WsTrackerChange {
+    Opened,
+    Closed,
+}
+
+/// Apply `change` to the connection tracker, when one is configured.
+fn adjust_tracker(tracker: Option<&WsConnectionTracker>, change: WsTrackerChange) {
+    let Some(tracker) = tracker else {
+        return;
+    };
+    match change {
+        WsTrackerChange::Opened => tracker.increment(),
+        WsTrackerChange::Closed => tracker.decrement(),
     }
 }
 

@@ -33,45 +33,60 @@ pub async fn run_mcp_command(cmd: McpCommand) -> anyhow::Result<()> {
     }
 }
 
-/// Add a new MCP server.
-async fn add_server(args: McpAddArgs) -> anyhow::Result<()> {
-    let McpAddArgs {
-        name,
-        url,
-        transport,
-        command,
-        cmd_args,
-        env,
-        socket,
-        headers,
-        client_id,
-        auth_url,
-        token_url,
-        scopes,
-        description,
-    } = args;
+/// Build the server config for the requested transport, with headers,
+/// description and OAuth applied.
+fn build_server_config(
+    args: &McpAddArgs,
+    transport_lower: &str,
+) -> anyhow::Result<McpServerConfig> {
+    let mut config = transport_config(args, transport_lower)?;
 
-    let transport_lower = transport.to_lowercase();
+    // Apply headers if any
+    if !args.headers.is_empty() {
+        let headers_map: HashMap<String, String> = args.headers.iter().cloned().collect();
+        config = config.with_headers(headers_map);
+    }
 
-    let mut config = match transport_lower.as_str() {
+    if let Some(desc) = &args.description {
+        config = config.with_description(desc.clone());
+    }
+
+    // Set up OAuth if client_id is provided (HTTP transport only)
+    if let Some(oauth) = oauth_config(args, transport_lower)? {
+        config = config.with_oauth(oauth);
+    }
+    Ok(config)
+}
+
+/// Create the base config for the stdio, unix or http transport.
+fn transport_config(args: &McpAddArgs, transport_lower: &str) -> anyhow::Result<McpServerConfig> {
+    match transport_lower {
         "stdio" => {
-            let cmd = command
+            let cmd = args
+                .command
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("--command is required for stdio transport"))?;
-            let env_map: HashMap<String, String> = env.into_iter().collect();
-            McpServerConfig::new_stdio(&name, &cmd, cmd_args.clone(), env_map)
+            let env_map: HashMap<String, String> = args.env.iter().cloned().collect();
+            Ok(McpServerConfig::new_stdio(
+                &args.name,
+                &cmd,
+                args.cmd_args.clone(),
+                env_map,
+            ))
         }
         "unix" => {
-            let socket_path = socket
+            let socket_path = args
+                .socket
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("--socket is required for unix transport"))?;
-            McpServerConfig::new_unix(&name, &socket_path)
+            Ok(McpServerConfig::new_unix(&args.name, &socket_path))
         }
         "http" => {
-            let url_val = url
+            let url_val = args
+                .url
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("URL is required for http transport"))?;
-            McpServerConfig::new(&name, url_val)
+            Ok(McpServerConfig::new(&args.name, url_val))
         }
         other => {
             anyhow::bail!(
@@ -79,43 +94,51 @@ async fn add_server(args: McpAddArgs) -> anyhow::Result<()> {
                 other
             );
         }
+    }
+}
+
+/// Build the OAuth config when a client id is given; OAuth needs the http
+/// transport.
+fn oauth_config(args: &McpAddArgs, transport_lower: &str) -> anyhow::Result<Option<OAuthConfig>> {
+    let Some(client_id) = args.client_id.clone() else {
+        return Ok(None);
     };
-
-    // Apply headers if any
-    if !headers.is_empty() {
-        let headers_map: HashMap<String, String> = headers.into_iter().collect();
-        config = config.with_headers(headers_map);
+    if transport_lower != "http" {
+        anyhow::bail!("OAuth authentication is only supported with http transport");
     }
 
-    if let Some(desc) = description {
-        config = config.with_description(desc);
+    let mut oauth = OAuthConfig::new(client_id);
+
+    if let (Some(auth), Some(token)) = (args.auth_url.clone(), args.token_url.clone()) {
+        oauth = oauth.with_endpoints(auth, token);
     }
+
+    if let Some(scopes_str) = &args.scopes {
+        let scope_list: Vec<String> = scopes_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+        oauth = oauth.with_scopes(scope_list);
+    }
+    Ok(Some(oauth))
+}
+
+/// Add a new MCP server.
+async fn add_server(args: McpAddArgs) -> anyhow::Result<()> {
+    let transport_lower = args.transport.to_lowercase();
+    let config = build_server_config(&args, &transport_lower)?;
+
+    let McpAddArgs {
+        name,
+        url,
+        command,
+        socket,
+        client_id,
+        ..
+    } = args;
 
     // Track if auth is required
     let requires_auth = client_id.is_some();
-
-    // Set up OAuth if client_id is provided (HTTP transport only)
-    if let Some(client_id) = client_id {
-        if transport_lower != "http" {
-            anyhow::bail!("OAuth authentication is only supported with http transport");
-        }
-
-        let mut oauth = OAuthConfig::new(client_id);
-
-        if let (Some(auth), Some(token)) = (auth_url, token_url) {
-            oauth = oauth.with_endpoints(auth, token);
-        }
-
-        if let Some(scopes_str) = scopes {
-            let scope_list: Vec<String> = scopes_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            oauth = oauth.with_scopes(scope_list);
-        }
-
-        config = config.with_oauth(oauth);
-    }
 
     // Validate
     config.validate()?;

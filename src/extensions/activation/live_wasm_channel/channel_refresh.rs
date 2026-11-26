@@ -273,32 +273,11 @@ impl super::LiveWasmChannelActivation {
         &self,
         name: &str,
     ) -> Result<ActivateResult, ExtensionError> {
-        let router = {
-            let rt_guard = self.channel_runtime.read().await;
-            match rt_guard.as_ref() {
-                Some(rt) => Arc::clone(&rt.wasm_channel_router),
-                None => {
-                    return Ok(ActivateResult {
-                        name: name.to_string(),
-                        kind: ExtensionKind::WasmChannel,
-                        tools_loaded: Vec::new(),
-                        message: format!("Channel '{}' is already active", name),
-                    });
-                }
-            }
-        };
-
-        let webhook_path = format!("/webhook/{}", name);
-        let existing_channel = match router.get_channel_for_path(&webhook_path).await {
-            Some(ch) => ch,
-            None => {
-                return Ok(ActivateResult {
-                    name: name.to_string(),
-                    kind: ExtensionKind::WasmChannel,
-                    tools_loaded: Vec::new(),
-                    message: format!("Channel '{}' is already active", name),
-                });
-            }
+        let Some((router, existing_channel)) = self.find_active_channel(name).await else {
+            return Ok(already_active_result(
+                name,
+                format!("Channel '{}' is already active", name),
+            ));
         };
 
         let chan = ChannelName(name.to_string());
@@ -330,11 +309,37 @@ impl super::LiveWasmChannelActivation {
             format!("Channel '{}' is already active", name)
         };
 
-        Ok(ActivateResult {
-            name: name.to_string(),
-            kind: ExtensionKind::WasmChannel,
-            tools_loaded: Vec::new(),
-            message,
-        })
+        Ok(already_active_result(name, message))
+    }
+
+    /// Look up the router and the registered channel for an active channel.
+    ///
+    /// `None` when there is no channel runtime or the router has no channel at
+    /// the webhook path.
+    async fn find_active_channel(
+        &self,
+        name: &str,
+    ) -> Option<(
+        Arc<crate::channels::wasm::WasmChannelRouter>,
+        Arc<crate::channels::wasm::WasmChannel>,
+    )> {
+        let router = {
+            let rt_guard = self.channel_runtime.read().await;
+            Arc::clone(&rt_guard.as_ref()?.wasm_channel_router)
+        };
+
+        let webhook_path = format!("/webhook/{}", name);
+        let existing_channel = router.get_channel_for_path(&webhook_path).await?;
+        Some((router, existing_channel))
+    }
+}
+
+/// The result reported for a WASM channel that is already active.
+fn already_active_result(name: &str, message: String) -> ActivateResult {
+    ActivateResult {
+        name: name.to_string(),
+        kind: ExtensionKind::WasmChannel,
+        tools_loaded: Vec::new(),
+        message,
     }
 }

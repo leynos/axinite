@@ -1,7 +1,7 @@
 //! Unit tests for the agentic loop's turn handling and tool dispatch.
 
 use super::*;
-use crate::llm::{RespondOutput, TokenUsage, ToolCall};
+use crate::llm::{ChatMessage, RespondOutput, TokenUsage, ToolCall};
 use crate::testing::StubLlm;
 use rstest::rstest;
 use std::sync::Arc;
