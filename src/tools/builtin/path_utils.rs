@@ -105,47 +105,94 @@ fn resolve_to_absolute(path: &Path, base_dir: Option<&Path>) -> PathBuf {
 
 /// The path to compare against the sandbox root.
 ///
-/// For existing paths, canonicalize to resolve symlinks. For non-existent
-/// paths, the lexical normalization already removed all `..` components, so
-/// `starts_with` is reliable: walk up to the nearest existing ancestor,
-/// canonicalize it, then re-append the remaining tail. This handles a symlink
-/// sitting above the new file.
-///
-/// The nearest ancestor is found with `symlink_metadata`, so a dangling
-/// symlink counts as existing. Its target is followed by hand (a dangling link
-/// cannot be canonicalized), so a link that leaves the sandbox is caught
-/// whether or not its target exists. `None` means the links loop or nest too
-/// deeply to resolve, which callers treat as an escape.
+/// The path is resolved component by component ([`resolve_links`]), so every
+/// symlink, live or dangling, is followed before the next `..` is applied. The
+/// nearest existing prefix of the result is then canonicalized, which keeps
+/// its form (for example a Windows verbatim prefix) consistent with the
+/// canonical sandbox root. `None` means the links loop or nest too deeply to
+/// resolve, which callers treat as an escape.
 fn canonical_check_path(resolved: &Path) -> Option<PathBuf> {
-    const MAX_LINK_HOPS: usize = 40;
-    let mut current = resolved.to_path_buf();
-    for _ in 0..MAX_LINK_HOPS {
-        let Some(ancestor) = current
-            .ancestors()
-            .find(|a| ambient_fs::symlink_metadata(a).is_ok())
-        else {
-            return Some(current);
-        };
-        let tail = current.strip_prefix(ancestor).unwrap_or(Path::new(""));
-        if let Ok(canonical) = ancestor.canonicalize() {
-            return Some(join_tail(canonical, tail));
-        }
-        // Existing but not canonicalizable: a dangling symlink. Follow it.
-        let target = ambient_fs::read_link(ancestor).ok()?;
-        let parent = ancestor.parent().unwrap_or(Path::new("/"));
-        current = join_tail(normalize_lexical(&parent.join(target)), tail);
-    }
-    None
+    let followed = resolve_links(resolved)?;
+    let Some(existing) = followed.ancestors().find(|a| a.exists()) else {
+        return Some(followed);
+    };
+    let tail = followed.strip_prefix(existing).unwrap_or(Path::new(""));
+    let canonical = existing
+        .canonicalize()
+        .unwrap_or_else(|_| existing.to_path_buf());
+    Some(if tail.as_os_str().is_empty() {
+        canonical
+    } else {
+        canonical.join(tail)
+    })
 }
 
-/// Append `tail` to `base`, leaving `base` as it is when `tail` is empty (a
-/// trailing slash would make the OS follow a final symlink).
-fn join_tail(base: PathBuf, tail: &Path) -> PathBuf {
-    if tail.as_os_str().is_empty() {
-        base
-    } else {
-        base.join(tail)
+/// One step of a path being resolved.
+enum Step {
+    /// A root or prefix component: restart from it.
+    Root(PathBuf),
+    /// `..`: drop the last resolved component.
+    Parent,
+    /// A named component, which may be a symlink.
+    Name(std::ffi::OsString),
+}
+
+/// Split `path` into resolution steps, dropping `.`.
+fn steps_of(path: &Path) -> Vec<Step> {
+    use std::path::Component;
+    path.components()
+        .filter_map(|component| match component {
+            Component::Prefix(_) | Component::RootDir => {
+                Some(Step::Root(PathBuf::from(component.as_os_str())))
+            }
+            Component::ParentDir => Some(Step::Parent),
+            Component::Normal(name) => Some(Step::Name(name.to_owned())),
+            Component::CurDir => None,
+        })
+        .collect()
+}
+
+/// Resolve every symlink in `path` in filesystem order, without requiring the
+/// final target (or any later component) to exist.
+///
+/// A symlink's target is spliced in front of the remaining components, so a
+/// `..` is applied only after the component before it has been resolved: the
+/// resolved prefix never contains a link. Returns `None` after 40 link hops,
+/// which covers loops.
+fn resolve_links(path: &Path) -> Option<PathBuf> {
+    const MAX_LINK_HOPS: usize = 40;
+    let mut queue: std::collections::VecDeque<Step> = steps_of(path).into();
+    let mut resolved = PathBuf::new();
+    let mut hops = 0;
+    while let Some(step) = queue.pop_front() {
+        match step {
+            Step::Root(root) => resolved.push(root),
+            Step::Parent => {
+                resolved.pop();
+            }
+            Step::Name(name) => {
+                let candidate = resolved.join(&name);
+                let is_link =
+                    ambient_fs::symlink_metadata(&candidate).is_ok_and(|m| m.is_symlink());
+                if !is_link {
+                    resolved = candidate;
+                    continue;
+                }
+                hops += 1;
+                if hops > MAX_LINK_HOPS {
+                    return None;
+                }
+                let target = ambient_fs::read_link(&candidate).ok()?;
+                if target.is_absolute() {
+                    resolved.clear();
+                }
+                for step in steps_of(&target).into_iter().rev() {
+                    queue.push_front(step);
+                }
+            }
+        }
     }
+    Some(resolved)
 }
 
 /// Basic path safety check without requiring a base directory.
@@ -268,58 +315,7 @@ mod tests {
         let result = validate_path("a/b/../c.txt", Some(dir.path()));
         assert!(result.is_ok());
     }
-
-    /// A sandbox, a directory outside it, and a symlink `sandbox/link` to `target`.
-    #[cfg(unix)]
-    fn link_in_sandbox(
-        target: impl FnOnce(&Path, &Path) -> PathBuf,
-    ) -> (tempfile::TempDir, tempfile::TempDir) {
-        let sandbox = tempdir().unwrap();
-        let outside = tempdir().unwrap();
-        let target = target(sandbox.path(), outside.path());
-        std::os::unix::fs::symlink(target, sandbox.path().join("link")).unwrap();
-        (sandbox, outside)
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_validate_path_rejects_dangling_symlink_to_outside() {
-        let (sandbox, _outside) = link_in_sandbox(|_, outside| outside.join("missing"));
-        let result = validate_path("link", Some(sandbox.path()));
-        assert!(result.is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_validate_path_allows_dangling_symlink_to_inside() {
-        let (sandbox, _outside) = link_in_sandbox(|inside, _| inside.join("missing"));
-        let result = validate_path("link", Some(sandbox.path()));
-        assert!(result.is_ok());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_validate_path_rejects_live_symlink_to_outside() {
-        let (sandbox, _outside) = link_in_sandbox(|_, outside| outside.to_path_buf());
-        let result = validate_path("link/file.txt", Some(sandbox.path()));
-        assert!(result.is_err());
-        assert!(validate_path("link", Some(sandbox.path())).is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_validate_path_allows_live_symlink_to_inside() {
-        let (sandbox, _outside) = link_in_sandbox(|inside, _| inside.to_path_buf());
-        let result = validate_path("link/new.txt", Some(sandbox.path()));
-        assert!(result.is_ok());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_validate_path_rejects_symlink_loops() {
-        let sandbox = tempdir().unwrap();
-        std::os::unix::fs::symlink("b", sandbox.path().join("a")).unwrap();
-        std::os::unix::fs::symlink("a", sandbox.path().join("b")).unwrap();
-        assert!(validate_path("a", Some(sandbox.path())).is_err());
-    }
 }
+
+#[cfg(all(test, unix))]
+mod symlink_tests;

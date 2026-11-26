@@ -65,11 +65,38 @@ pub fn metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata> {
 }
 
 /// Queries metadata for the given path without following a final symlink.
+///
+/// # Parameters
+///
+/// - `path`: the entry to inspect; if it is a symlink, the link itself is
+///   described, so a dangling link still yields metadata.
+///
+/// # Returns
+///
+/// The entry's metadata.
+///
+/// # Errors
+///
+/// Fails when the entry does not exist or cannot be inspected.
 pub fn symlink_metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata> {
     std::fs::symlink_metadata(path).map(Metadata::from_std)
 }
 
 /// Reads the target a symlink points at, without resolving it further.
+///
+/// # Parameters
+///
+/// - `path`: the symlink to read.
+///
+/// # Returns
+///
+/// The stored target exactly as written, which may be relative to the link's
+/// parent directory and may contain `..`. It is not a resolved path, so a
+/// containment check must resolve it component by component.
+///
+/// # Errors
+///
+/// Fails when `path` is not a symlink or cannot be read.
 pub fn read_link<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
     std::fs::read_link(path)
 }
