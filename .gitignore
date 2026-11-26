@@ -65,3 +65,6 @@ __pycache__/
 .verus/
 .cache/kani/
 .cache/z3/
+
+# Pending insta snapshots written by a failing snapshot test
+*.snap.new
