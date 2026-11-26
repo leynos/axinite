@@ -142,12 +142,14 @@ impl Agent {
                 .await;
 
                 let par_tool = tools.get(&tc.name).await;
+                let sanitized =
+                    crate::tools::execute::sanitized_status_result(&safety, &tc.name, &result);
                 let _ = channels
                     .send_status(
                         &env.channel,
                         StatusUpdate::tool_completed(
                             tc.name.clone(),
-                            &result,
+                            &sanitized,
                             &tc.arguments,
                             par_tool.as_deref(),
                         ),
