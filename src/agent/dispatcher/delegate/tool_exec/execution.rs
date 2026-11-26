@@ -3,6 +3,9 @@
 //! Runs the preflight-approved tool calls, batches them where safe, and
 //! captures raw results for the later postflight phase to interpret.
 
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use tokio::task::JoinSet;
 
 use crate::agent::dispatcher::delegate::ChatDelegate;
@@ -11,6 +14,7 @@ use crate::context::JobContext;
 use crate::error::Error;
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
+use crate::tools::monty::broker::{BrokerContext, BrokerServices, CallerPolicy};
 
 use super::postflight::check_auth_required;
 
@@ -24,12 +28,10 @@ pub(super) async fn run_phase2(
         (0..preflight_len).map(|_| None).collect();
     let mut start = 0;
     while start < runnable.len() {
-        if is_auth_barrier_tool(&runnable[start].1.name) {
+        if runs_alone(&runnable[start].1.name) {
             let batch = &runnable[start..=start];
             run_tool_batch_inline(delegate, batch, &mut exec_results).await;
-            if let Some(result) = &exec_results[runnable[start].0]
-                && check_auth_required(&runnable[start].1.name, result).is_some()
-            {
+            if stops_before_later_calls(&runnable[start], &exec_results) {
                 break;
             }
             start += 1;
@@ -37,7 +39,7 @@ pub(super) async fn run_phase2(
         }
 
         let mut end = start;
-        while end < runnable.len() && !is_auth_barrier_tool(&runnable[end].1.name) {
+        while end < runnable.len() && !runs_alone(&runnable[end].1.name) {
             end += 1;
         }
 
@@ -52,8 +54,114 @@ pub(super) async fn run_phase2(
     exec_results
 }
 
+/// Whether an authentication barrier call ended the turn.
+///
+/// A `tool_auth` or `tool_activate` call that now requires authorization
+/// stops the batch: later calls were planned against credentials the user has
+/// not supplied yet.
+fn stops_before_later_calls(
+    call: &(usize, crate::llm::ToolCall),
+    exec_results: &[Option<Result<String, Error>>],
+) -> bool {
+    let Some(result) = &exec_results[call.0] else {
+        return false;
+    };
+    is_auth_barrier_tool(&call.1.name) && check_auth_required(&call.1.name, result).is_some()
+}
+
 pub(super) fn is_auth_barrier_tool(tool_name: &str) -> bool {
     matches!(tool_name, "tool_auth" | "tool_activate")
+}
+
+/// Whether a call must run on its own rather than in a parallel batch.
+///
+/// `exec_code` builds a caller-issued broker for this specific invocation and
+/// starts a child process; running it beside unrelated calls would give the
+/// guest authority before the caller's decision is complete.
+pub(super) fn runs_alone(tool_name: &str) -> bool {
+    is_auth_barrier_tool(tool_name) || tool_name == "exec_code"
+}
+
+/// Builds the job context for one call, issuing `exec_code` authority when
+/// this is the chat caller.
+///
+/// The broker is built from the call's own `allowed_tools` argument, the
+/// session's current auto-approval snapshot, and the caller's attenuated
+/// ceiling: the names skill attenuation left visible this turn. A requested
+/// name outside any of those fails here, before the helper starts.
+pub(super) async fn prepare_job_context(
+    delegate: &ChatDelegate<'_>,
+    tc: &crate::llm::ToolCall,
+) -> Result<JobContext, Error> {
+    let mut job_ctx = delegate.job_ctx.clone();
+    if tc.name != "exec_code" {
+        return Ok(job_ctx);
+    }
+    let names = requested_tools(tc);
+    let policy = caller_policy(delegate).await;
+    let services = BrokerServices {
+        tools: delegate.agent.tools().clone(),
+        safety: delegate.agent.safety().clone(),
+        hooks: Some(Arc::clone(delegate.agent.hooks())),
+        policy,
+    };
+    job_ctx.broker = Some(Arc::new(build_broker(services, &names).await?));
+    Ok(job_ctx)
+}
+
+/// Read the tool names an `exec_code` call asked to expose to its guest.
+fn requested_tools(tc: &crate::llm::ToolCall) -> Vec<String> {
+    tc.arguments
+        .get("allowed_tools")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Snapshot the caller's authority for one `exec_code` call.
+async fn caller_policy(delegate: &ChatDelegate<'_>) -> CallerPolicy {
+    let permitted = attenuated_names(delegate).await;
+    let session = delegate.session.lock().await;
+    CallerPolicy {
+        user_id: delegate.message.user_id.clone(),
+        hook_context: "chat".to_string(),
+        auto_approved: session.auto_approved_tools.clone(),
+        permitted: Some(permitted),
+    }
+}
+
+/// The tool names the caller may offer, after skill attenuation.
+///
+/// The chat loop advertises this set to the model, so a name the model was
+/// never offered must not become callable by asking `exec_code` for it. With
+/// no active skill `attenuate_tools` returns every tool, which is exactly the
+/// snapshot the caller advertised; the ceiling is never left unspecified here,
+/// so an empty set really does mean "nothing is permitted".
+pub(super) async fn attenuated_names(delegate: &ChatDelegate<'_>) -> HashSet<String> {
+    let definitions = delegate.agent.tools().tool_definitions().await;
+    let attenuation = crate::skills::attenuate_tools(&definitions, &delegate.active_skills);
+    attenuation
+        .tools
+        .iter()
+        .map(|definition| definition.name.clone())
+        .collect()
+}
+
+/// Build the broker, reporting a refusal as an invalid-parameter error.
+async fn build_broker(services: BrokerServices, names: &[String]) -> Result<BrokerContext, Error> {
+    BrokerContext::new(services, names)
+        .await
+        .map_err(|error| crate::error::ToolError::InvalidParameters {
+            name: "exec_code".to_string(),
+            reason: error.to_string(),
+        })
+        .map_err(Error::from)
 }
 
 /// Run a batch of tools inline (sequential execution for small batches).
@@ -163,9 +271,10 @@ pub(super) async fn execute_one_tool(
     tc: &crate::llm::ToolCall,
 ) -> Result<String, Error> {
     send_tool_started(delegate, &tc.name).await;
+    let job_ctx = prepare_job_context(delegate, tc).await?;
     let result = delegate
         .agent
-        .execute_chat_tool(&tc.name, &tc.arguments, &delegate.job_ctx)
+        .execute_chat_tool(&tc.name, &tc.arguments, &job_ctx)
         .await;
     send_tool_completed(delegate, &tc.name, &result, &tc.arguments).await;
     result
@@ -187,6 +296,11 @@ async fn send_tool_started(delegate: &ChatDelegate<'_>, tool_name: &str) {
 }
 
 /// Send tool_completed status update.
+///
+/// The error text is sanitized first. A tool's own message can quote the data
+/// it was given — for `exec_code`, that is guest-controlled exception text
+/// built from `params`, which may be sensitive — and a status update is a
+/// display sink, not a place for a raw value to surface.
 async fn send_tool_completed(
     delegate: &ChatDelegate<'_>,
     tool_name: &str,
@@ -194,6 +308,8 @@ async fn send_tool_completed(
     arguments: &serde_json::Value,
 ) {
     let disp_tool = delegate.agent.tools().get(tool_name).await;
+    let sanitized =
+        crate::tools::execute::sanitized_status_result(delegate.agent.safety(), tool_name, result);
     let _ = delegate
         .agent
         .channels
@@ -201,7 +317,7 @@ async fn send_tool_completed(
             &delegate.message.channel,
             StatusUpdate::tool_completed(
                 tool_name.to_string(),
-                result,
+                &sanitized,
                 arguments,
                 disp_tool.as_deref(),
             ),

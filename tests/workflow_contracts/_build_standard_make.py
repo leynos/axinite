@@ -196,25 +196,75 @@ def parse_invocations(lines: Iterable[str]) -> tuple[list[Invocation], list[str]
     return found, unparsed
 
 
+def _is_cd_prefix(word: str, conjunction: str) -> bool:
+    """Report whether two words form the start of a ``cd <dir> &&`` prefix."""
+    return word == "cd" and conjunction == "&&"
+
+
+def _split_command_prefixes(words: list[str]) -> tuple[str | None, list[str]]:
+    """Split a recipe's ``cd`` prefix from the command it runs.
+
+    An out-of-workspace package must be built from its own directory: Cargo
+    discovers `.cargo/config.toml` from the working directory, and `nextest`
+    does not forward a global `--config` to the Cargo it runs. Those recipes
+    emit ``cd <dir> && cargo ...``, and the directory is returned so the
+    invocation still says which package it builds.
+    """
+    directory: str | None = None
+    rest = list(words)
+    while len(rest) > 2 and _is_cd_prefix(rest[0], rest[2]):
+        directory = rest[1]
+        rest = rest[3:]
+    return directory, rest
+
+
+def _nextest_invocation(
+    rest: list[str],
+    assignments: dict[str, str],
+    index: int,
+) -> Invocation:
+    """Return the invocation for a ``nextest`` command's remaining words."""
+    return Invocation(
+        "nextest",
+        rest[1] if len(rest) > 1 else "",
+        assignments,
+        tuple(rest[2:]),
+        index,
+    )
+
+
+def _with_directory(
+    assignments: dict[str, str], directory: str | None
+) -> dict[str, str]:
+    """Add the ``cd`` directory to an invocation's recorded settings."""
+    if directory is None:
+        return assignments
+    return {**assignments, "DIRECTORY": directory}
+
+
+def _cargo_invocation(
+    rest: list[str], assignments: dict[str, str], index: int
+) -> Invocation | None:
+    """Return the invocation for Cargo's own words, or ``None``."""
+    if not rest:
+        return None
+    if rest[0] == "nextest":
+        return _nextest_invocation(rest, assignments, index)
+    if rest[0] not in CARGO_VERBS:
+        return None
+    return Invocation("cargo", rest[0], assignments, tuple(rest[1:]), index)
+
+
 def _command_of(
     words: list[str], assignments: dict[str, str], index: int
 ) -> Invocation | None:
     """Return the invocation a command's words describe, or ``None``."""
+    directory, words = _split_command_prefixes(words)
     if not words:
         return None
+    assignments = _with_directory(assignments, directory)
     if words[0] == "probe-whitaker":
         return Invocation("whitaker", "dylint", assignments, tuple(words[1:]), index)
     if words[0] != "probe-cargo":
         return None
-    rest = words[1:]
-    if rest and rest[0] == "nextest":
-        return Invocation(
-            "nextest",
-            rest[1] if len(rest) > 1 else "",
-            assignments,
-            tuple(rest[2:]),
-            index,
-        )
-    if not rest or rest[0] not in CARGO_VERBS:
-        return None
-    return Invocation("cargo", rest[0], assignments, tuple(rest[1:]), index)
+    return _cargo_invocation(words[1:], assignments, index)

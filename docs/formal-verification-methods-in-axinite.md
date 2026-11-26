@@ -12,19 +12,23 @@ the tool's own tests (in rust-prover-tools) cover ordered multi-file runs and
 exit-status preservation. `make all` remains independent of prover installation.
 
 These examples establish that the selected tools and runners work. The Kani
-proof checks an exact four-entry projection over an 8-bit mask; the Verus
-proofs check mathematical set-intersection properties. Neither model is linked
-to Axinite runtime code or proves Monty's helper behaviour. Production proofs
-must establish a mechanically checked relationship between the proof model and
-the compiled implementation, and must reject stale generated artefacts. The
-candidate targets below remain future work unless explicitly marked as
-implemented.
+smoke proof checks an exact four-entry projection over an 8-bit mask and is not
+linked to runtime code. The Verus proofs in `verus/monty_capabilities.rs` are
+different: they prove the capability-projection kernel that `exec_code` ships,
+using a deterministic body bridge rather than a handwritten mirror.
+`crates/monty-capabilities/src/lib.rs` marks the shipped bodies with
+`KERNEL-BODY` comments, the Verus file repeats them verbatim, and
+`crates/monty-capabilities/tests/drift.rs` compares the marked bodies byte for
+byte after removing proof-only annotations. The proof covers exact
+intersection, non-widening in each input, admission consistency, and
+out-of-table rejection, and reports 19 verified, 0 errors. It does not prove
+authority resolution, pinned identity, approval, hooks, redaction, framing, or
+process lifecycle; those are covered by Rust and real-process tests.
 
-The Monty helper plan owns `verus/monty_capabilities.rs`. That file must prove
-the exact numeric capability projection against the production implementation,
-show how the proof-visible source corresponds to what Axinite compiles, and
-reject stale generated files. Importing these tools or passing the standalone
-smoke model does not discharge any of those requirements.
+The remaining candidate targets below stay future work unless explicitly marked
+as implemented, and other production proofs still owe a mechanically checked
+relationship between the proof model and the compiled implementation that
+rejects stale artefacts.
 
 ## Executive summary
 
@@ -97,8 +101,9 @@ build-side checks, `coverage.yml` handles coverage-specific instrumentation, and
 
 That means Axinite does **not** need a new testing culture. It already has one.
 It now has initial infrastructure for **proof-oriented** and **model-checking**
-workflows. It still lacks proofs over production Axinite behaviour and the
-production bridge required by Monty's helper plan.
+workflows, and the Monty capability kernel is the first production proof with a
+deterministic bridge to shipped code. Proofs over the wider orchestration
+surface remain future work.
 
 Two existing testing investments matter especially here.
 

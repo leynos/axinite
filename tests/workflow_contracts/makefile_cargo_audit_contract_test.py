@@ -425,7 +425,10 @@ def test_audit_uses_custom_subcommand_without_full_command_override(
         for command in commands
     ), f"custom CARGO_AUDIT_SUBCOMMAND emitted unexpected arguments: {commands!r}"
     selected_manifests = selected_cargo_manifests(utility_bin, REPOSITORY_ROOT)
-    assert len(commands) == len(selected_manifests), (
+    # This case runs against the repository, so the helper's own lockfile is
+    # audited as well, from the package directory the `find` prunes.
+    assert len(commands) == len(selected_manifests) + 1, (
         f"custom CARGO_AUDIT_SUBCOMMAND logged {len(commands)} calls for "
-        f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
+        f"{len(selected_manifests)} selected Cargo.toml manifests plus the "
+        f"out-of-workspace helper: {commands!r}"
     )

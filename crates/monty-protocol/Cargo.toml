@@ -1,0 +1,20 @@
+[package]
+name = "monty-protocol"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+description = "Versioned, bounded JSON wire protocol for the Axinite Monty helper"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[dev-dependencies]
+pretty_assertions = "1"

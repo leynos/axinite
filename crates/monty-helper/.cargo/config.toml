@@ -1,0 +1,22 @@
+# This package is outside the root workspace: Monty 1.6.0 needs Rust 1.98
+# while the workspace MSRV lane checks 1.95. Cargo merges this file with the
+# repository's `.cargo/config.toml` and joins `rustflags` arrays, so the
+# development standard (`-Zthreads=8`, plus `mold` on Linux) still applies and
+# these tables only append the recursion floor.
+#
+# The floor is required by the parallel frontend. Compiling `monty` 1.6.0
+# simplifies a generated `strum` `from_repr` constant deeper than the default
+# limit of 128 and otherwise fails with "queries overflow the depth limit".
+# The observed depth depends on the build: 256 fails at 258, 512 compiled a
+# `cargo check` but the test profile reached 514, so the floor is 1024.
+# `-Zmin-recursion-limit` is nightly-only, and this package builds only on the
+# pinned nightly from `rust-toolchain.toml`.
+#
+# Cargo discovers configuration from the working directory upwards, not from
+# `--manifest-path`, so run Cargo from this directory. The
+# `test-monty-helper` target does.
+[build]
+rustflags = ["-Zmin-recursion-limit=1024"]
+
+[target.'cfg(target_os = "linux")']
+rustflags = ["-Zmin-recursion-limit=1024"]

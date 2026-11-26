@@ -37,4 +37,16 @@ excluded_crates = [
     "import_openclaw",
     "support_unit_tests",
     "tools_and_config",
+    # The `exec_code` integration tests launch the out-of-workspace helper
+    # binary from a staged path and read its captured output; that staging is
+    # ambient fixture I/O by design.
+    "monty_exec_code_bdd",
+    "monty_helper_e2e",
+    "monty_helper_limits",
+    "monty_supervisor_protocol",
+    # The refinement-bridge test compares the shipped capability kernel with
+    # `verus/monty_capabilities.rs` by reading both sources from the
+    # repository root, which is an ambient path no directory capability
+    # describes.
+    "drift",
 ]

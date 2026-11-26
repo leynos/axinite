@@ -1,0 +1,10 @@
+# The helper is its own workspace, so the repository's `.config/nextest.toml`
+# is not discovered from here: nextest reads the config of the workspace it is
+# run in. The CI lane selects its `ci` profile, so this package states the same
+# budgets under that name rather than relying on the root's copy.
+
+[profile.ci]
+# Run everything: the helper has no compile-contract targets to exclude.
+default-filter = 'all()'
+slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
+global-timeout = "45m"

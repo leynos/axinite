@@ -22,6 +22,7 @@ use crate::tools::builtin::{
     SkillSearchTool, TimeTool, ToolActivateTool, ToolAuthTool, ToolInstallTool, ToolListTool,
     ToolRemoveTool, ToolSearchTool, ToolUpgradeTool, WriteFileTool,
 };
+use crate::tools::monty::exec_code::ExecCodeTool;
 use crate::tools::registry::loader::ToolRegistry;
 use crate::tools::tool::{Tool, ToolDomain};
 use crate::workspace::Workspace;
@@ -40,6 +41,7 @@ impl ToolRegistry {
         self.register_sync(Arc::new(EchoTool));
         self.register_sync(Arc::new(TimeTool));
         self.register_sync(Arc::new(JsonTool));
+        self.register_sync(Arc::new(ExecCodeTool::new()));
 
         let mut http = HttpTool::new()?;
         if let (Some(cr), Some(ss)) = (&self.credential_registry, &self.secrets_store) {

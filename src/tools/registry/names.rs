@@ -8,6 +8,7 @@ pub const PROTECTED_TOOL_NAMES: &[&str] = &[
     "time",
     "json",
     "http",
+    "exec_code",
     "shell",
     "read_file",
     "write_file",

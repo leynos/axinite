@@ -569,6 +569,95 @@ jobs:
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report
+  monty-helper-tests:
+    name: Monty Helper Tests
+    # `crates/monty-helper` is excluded from the workspace because Monty 1.6.0
+    # needs Rust 1.98 while the workspace MSRV lane checks 1.95, so
+    # `make test-workspace` cannot reach it. It has a lane of its own, like the
+    # GitHub tool crate.
+    #
+    # The helper needs the parallel frontend's recursion floor from its own
+    # `.cargo/config.toml`, found relative to the working directory rather
+    # than `--manifest-path`; `make test-monty-helper` enters that directory.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || (github.event.pull_request.head.repo.fork
+      || github.event.pull_request.user.login == 'dependabot[bot]')
+      && 'ubuntu-latest' || 'ubicloud-standard-4' }}
+    timeout-minutes: 60
+    env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. `setup-rust` names the wrapper, starts the server and
+      # selects the backend from the runner (shared-actions ADR 0005).
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+      - name: Setup Rust
+        id: setup-rust
+        uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
+        with:
+          rustflags: ''
+          cache-provider: external
+          install-binstall: 'false'
+          expect-cache: any
+      - name: Install build tools
+        run: make install-build-tools
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
+      # The helper is its own workspace, so the workspace lane's nextest never
+      # reaches it; this lane needs the runner the same way that lane does.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91  # v2.87.31
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
+      - name: Run Monty Helper Tests
+        run: make test-monty-helper NEXTEST_PROFILE=ci
+      - name: Run Exec Code Behaviour Tests
+        run: make test-monty-bdd NEXTEST_PROFILE=ci
+      # The end-to-end suite needs the helper executable, which the target
+      # builds from this package before injecting its absolute path.
+      - name: Run Exec Code End-to-End Tests
+        run: make test-monty-e2e NEXTEST_PROFILE=ci
+      - name: Report sccache statistics
+        if: always()
+        env:
+          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
+            # name the backend setup-rust chose.
+            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
+
   windows-build:
     name: Windows Build (${{ matrix.name }})
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.

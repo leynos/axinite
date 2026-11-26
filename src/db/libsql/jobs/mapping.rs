@@ -129,6 +129,7 @@ pub(super) fn row_to_job_context_libsql(row: &libsql::Row) -> Result<JobContext,
         tool_output_stash: std::sync::Arc::new(tokio::sync::RwLock::new(
             std::collections::HashMap::new(),
         )),
+        broker: None,
         user_timezone: get_text(row, JOB_USER_TIMEZONE_COL),
     })
 }

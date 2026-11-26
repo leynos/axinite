@@ -42,7 +42,13 @@ SCHEDULES = {"daily", "weekly"}
 def declared_msrvs(
     root_manifest: dict[str, typ.Any], members: dict[str, dict[str, typ.Any]]
 ) -> dict[str, str]:
-    """Return each manifest's declared ``rust-version``, by package."""
+    """Return each manifest's declared ``rust-version``, by package.
+
+    Every crate under ``crates/`` declares a promise, whether or not it is a
+    root-workspace member; the root package's promise is included too. Which
+    promise a crate owes is decided by `workspace_msrvs` and `standalone_msrvs`
+    below, from the root manifest's member list.
+    """
     declared: dict[str, str] = {}
     package = root_manifest.get("package", {})
     if "rust-version" in package:
@@ -52,6 +58,69 @@ def declared_msrvs(
         if version is not None:
             declared[name] = str(version)
     return declared
+
+
+def _workspace_package_names(
+    root_manifest: dict[str, typ.Any], members: cabc.Mapping[str, dict[str, typ.Any]]
+) -> set[str]:
+    """Return the package names the root workspace builds.
+
+    The root package is one of them: ``members`` starts with ``"."``. Each
+    other entry names a crate directory, whose manifest supplies its package
+    name.
+    """
+    workspace = root_manifest.get("workspace", {})
+    names: set[str] = set()
+    root_package = root_manifest.get("package", {}).get("name")
+    for entry in workspace.get("members", []):
+        normalized = str(entry).removeprefix("./")
+        if normalized.strip(".") == "":
+            if root_package is not None:
+                names.add(str(root_package))
+            continue
+        crate = normalized.rsplit("/", 1)[-1]
+        manifest = members.get(crate, {}).get("package", {})
+        if "name" in manifest:
+            names.add(str(manifest["name"]))
+    return names
+
+
+def workspace_msrvs(
+    root_manifest: dict[str, typ.Any],
+    members: cabc.Mapping[str, dict[str, typ.Any]],
+    msrvs: cabc.Mapping[str, str],
+) -> dict[str, str]:
+    """Return the promises the root workspace shares one MSRV across.
+
+    Only root-workspace members are in this set: one ``cargo`` invocation
+    compiles them, so a second version among them would be untestable.
+    """
+    names = _workspace_package_names(root_manifest, members)
+    return {
+        package: version
+        for package, version in msrvs.items()
+        if package in names
+    }
+
+
+def standalone_msrvs(
+    root_manifest: dict[str, typ.Any],
+    members: cabc.Mapping[str, dict[str, typ.Any]],
+    msrvs: cabc.Mapping[str, str],
+) -> dict[str, str]:
+    """Return the promises made by first-party crates outside the workspace.
+
+    An excluded crate is its own workspace. Monty 1.6.0 requires Rust 1.98
+    while the workspace MSRV lane checks 1.95, so ``crates/monty-helper``
+    cannot join the workspace and cannot pretend to 1.95 either. Each such
+    crate keeps its own promise, which its own lane must build.
+    """
+    names = _workspace_package_names(root_manifest, members)
+    return {
+        package: version
+        for package, version in msrvs.items()
+        if package not in names
+    }
 
 
 def setup_rust_toolchains(
@@ -98,7 +167,13 @@ def _dependabot_violations(dependabot: cabc.Mapping[str, typ.Any]) -> list[str]:
 def _msrv_violations(
     msrvs: dict[str, str], documents: cabc.Mapping[str, typ.Any]
 ) -> list[str]:
-    """RT-026: every declared MSRV is tested, and no toolchain input is stray."""
+    """RT-026: the workspace shares one MSRV, and every promise is built.
+
+    ``msrvs`` holds only root-workspace members, which must agree on one
+    version and be covered by the MSRV lane. An out-of-workspace promise is
+    judged by `_standalone_msrv_violations`, because no setup-rust input names
+    it: its own lane builds it on the pinned nightly.
+    """
     problems: list[str] = []
     if len(set(msrvs.values())) > 1:
         problems.append(f"workspace members declare different MSRVs: {msrvs}")
@@ -116,6 +191,30 @@ def _msrv_violations(
         for job, toolchain in named
         if toolchain not in set(msrvs.values())
     )
+    return problems
+
+
+def _standalone_msrv_violations(
+    standalone: cabc.Mapping[str, str],
+    workspace: cabc.Mapping[str, str],
+    texts: cabc.Mapping[str, str],
+) -> list[str]:
+    """An excluded first-party crate keeps a promise its own lane must build.
+
+    It may exceed the workspace MSRV, but it must declare one, and some
+    workflow must build it: an out-of-workspace version no lane compiles is a
+    claim nothing checks.
+    """
+    problems: list[str] = []
+    workspace_versions = set(workspace.values())
+    for package, version in standalone.items():
+        if version in workspace_versions:
+            continue
+        if not any(package in text for text in texts.values()):
+            problems.append(
+                f"RT-026: {package} declares rust-version {version}, which the "
+                "workspace MSRV lane does not provide, and no workflow builds it"
+            )
     return problems
 
 
@@ -155,7 +254,10 @@ def policy_violations(estate: cabc.Mapping[str, typ.Any]) -> list[str]:
     return [
         *_pin_violations(channel),
         *_dependabot_violations(estate["dependabot"]),
-        *_msrv_violations(estate["msrvs"], estate["documents"]),
+        *_msrv_violations(estate["workspace_msrvs"], estate["documents"]),
+        *_standalone_msrv_violations(
+            estate["standalone_msrvs"], estate["workspace_msrvs"], estate["texts"]
+        ),
         *_nightly_violations(channel, estate["texts"]),
         *_dockerignore_violations(estate["dockerignore"]),
     ]
@@ -170,10 +272,13 @@ def estate() -> dict[str, typ.Any]:
         for path in matching_entries(REPOSITORY_ROOT / "crates", "*/Cargo.toml")
         if is_regular_file(path)
     }
+    msrvs = declared_msrvs(root, members)
     return {
         "pin": read_toml("rust-toolchain.toml"),
         "dependabot": read_dependabot(REPOSITORY_ROOT / ".github/dependabot.yml"),
-        "msrvs": declared_msrvs(root, members),
+        "msrvs": msrvs,
+        "workspace_msrvs": workspace_msrvs(root, members, msrvs),
+        "standalone_msrvs": standalone_msrvs(root, members, msrvs),
         "documents": {
             name: dict(document)
             for name, document in read_workflows(WORKFLOW_DIR).items()
@@ -197,13 +302,16 @@ def test_the_repository_conforms(estate: dict[str, typ.Any]) -> None:
 
 
 def test_the_msrv_was_derived(estate: dict[str, typ.Any]) -> None:
-    """The declared versions were read from manifests, and every member is covered."""
-    assert len(estate["msrvs"]) >= 3, (
-        f"expected the root and both members: {estate['msrvs']}"
+    """The declared versions were read from manifests, and members agree."""
+    declared = estate["workspace_msrvs"]
+    assert len(declared) >= 3, (
+        f"expected the root and at least two crates: {declared}"
     )
-    declared = estate["msrvs"]
     assert len(set(declared.values())) == 1, (
         f"workspace members must share one MSRV: {declared}"
+    )
+    assert estate["standalone_msrvs"], (
+        "the helper is out of the workspace, so it must keep its own promise"
     )
 
 
@@ -239,7 +347,7 @@ def test_the_msrv_toolchain_is_the_declared_version(estate: dict[str, typ.Any]) 
         f"only the MSRV job may select stable explicitly: {named}"
     )
     tested = {toolchain for _, toolchain in named}
-    declared = set(estate["msrvs"].values())
+    declared = set(estate["workspace_msrvs"].values())
     assert tested == declared, (
         f"toolchains {tested} do not cover declared MSRVs {declared}"
     )
@@ -287,12 +395,12 @@ MUTATIONS: dict[str, tuple[cabc.Callable[[dict[str, typ.Any]], None], str]] = {
         "RT-024",
     ),
     "member-msrv-drifts": (
-        lambda e: e["msrvs"].update({"ambient-fs": "1.93"}),
+        lambda e: e["workspace_msrvs"].update({"ambient-fs": "1.93"}),
         "different MSRVs",
     ),
     "msrv-untested": (
-        lambda e: e["msrvs"].update(
-            {"axinite": "1.96", "ambient-fs": "1.96", "hyper-rustls": "1.96"}
+        lambda e: e["workspace_msrvs"].update(
+            dict.fromkeys(e["workspace_msrvs"], "1.96")
         ),
         "RT-026",
     ),
@@ -313,6 +421,12 @@ MUTATIONS: dict[str, tuple[cabc.Callable[[dict[str, typ.Any]], None], str]] = {
         "pin is ignored",
     ),
     "docker-context-takes-the-config": (_forget_the_dockerignore, ".dockerignore"),
+    "standalone-promise-without-a-lane": (
+        lambda e: e["texts"].update(
+            {name: "" for name in e["texts"]}
+        ),
+        "no workflow builds it",
+    ),
 }
 
 
@@ -328,4 +442,4 @@ def test_each_mutation_is_detected(name: str, estate: dict[str, typ.Any]) -> Non
 
 def test_the_mutations_executed() -> None:
     """Prove the parametrized cases exist, so none can be discovered away."""
-    assert len(MUTATIONS) == 9
+    assert len(MUTATIONS) == 10

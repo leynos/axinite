@@ -93,8 +93,16 @@ INVENTORY: tuple[Crate, ...] = (
     Crate(".", Role.SAFE),
     Crate("crates/ambient-fs", Role.SAFE),
     Crate("crates/hyper-rustls", Role.SAFE, vendored=True),
+    # The `exec_code` protocol and its verified capability kernel are
+    # first-party, `unsafe`-free workspace members.
+    Crate("crates/monty-capabilities", Role.SAFE),
+    Crate("crates/monty-protocol", Role.SAFE),
+    # The Monty helper is its own workspace root and links the interpreter.
+    # It holds no `unsafe` of its own and forbids it; the interpreter's
+    # boundary is Monty's, not this repository's.
+    Crate("crates/monty-helper", Role.SAFE, standalone=True),
     Crate("fuzz", Role.SAFE, standalone=True),
-Crate("tests/verification/kani-smoke", Role.SAFE, standalone=True),
+    Crate("tests/verification/kani-smoke", Role.SAFE, standalone=True),
     *(Crate(path, Role.BOUNDARY, standalone=True) for path in WASM_BOUNDARIES),
 )
 

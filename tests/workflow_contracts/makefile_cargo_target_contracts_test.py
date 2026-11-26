@@ -26,6 +26,22 @@ def without_assignments(line: str) -> str:
     return LEADING_ASSIGNMENTS.sub("", line)
 
 
+def cargo_command_of(line: str, quoted_cargo: str) -> str | None:
+    """Return the Cargo command a recipe line runs, or ``None``.
+
+    A package built from its own directory runs ``cd <dir> && cargo ...``, so
+    the command is found wherever it starts rather than only at the beginning
+    of the line. What the contract is about is that the resolved executable
+    reaches the shell as one quoted word, which `shell_quote` guarantees.
+    """
+    stripped = without_assignments(line)
+    marker = f"{quoted_cargo} "
+    index = stripped.find(marker)
+    if index < 0:
+        return None
+    return stripped[index:]
+
+
 @pytest.mark.parametrize(
     ("nextest_override", "expected_nextest"),
     [
@@ -102,7 +118,13 @@ def test_test_target_uses_expected_nextest_command(
 @pytest.mark.parametrize(
     ("make_target", "cargo_arguments"),
     [
-        ("install", ("install --path .",)),
+        (
+            "install",
+            (
+                "install --path . --locked",
+                "install --path .",
+            ),
+        ),
         (
             "build-github-tool-wasm",
             (
@@ -118,6 +140,7 @@ def test_test_target_uses_expected_nextest_command(
                 "fmt --all",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all",
                 "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all",
+                "fmt --manifest-path crates/monty-helper/Cargo.toml --all",
             ),
         ),
         (
@@ -126,6 +149,7 @@ def test_test_target_uses_expected_nextest_command(
                 "fmt --all -- --check",
                 "fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
                 "fmt --manifest-path tests/verification/kani-smoke/Cargo.toml --all -- --check",
+                "fmt --manifest-path crates/monty-helper/Cargo.toml --all -- --check",
             ),
         ),
         (
@@ -165,6 +189,7 @@ def test_test_target_uses_expected_nextest_command(
                     "clippy --manifest-path tools-src/github/Cargo.toml --tests "
                     "-- -D warnings"
                 ),
+                "clippy --all-targets -- -D warnings",
             ),
         ),
         (
@@ -309,9 +334,9 @@ def test_targets_use_resolved_quoted_cargo_command(
 
     quoted_cargo = shell_quote(str(cargo_path))
     emitted_cargo_commands = [
-        without_assignments(line)
+        command
         for line in result.stdout.splitlines()
-        if without_assignments(line).startswith(f"{quoted_cargo} ")
+        if (command := cargo_command_of(line, quoted_cargo)) is not None
     ]
     expected_cargo_commands = [
         f"{quoted_cargo} {arguments}" for arguments in cargo_arguments

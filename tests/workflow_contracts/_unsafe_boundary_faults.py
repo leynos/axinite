@@ -385,15 +385,14 @@ FAULTS: tuple[Fault, ...] = (
         "unlisted-workspace-member",
         _edit(
             "Cargo.toml",
-            'members = [".", "crates/ambient-fs", "crates/hyper-rustls"]',
-            'members = [".", "crates/ambient-fs", "crates/hyper-rustls", '
-            '"crates/new-crate"]',
+            '    "crates/monty-protocol",\n]',
+            '    "crates/monty-protocol",\n    "crates/new-crate",\n]',
         ),
         "is not an inventoried root-workspace crate",
     ),
     Fault(
         "inventoried-member-dropped",
-        _edit("Cargo.toml", '"crates/ambient-fs", ', ""),
+        _edit("Cargo.toml", '    "crates/ambient-fs",\n', ""),
         "inventoried crate 'crates/ambient-fs' is missing",
     ),
     Fault(

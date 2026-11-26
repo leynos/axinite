@@ -47,6 +47,18 @@ use crate::error::Error;
 use dispatch::DispatchCtx;
 use document_store::store_extracted_documents as store_extracted_documents_impl;
 
+/// Borrow one thread mutably, reporting a missing id as a typed error.
+///
+/// Every turn path needs the same lookup and the same error, so it lives here
+/// beside the other thread operations rather than in one of its callers.
+pub(super) fn thread_mut(
+    sess: &mut Session,
+    thread_id: Uuid,
+) -> Result<&mut crate::agent::session::Thread, Error> {
+    let missing = || Error::from(crate::error::JobError::NotFound { id: thread_id });
+    sess.threads.get_mut(&thread_id).ok_or_else(missing)
+}
+
 pub(super) async fn store_extracted_documents(
     workspace: &Arc<crate::workspace::Workspace>,
     message: &IncomingMessage,

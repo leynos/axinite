@@ -18,6 +18,23 @@ COPY . .
 RUN cargo build --release --bin axinite
 
 # ---
+# Build the Monty helper `exec_code` launches. It is a separate workspace, so
+# it is copied on its own to keep the root `.cargo/config.toml` (which needs
+# mold and clang) out of this stage, and it uses the pinned nightly because its
+# own configuration passes `-Zmin-recursion-limit`.
+FROM rust:1.95-bookworm AS monty-builder
+
+RUN rustup toolchain install nightly-2026-10-16 --profile minimal
+
+WORKDIR /build
+
+COPY crates/monty-helper/ crates/monty-helper/
+COPY crates/monty-protocol/ crates/monty-protocol/
+
+RUN cd crates/monty-helper \
+    && cargo +nightly-2026-10-16 build --release --locked
+
+# ---
 
 FROM debian:bookworm-slim
 
@@ -54,8 +71,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-ini
 # Install Claude Code CLI (for claude-bridge mode)
 RUN npm install -g @anthropic-ai/claude-code@latest
 
-# Copy the binary
+# Copy the binary and the helper pair `exec_code` resolves beside it.
 COPY --from=builder /build/target/release/axinite /usr/local/bin/axinite
+COPY --from=monty-builder /build/crates/monty-helper/target/release/axinite-monty-helper \
+    /usr/local/bin/axinite-monty-helper
 
 # Create non-root user (UID 1000 matches the orchestrator's container config)
 RUN useradd -m -u 1000 -s /bin/bash sandbox \

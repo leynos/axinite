@@ -147,13 +147,18 @@ def test_the_build_tools_check_precedes_the_first_development_compile(
 def test_release_routes_were_seen_and_assign_rustflags(
     emitted: dict[str, tuple[list[str], list[Invocation]]],
 ) -> None:
-    """`install` and the WASM release build both carry the release assignment."""
+    """Every release route carries the release assignment.
+
+    `install` has two: the parent, and the out-of-workspace Monty helper it
+    stages beside it. The helper's assignment must keep the recursion floor,
+    because it compiles Monty.
+    """
     release = [
         invocation
         for target in ("install", "build-github-tool-wasm")
         for invocation in emitted[target][1]
     ]
-    assert len(release) == 2, f"expected both release invocations, got: {release}"
+    assert len(release) == 3, f"expected all release invocations, got: {release}"
     missing_assignments = [
         invocation
         for invocation in release
@@ -161,6 +166,22 @@ def test_release_routes_were_seen_and_assign_rustflags(
     ]
     assert not missing_assignments, (
         f"release invocations missing RUSTFLAGS: {missing_assignments}"
+    )
+    helper = [
+        invocation
+        for invocation in release
+        if invocation.assignments.get("DIRECTORY") == "crates/monty-helper"
+    ]
+    assert helper, f"the helper release build was not seen: {release}"
+    lost_floor = [
+        invocation
+        for invocation in helper
+        if "-Zmin-recursion-limit=1024"
+        not in invocation.assignments.get("RUSTFLAGS", "")
+    ]
+    assert not lost_floor, (
+        "a release-profile helper build dropped the Monty recursion floor: "
+        f"{lost_floor}"
     )
 
 

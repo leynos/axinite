@@ -8,7 +8,7 @@ use crate::context::JobContext;
 use crate::error::Error;
 use crate::llm::ChatMessage;
 use crate::safety::SafetyLayer;
-use crate::tools::{ToolRegistry, redact_params};
+use crate::tools::{ToolOutput, ToolRegistry, redact_params};
 
 /// Execute a tool with safety checks: lookup → validate → timeout → execute → serialize.
 ///
@@ -29,21 +29,24 @@ pub async fn execute_tool_with_safety(
             name: tool_name.to_string(),
         })?;
 
-    // Validate tool parameters
-    let validation = safety.validator().validate_tool_params(params);
-    if !validation.is_valid {
-        let details = validation
-            .errors
-            .iter()
-            .map(|e| format!("{}: {}", e.field, e.message))
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(crate::error::ToolError::InvalidParameters {
-            name: tool_name.to_string(),
-            reason: format!("Invalid tool parameters: {}", details),
-        }
-        .into());
-    }
+    execute_resolved_tool_with_safety(tool.as_ref(), safety, params, job_ctx).await
+}
+
+/// Execute an already-resolved tool with safety checks.
+///
+/// This is the shared pipeline used by both ordinary name lookup and the
+/// Monty broker: validate → timeout → execute → serialize. The broker resolves
+/// and pins the tool identity before calling it, so this function never
+/// consults the registry. Errors are sanitized before they are traced; the
+/// caller decides how the sanitized failure is surfaced.
+pub async fn execute_resolved_tool_with_safety(
+    tool: &dyn crate::tools::Tool,
+    safety: &SafetyLayer,
+    params: &serde_json::Value,
+    job_ctx: &JobContext,
+) -> Result<String, Error> {
+    let tool_name = tool.name().to_string();
+    validate_params(safety, params, &tool_name)?;
 
     let safe_params = redact_params(params, tool.sensitive_params());
     tracing::debug!(
@@ -59,9 +62,74 @@ pub async fn execute_tool_with_safety(
         tool.execute(params.clone(), job_ctx).await
     })
     .await;
-    let elapsed = start.elapsed();
+    let timing = Timing {
+        tool_name: tool_name.clone(),
+        elapsed: start.elapsed(),
+        timeout,
+    };
+    trace_outcome(safety, &timing, &result);
 
-    match &result {
+    let result = result
+        .map_err(|_| crate::error::ToolError::Timeout {
+            name: tool_name.clone(),
+            timeout,
+        })?
+        .map_err(|e| crate::error::ToolError::ExecutionFailed {
+            name: tool_name.clone(),
+            reason: e.to_string(),
+        })?;
+
+    serde_json::to_string_pretty(&result.result).map_err(|e| {
+        crate::error::ToolError::ExecutionFailed {
+            name: tool_name.clone(),
+            reason: format!("Failed to serialize result: {}", e),
+        }
+        .into()
+    })
+}
+
+/// Refuse a call whose parameters the validator rejects.
+fn validate_params(
+    safety: &SafetyLayer,
+    params: &serde_json::Value,
+    tool_name: &str,
+) -> Result<(), Error> {
+    let validation = safety.validator().validate_tool_params(params);
+    if validation.is_valid {
+        return Ok(());
+    }
+    let details = validation
+        .errors
+        .iter()
+        .map(|e| format!("{}: {}", e.field, e.message))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(crate::error::ToolError::InvalidParameters {
+        name: tool_name.to_string(),
+        reason: format!("Invalid tool parameters: {}", details),
+    }
+    .into())
+}
+
+/// One call's timing, for the trace line that records how it ended.
+struct Timing {
+    tool_name: String,
+    elapsed: std::time::Duration,
+    timeout: std::time::Duration,
+}
+
+/// Trace how one call ended, sanitizing a tool error before it is logged.
+fn trace_outcome<E: std::fmt::Display>(
+    safety: &SafetyLayer,
+    timing: &Timing,
+    result: &Result<Result<ToolOutput, E>, tokio::time::error::Elapsed>,
+) {
+    let Timing {
+        tool_name,
+        elapsed,
+        timeout,
+    } = timing;
+    match result {
         Ok(Ok(output)) => {
             let result_size = serde_json::to_string(&output.result)
                 .map(|s| s.len())
@@ -73,11 +141,15 @@ pub async fn execute_tool_with_safety(
                 "Tool call succeeded"
             );
         }
-        Ok(Err(e)) => {
+        Ok(Err(error)) => {
+            // The tool's own message may quote external data or a secret it
+            // was given. Sanitize before it reaches the log, not only before
+            // it reaches the model.
+            let sanitized = safety.sanitize_tool_output(tool_name, &error.to_string());
             tracing::debug!(
                 tool = %tool_name,
                 elapsed_ms = elapsed.as_millis() as u64,
-                error = %e,
+                error = %sanitized.content,
                 "Tool call failed"
             );
         }
@@ -90,24 +162,29 @@ pub async fn execute_tool_with_safety(
             );
         }
     }
+}
 
-    let result = result
-        .map_err(|_| crate::error::ToolError::Timeout {
+/// Rewrite a tool result's error text through the safety layer.
+///
+/// Status updates and logs are display sinks: a tool's own message can quote
+/// the data it was given, and for `exec_code` that text is guest-controlled.
+/// Callers that surface a result outside the model's channel use this so the
+/// redaction happens once, identically, on every path.
+pub fn sanitized_status_result(
+    safety: &SafetyLayer,
+    tool_name: &str,
+    result: &Result<String, Error>,
+) -> Result<String, Error> {
+    match result {
+        Ok(output) => Ok(output.clone()),
+        Err(error) => Err(crate::error::ToolError::ExecutionFailed {
             name: tool_name.to_string(),
-            timeout,
-        })?
-        .map_err(|e| crate::error::ToolError::ExecutionFailed {
-            name: tool_name.to_string(),
-            reason: e.to_string(),
-        })?;
-
-    serde_json::to_string_pretty(&result.result).map_err(|e| {
-        crate::error::ToolError::ExecutionFailed {
-            name: tool_name.to_string(),
-            reason: format!("Failed to serialize result: {}", e),
+            reason: safety
+                .sanitize_tool_output(tool_name, &error.to_string())
+                .content,
         }
-        .into()
-    })
+        .into()),
+    }
 }
 
 /// Process a tool result into a `ChatMessage::tool_result` with safety sanitization.

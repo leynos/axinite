@@ -1,6 +1,16 @@
 [workspace]
-members = [".", "crates/ambient-fs", "crates/hyper-rustls"]
+members = [
+    ".",
+    "crates/ambient-fs",
+    "crates/hyper-rustls",
+    "crates/monty-capabilities",
+    "crates/monty-protocol",
+]
+# `crates/monty-helper` is its own workspace: Monty 1.6.0 needs Rust 1.98 while
+# the workspace MSRV lane checks Rust 1.95. Build and test it through
+# `make test-monty-helper`.
 exclude = [
+    "crates/monty-helper",
     "channels-src/discord",
     "channels-src/telegram",
     "channels-src/slack",
@@ -117,6 +127,11 @@ fs4 = "0.6"
 # Deliberately-ambient filesystem boundary (see crates/ambient-fs)
 ambient-fs = { path = "crates/ambient-fs" }
 
+# Monty exec_code boundary: the parent owns the types and the restricted helper
+# owns the interpreter, so the root crate never links Monty.
+monty-protocol = { path = "crates/monty-protocol" }
+monty-capabilities = { path = "crates/monty-capabilities" }
+
 # Semantic versioning
 semver = "1"
 
@@ -230,6 +245,7 @@ tempfile = "3"
 mockall = "0.13"
 trybuild = "1"
 proptest = "1.6.0"
+googletest = "0.14.4"
 delegate = "0.13"
 gag = "1.0.0"
 scopeguard = "1.2.0"

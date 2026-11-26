@@ -43,13 +43,15 @@ impl Agent {
                 .await;
 
             let deferred_tool = self.tools().get(&tc.name).await;
+            let sanitized =
+                crate::tools::execute::sanitized_status_result(self.safety(), &tc.name, &result);
             let _ = self
                 .channels
                 .send_status(
                     &exec.env.channel,
                     StatusUpdate::tool_completed(
                         tc.name.clone(),
-                        &result,
+                        &sanitized,
                         &tc.arguments,
                         deferred_tool.as_deref(),
                     ),

@@ -168,7 +168,7 @@ impl Agent {
                 Ok(SubmissionResult::response(response))
             }
             Ok(AgenticLoopResult::NeedApproval { pending }) => {
-                self.enter_awaiting_approval_and_notify(&scope, pending)
+                self.enter_awaiting_approval_and_notify(&scope, *pending)
                     .await
             }
             Err(e) => self.fail_turn_and_error(&scope, e.to_string()).await,

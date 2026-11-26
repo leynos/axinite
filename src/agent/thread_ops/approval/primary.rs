@@ -93,11 +93,17 @@ impl Agent {
     }
 
     /// Build JobContext for approval execution.
-    fn build_job_context_for_approval(
+    ///
+    /// `exec_code` needs the same broker after approval that the dispatcher
+    /// would have issued before it: the pending call carries the caller's
+    /// attenuated ceiling and auto-approval snapshot, so the continuation
+    /// rebuilds the authority from them rather than running with none. Outer
+    /// approval still does not authorize a nested tool.
+    async fn build_job_context_for_approval(
         &self,
         env: &MsgEnv,
         pending: &PendingApproval,
-    ) -> JobContext {
+    ) -> Result<JobContext, Error> {
         let mut job_ctx = JobContext::with_user(&env.user_id, "chat", "Interactive chat session");
         job_ctx.http_interceptor = self.deps.http_interceptor.clone();
         // Prefer a valid timezone from the approval message, fall back to the
@@ -110,7 +116,12 @@ impl Agent {
         if let Some(tz) = tz_candidate {
             job_ctx.user_timezone = tz.to_string();
         }
-        job_ctx
+        if pending.tool_name == "exec_code" {
+            job_ctx.broker = Some(Arc::new(
+                super::broker::approved_broker(self, &env.user_id, pending).await?,
+            ));
+        }
+        Ok(job_ctx)
     }
 
     /// Execute primary tool and send notifications.
@@ -136,13 +147,20 @@ impl Agent {
             .await;
 
         let tool_ref = self.tools().get(&pending.tool_name).await;
+        // Status is a display sink: the tool's own message can quote the data
+        // it was given.
+        let sanitized = crate::tools::execute::sanitized_status_result(
+            self.safety(),
+            &pending.tool_name,
+            &tool_result,
+        );
         let _ = self
             .channels
             .send_status(
                 &env.channel,
                 StatusUpdate::tool_completed(
                     pending.tool_name.clone(),
-                    &tool_result,
+                    &sanitized,
                     &pending.display_parameters,
                     tool_ref.as_deref(),
                 ),
@@ -307,7 +325,9 @@ impl Agent {
             .await;
 
         // e) Build context and execute primary tool
-        let job_ctx = self.build_job_context_for_approval(&scope.env, &pending);
+        let job_ctx = self
+            .build_job_context_for_approval(&scope.env, &pending)
+            .await?;
         let (tool_result, _) = self
             .execute_primary_tool_and_notify(&scope.env, &pending, &job_ctx)
             .await;

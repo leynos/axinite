@@ -67,9 +67,13 @@ pub(crate) enum AgenticLoopResult {
     /// Completed with a response.
     Response(String),
     /// A tool requires approval before continuing.
+    ///
+    /// The request is boxed: it carries the conversation context, the deferred
+    /// calls and the caller's authority snapshot, so inlining it would make
+    /// every `Response` pay for a payload it never holds.
     NeedApproval {
         /// The pending approval request to store.
-        pending: crate::agent::session::PendingApproval,
+        pending: Box<crate::agent::session::PendingApproval>,
     },
 }
 

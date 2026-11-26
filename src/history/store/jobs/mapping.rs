@@ -138,6 +138,7 @@ pub(super) fn row_to_job_context(row: &tokio_postgres::Row) -> Result<JobContext
         tool_output_stash: std::sync::Arc::new(tokio::sync::RwLock::new(
             std::collections::HashMap::new(),
         )),
+        broker: None,
         user_timezone: row
             .get::<_, Option<String>>("user_timezone")
             .unwrap_or_else(|| "UTC".to_string()),

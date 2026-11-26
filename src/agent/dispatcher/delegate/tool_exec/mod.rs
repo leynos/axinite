@@ -16,7 +16,7 @@ use crate::channels::StatusUpdate;
 use crate::error::Error;
 use crate::llm::{ChatMessage, ReasoningContext};
 
-fn build_pending_approval(
+async fn build_pending_approval(
     delegate: &ChatDelegate<'_>,
     candidate: preflight::ApprovalCandidate,
     tool_calls: &[crate::llm::ToolCall],
@@ -26,6 +26,14 @@ fn build_pending_approval(
         &candidate.tool_call.arguments,
         candidate.tool.sensitive_params(),
     );
+    let permitted_tools = execution::attenuated_names(delegate)
+        .await
+        .into_iter()
+        .collect();
+    let auto_approved_tools = {
+        let session = delegate.session.lock().await;
+        session.auto_approved_tools.iter().cloned().collect()
+    };
     PendingApproval {
         request_id: Uuid::new_v4(),
         tool_name: candidate.tool_call.name.clone(),
@@ -36,6 +44,8 @@ fn build_pending_approval(
         context_messages: reason_ctx.messages.clone(),
         deferred_tool_calls: tool_calls[candidate.idx + 1..].to_vec(),
         user_timezone: Some(delegate.user_tz.name().to_string()),
+        permitted_tools,
+        auto_approved_tools,
     }
 }
 
@@ -90,7 +100,7 @@ pub(crate) async fn execute_tool_calls(
     }
 
     if let Some(candidate) = approval_needed {
-        let pending = build_pending_approval(delegate, candidate, &tool_calls, reason_ctx);
+        let pending = build_pending_approval(delegate, candidate, &tool_calls, reason_ctx).await;
         return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
     }
 
