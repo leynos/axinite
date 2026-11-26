@@ -14,7 +14,8 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use super::HttpChannelState;
-use crate::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
+use super::attachments::{AttachmentData, decode_attachments};
+use crate::channels::{IncomingAttachment, IncomingMessage};
 
 /// Maximum number of pending wait-for-response requests.
 const MAX_PENDING_RESPONSES: usize = 100;
@@ -44,29 +45,6 @@ pub(super) struct WebhookRequest {
     attachments: Vec<AttachmentData>,
 }
 
-/// A file attachment in a webhook request.
-#[derive(Debug, Deserialize)]
-pub(super) struct AttachmentData {
-    /// MIME type (e.g. "image/png", "application/pdf").
-    mime_type: String,
-    /// Optional filename.
-    #[serde(default)]
-    filename: Option<String>,
-    /// Base64-encoded file data.
-    #[serde(default)]
-    data_base64: Option<String>,
-    /// URL to fetch the file from (not downloaded server-side for SSRF prevention).
-    #[serde(default)]
-    url: Option<String>,
-}
-
-/// Maximum size per attachment (5 MB decoded).
-const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
-/// Maximum total attachment size (10 MB decoded).
-const MAX_TOTAL_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
-/// Maximum number of attachments per request.
-const MAX_ATTACHMENTS: usize = 5;
-
 #[derive(Debug, Serialize)]
 pub(super) struct WebhookResponse {
     /// Message ID assigned to this request.
@@ -90,29 +68,25 @@ pub(super) async fn health_handler() -> impl IntoResponse {
     })
 }
 
+/// A webhook reply: status code plus JSON body.
+type WebhookReply = (StatusCode, Json<WebhookResponse>);
+
 pub(super) async fn webhook_handler(
     State(state): State<Arc<HttpChannelState>>,
     Json(req): Json<WebhookRequest>,
-) -> (StatusCode, Json<WebhookResponse>) {
-    // Rate limiting
-    {
-        let mut limiter = state.rate_limit.lock().await;
-        if limiter.window_start.elapsed() >= std::time::Duration::from_secs(60) {
-            limiter.window_start = std::time::Instant::now();
-            limiter.request_count = 0;
-        }
-        limiter.request_count += 1;
-        if limiter.request_count > MAX_REQUESTS_PER_MINUTE {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(WebhookResponse {
-                    message_id: Uuid::nil(),
-                    status: "error".to_string(),
-                    response: Some("Rate limit exceeded".to_string()),
-                }),
-            );
-        }
+) -> WebhookReply {
+    match validate_webhook(&state, &req).await {
+        Ok(msg) => process_message(state, msg, req.wait_for_response).await,
+        Err(reply) => reply,
     }
+}
+
+/// Run every webhook admission check in order and build the message to forward.
+async fn validate_webhook(
+    state: &HttpChannelState,
+    req: &WebhookRequest,
+) -> Result<IncomingMessage, WebhookReply> {
+    check_rate_limit(state).await?;
 
     let _ = req.user_id.as_ref().map(|user_id| {
         tracing::debug!(
@@ -121,135 +95,74 @@ pub(super) async fn webhook_handler(
         );
     });
 
-    // Validate secret if configured
-    if let Some(ref expected_secret) = *state.webhook_secret.read().await {
-        let expected_bytes = expected_secret.expose_secret().as_bytes();
-        match &req.secret {
-            Some(provided) if bool::from(provided.as_bytes().ct_eq(expected_bytes)) => {
-                // Secret matches, continue
-            }
-            Some(_) => {
-                return (
-                    StatusCode::UNAUTHORIZED,
-                    Json(WebhookResponse {
-                        message_id: Uuid::nil(),
-                        status: "error".to_string(),
-                        response: Some("Invalid webhook secret".to_string()),
-                    }),
-                );
-            }
-            None => {
-                return (
-                    StatusCode::UNAUTHORIZED,
-                    Json(WebhookResponse {
-                        message_id: Uuid::nil(),
-                        status: "error".to_string(),
-                        response: Some("Webhook secret required".to_string()),
-                    }),
-                );
-            }
-        }
-    }
+    check_webhook_secret(state, req.secret.as_deref()).await?;
 
     if req.content.len() > MAX_CONTENT_BYTES {
-        return (
+        return Err(error_response(
+            Uuid::nil(),
             StatusCode::PAYLOAD_TOO_LARGE,
-            Json(WebhookResponse {
-                message_id: Uuid::nil(),
-                status: "error".to_string(),
-                response: Some("Content too large".to_string()),
-            }),
-        );
+            "Content too large",
+        ));
     }
 
-    // Validate and decode attachments
-    let attachments = if !req.attachments.is_empty() {
-        if req.attachments.len() > MAX_ATTACHMENTS {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(WebhookResponse {
-                    message_id: Uuid::nil(),
-                    status: "error".to_string(),
-                    response: Some(format!("Too many attachments (max {})", MAX_ATTACHMENTS)),
-                }),
-            );
-        }
+    let attachments = decode_attachments(&req.attachments)
+        .map_err(|rejection| error_response(Uuid::nil(), rejection.status, &rejection.message))?;
+    Ok(build_incoming_message(state, req, attachments))
+}
 
-        let mut decoded_attachments = Vec::new();
-        let mut total_bytes: usize = 0;
-        for att in &req.attachments {
-            if let Some(ref b64) = att.data_base64 {
-                use base64::Engine;
-                let data = match base64::engine::general_purpose::STANDARD.decode(b64) {
-                    Ok(d) => d,
-                    Err(_) => {
-                        return (
-                            StatusCode::BAD_REQUEST,
-                            Json(WebhookResponse {
-                                message_id: Uuid::nil(),
-                                status: "error".to_string(),
-                                response: Some("Invalid base64 in attachment".to_string()),
-                            }),
-                        );
-                    }
-                };
-                if data.len() > MAX_ATTACHMENT_BYTES {
-                    return (
-                        StatusCode::PAYLOAD_TOO_LARGE,
-                        Json(WebhookResponse {
-                            message_id: Uuid::nil(),
-                            status: "error".to_string(),
-                            response: Some(format!(
-                                "Attachment too large (max {} bytes)",
-                                MAX_ATTACHMENT_BYTES
-                            )),
-                        }),
-                    );
-                }
-                total_bytes += data.len();
-                if total_bytes > MAX_TOTAL_ATTACHMENT_BYTES {
-                    return (
-                        StatusCode::PAYLOAD_TOO_LARGE,
-                        Json(WebhookResponse {
-                            message_id: Uuid::nil(),
-                            status: "error".to_string(),
-                            response: Some("Total attachment size exceeds limit".to_string()),
-                        }),
-                    );
-                }
-                decoded_attachments.push(IncomingAttachment {
-                    id: Uuid::new_v4().to_string(),
-                    kind: AttachmentKind::from_mime_type(&att.mime_type),
-                    mime_type: att.mime_type.clone(),
-                    filename: att.filename.clone(),
-                    size_bytes: Some(data.len() as u64),
-                    source_url: None,
-                    storage_key: None,
-                    extracted_text: None,
-                    data,
-                    duration_secs: None,
-                });
-            } else if let Some(ref url) = att.url {
-                // URL-only attachment: set source_url but don't download (SSRF prevention)
-                decoded_attachments.push(IncomingAttachment {
-                    id: Uuid::new_v4().to_string(),
-                    kind: AttachmentKind::from_mime_type(&att.mime_type),
-                    mime_type: att.mime_type.clone(),
-                    filename: att.filename.clone(),
-                    size_bytes: None,
-                    source_url: Some(url.clone()),
-                    storage_key: None,
-                    extracted_text: None,
-                    data: Vec::new(),
-                    duration_secs: None,
-                });
-            }
-        }
-        decoded_attachments
-    } else {
-        Vec::new()
+/// Count this request against the fixed one-minute window; fail with 429 when
+/// the window's budget is spent.
+async fn check_rate_limit(state: &HttpChannelState) -> Result<(), WebhookReply> {
+    let mut limiter = state.rate_limit.lock().await;
+    if limiter.window_start.elapsed() >= std::time::Duration::from_secs(60) {
+        limiter.window_start = std::time::Instant::now();
+        limiter.request_count = 0;
+    }
+    limiter.request_count += 1;
+    if limiter.request_count > MAX_REQUESTS_PER_MINUTE {
+        return Err(error_response(
+            Uuid::nil(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded",
+        ));
+    }
+    Ok(())
+}
+
+/// Compare the provided secret against the configured one in constant time.
+///
+/// Passes when no secret is configured; fails with 401 when one is configured
+/// and the request omits it or supplies a different value.
+async fn check_webhook_secret(
+    state: &HttpChannelState,
+    provided: Option<&str>,
+) -> Result<(), WebhookReply> {
+    let guard = state.webhook_secret.read().await;
+    let Some(expected_secret) = guard.as_ref() else {
+        return Ok(());
     };
+    let expected_bytes = expected_secret.expose_secret().as_bytes();
+    match provided {
+        Some(p) if bool::from(p.as_bytes().ct_eq(expected_bytes)) => Ok(()),
+        Some(_) => Err(error_response(
+            Uuid::nil(),
+            StatusCode::UNAUTHORIZED,
+            "Invalid webhook secret",
+        )),
+        None => Err(error_response(
+            Uuid::nil(),
+            StatusCode::UNAUTHORIZED,
+            "Webhook secret required",
+        )),
+    }
+}
 
+/// Assemble the message forwarded to the agent from a validated request.
+fn build_incoming_message(
+    state: &HttpChannelState,
+    req: &WebhookRequest,
+    attachments: Vec<IncomingAttachment>,
+) -> IncomingMessage {
     let mut msg = IncomingMessage::new("http", &state.user_id, &req.content).with_metadata(
         serde_json::json!({
             "wait_for_response": req.wait_for_response,
@@ -263,8 +176,7 @@ pub(super) async fn webhook_handler(
     if let Some(thread_id) = &req.thread_id {
         msg = msg.with_thread(thread_id);
     }
-
-    process_message(state, msg, req.wait_for_response).await
+    msg
 }
 
 /// Build a webhook error response with the given status code and message.

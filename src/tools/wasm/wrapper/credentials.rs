@@ -4,6 +4,7 @@
 use super::http::reject_private_ip;
 use super::store::ResolvedHostCredential;
 use super::*;
+use crate::secrets::CredentialMapping;
 
 /// Refresh an expired OAuth access token using the stored refresh token.
 ///
@@ -214,29 +215,14 @@ pub(super) async fn resolve_host_credentials(
     // Check if the access token needs refreshing before resolving credentials.
     // This runs once per tool execution, keeping the hot path (credential injection
     // inside WASM) synchronous and allocation-free.
-    if let Some(config) = oauth_refresh {
-        let needs_refresh = match store.get(user_id, &config.secret_name).await {
-            Ok(secret) => match secret.expires_at {
-                Some(expires_at) => {
-                    let buffer = chrono::Duration::minutes(5);
-                    expires_at - buffer < chrono::Utc::now()
-                }
-                // No expires_at means legacy token, don't try to refresh
-                None => false,
-            },
-            // Expired error from store means we definitely need to refresh
-            Err(crate::secrets::SecretError::Expired) => true,
-            // Not found or other errors: skip refresh, let the normal flow handle it
-            Err(_) => false,
-        };
-
-        if needs_refresh {
-            tracing::debug!(
-                secret_name = %config.secret_name,
-                "Access token expired or near expiry, attempting refresh"
-            );
-            refresh_oauth_token(store, user_id, config).await;
-        }
+    if let Some(config) = oauth_refresh
+        && access_token_needs_refresh(store, user_id, config).await
+    {
+        tracing::debug!(
+            secret_name = %config.secret_name,
+            "Access token expired or near expiry, attempting refresh"
+        );
+        refresh_oauth_token(store, user_id, config).await;
     }
 
     let http_cap = match &capabilities.http {
@@ -251,39 +237,9 @@ pub(super) async fn resolve_host_credentials(
     let mut resolved = Vec::new();
 
     for mapping in http_cap.credentials.values() {
-        // Skip UrlPath credentials, they're handled by placeholder substitution
-        if matches!(
-            mapping.location,
-            crate::secrets::CredentialLocation::UrlPath { .. }
-        ) {
-            continue;
+        if let Some(credential) = resolve_mapping_credential(store, user_id, mapping).await {
+            resolved.push(credential);
         }
-
-        let secret = match store.get_decrypted(user_id, &mapping.secret_name).await {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::debug!(
-                    secret_name = %mapping.secret_name,
-                    error = %e,
-                    "Could not resolve credential for WASM tool (auth may not be configured)"
-                );
-                continue;
-            }
-        };
-
-        let mut injected = InjectedCredentials::empty();
-        inject_credential(&mut injected, &mapping.location, &secret);
-
-        if injected.is_empty() {
-            continue;
-        }
-
-        resolved.push(ResolvedHostCredential {
-            host_patterns: mapping.host_patterns.clone(),
-            headers: injected.headers,
-            query_params: injected.query_params,
-            secret_value: secret.expose().to_string(),
-        });
     }
 
     if !resolved.is_empty() {
@@ -294,4 +250,68 @@ pub(super) async fn resolve_host_credentials(
     }
 
     resolved
+}
+
+/// Decide whether the stored access token must be refreshed before use.
+///
+/// True when the token is within five minutes of expiry or the store reports it
+/// expired. A token without `expires_at` is a legacy one and is never refreshed;
+/// not-found and other store errors skip the refresh and leave the normal flow
+/// to handle them.
+async fn access_token_needs_refresh(
+    store: &(dyn SecretsStore + Send + Sync),
+    user_id: &str,
+    config: &OAuthRefreshConfig,
+) -> bool {
+    match store.get(user_id, &config.secret_name).await {
+        Ok(secret) => secret.expires_at.is_some_and(|expires_at| {
+            let buffer = chrono::Duration::minutes(5);
+            expires_at - buffer < chrono::Utc::now()
+        }),
+        Err(crate::secrets::SecretError::Expired) => true,
+        Err(_) => false,
+    }
+}
+
+/// Resolve one credential mapping to host-side injection data.
+///
+/// Skips `UrlPath` credentials (handled by placeholder substitution), secrets
+/// that cannot be resolved, and mappings that inject nothing.
+async fn resolve_mapping_credential(
+    store: &(dyn SecretsStore + Send + Sync),
+    user_id: &str,
+    mapping: &CredentialMapping,
+) -> Option<ResolvedHostCredential> {
+    if matches!(
+        mapping.location,
+        crate::secrets::CredentialLocation::UrlPath { .. }
+    ) {
+        return None;
+    }
+
+    let secret = match store.get_decrypted(user_id, &mapping.secret_name).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::debug!(
+                secret_name = %mapping.secret_name,
+                error = %e,
+                "Could not resolve credential for WASM tool (auth may not be configured)"
+            );
+            return None;
+        }
+    };
+
+    let mut injected = InjectedCredentials::empty();
+    inject_credential(&mut injected, &mapping.location, &secret);
+
+    if injected.is_empty() {
+        return None;
+    }
+
+    Some(ResolvedHostCredential {
+        host_patterns: mapping.host_patterns.clone(),
+        headers: injected.headers,
+        query_params: injected.query_params,
+        secret_value: secret.expose().to_string(),
+    })
 }

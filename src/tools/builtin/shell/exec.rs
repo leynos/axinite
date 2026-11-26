@@ -25,6 +25,38 @@ struct CommandSpec<'a> {
     timeout: Duration,
 }
 
+/// Read up to `MAX_OUTPUT_SIZE` bytes from a child's pipe, then drain the rest
+/// so the child does not block on write. A missing pipe yields an empty string.
+async fn drain_pipe<R>(pipe: Option<R>) -> String
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let Some(mut pipe) = pipe else {
+        return String::new();
+    };
+    let mut buf = Vec::new();
+    (&mut pipe)
+        .take(MAX_OUTPUT_SIZE as u64)
+        .read_to_end(&mut buf)
+        .await
+        .ok();
+    tokio::io::copy(&mut pipe, &mut tokio::io::sink())
+        .await
+        .ok();
+    String::from_utf8_lossy(&buf).to_string()
+}
+
+/// Join stdout and stderr, labelling stderr when both have content.
+fn combine_output(stdout: String, stderr: String) -> String {
+    if stderr.is_empty() {
+        stdout
+    } else if stdout.is_empty() {
+        stderr
+    } else {
+        format!("{}\n\n--- stderr ---\n{}", stdout, stderr)
+    }
+}
+
 impl ShellTool {
     /// Execute a command through the sandbox.
     async fn execute_sandboxed(
@@ -55,13 +87,13 @@ impl ShellTool {
         }
     }
 
-    /// Execute a command directly (fallback when sandbox unavailable).
-    async fn execute_direct(
+    /// Build the shell command with a scrubbed environment, the working
+    /// directory from `spec` and piped stdout/stderr.
+    fn scrubbed_command(
         &self,
         spec: &CommandSpec<'_>,
         extra_env: &HashMap<String, String>,
-    ) -> Result<(String, i32), ToolError> {
-        // Build command
+    ) -> Command {
         let mut command = if cfg!(target_os = "windows") {
             let mut c = Command::new("cmd");
             c.args(["/C", spec.cmd]);
@@ -95,6 +127,16 @@ impl ShellTool {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        command
+    }
+
+    /// Execute a command directly (fallback when sandbox unavailable).
+    async fn execute_direct(
+        &self,
+        spec: &CommandSpec<'_>,
+        extra_env: &HashMap<String, String>,
+    ) -> Result<(String, i32), ToolError> {
+        let mut command = self.scrubbed_command(spec, extra_env);
 
         // Spawn process
         let mut child = command
@@ -109,50 +151,13 @@ impl ShellTool {
         let stderr_handle = child.stderr.take();
 
         let result = tokio::time::timeout(spec.timeout, async {
-            let stdout_fut = async {
-                if let Some(mut out) = stdout_handle {
-                    let mut buf = Vec::new();
-                    (&mut out)
-                        .take(MAX_OUTPUT_SIZE as u64)
-                        .read_to_end(&mut buf)
-                        .await
-                        .ok();
-                    // Drain any remaining output so the child does not block
-                    tokio::io::copy(&mut out, &mut tokio::io::sink()).await.ok();
-                    String::from_utf8_lossy(&buf).to_string()
-                } else {
-                    String::new()
-                }
-            };
-
-            let stderr_fut = async {
-                if let Some(mut err) = stderr_handle {
-                    let mut buf = Vec::new();
-                    (&mut err)
-                        .take(MAX_OUTPUT_SIZE as u64)
-                        .read_to_end(&mut buf)
-                        .await
-                        .ok();
-                    tokio::io::copy(&mut err, &mut tokio::io::sink()).await.ok();
-                    String::from_utf8_lossy(&buf).to_string()
-                } else {
-                    String::new()
-                }
-            };
-
-            let (stdout, stderr, wait_result) = tokio::join!(stdout_fut, stderr_fut, child.wait());
+            let (stdout, stderr, wait_result) = tokio::join!(
+                drain_pipe(stdout_handle),
+                drain_pipe(stderr_handle),
+                child.wait()
+            );
             let status = wait_result?;
-
-            // Combine output
-            let output = if stderr.is_empty() {
-                stdout
-            } else if stdout.is_empty() {
-                stderr
-            } else {
-                format!("{}\n\n--- stderr ---\n{}", stdout, stderr)
-            };
-
-            Ok::<_, std::io::Error>((output, status.code().unwrap_or(-1)))
+            Ok::<_, std::io::Error>((combine_output(stdout, stderr), status.code().unwrap_or(-1)))
         })
         .await;
 
