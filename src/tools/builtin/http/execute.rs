@@ -132,7 +132,7 @@ impl NativeTool for HttpTool {
         if let Some(ref interceptor) = ctx.http_interceptor
             && let Some(recorded) = interceptor.before_request(&intercept_req).await
         {
-            return Ok(replayed_output(recorded, start.elapsed()));
+            return Ok(replayed_output(recorded, start));
         }
 
         // Execute request
@@ -234,7 +234,7 @@ impl NativeTool for HttpTool {
 /// Build the tool output for a response replayed from a recording.
 fn replayed_output(
     recorded: crate::llm::recording::HttpExchangeResponse,
-    elapsed: Duration,
+    start: std::time::Instant,
 ) -> ToolOutput {
     let headers: HashMap<String, String> = recorded.headers.iter().cloned().collect();
     let body: serde_json::Value = serde_json::from_str(&recorded.body)
@@ -244,7 +244,7 @@ fn replayed_output(
         "headers": headers,
         "body": body
     });
-    ToolOutput::success(result, elapsed).with_raw(recorded.body)
+    ToolOutput::success(result, start.elapsed()).with_raw(recorded.body)
 }
 
 /// Send the request, mapping transport failures to tool errors.

@@ -57,7 +57,6 @@ pub async fn oauth_callback_handler(
 
     record_flow_outcome(state.as_ref(), &flow, &result).await;
 
-    let html = crate::cli::oauth_defaults::landing_html(&flow.display_name, success);
     // Broadcast SSE event to notify the web UI
     if let Some(sender) = flow.sse_sender {
         let _ = sender.send(SseEvent::AuthCompleted {
@@ -67,6 +66,7 @@ pub async fn oauth_callback_handler(
         });
     }
 
+    let html = crate::cli::oauth_defaults::landing_html(&flow.display_name, success);
     axum::response::Html(html).into_response()
 }
 
