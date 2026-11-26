@@ -114,26 +114,14 @@ fn canonical_check_path(resolved: &Path) -> PathBuf {
             .canonicalize()
             .unwrap_or_else(|_| resolved.to_path_buf());
     }
-    let mut ancestor = resolved;
-    let mut tail_parts: Vec<&std::ffi::OsStr> = Vec::new();
-    loop {
-        if ancestor.exists() {
-            let mut result = ancestor
-                .canonicalize()
-                .unwrap_or_else(|_| ancestor.to_path_buf());
-            for part in tail_parts.into_iter().rev() {
-                result = result.join(part);
-            }
-            return result;
-        }
-        if let Some(name) = ancestor.file_name() {
-            tail_parts.push(name);
-        }
-        match ancestor.parent() {
-            Some(parent) if parent != ancestor => ancestor = parent,
-            _ => return resolved.to_path_buf(),
-        }
-    }
+    let Some(ancestor) = resolved.ancestors().find(|ancestor| ancestor.exists()) else {
+        return resolved.to_path_buf();
+    };
+    let tail = resolved.strip_prefix(ancestor).unwrap_or(Path::new(""));
+    ancestor
+        .canonicalize()
+        .unwrap_or_else(|_| ancestor.to_path_buf())
+        .join(tail)
 }
 
 /// Basic path safety check without requiring a base directory.

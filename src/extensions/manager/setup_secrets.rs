@@ -106,8 +106,9 @@ impl ExtensionManager {
 
         validate_telegram_token_if_submitted(name, secrets).await?;
 
-        self.store_and_complete_secrets(name, kind, &allowed, secrets)
+        self.store_submitted_secrets(name, &allowed, secrets)
             .await?;
+        self.auto_generate_for_channel(name, kind, secrets).await?;
 
         // For tools, save and attempt auto-activation, then check auth.
         // Otherwise try to hot-activate the channel now that secrets are saved.
@@ -117,17 +118,13 @@ impl ExtensionManager {
         })
     }
 
-    /// Store the submitted secrets, then auto-generate the missing ones (channels only).
-    async fn store_and_complete_secrets(
+    /// Auto-generate any missing secrets (a channel-only feature).
+    async fn auto_generate_for_channel(
         &self,
         name: &str,
         kind: ExtensionKind,
-        allowed: &std::collections::HashSet<String>,
         secrets: &std::collections::HashMap<String, String>,
     ) -> Result<(), ExtensionError> {
-        self.store_submitted_secrets(name, allowed, secrets).await?;
-
-        // Auto-generate any missing secrets (channel-only feature)
         if kind == ExtensionKind::WasmChannel {
             self.auto_generate_channel_secrets(name, secrets).await?;
         }
