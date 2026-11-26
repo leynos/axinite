@@ -13,6 +13,7 @@ use crate::context::JobContext;
 use crate::hooks::HookRegistry;
 use crate::safety::SafetyLayer;
 use crate::tools::monty::broker::{BrokerContext, BrokerServices, CallerPolicy};
+use crate::tools::monty::capabilities::SelectionError;
 use crate::tools::{ApprovalRequirement, NativeTool, Tool, ToolError, ToolOutput, ToolRegistry};
 
 struct CountingTool {
@@ -322,3 +323,56 @@ async fn schema_violation_is_a_contract_error_without_effects() {
 
 #[path = "hook_tests.rs"]
 mod hooks;
+
+/// An explicit empty ceiling refuses everything; only an absent snapshot is
+/// permissive. Collapsing the two would let a caller whose attenuation left
+/// no visible tools select any registered one.
+#[tokio::test]
+async fn an_empty_ceiling_refuses_a_registered_tool() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let registry = ToolRegistry::new();
+    registry.register_sync(tool(
+        "alpha",
+        &calls,
+        ApprovalRequirement::Never,
+        query_schema(),
+    ));
+    let mut restrictive = policy();
+    restrictive.permitted = Some(Default::default());
+    let denied = BrokerContext::new(
+        BrokerServices {
+            tools: Arc::new(registry),
+            safety: Arc::new(test_safety()),
+            hooks: None,
+            policy: restrictive,
+        },
+        &["alpha".to_string()],
+    )
+    .await
+    .expect_err("a caller with no visible tools must not select one");
+    assert!(
+        matches!(denied, SelectionError::OutsideCallerAuthority { .. }),
+        "{denied:?}"
+    );
+}
+
+/// The absent snapshot is the only permissive case.
+#[tokio::test]
+async fn an_absent_ceiling_admits_a_registered_tool() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut permissive = policy();
+    permissive.permitted = None;
+    let broker = broker(
+        vec![tool(
+            "alpha",
+            &calls,
+            ApprovalRequirement::Never,
+            query_schema(),
+        )],
+        &["alpha"],
+        permissive,
+        None,
+    )
+    .await;
+    assert_eq!(broker.table().len(), 1);
+}

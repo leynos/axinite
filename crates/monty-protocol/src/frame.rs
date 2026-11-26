@@ -54,12 +54,37 @@ pub enum FrameError {
     Io(#[from] io::Error),
 }
 
+/// A writer that refuses to grow past a ceiling.
+///
+/// Serialising first and checking afterwards would let one message allocate
+/// far beyond the frame limit before it was refused. Writing through this
+/// wrapper bounds the allocation at the point it happens.
+struct BoundedWriter {
+    bytes: Vec<u8>,
+}
+
+impl std::io::Write for BoundedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.bytes.len() + buf.len() > MAX_FRAME_BYTES {
+            return Err(std::io::Error::other("frame exceeds its ceiling"));
+        }
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Encodes one message as a complete frame.
 pub fn encode_frame<T: Serialize>(message: &T) -> Result<Vec<u8>, FrameError> {
-    let payload = serde_json::to_vec(message)?;
-    if payload.len() > MAX_FRAME_BYTES {
-        return Err(FrameError::OutputTooLarge(payload.len()));
-    }
+    let mut writer = BoundedWriter { bytes: Vec::new() };
+    serde_json::to_writer(&mut writer, message).map_err(|error| match error.is_io() {
+        true => FrameError::OutputTooLarge(writer.bytes.len()),
+        false => FrameError::InvalidJson(error),
+    })?;
+    let payload = writer.bytes;
     let length =
         u32::try_from(payload.len()).map_err(|_| FrameError::OutputTooLarge(payload.len()))?;
     let mut framed = Vec::with_capacity(LENGTH_PREFIX_BYTES + payload.len());

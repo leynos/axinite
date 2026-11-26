@@ -37,20 +37,24 @@ pub struct CallerPolicy {
     /// Tools the caller's session has already auto-approved.
     pub auto_approved: HashSet<String>,
     /// The authority ceiling the caller advertises: the names its own skill
-    /// attenuation left visible. A requested name outside this set is refused
-    /// even when it is registered, so a run cannot widen authority by naming a
-    /// tool the caller was never offered.
-    pub permitted: HashSet<String>,
+    /// attenuation left visible.
+    ///
+    /// `None` means the caller supplied no snapshot at all — a legacy pending
+    /// request, say — so the registry, hook and approval checks are the only
+    /// ceiling. `Some` is always authoritative, including when it is empty: a
+    /// caller whose attenuation left nothing visible must not be able to name
+    /// a registered tool. An empty set and "no ceiling" are therefore
+    /// different values, and collapsing them would let a caller with no
+    /// visible tools select any registered one.
+    pub permitted: Option<HashSet<String>>,
 }
 
 impl CallerPolicy {
     /// Report whether the caller's own ceiling admits `name`.
-    ///
-    /// An empty ceiling is a caller that did not advertise one; `exec_code`
-    /// already refuses unknown names at selection, and the registry plus the
-    /// hook and approval checks still apply.
     pub fn permits(&self, name: &str) -> bool {
-        self.permitted.is_empty() || self.permitted.contains(name)
+        self.permitted
+            .as_ref()
+            .is_none_or(|permitted| permitted.contains(name))
     }
 }
 

@@ -117,50 +117,11 @@ impl Agent {
             job_ctx.user_timezone = tz.to_string();
         }
         if pending.tool_name == "exec_code" {
-            job_ctx.broker = Some(Arc::new(self.approved_broker(env, pending).await?));
+            job_ctx.broker = Some(Arc::new(
+                super::broker::approved_broker(self, &env.user_id, pending).await?,
+            ));
         }
         Ok(job_ctx)
-    }
-
-    /// Rebuild the authority an approved `exec_code` call runs with.
-    async fn approved_broker(
-        &self,
-        env: &MsgEnv,
-        pending: &PendingApproval,
-    ) -> Result<crate::tools::monty::broker::BrokerContext, Error> {
-        let requested: Vec<String> = pending
-            .parameters
-            .get("allowed_tools")
-            .and_then(serde_json::Value::as_array)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter_map(serde_json::Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let policy = crate::tools::monty::broker::CallerPolicy {
-            user_id: env.user_id.clone(),
-            hook_context: "chat".to_string(),
-            auto_approved: pending.auto_approved_tools.iter().cloned().collect(),
-            permitted: pending.permitted_tools.iter().cloned().collect(),
-        };
-        let services = crate::tools::monty::broker::BrokerServices {
-            tools: self.tools().clone(),
-            safety: self.safety().clone(),
-            hooks: Some(Arc::clone(self.hooks())),
-            policy,
-        };
-        crate::tools::monty::broker::BrokerContext::new(services, &requested)
-            .await
-            .map_err(|error| {
-                crate::error::ToolError::InvalidParameters {
-                    name: "exec_code".to_string(),
-                    reason: error.to_string(),
-                }
-                .into()
-            })
     }
 
     /// Execute primary tool and send notifications.
@@ -186,13 +147,26 @@ impl Agent {
             .await;
 
         let tool_ref = self.tools().get(&pending.tool_name).await;
+        // Sanitise before the display sink: the tool's own message can quote
+        // the data it was given.
+        let sanitized = match &tool_result {
+            Ok(output) => Ok(output.clone()),
+            Err(error) => Err(crate::error::ToolError::ExecutionFailed {
+                name: pending.tool_name.clone(),
+                reason: self
+                    .safety()
+                    .sanitize_tool_output(&pending.tool_name, &error.to_string())
+                    .content,
+            }
+            .into()),
+        };
         let _ = self
             .channels
             .send_status(
                 &env.channel,
                 StatusUpdate::tool_completed(
                     pending.tool_name.clone(),
-                    &tool_result,
+                    &sanitized,
                     &pending.display_parameters,
                     tool_ref.as_deref(),
                 ),

@@ -42,6 +42,7 @@
 //! - `auth`: Auth intercepts and the `process_auth_token` entry point
 
 mod auth;
+mod broker;
 mod context;
 mod deferred_exec;
 mod deferred_flow;

@@ -132,20 +132,18 @@ async fn caller_policy(delegate: &ChatDelegate<'_>) -> CallerPolicy {
         user_id: delegate.message.user_id.clone(),
         hook_context: "chat".to_string(),
         auto_approved: session.auto_approved_tools.clone(),
-        permitted,
+        permitted: Some(permitted),
     }
 }
 
 /// The tool names the caller may offer, after skill attenuation.
 ///
-/// The chat loop advertises the attenuated set to the model; a name the model
-/// was never offered must not become callable by asking `exec_code` for it.
-/// With no active skill the ceiling is empty, which `CallerPolicy::permits`
-/// reads as "no attenuation applies".
+/// The chat loop advertises this set to the model, so a name the model was
+/// never offered must not become callable by asking `exec_code` for it. With
+/// no active skill `attenuate_tools` returns every tool, which is exactly the
+/// snapshot the caller advertised; the ceiling is never left unspecified here,
+/// so an empty set really does mean "nothing is permitted".
 pub(super) async fn attenuated_names(delegate: &ChatDelegate<'_>) -> HashSet<String> {
-    if delegate.active_skills.is_empty() {
-        return HashSet::new();
-    }
     let definitions = delegate.agent.tools().tool_definitions().await;
     let attenuation = crate::skills::attenuate_tools(&definitions, &delegate.active_skills);
     attenuation

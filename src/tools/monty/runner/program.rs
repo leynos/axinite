@@ -45,7 +45,14 @@ impl HelperProgram {
     /// resolved.
     pub fn resolve_from(env: &EnvContext) -> Result<Self, RunError> {
         if let Some(path) = env.get(HELPER_ENV) {
-            return Ok(Self(PathBuf::from(path)));
+            // The plan requires a trusted absolute path: a relative override
+            // would resolve against whatever directory the parent happens to
+            // be in, which is not an authority the caller supplied.
+            let path = PathBuf::from(path);
+            if !path.is_absolute() {
+                return Err(RunError::HelperUnavailable);
+            }
+            return Ok(Self(path));
         }
         let parent = std::env::current_exe().map_err(|_| RunError::HelperUnavailable)?;
         let directory = parent.parent().ok_or(RunError::HelperUnavailable)?;

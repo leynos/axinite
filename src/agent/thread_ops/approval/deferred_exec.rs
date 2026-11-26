@@ -43,13 +43,26 @@ impl Agent {
                 .await;
 
             let deferred_tool = self.tools().get(&tc.name).await;
+            // The error text can quote data the tool was given, so it is
+            // sanitised before it reaches a display sink.
+            let sanitized = match &result {
+                Ok(output) => Ok(output.clone()),
+                Err(error) => Err(crate::error::ToolError::ExecutionFailed {
+                    name: tc.name.clone(),
+                    reason: self
+                        .safety()
+                        .sanitize_tool_output(&tc.name, &error.to_string())
+                        .content,
+                }
+                .into()),
+            };
             let _ = self
                 .channels
                 .send_status(
                     &exec.env.channel,
                     StatusUpdate::tool_completed(
                         tc.name.clone(),
-                        &result,
+                        &sanitized,
                         &tc.arguments,
                         deferred_tool.as_deref(),
                     ),

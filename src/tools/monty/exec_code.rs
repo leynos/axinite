@@ -22,6 +22,12 @@ pub const DEFAULT_DEADLINE: Duration = Duration::from_secs(120);
 /// Hard ceiling on the wall-clock budget a caller may request.
 pub const MAX_DEADLINE: Duration = Duration::from_secs(300);
 
+/// The largest guest source the tool accepts.
+///
+/// The frame ceiling bounds the request too, but checking here refuses an
+/// oversized program before it is copied into a request structure.
+pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
+
 /// The guest heap ceiling the helper enforces.
 pub const MAX_GUEST_MEMORY_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -58,6 +64,9 @@ impl ExecCodeTool {
             .ok_or_else(|| invalid("code must be a string"))?;
         if code.trim().is_empty() {
             return Err(invalid("code must not be empty"));
+        }
+        if code.len() > MAX_SOURCE_BYTES {
+            return Err(invalid(format!("code exceeds {MAX_SOURCE_BYTES} bytes")));
         }
         let allowed = parse_allowed(object.get("allowed_tools"))?;
         let entrypoint = object

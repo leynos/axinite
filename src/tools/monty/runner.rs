@@ -12,7 +12,7 @@ use monty_protocol::{
     ResumeRun, StartRun, TerminalOutcome,
 };
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use self::bounds::{append_bounded, truncate};
 use self::process::{
@@ -89,12 +89,10 @@ impl Supervisor {
             .clone()
             .try_acquire_owned()
             .map_err(|_| RunError::Overloaded)?;
-        // The deadline is enforced inside `run_admitted`, which owns the child.
-        // The permit is therefore released only after the helper has been
-        // killed and reaped, never while a timed-out run is still winding down.
-        let result = self.run_admitted(request, broker, job_ctx).await;
-        drop(permit);
-        result
+        // The permit moves into the guard, so it is released by the same
+        // cleanup that reaps the child — including when this future is
+        // cancelled. `run_admitted` therefore cannot release it early.
+        self.run_admitted(request, broker, job_ctx, permit).await
     }
 
     async fn run_admitted(
@@ -102,13 +100,14 @@ impl Supervisor {
         request: RunRequest,
         broker: &Arc<BrokerContext>,
         job_ctx: &JobContext,
+        permit: OwnedSemaphorePermit,
     ) -> Result<RunOutcome, RunError> {
         let guest_limits = request.limits.guest();
         let deadline = request.limits.deadline;
         let spawned = spawn(&self.program).await?;
         // The guard reaps the child if this future is dropped mid-run, so the
         // permit above is never released while a helper is still exiting.
-        let mut guarded = ChildGuard::new(spawned);
+        let mut guarded = ChildGuard::new(spawned, permit);
         let Pipes {
             mut stdin,
             mut stdout,
@@ -196,18 +195,40 @@ impl CallbackBudget {
                 "run exceeded its callback budget".to_string(),
             ));
         }
-        let size = serde_json::to_vec(call)
-            .map(|encoded| encoded.len() as u64)
-            .unwrap_or(u64::MAX);
+        let size = encoded_size(call);
+        self.charge_bytes(size)?;
+        self.remaining_calls -= 1;
+        Ok(())
+    }
+
+    /// Charge the value the parent returned for one callback.
+    ///
+    /// Both directions count: a helper that made many small calls could
+    /// otherwise return far more than the budget intended, because the request
+    /// side alone is bounded.
+    fn charge_result(&mut self, value: &serde_json::Value) -> Result<(), RunError> {
+        let size = encoded_size(value);
+        self.charge_bytes(size)
+    }
+
+    /// Deduct `size` from the byte budget, refusing the run if it overflows.
+    fn charge_bytes(&mut self, size: u64) -> Result<(), RunError> {
         if size > self.remaining_bytes {
             return Err(RunError::RuntimeCrash(
                 "run exceeded its callback byte budget".to_string(),
             ));
         }
-        self.remaining_calls -= 1;
         self.remaining_bytes -= size;
         Ok(())
     }
+}
+
+/// The encoded size of a value, saturating so a serialisation failure is
+/// charged as the whole budget rather than silently free.
+fn encoded_size<T: serde::Serialize>(value: &T) -> u64 {
+    serde_json::to_vec(value)
+        .map(|encoded| encoded.len() as u64)
+        .unwrap_or(u64::MAX)
 }
 
 impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
@@ -240,7 +261,7 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
                     self.check_run(&call.run_id, "callback for another run")?;
                     budget.charge(&call)?;
                     next_call_id = call.call_id;
-                    if let Some(denial) = self.answer(call).await? {
+                    if let Some(denial) = self.answer(call, &mut budget).await? {
                         return Err(denial);
                     }
                 }
@@ -270,13 +291,20 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Session<'_, W, R> {
     /// A denial is terminal: the outcome is sent so the guest sees the typed
     /// refusal, and the run ends there rather than waiting for another
     /// message. `None` means the callback succeeded and the run continues.
-    async fn answer(&mut self, call: HostCall) -> Result<Option<RunError>, RunError> {
+    async fn answer(
+        &mut self,
+        call: HostCall,
+        budget: &mut CallbackBudget,
+    ) -> Result<Option<RunError>, RunError> {
         let (outcome, denial) = match self
             .broker
             .mediate(&call.name, &call.arguments, self.job_ctx)
             .await
         {
-            Ok(value) => (CallOutcome::Value { value }, None),
+            Ok(value) => {
+                budget.charge_result(&value)?;
+                (CallOutcome::Value { value }, None)
+            }
             Err(denial) => {
                 let reported = RunError::ToolDenied(denial.clone());
                 (

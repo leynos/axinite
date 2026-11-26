@@ -26,6 +26,9 @@ use super::{HelperProgram, RunError};
 /// actually gone.
 pub(super) struct ChildGuard {
     child: Option<Child>,
+    /// Held until the child has been reaped, so admission is not released
+    /// while a helper is still exiting.
+    _permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 /// The three pipes one run talks over.
@@ -40,8 +43,11 @@ pub(super) struct Pipes<W, R> {
 
 impl ChildGuard {
     /// Take ownership of a spawned child, ready for cancellation-safe cleanup.
-    pub(super) fn new(child: Child) -> Self {
-        Self { child: Some(child) }
+    pub(super) fn new(child: Child, permit: tokio::sync::OwnedSemaphorePermit) -> Self {
+        Self {
+            child: Some(child),
+            _permit: Some(permit),
+        }
     }
 
     /// Take the child's pipes, or report which one was not piped.
@@ -95,13 +101,16 @@ impl Drop for ChildGuard {
             return;
         };
         let _ = child.start_kill();
+        // The permit moves into the same task that waits for the child, so
+        // the admission slot is reclaimed only once the helper has actually
+        // exited — including when this future was cancelled.
+        let permit = self._permit.take();
         // `Drop` cannot await, so the reap moves to a detached task on the
-        // current runtime. That task outlives this future's cancellation,
-        // which is what keeps the admission slot honest: it is reclaimed only
-        // once the helper has actually exited.
+        // current runtime. That task outlives this future's cancellation.
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
                 let _ = child.wait().await;
+                drop(permit);
             });
         }
     }
