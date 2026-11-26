@@ -132,25 +132,11 @@ impl NativeTool for HttpTool {
         if let Some(ref interceptor) = ctx.http_interceptor
             && let Some(recorded) = interceptor.before_request(&intercept_req).await
         {
-            let headers: HashMap<String, String> = recorded.headers.iter().cloned().collect();
-            let body: serde_json::Value = serde_json::from_str(&recorded.body)
-                .unwrap_or_else(|_| serde_json::Value::String(recorded.body.clone()));
-            let result = serde_json::json!({
-                "status": recorded.status,
-                "headers": headers,
-                "body": body
-            });
-            return Ok(ToolOutput::success(result, start.elapsed()).with_raw(recorded.body));
+            return Ok(replayed_output(recorded, start.elapsed()));
         }
 
         // Execute request
-        let response = request.send().await.map_err(|e| {
-            if e.is_timeout() {
-                ToolError::Timeout(Duration::from_secs(30))
-            } else {
-                ToolError::ExternalService(e.to_string())
-            }
-        })?;
+        let response = send_request(request).await?;
 
         let status = response.status().as_u16();
 
@@ -193,34 +179,18 @@ impl NativeTool for HttpTool {
 
         // Record the HTTP exchange if interceptor is present (recording mode)
         if let Some(ref interceptor) = ctx.http_interceptor {
-            let resp_headers: Vec<(String, String)> = headers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            interceptor
-                .after_response(
-                    &intercept_req,
-                    &crate::llm::recording::HttpExchangeResponse {
-                        status,
-                        headers: resp_headers,
-                        body: body_text.clone(),
-                    },
-                )
-                .await;
+            let recorded = crate::llm::recording::HttpExchangeResponse {
+                status,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: body_text.clone(),
+            };
+            interceptor.after_response(&intercept_req, &recorded).await;
         }
 
-        #[cfg(feature = "html-to-markdown")]
-        let body_text = if is_html_response(&headers) {
-            match convert_html_to_markdown(&body_text, parsed_url.as_str()) {
-                Ok(md) => md,
-                Err(e) => {
-                    tracing::warn!(url = %parsed_url, error = %e, "HTML-to-markdown conversion failed, returning raw HTML");
-                    body_text
-                }
-            }
-        } else {
-            body_text
-        };
+        let body_text = markdown_if_html(body_text, &headers, &parsed_url);
 
         // Try to parse as JSON, fall back to string
         let body: serde_json::Value = serde_json::from_str(&body_text)
@@ -259,4 +229,60 @@ impl NativeTool for HttpTool {
     fn rate_limit_config(&self) -> Option<crate::tools::tool::ToolRateLimitConfig> {
         Some(crate::tools::tool::ToolRateLimitConfig::new(30, 500))
     }
+}
+
+/// Build the tool output for a response replayed from a recording.
+fn replayed_output(
+    recorded: crate::llm::recording::HttpExchangeResponse,
+    elapsed: Duration,
+) -> ToolOutput {
+    let headers: HashMap<String, String> = recorded.headers.iter().cloned().collect();
+    let body: serde_json::Value = serde_json::from_str(&recorded.body)
+        .unwrap_or_else(|_| serde_json::Value::String(recorded.body.clone()));
+    let result = serde_json::json!({
+        "status": recorded.status,
+        "headers": headers,
+        "body": body
+    });
+    ToolOutput::success(result, elapsed).with_raw(recorded.body)
+}
+
+/// Send the request, mapping transport failures to tool errors.
+async fn send_request(request: reqwest::RequestBuilder) -> Result<reqwest::Response, ToolError> {
+    request.send().await.map_err(|e| {
+        if e.is_timeout() {
+            ToolError::Timeout(Duration::from_secs(30))
+        } else {
+            ToolError::ExternalService(e.to_string())
+        }
+    })
+}
+
+/// Convert an HTML body to Markdown; other bodies pass through unchanged.
+#[cfg(feature = "html-to-markdown")]
+fn markdown_if_html(
+    body_text: String,
+    headers: &HashMap<String, String>,
+    url: &reqwest::Url,
+) -> String {
+    if !is_html_response(headers) {
+        return body_text;
+    }
+    match convert_html_to_markdown(&body_text, url.as_str()) {
+        Ok(md) => md,
+        Err(e) => {
+            tracing::warn!(url = %url, error = %e, "HTML-to-markdown conversion failed, returning raw HTML");
+            body_text
+        }
+    }
+}
+
+/// Without the `html-to-markdown` feature, bodies pass through unchanged.
+#[cfg(not(feature = "html-to-markdown"))]
+fn markdown_if_html(
+    body_text: String,
+    _headers: &HashMap<String, String>,
+    _url: &reqwest::Url,
+) -> String {
+    body_text
 }

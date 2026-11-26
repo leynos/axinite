@@ -43,6 +43,41 @@ pub async fn oauth_callback_handler(
     State(state): State<Arc<GatewayState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
+    let (flow, code) = match claim_pending_flow(&state, &params).await {
+        Ok(claimed) => claimed,
+        Err(label) => return oauth_error_page(&label),
+    };
+
+    let result = complete_gateway_oauth_flow(&flow, &code).await;
+    let success = result.is_ok();
+    let message = match &result {
+        Ok(()) => format!("{} authenticated successfully", flow.display_name),
+        Err(e) => format!("{} authentication failed: {}", flow.display_name, e),
+    };
+
+    record_flow_outcome(state.as_ref(), &flow, &result).await;
+
+    let html = crate::cli::oauth_defaults::landing_html(&flow.display_name, success);
+    // Broadcast SSE event to notify the web UI
+    if let Some(sender) = flow.sse_sender {
+        let _ = sender.send(SseEvent::AuthCompleted {
+            extension_name: flow.extension_name,
+            success,
+            message,
+        });
+    }
+
+    axum::response::Html(html).into_response()
+}
+
+/// Validate the callback parameters and take the matching, unexpired flow.
+///
+/// The flow is removed atomically, which prevents replay. Any failure yields
+/// the label for the error page.
+async fn claim_pending_flow(
+    state: &GatewayState,
+    params: &HashMap<String, String>,
+) -> Result<(crate::cli::oauth_defaults::PendingOAuthFlow, String), String> {
     use crate::cli::oauth_defaults;
 
     // Check for error from OAuth provider (e.g., user denied consent)
@@ -51,23 +86,16 @@ pub async fn oauth_callback_handler(
             .get("error_description")
             .cloned()
             .unwrap_or_else(|| error.clone());
-        return oauth_error_page(&description);
+        return Err(description);
     }
 
-    let state_param = match params.get("state") {
-        Some(s) if !s.is_empty() => s.clone(),
-        _ => return oauth_error_page("Axinite"),
+    let non_empty = |key: &str| params.get(key).filter(|v| !v.is_empty()).cloned();
+    let (Some(state_param), Some(code)) = (non_empty("state"), non_empty("code")) else {
+        return Err("Axinite".to_string());
     };
 
-    let code = match params.get("code") {
-        Some(c) if !c.is_empty() => c.clone(),
-        _ => return oauth_error_page("Axinite"),
-    };
-
-    // Look up the pending flow by CSRF state (atomic remove prevents replay)
-    let ext_mgr = match state.extension_manager.as_ref() {
-        Some(mgr) => mgr,
-        None => return oauth_error_page("Axinite"),
+    let Some(ext_mgr) = state.extension_manager.as_ref() else {
+        return Err("Axinite".to_string());
     };
 
     // Strip instance prefix from state for registry lookup.
@@ -80,16 +108,13 @@ pub async fn oauth_callback_handler(
         .await
         .remove(lookup_key);
 
-    let flow = match flow {
-        Some(f) => f,
-        None => {
-            tracing::warn!(
-                state = %state_param,
-                lookup_key = %lookup_key,
-                "OAuth callback received with unknown or expired state"
-            );
-            return oauth_error_page("Axinite");
-        }
+    let Some(flow) = flow else {
+        tracing::warn!(
+            state = %state_param,
+            lookup_key = %lookup_key,
+            "OAuth callback received with unknown or expired state"
+        );
+        return Err("Axinite".to_string());
     };
 
     // Check flow expiry (5 minutes, matching TCP listener timeout)
@@ -98,25 +123,21 @@ pub async fn oauth_callback_handler(
             extension = %flow.extension_name,
             "OAuth flow expired"
         );
-        return oauth_error_page(&flow.display_name);
+        return Err(flow.display_name);
     }
 
-    let result = complete_gateway_oauth_flow(&flow, &code).await;
+    Ok((flow, code))
+}
 
-    let (success, message) = match &result {
-        Ok(()) => (
-            true,
-            format!("{} authenticated successfully", flow.display_name),
-        ),
-        Err(e) => (
-            false,
-            format!("{} authentication failed: {}", flow.display_name, e),
-        ),
-    };
-
-    match &result {
+/// Log the outcome and, on success, clear the pending auth mode.
+async fn record_flow_outcome(
+    state: &GatewayState,
+    flow: &crate::cli::oauth_defaults::PendingOAuthFlow,
+    result: &Result<(), String>,
+) {
+    match result {
         Ok(()) => {
-            clear_auth_mode(state.as_ref(), Some(&flow.extension_name)).await;
+            clear_auth_mode(state, Some(&flow.extension_name)).await;
             tracing::info!(
                 extension = %flow.extension_name,
                 "OAuth completed successfully via gateway callback"
@@ -130,19 +151,8 @@ pub async fn oauth_callback_handler(
             );
         }
     }
-
-    // Broadcast SSE event to notify the web UI
-    if let Some(ref sender) = flow.sse_sender {
-        let _ = sender.send(SseEvent::AuthCompleted {
-            extension_name: flow.extension_name,
-            success,
-            message,
-        });
-    }
-
-    let html = oauth_defaults::landing_html(&flow.display_name, success);
-    axum::response::Html(html).into_response()
 }
+
 /// Exchange an authorization code for tokens, optionally validate the access
 /// token, and persist the result in the secrets store.
 ///

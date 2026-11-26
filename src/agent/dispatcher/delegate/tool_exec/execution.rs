@@ -3,10 +3,12 @@
 //! Runs the preflight-approved tool calls, batches them where safe, and
 //! captures raw results for the later postflight phase to interpret.
 
+use std::sync::Arc;
+
 use tokio::task::JoinSet;
 
 use crate::agent::dispatcher::delegate::ChatDelegate;
-use crate::channels::StatusUpdate;
+use crate::channels::{ChannelManager, StatusUpdate};
 use crate::context::JobContext;
 use crate::error::Error;
 use crate::safety::SafetyLayer;
@@ -68,6 +70,78 @@ pub(super) async fn run_tool_batch_inline(
     }
 }
 
+/// Owned snapshot of everything one parallel tool task needs.
+///
+/// A spawned task cannot borrow from the delegate, so each field is cloned.
+struct ParallelToolTask {
+    pf_idx: usize,
+    tc: crate::llm::ToolCall,
+    tools: Arc<ToolRegistry>,
+    safety: Arc<SafetyLayer>,
+    channels: Arc<ChannelManager>,
+    job_ctx: JobContext,
+    channel: String,
+    metadata: serde_json::Value,
+}
+
+impl ParallelToolTask {
+    /// Clone the delegate state needed to run `tc` on its own task.
+    fn new(delegate: &ChatDelegate<'_>, pf_idx: usize, tc: &crate::llm::ToolCall) -> Self {
+        Self {
+            pf_idx,
+            tc: tc.clone(),
+            tools: delegate.agent.tools().clone(),
+            safety: delegate.agent.safety().clone(),
+            channels: delegate.agent.channels.clone(),
+            job_ctx: delegate.job_ctx.clone(),
+            channel: delegate.message.channel.clone(),
+            metadata: delegate.message.metadata.clone(),
+        }
+    }
+
+    /// Run the tool, reporting start and completion, and return its slot and result.
+    async fn run(self) -> (usize, Result<String, Error>) {
+        let _ = self
+            .channels
+            .send_status(
+                &self.channel,
+                StatusUpdate::ToolStarted {
+                    name: self.tc.name.clone(),
+                },
+                &self.metadata,
+            )
+            .await;
+
+        let result = execute_chat_tool_standalone(
+            &self.tools,
+            &self.safety,
+            &ToolCallSpec {
+                name: &self.tc.name,
+                params: &self.tc.arguments,
+            },
+            &self.job_ctx,
+        )
+        .await;
+
+        let par_tool = self.tools.get(&self.tc.name).await;
+        let _ = self
+            .channels
+            .send_status(
+                &self.channel,
+                StatusUpdate::tool_completed(
+                    self.tc.name.clone(),
+                    &result,
+                    &self.tc.arguments,
+                    par_tool.as_deref(),
+                ),
+                &self.metadata,
+            )
+            .await;
+
+        (self.pf_idx, result)
+    }
+}
+
 /// Run a batch of tools in parallel (for large batches).
 pub(super) async fn run_tool_batch_parallel(
     delegate: &ChatDelegate<'_>,
@@ -75,73 +149,34 @@ pub(super) async fn run_tool_batch_parallel(
     exec_results: &mut [Option<Result<String, Error>>],
 ) {
     let mut join_set = JoinSet::new();
-
     for (pf_idx, tc) in runnable {
-        let pf_idx = *pf_idx;
-        // Clone all data the spawned task needs — it cannot borrow from `delegate`.
-        let tools = delegate.agent.tools().clone();
-        let safety = delegate.agent.safety().clone();
-        let channels = delegate.agent.channels.clone();
-        let job_ctx = delegate.job_ctx.clone();
-        let tc = tc.clone();
-        let channel = delegate.message.channel.clone();
-        let metadata = delegate.message.metadata.clone();
-
-        join_set.spawn(async move {
-            let _ = channels
-                .send_status(
-                    &channel,
-                    StatusUpdate::ToolStarted {
-                        name: tc.name.clone(),
-                    },
-                    &metadata,
-                )
-                .await;
-
-            let result = execute_chat_tool_standalone(
-                &tools,
-                &safety,
-                &ToolCallSpec {
-                    name: &tc.name,
-                    params: &tc.arguments,
-                },
-                &job_ctx,
-            )
-            .await;
-
-            let par_tool = tools.get(&tc.name).await;
-            let _ = channels
-                .send_status(
-                    &channel,
-                    StatusUpdate::tool_completed(
-                        tc.name.clone(),
-                        &result,
-                        &tc.arguments,
-                        par_tool.as_deref(),
-                    ),
-                    &metadata,
-                )
-                .await;
-
-            (pf_idx, result)
-        });
+        join_set.spawn(ParallelToolTask::new(delegate, *pf_idx, tc).run());
     }
+    collect_parallel_results(&mut join_set, exec_results).await;
+    fill_failed_slots(runnable, exec_results);
+}
 
+/// Drain finished tasks into their result slots, logging panics and cancellations.
+async fn collect_parallel_results(
+    join_set: &mut JoinSet<(usize, Result<String, Error>)>,
+    exec_results: &mut [Option<Result<String, Error>>],
+) {
     while let Some(join_result) = join_set.join_next().await {
         match join_result {
-            Ok((pf_idx, result)) => {
-                exec_results[pf_idx] = Some(result);
+            Ok((pf_idx, result)) => exec_results[pf_idx] = Some(result),
+            Err(e) if e.is_panic() => {
+                tracing::error!("Chat tool execution task panicked: {}", e);
             }
-            Err(e) => {
-                if e.is_panic() {
-                    tracing::error!("Chat tool execution task panicked: {}", e);
-                } else {
-                    tracing::error!("Chat tool execution task cancelled: {}", e);
-                }
-            }
+            Err(e) => tracing::error!("Chat tool execution task cancelled: {}", e),
         }
     }
+}
 
+/// Give every slot whose task failed an execution error.
+fn fill_failed_slots(
+    runnable: &[(usize, crate::llm::ToolCall)],
+    exec_results: &mut [Option<Result<String, Error>>],
+) {
     for (pf_idx, tc) in runnable.iter() {
         if exec_results[*pf_idx].is_none() {
             tracing::error!(

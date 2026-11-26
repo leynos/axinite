@@ -35,6 +35,42 @@ fn to_lowercase_vec(items: &[String]) -> Vec<String> {
 mod error;
 pub use error::SkillRegistryError;
 
+/// Names seen so far while discovering skills across directories.
+#[derive(Default)]
+struct DiscoveryPass {
+    seen: HashSet<String>,
+    loaded_names: Vec<String>,
+}
+
+impl DiscoveryPass {
+    /// Add each discovered skill not already seen; earlier directories win.
+    ///
+    /// `shadow_note` is `(kind, winner)` for the debug line logged when a
+    /// skill is skipped, or `None` to skip silently.
+    fn absorb(
+        &mut self,
+        skills: &mut Vec<LoadedSkill>,
+        found: Vec<(String, LoadedSkill)>,
+        shadow_note: Option<(&str, &str)>,
+    ) {
+        for (name, skill) in found {
+            if !self.seen.insert(name.clone()) {
+                if let Some((kind, winner)) = shadow_note {
+                    tracing::debug!(
+                        "Skipping {} skill '{}' (overridden by {})",
+                        kind,
+                        name,
+                        winner
+                    );
+                }
+                continue;
+            }
+            self.loaded_names.push(name);
+            skills.push(skill);
+        }
+    }
+}
+
 /// Registry of available skills.
 pub struct SkillRegistry {
     /// All loaded skills.
@@ -82,58 +118,35 @@ impl SkillRegistry {
     /// 2. User skills directory -- Trusted
     /// 3. Installed skills directory (if set) -- Installed
     pub async fn discover_all(&mut self) -> Vec<String> {
-        let mut loaded_names: Vec<String> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
+        let mut pass = DiscoveryPass::default();
 
         // 1. Workspace skills (highest priority)
         if let Some(ws_dir) = self.workspace_dir.clone() {
-            let ws_skills =
+            let found =
                 discovery::discover_from_dir(&ws_dir, SkillTrust::Trusted, SkillSource::Workspace)
                     .await;
-            for (name, skill) in ws_skills {
-                if seen.contains(&name) {
-                    continue;
-                }
-                seen.insert(name.clone());
-                loaded_names.push(name);
-                self.skills.push(skill);
-            }
+            pass.absorb(&mut self.skills, found, None);
         }
 
         // 2. User skills
         let user_dir = self.user_dir.clone();
-        let user_skills =
+        let found =
             discovery::discover_from_dir(&user_dir, SkillTrust::Trusted, SkillSource::User).await;
-        for (name, skill) in user_skills {
-            if seen.contains(&name) {
-                tracing::debug!("Skipping user skill '{}' (overridden by workspace)", name);
-                continue;
-            }
-            seen.insert(name.clone());
-            loaded_names.push(name);
-            self.skills.push(skill);
-        }
+        pass.absorb(&mut self.skills, found, Some(("user", "workspace")));
 
         // 3. Installed skills (registry-installed, lowest priority)
         if let Some(inst_dir) = self.installed_dir.clone() {
-            let inst_skills =
+            let found =
                 discovery::discover_from_dir(&inst_dir, SkillTrust::Installed, SkillSource::User)
                     .await;
-            for (name, skill) in inst_skills {
-                if seen.contains(&name) {
-                    tracing::debug!(
-                        "Skipping installed skill '{}' (overridden by user/workspace)",
-                        name
-                    );
-                    continue;
-                }
-                seen.insert(name.clone());
-                loaded_names.push(name);
-                self.skills.push(skill);
-            }
+            pass.absorb(
+                &mut self.skills,
+                found,
+                Some(("installed", "user/workspace")),
+            );
         }
 
-        loaded_names
+        pass.loaded_names
     }
 
     /// Get all loaded skills.

@@ -105,144 +105,90 @@ impl TestHarness {
 
         let duration = start.elapsed();
 
-        match exec_result {
-            Err(_) => TestResult {
-                name: test.name.clone(),
-                passed: false,
-                duration,
-                error: Some(format!("Test timed out after {:?}", timeout)),
-                actual_output: None,
-            },
-            Ok(Err(e)) => {
-                // Execution error
-                if test.expect_error {
-                    let error_str = e.to_string();
-                    let matches = test
-                        .error_contains
-                        .as_ref()
-                        .is_none_or(|expected| error_str.contains(expected));
+        let (failure, actual_output) = match exec_result {
+            Err(_) => (Some(format!("Test timed out after {:?}", timeout)), None),
+            Ok(Err(e)) => (judge_execution_error(test, &e.to_string()), None),
+            Ok(Ok(output)) => (judge_output(test, &output.result), Some(output.result)),
+        };
 
-                    TestResult {
-                        name: test.name.clone(),
-                        passed: matches,
-                        duration,
-                        error: if matches {
-                            None
-                        } else {
-                            Some(format!(
-                                "Expected error containing '{}', got: {}",
-                                test.error_contains.as_deref().unwrap_or(""),
-                                error_str
-                            ))
-                        },
-                        actual_output: None,
-                    }
-                } else {
-                    TestResult {
-                        name: test.name.clone(),
-                        passed: false,
-                        duration,
-                        error: Some(format!("Unexpected error: {}", e)),
-                        actual_output: None,
-                    }
-                }
-            }
-            Ok(Ok(output)) => {
-                let actual = output.result;
-
-                // Check if output contains an error field
-                if let Some(error_val) = actual.get("error") {
-                    if test.expect_error {
-                        let error_str = error_val.as_str().unwrap_or("");
-                        let matches = test
-                            .error_contains
-                            .as_ref()
-                            .is_none_or(|expected| error_str.contains(expected));
-
-                        return TestResult {
-                            name: test.name.clone(),
-                            passed: matches,
-                            duration,
-                            error: if matches {
-                                None
-                            } else {
-                                Some(format!(
-                                    "Expected error containing '{}', got: {}",
-                                    test.error_contains.as_deref().unwrap_or(""),
-                                    error_str
-                                ))
-                            },
-                            actual_output: Some(actual),
-                        };
-                    } else {
-                        return TestResult {
-                            name: test.name.clone(),
-                            passed: false,
-                            duration,
-                            error: Some(format!("Unexpected error in output: {}", error_val)),
-                            actual_output: Some(actual),
-                        };
-                    }
-                }
-
-                // Verify expected output
-                if let Some(ref expected) = test.expected_output
-                    && &actual != expected
-                {
-                    return TestResult {
-                        name: test.name.clone(),
-                        passed: false,
-                        duration,
-                        error: Some(format!(
-                            "Output mismatch:\nExpected: {}\nActual: {}",
-                            serde_json::to_string_pretty(expected).unwrap_or_default(),
-                            serde_json::to_string_pretty(&actual).unwrap_or_default()
-                        )),
-                        actual_output: Some(actual),
-                    };
-                }
-
-                // Verify expected fields
-                if let Some(ref fields) = test.expected_fields {
-                    for field in fields {
-                        let field_value = get_json_path(&actual, &field.path);
-
-                        if field.exists && field_value.is_none() {
-                            return TestResult {
-                                name: test.name.clone(),
-                                passed: false,
-                                duration,
-                                error: Some(format!("Missing expected field: {}", field.path)),
-                                actual_output: Some(actual),
-                            };
-                        }
-
-                        if let Some(ref expected_value) = field.value
-                            && field_value != Some(expected_value)
-                        {
-                            return TestResult {
-                                name: test.name.clone(),
-                                passed: false,
-                                duration,
-                                error: Some(format!(
-                                    "Field '{}' mismatch: expected {:?}, got {:?}",
-                                    field.path, expected_value, field_value
-                                )),
-                                actual_output: Some(actual),
-                            };
-                        }
-                    }
-                }
-
-                TestResult {
-                    name: test.name.clone(),
-                    passed: true,
-                    duration,
-                    error: None,
-                    actual_output: Some(actual),
-                }
-            }
+        TestResult {
+            name: test.name.clone(),
+            passed: failure.is_none(),
+            duration,
+            error: failure,
+            actual_output,
         }
+    }
+}
+
+/// Describe a failed `error_contains` expectation, or `None` if it holds.
+fn error_text_mismatch(test: &TestCase, error_str: &str) -> Option<String> {
+    let matches = test
+        .error_contains
+        .as_ref()
+        .is_none_or(|expected| error_str.contains(expected));
+    (!matches).then(|| {
+        format!(
+            "Expected error containing '{}', got: {}",
+            test.error_contains.as_deref().unwrap_or(""),
+            error_str
+        )
+    })
+}
+
+/// Judge a tool execution error against the test's error expectation.
+fn judge_execution_error(test: &TestCase, error_str: &str) -> Option<String> {
+    if test.expect_error {
+        error_text_mismatch(test, error_str)
+    } else {
+        Some(format!("Unexpected error: {}", error_str))
+    }
+}
+
+/// Judge a successful tool output; `None` means the test passed.
+fn judge_output(test: &TestCase, actual: &serde_json::Value) -> Option<String> {
+    // Check if output contains an error field
+    if let Some(error_val) = actual.get("error") {
+        return if test.expect_error {
+            error_text_mismatch(test, error_val.as_str().unwrap_or(""))
+        } else {
+            Some(format!("Unexpected error in output: {}", error_val))
+        };
+    }
+
+    // Verify expected output
+    if let Some(ref expected) = test.expected_output
+        && actual != expected
+    {
+        return Some(format!(
+            "Output mismatch:\nExpected: {}\nActual: {}",
+            serde_json::to_string_pretty(expected).unwrap_or_default(),
+            serde_json::to_string_pretty(actual).unwrap_or_default()
+        ));
+    }
+
+    // Verify expected fields
+    test.expected_fields.as_deref().and_then(|fields| {
+        fields
+            .iter()
+            .find_map(|field| field_mismatch(field, actual))
+    })
+}
+
+/// Describe how `actual` fails `field`'s expectation, or `None` if it holds.
+fn field_mismatch(field: &ExpectedField, actual: &serde_json::Value) -> Option<String> {
+    let field_value = get_json_path(actual, &field.path);
+
+    if field.exists && field_value.is_none() {
+        return Some(format!("Missing expected field: {}", field.path));
+    }
+
+    match field.value {
+        Some(ref expected_value) if field_value != Some(expected_value) => Some(format!(
+            "Field '{}' mismatch: expected {:?}, got {:?}",
+            field.path, expected_value, field_value
+        )),
+        _ => None,
     }
 }
 
