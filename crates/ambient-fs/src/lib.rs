@@ -26,7 +26,8 @@ mod meta;
 pub use dir::{DirEntry, ReadDir};
 pub use file::{File, OpenOptions};
 pub use fns::{
-    canonicalize, copy, create_dir, create_dir_all, metadata, read, read_dir, read_to_string,
-    remove_dir, remove_dir_all, remove_file, rename, set_permissions, try_exists, write,
+    canonicalize, copy, create_dir, create_dir_all, metadata, read, read_dir, read_link,
+    read_to_string, remove_dir, remove_dir_all, remove_file, rename, set_permissions,
+    symlink_metadata, try_exists, write,
 };
 pub use meta::{FileType, Metadata, Permissions};

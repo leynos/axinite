@@ -64,6 +64,16 @@ pub fn metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata> {
     std::fs::metadata(path).map(Metadata::from_std)
 }
 
+/// Queries metadata for the given path without following a final symlink.
+pub fn symlink_metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata> {
+    std::fs::symlink_metadata(path).map(Metadata::from_std)
+}
+
+/// Reads the target a symlink points at, without resolving it further.
+pub fn read_link<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
+    std::fs::read_link(path)
+}
+
 /// Sets the permissions of a file or directory.
 pub fn set_permissions<P: AsRef<Path>>(path: P, perm: Permissions) -> io::Result<()> {
     std::fs::set_permissions(path, perm.into_std())

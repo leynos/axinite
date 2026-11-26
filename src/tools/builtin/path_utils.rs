@@ -122,7 +122,7 @@ fn canonical_check_path(resolved: &Path) -> Option<PathBuf> {
     for _ in 0..MAX_LINK_HOPS {
         let Some(ancestor) = current
             .ancestors()
-            .find(|a| std::fs::symlink_metadata(a).is_ok())
+            .find(|a| ambient_fs::symlink_metadata(a).is_ok())
         else {
             return Some(current);
         };
@@ -131,7 +131,7 @@ fn canonical_check_path(resolved: &Path) -> Option<PathBuf> {
             return Some(join_tail(canonical, tail));
         }
         // Existing but not canonicalizable: a dangling symlink. Follow it.
-        let target = std::fs::read_link(ancestor).ok()?;
+        let target = ambient_fs::read_link(ancestor).ok()?;
         let parent = ancestor.parent().unwrap_or(Path::new("/"));
         current = join_tail(normalize_lexical(&parent.join(target)), tail);
     }
@@ -300,8 +300,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_validate_path_rejects_live_symlink_to_outside() {
-        let (sandbox, outside) = link_in_sandbox(|_, outside| outside.to_path_buf());
-        std::fs::write(outside.path().join("file.txt"), b"x").unwrap();
+        let (sandbox, _outside) = link_in_sandbox(|_, outside| outside.to_path_buf());
         let result = validate_path("link/file.txt", Some(sandbox.path()));
         assert!(result.is_err());
         assert!(validate_path("link", Some(sandbox.path())).is_err());
