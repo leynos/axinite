@@ -319,6 +319,11 @@ async fn test_tool_intent_nudge_fires_and_caps() {
         nudge_messages, 2,
         "Should have exactly 2 nudge messages in context"
     );
+    assert_eq!(
+        *delegate.iterations_seen.lock().await,
+        vec![1, 2],
+        "Each nudged iteration must still run the after_iteration hook"
+    );
 }
 
 #[tokio::test]
