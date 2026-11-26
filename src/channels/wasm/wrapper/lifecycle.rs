@@ -16,6 +16,7 @@ use crate::channels::wasm::schema::ChannelConfig;
 use crate::pairing::PairingStore;
 
 use super::types::SecretValue;
+use super::webhook_log::log_webhook_body;
 use super::{
     HttpResponse, ResolvedHostCredential, WasmChannel, convert_channel_config,
     convert_http_response, resolve_channel_host_credentials, wit_channel,
@@ -198,15 +199,7 @@ impl WasmChannel {
             "call_on_http_request invoked (webhook received)"
         );
 
-        // Log the body for debugging (truncated at char boundary)
-        if let Ok(body_str) = std::str::from_utf8(body) {
-            let truncated = if body_str.chars().count() > 1000 {
-                format!("{}...", body_str.chars().take(1000).collect::<String>())
-            } else {
-                body_str.to_string()
-            };
-            tracing::debug!(body = %truncated, "Webhook request body");
-        }
+        log_webhook_body(body);
 
         // Log credentials state (without values)
         let creds = self.get_credentials().await;

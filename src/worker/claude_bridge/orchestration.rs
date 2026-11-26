@@ -54,10 +54,19 @@ impl ClaudeBridgeRuntime {
             }
         };
 
+        self.run_followups_and_report(session_id, &extra_env).await
+    }
+
+    /// Run the follow-up loop, then report completion or the failure.
+    async fn run_followups_and_report(
+        &self,
+        session_id: Option<String>,
+        extra_env: &HashMap<String, String>,
+    ) -> Result<(), WorkerError> {
         match self
             .timeout_followup_loop(
                 "Claude follow-up loop timed out",
-                self.followup_loop(session_id, &extra_env),
+                self.followup_loop(session_id, extra_env),
             )
             .await
         {

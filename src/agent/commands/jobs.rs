@@ -95,23 +95,32 @@ impl JobTotals {
 }
 
 impl Agent {
+    /// Send a thinking status for non-trivial operations (job creation).
+    async fn send_thinking_for_job_creation(
+        &self,
+        intent: &MessageIntent,
+        message: &IncomingMessage,
+    ) {
+        if !matches!(intent, MessageIntent::CreateJob { .. }) {
+            return;
+        }
+        let _ = self
+            .channels
+            .send_status(
+                &message.channel,
+                StatusUpdate::Thinking("Processing...".into()),
+                &message.metadata,
+            )
+            .await;
+    }
+
     /// Handle job-related intents without turn tracking.
     pub(in crate::agent) async fn handle_job_or_command(
         &self,
         intent: MessageIntent,
         message: &IncomingMessage,
     ) -> Result<SubmissionResult, Error> {
-        // Send thinking status for non-trivial operations
-        if let MessageIntent::CreateJob { .. } = &intent {
-            let _ = self
-                .channels
-                .send_status(
-                    &message.channel,
-                    StatusUpdate::Thinking("Processing...".into()),
-                    &message.metadata,
-                )
-                .await;
-        }
+        self.send_thinking_for_job_creation(&intent, message).await;
 
         let response = match intent {
             MessageIntent::CreateJob {

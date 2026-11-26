@@ -20,6 +20,22 @@ pub struct ChannelManager {
     inject_rx: tokio::sync::Mutex<Option<mpsc::Receiver<IncomingMessage>>>,
 }
 
+/// Forward a hot-added channel's messages into the agent loop until either side ends.
+async fn forward_stream(
+    mut stream: MessageStream,
+    tx: mpsc::Sender<IncomingMessage>,
+    name: String,
+) {
+    use futures::StreamExt;
+    while let Some(msg) = stream.next().await {
+        if tx.send(msg).await.is_err() {
+            tracing::warn!(channel = %name, "Inject channel closed, stopping hot-added channel");
+            break;
+        }
+    }
+    tracing::debug!(channel = %name, "Hot-added channel stream ended");
+}
+
 impl ChannelManager {
     /// Create a new channel manager.
     pub fn new() -> Self {
@@ -59,13 +75,7 @@ impl ChannelManager {
 
         // Shut down any existing channel with the same name to avoid parallel consumers.
         // The old forwarding task will stop when the channel's stream ends after shutdown.
-        {
-            let channels = self.channels.read().await;
-            if let Some(existing) = channels.get(&name) {
-                tracing::debug!(channel = %name, "Shutting down existing channel before hot-add replacement");
-                let _ = existing.shutdown().await;
-            }
-        }
+        self.shutdown_existing(&name).await;
 
         let stream = channel.start().await?;
 
@@ -76,20 +86,18 @@ impl ChannelManager {
             .insert(name.clone(), Arc::from(channel));
 
         // Forward stream messages through inject_tx
-        let tx = self.inject_tx.clone();
-        tokio::spawn(async move {
-            use futures::StreamExt;
-            let mut stream = stream;
-            while let Some(msg) = stream.next().await {
-                if tx.send(msg).await.is_err() {
-                    tracing::warn!(channel = %name, "Inject channel closed, stopping hot-added channel");
-                    break;
-                }
-            }
-            tracing::debug!(channel = %name, "Hot-added channel stream ended");
-        });
+        tokio::spawn(forward_stream(stream, self.inject_tx.clone(), name));
 
         Ok(())
+    }
+
+    /// Shut down any channel already registered under `name`.
+    async fn shutdown_existing(&self, name: &str) {
+        let channels = self.channels.read().await;
+        if let Some(existing) = channels.get(name) {
+            tracing::debug!(channel = %name, "Shutting down existing channel before hot-add replacement");
+            let _ = existing.shutdown().await;
+        }
     }
 
     /// Start all channels and return a merged stream of messages.

@@ -33,7 +33,10 @@ pub struct HistoryQuery {
 const DEFAULT_HISTORY_LIMIT: usize = 50;
 const MAX_HISTORY_LIMIT: usize = 200;
 
-fn parse_before_cursor(value: &str) -> Result<(chrono::DateTime<chrono::Utc>, Uuid), ()> {
+/// A pagination cursor: the timestamp and id of the oldest message already seen.
+type BeforeCursor = (chrono::DateTime<chrono::Utc>, Uuid);
+
+fn parse_before_cursor(value: &str) -> Result<BeforeCursor, ()> {
     let Some((timestamp, message_id)) = value.split_once('|') else {
         return parse_timestamp_only_cursor(value);
     };
@@ -99,6 +102,122 @@ fn thread_has_content(thread: &crate::agent::session::Thread) -> bool {
     !thread.turns.is_empty() || thread.pending_approval.is_some()
 }
 
+/// Reject a requested thread that neither the user's stored conversations nor
+/// the live session knows about.
+async fn verify_thread_known(
+    state: &GatewayState,
+    thread_id: Uuid,
+    in_session: bool,
+) -> Result<(), (StatusCode, String)> {
+    let Some(ref store) = state.store else {
+        return Ok(());
+    };
+    let owned = store
+        .conversation_belongs_to_user(thread_id, &state.user_id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to verify thread ownership: {e}"),
+            )
+        })?;
+    if !owned && !in_session {
+        return Err((StatusCode::NOT_FOUND, "Thread not found".to_string()));
+    }
+    Ok(())
+}
+
+/// Summarize one tool call for the history response.
+fn tool_call_info(tool_call: &crate::agent::session::TurnToolCall) -> ToolCallInfo {
+    ToolCallInfo {
+        name: tool_call.name.clone(),
+        has_result: tool_call.result.is_some(),
+        has_error: tool_call.error.is_some(),
+        result_preview: tool_call.result.as_ref().map(|result| {
+            let string = match result {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            truncate_preview(&string, 500)
+        }),
+        error: tool_call.error.clone(),
+    }
+}
+
+/// Summarize one in-memory turn for the history response.
+fn turn_info(turn: &crate::agent::session::Turn) -> TurnInfo {
+    TurnInfo {
+        turn_number: turn.turn_number,
+        user_input: turn.user_input.clone(),
+        response: turn.response.clone(),
+        state: format!("{:?}", turn.state),
+        started_at: turn.started_at.to_rfc3339(),
+        completed_at: turn.completed_at.map(|dt| dt.to_rfc3339()),
+        tool_calls: turn.tool_calls.iter().map(tool_call_info).collect(),
+    }
+}
+
+/// Build the history response from a live in-memory thread.
+fn in_memory_history(
+    thread: &crate::agent::session::Thread,
+    thread_id: Uuid,
+) -> Result<HistoryResponse, (StatusCode, String)> {
+    let pending_approval = thread
+        .pending_approval
+        .as_ref()
+        .map(|approval| {
+            serde_json::to_string_pretty(&approval.parameters).map(|parameters| {
+                PendingApprovalInfo {
+                    request_id: approval.request_id.to_string(),
+                    tool_name: approval.tool_name.clone(),
+                    description: approval.description.clone(),
+                    parameters,
+                }
+            })
+        })
+        .transpose()
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to serialize pending approval parameters: {e}"),
+            )
+        })?;
+
+    Ok(HistoryResponse {
+        thread_id,
+        turns: thread.turns.iter().map(turn_info).collect(),
+        has_more: false,
+        oldest_timestamp: None,
+        pending_approval,
+    })
+}
+
+/// Parse the optional `before` pagination cursor, rejecting a malformed one.
+fn parse_optional_before(
+    before: Option<&str>,
+) -> Result<Option<BeforeCursor>, (StatusCode, String)> {
+    before.map(parse_before_cursor).transpose().map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "Invalid 'before' cursor".to_string(),
+        )
+    })
+}
+
+/// The thread to report: the one named in the query, else the session's active thread.
+async fn requested_thread_id(
+    query: &HistoryQuery,
+    session: &Arc<tokio::sync::Mutex<crate::agent::session::Session>>,
+) -> Result<Uuid, (StatusCode, String)> {
+    if let Some(ref tid) = query.thread_id {
+        return Uuid::parse_str(tid)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid thread_id".to_string()));
+    }
+    let sess = session.lock().await;
+    sess.active_thread
+        .ok_or((StatusCode::NOT_FOUND, "No active thread".to_string()))
+}
+
 pub async fn chat_history_handler(
     State(state): State<Arc<GatewayState>>,
     Query(query): Query<HistoryQuery>,
@@ -122,47 +241,17 @@ pub async fn chat_history_handler(
         .limit
         .unwrap_or(DEFAULT_HISTORY_LIMIT)
         .clamp(1, MAX_HISTORY_LIMIT);
-    let before_cursor = query
-        .before
-        .as_deref()
-        .map(parse_before_cursor)
-        .transpose()
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                "Invalid 'before' cursor".to_string(),
-            )
-        })?;
+    let before_cursor = parse_optional_before(query.before.as_deref())?;
 
-    let requested_thread_id = if let Some(ref tid) = query.thread_id {
-        Uuid::parse_str(tid)
-            .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid thread_id".to_string()))?
-    } else {
-        let sess = session.lock().await;
-        sess.active_thread
-            .ok_or((StatusCode::NOT_FOUND, "No active thread".to_string()))?
-    };
+    let requested_thread_id = requested_thread_id(&query, &session).await?;
 
     let session_thread = {
         let sess = session.lock().await;
         sess.threads.get(&requested_thread_id).cloned()
     };
 
-    if query.thread_id.is_some()
-        && let Some(ref store) = state.store
-    {
-        let owned = store
-            .conversation_belongs_to_user(requested_thread_id, &state.user_id)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to verify thread ownership: {e}"),
-                )
-            })?;
-        if !owned && session_thread.is_none() {
-            return Err((StatusCode::NOT_FOUND, "Thread not found".to_string()));
-        }
+    if query.thread_id.is_some() {
+        verify_thread_known(&state, requested_thread_id, session_thread.is_some()).await?;
     }
 
     if before_cursor.is_some()
@@ -176,64 +265,7 @@ pub async fn chat_history_handler(
     if let Some(thread) = session_thread.as_ref()
         && thread_has_content(thread)
     {
-        let turns = thread
-            .turns
-            .iter()
-            .map(|turn| TurnInfo {
-                turn_number: turn.turn_number,
-                user_input: turn.user_input.clone(),
-                response: turn.response.clone(),
-                state: format!("{:?}", turn.state),
-                started_at: turn.started_at.to_rfc3339(),
-                completed_at: turn.completed_at.map(|dt| dt.to_rfc3339()),
-                tool_calls: turn
-                    .tool_calls
-                    .iter()
-                    .map(|tool_call| ToolCallInfo {
-                        name: tool_call.name.clone(),
-                        has_result: tool_call.result.is_some(),
-                        has_error: tool_call.error.is_some(),
-                        result_preview: tool_call.result.as_ref().map(|result| {
-                            let string = match result {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => other.to_string(),
-                            };
-                            truncate_preview(&string, 500)
-                        }),
-                        error: tool_call.error.clone(),
-                    })
-                    .collect(),
-            })
-            .collect();
-
-        let pending_approval = thread
-            .pending_approval
-            .as_ref()
-            .map(|approval| {
-                serde_json::to_string_pretty(&approval.parameters).map(|parameters| {
-                    PendingApprovalInfo {
-                        request_id: approval.request_id.to_string(),
-                        tool_name: approval.tool_name.clone(),
-                        description: approval.description.clone(),
-                        parameters,
-                    }
-                })
-            })
-            .transpose()
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to serialize pending approval parameters: {e}"),
-                )
-            })?;
-
-        return Ok(Json(HistoryResponse {
-            thread_id: requested_thread_id,
-            turns,
-            has_more: false,
-            oldest_timestamp: None,
-            pending_approval,
-        }));
+        return in_memory_history(thread, requested_thread_id).map(Json);
     }
 
     if let Some(ref store) = state.store {

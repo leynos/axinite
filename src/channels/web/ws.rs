@@ -22,6 +22,7 @@ use crate::agent::submission::Submission;
 use crate::channels::IncomingMessage;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::{SseEvent, WsClientMessage, WsServerMessage};
+use chat_message::ChatMessage;
 
 /// Tracks active WebSocket connections.
 pub struct WsConnectionTracker {
@@ -65,7 +66,7 @@ impl Default for WsConnectionTracker {
 /// When either task ends (client disconnect or broadcast closed), both are
 /// cleaned up.
 pub async fn handle_ws_connection(socket: WebSocket, state: Arc<GatewayState>) {
-    let (mut ws_sink, mut ws_stream) = socket.split();
+    let (ws_sink, mut ws_stream) = socket.split();
 
     // Track connection
     let tracker_for_drop = state.ws_tracker.clone();
@@ -79,40 +80,57 @@ pub async fn handle_ws_connection(socket: WebSocket, state: Arc<GatewayState>) {
         adjust_tracker(tracker_for_drop.as_deref(), WsTrackerChange::Closed);
         return;
     };
-    let mut event_stream = Box::pin(raw_stream);
+    let event_stream = Box::pin(raw_stream);
 
     // Channel for the sender task to receive messages from both
     // the broadcast stream and any direct sends (like Pong)
-    let (direct_tx, mut direct_rx) = mpsc::channel::<WsServerMessage>(64);
+    let (direct_tx, direct_rx) = mpsc::channel::<WsServerMessage>(64);
 
     // Sender task: forward broadcast events + direct messages to WS client
-    let sender_handle = tokio::spawn(async move {
-        while let Some(msg) = next_outbound(&mut event_stream, &mut direct_rx).await {
-            let json = match serde_json::to_string(&msg) {
-                Ok(j) => j,
-                Err(_) => continue,
-            };
-
-            if ws_sink.send(Message::Text(json.into())).await.is_err() {
-                break; // Client disconnected
-            }
-        }
-    });
+    let sender_handle = tokio::spawn(forward_outbound(ws_sink, event_stream, direct_rx));
 
     // Receiver task: read client frames and route to agent
-    let user_id = state.user_id.clone();
+    receive_frames(&mut ws_stream, &state, &direct_tx).await;
+
+    // Clean up: abort sender, decrement counter
+    sender_handle.abort();
+    adjust_tracker(tracker_for_drop.as_deref(), WsTrackerChange::Closed);
+}
+
+/// Forward broadcast events and direct messages to the client until it disconnects.
+async fn forward_outbound<S>(
+    mut ws_sink: futures::stream::SplitSink<WebSocket, Message>,
+    mut event_stream: S,
+    mut direct_rx: mpsc::Receiver<WsServerMessage>,
+) where
+    S: futures::Stream<Item = SseEvent> + Unpin,
+{
+    while let Some(msg) = next_outbound(&mut event_stream, &mut direct_rx).await {
+        let json = match serde_json::to_string(&msg) {
+            Ok(j) => j,
+            Err(_) => continue,
+        };
+
+        if ws_sink.send(Message::Text(json.into())).await.is_err() {
+            break; // Client disconnected
+        }
+    }
+}
+
+/// Read client frames and route them to the agent until the client closes or errors.
+async fn receive_frames(
+    ws_stream: &mut futures::stream::SplitStream<WebSocket>,
+    state: &GatewayState,
+    direct_tx: &mpsc::Sender<WsServerMessage>,
+) {
     while let Some(Ok(frame)) = ws_stream.next().await {
-        if handle_frame(frame, &state, &user_id, &direct_tx)
+        if handle_frame(frame, state, &state.user_id, direct_tx)
             .await
             .is_break()
         {
             break;
         }
     }
-
-    // Clean up: abort sender, decrement counter
-    sender_handle.abort();
-    adjust_tracker(tracker_for_drop.as_deref(), WsTrackerChange::Closed);
 }
 
 /// A change to the open-connection count.
@@ -246,29 +264,9 @@ impl WsContext<'_> {
     }
 }
 
-/// The fields of a client chat message.
-struct ChatMessage {
-    content: String,
-    thread_id: Option<String>,
-    timezone: Option<String>,
-    images: Vec<crate::channels::web::types::ImageData>,
-}
-
 /// Forward a chat message to the agent, or tell the client why that is not possible.
 async fn forward_chat_message(chat: ChatMessage, ctx: &WsContext<'_>) {
-    let mut incoming = IncomingMessage::new("gateway", ctx.user_id, &chat.content);
-    if let Some(ref tz) = chat.timezone {
-        incoming = incoming.with_timezone(tz);
-    }
-    if let Some(ref tid) = chat.thread_id {
-        incoming = incoming.with_thread(tid);
-    }
-
-    // Convert uploaded images to IncomingAttachments
-    if !chat.images.is_empty() {
-        let attachments = crate::channels::web::handlers::chat::images_to_attachments(&chat.images);
-        incoming = incoming.with_attachments(attachments);
-    }
+    let incoming = chat.into_incoming(ctx.user_id);
 
     let tx_guard = ctx.state.msg_tx.read().await;
     if let Some(ref tx) = *tx_guard {
@@ -376,6 +374,8 @@ async fn submit_auth_token(extension_name: String, token: &str, ctx: &WsContext<
         }
     }
 }
+
+mod chat_message;
 
 #[cfg(test)]
 mod tests;

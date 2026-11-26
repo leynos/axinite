@@ -31,6 +31,40 @@ impl NgrokTunnel {
     }
 }
 
+/// Pull the public URL out of an ngrok logfmt line (`url=https://xxxx.ngrok-free.app`).
+fn parse_public_url(line: &str) -> Option<String> {
+    let idx = line.find("url=https://")?;
+    let url_part = &line[idx + 4..]; // skip "url="
+    let end = url_part
+        .find(|c: char| c.is_whitespace())
+        .unwrap_or(url_part.len());
+    Some(url_part[..end].to_string())
+}
+
+/// Read ngrok's stdout for up to 15 seconds and return its public URL, or an
+/// empty string when none appeared.
+async fn read_public_url(stdout: tokio::process::ChildStdout) -> Result<String> {
+    let mut reader = tokio::io::BufReader::new(stdout).lines();
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
+    while tokio::time::Instant::now() < deadline {
+        let line =
+            tokio::time::timeout(tokio::time::Duration::from_secs(3), reader.next_line()).await;
+
+        match line {
+            Ok(Ok(Some(l))) => {
+                tracing::debug!("ngrok: {l}");
+                if let Some(url) = parse_public_url(&l) {
+                    return Ok(url);
+                }
+            }
+            Ok(Ok(None)) => break,
+            Ok(Err(e)) => bail!("Error reading ngrok output: {e}"),
+            Err(_) => {}
+        }
+    }
+    Ok(String::new())
+}
+
 impl NativeTunnel for NgrokTunnel {
     fn name(&self) -> &str {
         "ngrok"
@@ -57,33 +91,7 @@ impl NativeTunnel for NgrokTunnel {
             .take()
             .ok_or_else(|| anyhow::anyhow!("Failed to capture ngrok stdout"))?;
 
-        let mut reader = tokio::io::BufReader::new(stdout).lines();
-        let mut public_url = String::new();
-
-        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(15);
-        while tokio::time::Instant::now() < deadline {
-            let line =
-                tokio::time::timeout(tokio::time::Duration::from_secs(3), reader.next_line()).await;
-
-            match line {
-                Ok(Ok(Some(l))) => {
-                    tracing::debug!("ngrok: {l}");
-                    // ngrok logfmt: url=https://xxxx.ngrok-free.app
-                    if let Some(idx) = l.find("url=https://") {
-                        let url_start = idx + 4; // skip "url="
-                        let url_part = &l[url_start..];
-                        let end = url_part
-                            .find(|c: char| c.is_whitespace())
-                            .unwrap_or(url_part.len());
-                        public_url = url_part[..end].to_string();
-                        break;
-                    }
-                }
-                Ok(Ok(None)) => break,
-                Ok(Err(e)) => bail!("Error reading ngrok output: {e}"),
-                Err(_) => {}
-            }
-        }
+        let public_url = read_public_url(stdout).await?;
 
         if public_url.is_empty() {
             child.kill().await.ok();

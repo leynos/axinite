@@ -133,6 +133,40 @@ impl TranscriptionMiddleware {
         Self { provider }
     }
 
+    /// Transcribe one audio attachment: the text, a failure note, or `None`
+    /// when its format is unsupported.
+    async fn transcribe_attachment(
+        &self,
+        attachment: &crate::channels::IncomingAttachment,
+    ) -> Option<String> {
+        let Some(format) = AudioFormat::from_mime_type(&attachment.mime_type) else {
+            tracing::warn!(
+                mime = %attachment.mime_type,
+                "Skipping audio attachment with unsupported format"
+            );
+            return None;
+        };
+
+        match self.provider.transcribe(&attachment.data, format).await {
+            Ok(text) => {
+                tracing::info!(
+                    attachment_id = %attachment.id,
+                    text_len = text.len(),
+                    "Transcribed audio attachment"
+                );
+                Some(text)
+            }
+            Err(e) => {
+                tracing::error!(
+                    attachment_id = %attachment.id,
+                    error = %e,
+                    "Failed to transcribe audio attachment"
+                );
+                Some(format!("[Transcription failed: {}]", e))
+            }
+        }
+    }
+
     /// Process an incoming message, transcribing any audio attachments with data.
     ///
     /// Modifies the message in place:
@@ -155,34 +189,8 @@ impl TranscriptionMiddleware {
                 continue;
             }
 
-            let format = match AudioFormat::from_mime_type(&attachment.mime_type) {
-                Some(f) => f,
-                None => {
-                    tracing::warn!(
-                        mime = %attachment.mime_type,
-                        "Skipping audio attachment with unsupported format"
-                    );
-                    continue;
-                }
-            };
-
-            match self.provider.transcribe(&attachment.data, format).await {
-                Ok(text) => {
-                    tracing::info!(
-                        attachment_id = %attachment.id,
-                        text_len = text.len(),
-                        "Transcribed audio attachment"
-                    );
-                    transcriptions.push((i, text));
-                }
-                Err(e) => {
-                    tracing::error!(
-                        attachment_id = %attachment.id,
-                        error = %e,
-                        "Failed to transcribe audio attachment"
-                    );
-                    transcriptions.push((i, format!("[Transcription failed: {}]", e)));
-                }
+            if let Some(text) = self.transcribe_attachment(attachment).await {
+                transcriptions.push((i, text));
             }
         }
 

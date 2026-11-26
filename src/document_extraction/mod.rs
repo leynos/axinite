@@ -54,15 +54,7 @@ impl DocumentExtractionMiddleware {
                     size,
                     "Document too large for extraction, skipping"
                 );
-                let mb = size as f64 / (1024.0 * 1024.0);
-                let max_mb = MAX_DOCUMENT_SIZE as f64 / (1024.0 * 1024.0);
-                extractions.push((
-                    i,
-                    format!(
-                        "[Document too large for text extraction: {mb:.1} MB exceeds {max_mb:.0} MB limit. \
-                         Please send a smaller file or copy-paste the relevant text.]"
-                    ),
-                ));
+                extractions.push((i, too_large_message(size)));
                 continue;
             }
 
@@ -81,67 +73,72 @@ impl DocumentExtractionMiddleware {
 
             // Enforce size limit before cloning to avoid unnecessary allocation
             if attachment.data.len() as u64 > MAX_DOCUMENT_SIZE {
-                let mb = attachment.data.len() as f64 / (1024.0 * 1024.0);
-                let max_mb = MAX_DOCUMENT_SIZE as f64 / (1024.0 * 1024.0);
-                extractions.push((
-                    i,
-                    format!(
-                        "[Document too large for text extraction: {mb:.1} MB exceeds {max_mb:.0} MB limit. \
-                         Please send a smaller file or copy-paste the relevant text.]"
-                    ),
-                ));
+                extractions.push((i, too_large_message(attachment.data.len() as u64)));
                 continue;
             }
 
-            let data = attachment.data.clone();
-
-            let mime = &attachment.mime_type;
-            let filename = attachment.filename.as_deref();
-            match extractors::extract_text(&data, mime, filename) {
-                Ok(text) => {
-                    // Truncate at a char boundary to avoid panicking on multi-byte UTF-8
-                    let text = if text.len() > MAX_EXTRACTED_TEXT_LEN {
-                        let boundary = text
-                            .char_indices()
-                            .map(|(i, _)| i)
-                            .take_while(|&i| i <= MAX_EXTRACTED_TEXT_LEN)
-                            .last()
-                            .unwrap_or(0);
-                        let mut truncated = text[..boundary].to_string();
-                        truncated.push_str("\n\n[... truncated, document too long ...]");
-                        truncated
-                    } else {
-                        text
-                    };
-                    tracing::info!(
-                        attachment_id = %attachment.id,
-                        mime_type = %mime,
-                        text_len = text.len(),
-                        "Extracted text from document"
-                    );
-                    extractions.push((i, text));
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        attachment_id = %attachment.id,
-                        mime_type = %mime,
-                        error = %e,
-                        "Failed to extract text from document"
-                    );
-                    let name = filename.unwrap_or("document");
-                    extractions.push((
-                        i,
-                        format!(
-                            "[Failed to extract text from '{name}' ({mime}): {e}. \
-                             The file format may not be supported.]"
-                        ),
-                    ));
-                }
-            }
+            extractions.push((i, extract_attachment_text(attachment)));
         }
 
         for (i, text) in extractions {
             msg.attachments[i].extracted_text = Some(text);
+        }
+    }
+}
+
+/// The note placed in the message when a document exceeds the size limit.
+fn too_large_message(size: u64) -> String {
+    let mb = size as f64 / (1024.0 * 1024.0);
+    let max_mb = MAX_DOCUMENT_SIZE as f64 / (1024.0 * 1024.0);
+    format!(
+        "[Document too large for text extraction: {mb:.1} MB exceeds {max_mb:.0} MB limit. \
+         Please send a smaller file or copy-paste the relevant text.]"
+    )
+}
+
+/// Truncate `text` at a char boundary to avoid panicking on multi-byte UTF-8.
+fn truncate_extracted(text: String) -> String {
+    if text.len() <= MAX_EXTRACTED_TEXT_LEN {
+        return text;
+    }
+    let boundary = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .take_while(|&i| i <= MAX_EXTRACTED_TEXT_LEN)
+        .last()
+        .unwrap_or(0);
+    let mut truncated = text[..boundary].to_string();
+    truncated.push_str("\n\n[... truncated, document too long ...]");
+    truncated
+}
+
+/// Extract the text of an inline document, or a note saying why that failed.
+fn extract_attachment_text(attachment: &crate::channels::IncomingAttachment) -> String {
+    let mime = &attachment.mime_type;
+    let filename = attachment.filename.as_deref();
+    match extractors::extract_text(&attachment.data, mime, filename) {
+        Ok(text) => {
+            let text = truncate_extracted(text);
+            tracing::info!(
+                attachment_id = %attachment.id,
+                mime_type = %mime,
+                text_len = text.len(),
+                "Extracted text from document"
+            );
+            text
+        }
+        Err(e) => {
+            tracing::warn!(
+                attachment_id = %attachment.id,
+                mime_type = %mime,
+                error = %e,
+                "Failed to extract text from document"
+            );
+            let name = filename.unwrap_or("document");
+            format!(
+                "[Failed to extract text from '{name}' ({mime}): {e}. \
+                 The file format may not be supported.]"
+            )
         }
     }
 }

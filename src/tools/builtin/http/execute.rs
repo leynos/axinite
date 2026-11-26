@@ -143,19 +143,10 @@ impl NativeTool for HttpTool {
         // Redirects are followed automatically (up to 10 hops).
         // If we still see a 3xx here, the chain was too long.
 
-        let headers: HashMap<String, String> = response
-            .headers()
-            .iter()
-            .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
-            .collect();
+        let headers = response_headers(&response);
 
         // Use a larger size limit when saving to disk (file downloads)
-        let saving_to_disk = params.get("save_to").is_some();
-        let max_size = if saving_to_disk {
-            MAX_SAVE_TO_SIZE
-        } else {
-            MAX_RESPONSE_SIZE
-        };
+        let max_size = max_body_size(&params);
 
         // Pre-check Content-Length header to reject obviously oversized responses
         // before downloading anything, preventing OOM from malicious servers.
@@ -245,6 +236,24 @@ fn replayed_output(
         "body": body
     });
     ToolOutput::success(result, start.elapsed()).with_raw(recorded.body)
+}
+
+/// The response headers whose values are valid UTF-8, keyed by name.
+fn response_headers(response: &reqwest::Response) -> HashMap<String, String> {
+    response
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
+        .collect()
+}
+
+/// The body size cap: larger when saving to disk (file downloads).
+fn max_body_size(params: &serde_json::Value) -> usize {
+    if params.get("save_to").is_some() {
+        MAX_SAVE_TO_SIZE
+    } else {
+        MAX_RESPONSE_SIZE
+    }
 }
 
 /// Send the request, mapping transport failures to tool errors.

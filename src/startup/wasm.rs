@@ -274,38 +274,47 @@ pub(crate) async fn wire_wasm_channel_runtime<Manager: WasmRuntimeWiringPort + ?
     wasm_channel_runtime_state: &mut Option<WasmChannelRuntimeState>,
     loaded_wasm_channel_names: &[String],
 ) {
-    if let Some(ext_mgr) = wiring.extension_manager
-        && let Some((rt, ps, router)) = wasm_channel_runtime_state.take()
-    {
-        let active_at_startup: std::collections::HashSet<String> =
-            loaded_wasm_channel_names.iter().cloned().collect();
-        ext_mgr
-            .set_active_channels(loaded_wasm_channel_names.to_owned())
-            .await;
-        ext_mgr
-            .set_channel_runtime(
-                Arc::clone(wiring.channels),
-                rt,
-                ps,
-                router,
-                wiring.wasm_channel_owner_ids.clone(),
-            )
-            .await;
-        tracing::debug!("Channel runtime wired into extension manager for hot-activation");
+    let Some(ext_mgr) = wiring.extension_manager else {
+        return;
+    };
 
-        let persisted = ext_mgr.load_persisted_active_channels().await;
-        auto_activate_persisted_channels(ext_mgr.as_ref(), &active_at_startup, &persisted).await;
+    if let Some(runtime_state) = wasm_channel_runtime_state.take() {
+        hand_over_runtime(ext_mgr, wiring, runtime_state, loaded_wasm_channel_names).await;
     }
 
-    if let Some(ext_mgr) = wiring.extension_manager {
-        wire_relay_channels(ext_mgr.as_ref(), wiring.channels).await;
-    }
+    wire_relay_channels(ext_mgr.as_ref(), wiring.channels).await;
 
-    if let Some(ext_mgr) = wiring.extension_manager
-        && let Some(sender) = wiring.sse_sender
-    {
+    if let Some(sender) = wiring.sse_sender {
         register_sse_sender(ext_mgr.as_ref(), sender).await;
     }
+}
+
+/// Give the extension manager the channel runtime, then auto-activate the
+/// persisted channels that were not already active at startup.
+async fn hand_over_runtime<Manager: WasmRuntimeWiringPort + ?Sized>(
+    ext_mgr: &Arc<Manager>,
+    wiring: &WasmWiringContext<'_, Manager>,
+    (rt, ps, router): WasmChannelRuntimeState,
+    loaded_wasm_channel_names: &[String],
+) {
+    let active_at_startup: std::collections::HashSet<String> =
+        loaded_wasm_channel_names.iter().cloned().collect();
+    ext_mgr
+        .set_active_channels(loaded_wasm_channel_names.to_owned())
+        .await;
+    ext_mgr
+        .set_channel_runtime(
+            Arc::clone(wiring.channels),
+            rt,
+            ps,
+            router,
+            wiring.wasm_channel_owner_ids.clone(),
+        )
+        .await;
+    tracing::debug!("Channel runtime wired into extension manager for hot-activation");
+
+    let persisted = ext_mgr.load_persisted_active_channels().await;
+    auto_activate_persisted_channels(ext_mgr.as_ref(), &active_at_startup, &persisted).await;
 }
 
 #[cfg(test)]
