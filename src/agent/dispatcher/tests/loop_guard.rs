@@ -7,7 +7,7 @@ use super::*;
 
 /// Asserts iteration bounds guarantee termination for a given max_iter.
 fn assert_iteration_bounds(max_iter: usize) {
-    let thresholds = super::super::core::compute_loop_thresholds(max_iter);
+    let thresholds = super::super::loop_core::compute_loop_thresholds(max_iter);
     let force_text_at = thresholds.force_text_at;
     let nudge_at = thresholds.nudge_at;
     let hard_ceiling = thresholds.hard_ceiling;
@@ -107,7 +107,7 @@ async fn force_text_prevents_infinite_tool_call_loop() {
     );
 }
 
-async fn build_loop_ctx(prompt: &str) -> (IncomingMessage, super::super::core::RunLoopCtx) {
+async fn build_loop_ctx(prompt: &str) -> (IncomingMessage, super::super::loop_core::RunLoopCtx) {
     let session = Arc::new(Mutex::new(Session::new("test-user")));
     let thread_id = {
         let mut sess = session.lock().await;
@@ -115,7 +115,7 @@ async fn build_loop_ctx(prompt: &str) -> (IncomingMessage, super::super::core::R
     };
     let message = IncomingMessage::new("test", "test-user", prompt);
     let initial_messages = vec![ChatMessage::user(prompt)];
-    let ctx = super::super::core::RunLoopCtx {
+    let ctx = super::super::loop_core::RunLoopCtx {
         session,
         thread_id,
         initial_messages,

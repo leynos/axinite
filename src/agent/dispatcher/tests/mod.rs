@@ -23,7 +23,7 @@ use crate::tools::ToolRegistry;
 use crate::tools::builtin::EchoTool;
 use tokio::sync::Mutex;
 
-use super::types::*;
+use super::*;
 
 /// Configuration for the forced-text arm of a mock tool responder.
 struct MockTextResponse {

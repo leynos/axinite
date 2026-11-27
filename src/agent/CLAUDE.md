@@ -8,7 +8,7 @@ in `src/agent/`.
 | File                             | Role                                                                                                                                                                                  |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent_loop.rs`                  | `Agent` struct, `AgentDeps`, main `run()` event loop. Delegates to siblings.                                                                                                          |
-| `dispatcher.rs`                  | Agentic loop for conversational turns: LLM call → tool execution → repeat. Injects skill context. Returns `Response` or `NeedApproval`.                                               |
+| `dispatcher/`                    | Conversational-turn dispatcher: turn-context assembly, agentic-loop orchestration, tool dispatch, previews, and the delegate layer. Returns `Response` or `NeedApproval`.             |
 | `thread_ops.rs`                  | Thread/session operations: `process_user_input`, undo/redo, approval, auth-mode interception, DB hydration, compaction.                                                               |
 | `commands.rs`                    | System command handlers (`/help`, `/model`, `/status`, `/skills`, etc.) and job intent handlers.                                                                                      |
 | `session.rs`                     | Data model: `Session` → `Thread` → `Turn`. State machines for threads and turns.                                                                                                      |
@@ -28,6 +28,18 @@ in `src/agent/`.
 | `task.rs`                        | Task types for the scheduler: `Job`, `ToolExec`, `Background`. Used by `spawn_subtask` and `spawn_batch`.                                                                             |
 | `cost_guard.rs`                  | LLM spend and action-rate enforcement. Tracks daily budget (cents) and hourly call rate. Lives in `AgentDeps`.                                                                        |
 | `job_monitor.rs`                 | Subscribes to SSE broadcast and injects Claude Code (container) output back into the agent loop as `IncomingMessage`.                                                                 |
+
+### Dispatcher Files
+
+| File               | Role                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `mod.rs`           | Module declarations and the stable `pub(crate)` re-export surface used by sibling agent modules.                 |
+| `context.rs`       | Per-turn reasoning context: system prompt, channel data, active skill selection, and context-length helpers.     |
+| `loop_core.rs`     | Agentic-loop orchestration: `RunLoopCtx`, thresholds, `ChatDelegate` construction, and outcome-to-error mapping. |
+| `tool_dispatch.rs` | Standalone tool execution and `tool_auth` result parsing used by the approval flows.                             |
+| `preview.rs`       | Single-line output previews and internal tool-call marker removal.                                               |
+| `delegate/`        | `ChatDelegate` and the preflight → execute → postflight tool pipeline.                                           |
+| `tests/`           | Dispatcher unit and behavioural tests, including snapshots keyed on the test module path.                        |
 
 ## Session / Thread / Turn Model
 

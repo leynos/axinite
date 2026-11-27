@@ -6,7 +6,7 @@ use std::sync::RwLock;
 
 use insta::assert_snapshot;
 
-use super::super::types::select_active_skills;
+use super::super::context::select_active_skills;
 use super::*;
 use crate::skills::{
     ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,

@@ -2,7 +2,7 @@
 
 use insta::assert_snapshot;
 
-use super::super::types::truncate_for_preview;
+use super::super::preview::truncate_for_preview;
 
 #[test]
 fn test_truncate_short_input() {
@@ -79,13 +79,13 @@ fn test_truncate_large_whitespace_run_truncates_correctly() {
 #[test]
 fn truncate_for_preview_snapshot_normalization() {
     let input = "Line 1\n\n   Line   2\t\twith  spaces\n\nLine 3";
-    let out = crate::agent::dispatcher::types::truncate_for_preview(input, 32);
+    let out = crate::agent::dispatcher::preview::truncate_for_preview(input, 32);
     assert_snapshot!("truncate_normalize_32", out);
 }
 
 #[test]
 fn truncate_for_preview_snapshot_cjk_emoji() {
     let input = "你好世界🙂🙂🙂 — mixed 文本 and emoji!";
-    let out = crate::agent::dispatcher::types::truncate_for_preview(input, 16);
+    let out = crate::agent::dispatcher::preview::truncate_for_preview(input, 16);
     assert_snapshot!("truncate_cjk_emoji_16", out);
 }
