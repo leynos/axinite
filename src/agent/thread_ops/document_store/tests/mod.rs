@@ -7,8 +7,8 @@ use crate::channels::{AttachmentKind, IncomingAttachment};
 use crate::workspace::Workspace;
 
 use super::{
-    PathParts, build_document_path, get_valid_document_text, is_usable_extracted_text,
-    sanitize_filename, store_extracted_documents,
+    HeaderMeta, PathParts, build_document_path, build_header, get_valid_document_text,
+    is_usable_extracted_text, sanitize_filename, store_extracted_documents,
 };
 
 fn make_incoming_attachment(
@@ -180,6 +180,24 @@ fn build_document_path_uses_sanitized_id_and_filename() {
         .expect_valid("path should include date prefix");
     assert!(!suffix.contains('/'));
     assert!(!suffix.contains('\\'));
+}
+
+#[test]
+fn build_header_renders_expected_payload_snapshot() {
+    let date =
+        chrono::NaiveDate::from_ymd_opt(2026, 4, 3).expect_valid("2026-04-03 is a valid date");
+    let meta = HeaderMeta {
+        filename: "report.pdf",
+        user_id: "test-user",
+        channel: "test-channel",
+        mime: "application/pdf",
+        size_bytes: 1024,
+        date,
+    };
+    let header = build_header(&meta);
+    let text = "This is extracted document text";
+    let payload = format!("{header}{text}");
+    insta::assert_snapshot!("build_header_renders_expected_payload", payload);
 }
 
 #[tokio::test]
