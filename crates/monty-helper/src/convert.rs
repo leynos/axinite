@@ -9,8 +9,8 @@
 use std::fmt;
 
 use monty_protocol::MAX_JSON_DEPTH;
-use num_bigint::BigInt;
 use monty_types::{CallArgs, MontyObject, ObjectRef};
+use num_bigint::BigInt;
 use serde_json::{Map, Value};
 
 /// A value that cannot be represented in the JSON ABI.
