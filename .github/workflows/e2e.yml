@@ -53,7 +53,7 @@ jobs:
       # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -176,7 +176,7 @@ jobs:
               tests/e2e/scenarios/test_extensions_configure.py
               tests/e2e/scenarios/test_extensions_channels.py
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
