@@ -9,6 +9,10 @@ permissions:
   pull-requests: write
   issues: read           # needed for search/issues API (contributor count)
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+
 jobs:
   classify:
     # Labelling: shells out to the GitHub API to size and classify the pull
