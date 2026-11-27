@@ -25,23 +25,6 @@ use axinite::workspace::Workspace;
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::LlmTrace;
 
-/// Describes a system event to be emitted in tests.
-pub struct SystemEventSpec<'a> {
-    pub source: &'a str,
-    pub event_type: &'a str,
-    pub payload: serde_json::Value,
-}
-
-impl<'a> SystemEventSpec<'a> {
-    pub fn new(source: &'a str, event_type: &'a str, payload: serde_json::Value) -> Self {
-        Self {
-            source,
-            event_type,
-            payload,
-        }
-    }
-}
-
 mod db {
     //! Temporary libSQL database helpers for routine tests.
 
@@ -169,18 +152,42 @@ mod engine {
     }
 }
 
-mod registration {
-    //! Helpers registering routines for system event tests.
+pub mod system_events {
+    //! System-event fixtures and assertions for the `routine_system_event`
+    //! E2E test.
+
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use axinite::agent::routine::{Routine, Trigger};
+    use axinite::agent::routine_engine::{RoutineEngine, SystemEventRef};
+    use axinite::db::Database;
 
     use super::builders::make_routine;
-    use super::*;
+
+    /// Describes a system event to be emitted in tests.
+    pub struct SystemEventSpec<'a> {
+        pub source: &'a str,
+        pub event_type: &'a str,
+        pub payload: serde_json::Value,
+    }
+
+    impl<'a> SystemEventSpec<'a> {
+        pub fn new(source: &'a str, event_type: &'a str, payload: serde_json::Value) -> Self {
+            Self {
+                source,
+                event_type,
+                payload,
+            }
+        }
+    }
 
     /// Register a GitHub issue routine for system event tests.
     pub async fn register_github_issue_routine(
         db: &Arc<dyn Database>,
         engine: &RoutineEngine,
     ) -> anyhow::Result<Routine> {
-        let mut filters = std::collections::HashMap::new();
+        let mut filters = HashMap::new();
         filters.insert("repository".to_string(), "nearai/ironclaw".to_string());
         let routine = make_routine(
             "github-issue-opened",
@@ -195,12 +202,6 @@ mod registration {
         engine.refresh_event_cache().await;
         Ok(routine)
     }
-}
-
-mod assertions {
-    //! Assertion helpers for routine engine event tests.
-
-    use super::*;
 
     /// Assert that a system event fires the expected number of routines.
     pub async fn assert_system_event_count(
@@ -210,7 +211,7 @@ mod assertions {
         msg: &str,
     ) {
         let fired = engine
-            .emit_system_event(axinite::agent::routine_engine::SystemEventRef {
+            .emit_system_event(SystemEventRef {
                 source: spec.source,
                 event_type: spec.event_type,
                 payload: &spec.payload,
@@ -221,14 +222,11 @@ mod assertions {
     }
 }
 
-pub use assertions::assert_system_event_count;
 pub use builders::{make_routine, make_test_incoming_message};
 #[cfg(feature = "libsql")]
 pub use db::create_test_db;
 pub use db::create_workspace;
 pub use engine::make_minimal_engine;
-#[cfg(feature = "libsql")]
-pub use registration::register_github_issue_routine;
 
 pub mod engine_sync {
     //! Deterministic synchronization helpers for tests that drive
@@ -236,8 +234,8 @@ pub mod engine_sync {
     //!
     //! Scoped into their own inline module so that test binaries which do
     //! not exercise `RoutineEngine` (e.g. `heartbeat`) never reference these
-    //! items, while compile-time type assertions in `support::mod` prove
-    //! liveness for the rest.
+    //! items, while the `const _:` API assertions in
+    //! `tests/support/e2e_traces.rs` prove liveness for the rest.
 
     use std::sync::Arc;
     use std::time::Duration;

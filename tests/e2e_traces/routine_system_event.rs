@@ -6,10 +6,10 @@
 use std::time::Duration;
 
 use crate::support::routines::engine_sync::{wait_for_idle, wait_for_persisted_run};
-use crate::support::routines::{
-    SystemEventSpec, assert_system_event_count, create_test_db, create_workspace,
-    make_minimal_engine, register_github_issue_routine,
+use crate::support::routines::system_events::{
+    SystemEventSpec, assert_system_event_count, register_github_issue_routine,
 };
+use crate::support::routines::{create_test_db, create_workspace, make_minimal_engine};
 use axinite::llm::recording::{TraceResponse, TraceStep};
 
 use crate::support::trace_types::LlmTrace;
