@@ -43,7 +43,7 @@ jobs:
       - name: Install Kani
         # The install lands where `make kani` and `make kani-check` look: the
         # front-end in `.cache/kani/bin`, the bundle under `KANI_HOME`.
-        uses: leynos/shared-actions/.github/actions/install-prover-tools@9ed445010fe26a7facb708d7a9ba4d5bd0fa57ca
+        uses: leynos/shared-actions/.github/actions/install-prover-tools@bd052c68a4792e92c3272fb1b6ea3b594f3ab7f3
         with:
           tools: kani
           runner-image: ubuntu2404
@@ -71,7 +71,7 @@ jobs:
           enable-cache: false
       - name: Install Verus and Z3
         # Z3 lands at `Z3_INSTALL_DIR`, where `make verus` looks for it.
-        uses: leynos/shared-actions/.github/actions/install-prover-tools@9ed445010fe26a7facb708d7a9ba4d5bd0fa57ca
+        uses: leynos/shared-actions/.github/actions/install-prover-tools@bd052c68a4792e92c3272fb1b6ea3b594f3ab7f3
         with:
           tools: verus
           runner-image: ubuntu2404
