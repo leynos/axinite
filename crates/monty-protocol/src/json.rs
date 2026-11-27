@@ -20,8 +20,8 @@ pub enum JsonLimitError {
     /// The value nests deeper than [`MAX_JSON_DEPTH`].
     #[error("JSON nesting exceeds the {MAX_JSON_DEPTH}-level ceiling")]
     DepthExceeded,
-    /// An integer did not fit in a signed 64-bit value.
-    #[error("JSON integer does not fit a signed 64-bit value: {0}")]
+    /// An integer fell outside the exact 64-bit range the boundary carries.
+    #[error("JSON integer is outside the exact signed/unsigned 64-bit range: {0}")]
     IntegerOutOfRange(String),
     /// A number was not finite binary64.
     #[error("JSON number is not a finite binary64 value: {0}")]
@@ -107,12 +107,22 @@ fn validate_number(token: &str) -> Result<(), JsonLimitError> {
         } else {
             Err(JsonLimitError::NonFiniteNumber(token.to_owned()))
         }
+    } else if exact_integer(token) {
+        Ok(())
     } else {
-        token
-            .parse::<i64>()
-            .map(|_| ())
-            .map_err(|_| JsonLimitError::IntegerOutOfRange(token.to_owned()))
+        Err(JsonLimitError::IntegerOutOfRange(token.to_owned()))
     }
+}
+
+/// Report whether `token` is an integer the boundary carries exactly.
+///
+/// The contract keeps exact signed *and* unsigned 64-bit integers, so the
+/// accepted range is `i64::MIN ..= u64::MAX`. Parsing the non-negative range as
+/// `u64` is what admits values above `i64::MAX`; a leading `-` cannot be a
+/// `u64`, so the two parses together cover the range without arithmetic that
+/// could overflow. Anything wider is refused rather than rounded.
+fn exact_integer(token: &str) -> bool {
+    token.parse::<i64>().is_ok() || token.parse::<u64>().is_ok()
 }
 
 #[cfg(test)]
@@ -132,13 +142,29 @@ mod tests {
         validate_json_text(r#"{"text":"999999999999999999999999"}"#).expect("string");
     }
 
+    /// The contract keeps exact signed *and* unsigned 64-bit integers, so the
+    /// accepted range is `i64::MIN ..= u64::MAX`. `i64::MAX + 1` is the first
+    /// value only an unsigned 64-bit parse accepts.
     #[test]
-    fn rejects_integer_outside_i64() {
-        let error = validate_json_text("9223372036854775808").expect_err("range");
-        assert_eq!(
-            error,
-            JsonLimitError::IntegerOutOfRange("9223372036854775808".to_owned())
-        );
+    fn accepts_the_whole_exact_64_bit_range() {
+        for token in [
+            "-9223372036854775808",
+            "-1",
+            "0",
+            "9223372036854775807",
+            "9223372036854775808",
+            "18446744073709551615",
+        ] {
+            validate_json_text(token).unwrap_or_else(|error| panic!("{token}: {error}"));
+        }
+    }
+
+    #[test]
+    fn rejects_integer_wider_than_64_bits() {
+        for token in ["18446744073709551616", "-9223372036854775809"] {
+            let error = validate_json_text(token).expect_err("range");
+            assert_eq!(error, JsonLimitError::IntegerOutOfRange(token.to_owned()));
+        }
     }
 
     #[test]

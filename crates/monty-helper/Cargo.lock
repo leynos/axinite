@@ -107,6 +107,7 @@ dependencies = [
  "monty-alloc",
  "monty-protocol",
  "monty-types",
+ "num-bigint",
  "pretty_assertions",
  "rustix",
  "serde_json",

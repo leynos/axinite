@@ -364,7 +364,9 @@ fn value_matches(kind: &str, value: &Value, depth: usize) -> bool {
     match kind {
         "string" => value.is_string(),
         "number" => value.is_number(),
-        "integer" => value.as_i64().is_some(),
+        // The boundary carries exact signed and unsigned 64-bit integers, so
+        // the whole `i64::MIN ..= u64::MAX` range is an integer here.
+        "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
         "boolean" => value.is_boolean(),
         "object" => value.is_object(),
         "array" => value.is_array(),

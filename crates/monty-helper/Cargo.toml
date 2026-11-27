@@ -20,6 +20,11 @@ path = "src/main.rs"
 [dependencies]
 monty = "=1.6.0"
 monty-types = "=1.6.0"
+# The boundary carries exact unsigned 64-bit integers, which do not fit
+# Monty's `i64` variant. `BigInt` is how Monty represents them, and
+# `monty-types` does not re-export the type, so it is named here at the same
+# major version `monty-types` already depends on.
+num-bigint = "0.4"
 monty-alloc = { version = "=1.6.0", features = ["exit-code"] }
 monty-protocol = { path = "../monty-protocol" }
 serde_json = "1"

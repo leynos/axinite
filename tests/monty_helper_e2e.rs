@@ -219,6 +219,56 @@ async fn a_tool_result_is_sanitized_before_the_guest_sees_it() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
+/// A guest `int` spanning the exact 64-bit range survives the round trip.
+///
+/// Python integers are arbitrary precision, so `u64::MAX` and `i64::MIN` are
+/// ordinary values. The boundary carries them exactly; only a value outside
+/// `i64::MIN ..= u64::MAX` is refused.
+#[tokio::test]
+async fn exact_64_bit_integers_survive_the_guest_round_trip() {
+    let Some(helper) = skip_without_helper() else {
+        return;
+    };
+    let ctx = context_with(vec![], &[]).await;
+
+    let output = run(
+        &helper,
+        &ctx,
+        "return {'result': [18446744073709551615, -9223372036854775808, 9223372036854775808], 'state': {}}",
+        &[],
+    )
+    .await
+    .expect("run");
+
+    assert_eq!(
+        output.result["result"],
+        json!([u64::MAX, i64::MIN, 9_223_372_036_854_775_808_u64])
+    );
+}
+
+/// A guest integer wider than 64 bits has no exact JSON form, so the run
+/// reports a typed failure rather than returning a rounded float.
+#[tokio::test]
+async fn an_integer_wider_than_64_bits_fails_the_run() {
+    let Some(helper) = skip_without_helper() else {
+        return;
+    };
+    let ctx = context_with(vec![], &[]).await;
+
+    let error = run(
+        &helper,
+        &ctx,
+        "return {'result': 18446744073709551616, 'state': {}}",
+        &[],
+    )
+    .await
+    .expect_err("too wide");
+    assert!(
+        error.to_string().contains("64-bit"),
+        "expected an exact-range refusal, got {error}"
+    );
+}
+
 #[tokio::test]
 async fn a_script_error_is_reported_as_a_failed_run() {
     let Some(helper) = skip_without_helper() else {
