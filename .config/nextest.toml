@@ -73,7 +73,7 @@ filter = 'binary(schema_helpers_ui)'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.default.overrides]]
-filter = 'binary(trybuild) & test(db_surface_compile_contracts)'
+filter = 'binary(trybuild) & (test(db_surface_compile_contracts) | test(a_nested_fixture_preparation))'
 slow-timeout = { period = "2400s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.default.overrides]]
@@ -86,7 +86,7 @@ filter = 'binary(schema_helpers_ui)'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]
-filter = 'binary(trybuild) & test(db_surface_compile_contracts)'
+filter = 'binary(trybuild) & (test(db_surface_compile_contracts) | test(a_nested_fixture_preparation))'
 slow-timeout = { period = "2400s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]

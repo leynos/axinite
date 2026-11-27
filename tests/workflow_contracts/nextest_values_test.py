@@ -72,8 +72,11 @@ REQUIRED_OVERRIDE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
 }
 
 #: The complete filter of the database-surface override, predicate included.
+#: It also names the preparation test, which pays the cold dependency build
+#: the database-surface session used to pay, so it needs the same allowance.
 REQUIRED_DB_SURFACE_FILTER: typ.Final = (
-    "binary(trybuild) & test(db_surface_compile_contracts)"
+    "binary(trybuild) & "
+    "(test(db_surface_compile_contracts) | test(a_nested_fixture_preparation))"
 )
 
 #: ``db_surface_compile_contracts`` is a nested Cargo session that took about

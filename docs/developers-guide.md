@@ -4389,11 +4389,14 @@ integration target before nextest starts the test process.
 test the concordat NC-010 rule looks for (the name ends in
 `nested_fixture_preparation`). It runs one small fixture so that trybuild's
 cold dependency build lands in a test of its own, and the contract sessions
-start from a built tree. The leading `a_` makes it sort first, and the serial
-group runs the tests one at a time. A cold run measured 527 s for it and about
-36 s for each contract session; a warm run measured 11 s for it. It runs under
-the same features as the sessions because trybuild reads the features from the
-build that produced the test binary.
+start from a built tree. Under nextest the leading `a_` makes it sort first,
+and the serial group runs the tests one at a time; plain `cargo test` runs them
+in parallel and gives no ordering guarantee, so there the first session to take
+trybuild's lock pays the cold build. Because it pays what the database-surface
+session used to pay, it shares that session's 2,400-second override. A cold run
+measured 527 s for it and about 36 s for each contract session; a warm run
+measured 11 s for it. It runs under the same features as the sessions because
+trybuild reads the features from the build that produced the test binary.
 
 The `compile-contracts` test group sets `max-threads = 1`. The `default` and
 `ci` overrides assign both required binaries to this group, and `coverage`
