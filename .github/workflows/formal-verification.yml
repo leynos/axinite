@@ -52,6 +52,11 @@ jobs:
         run: make kani-check
       - name: Run Kani proof
         run: make kani
+      - name: Run repair-claims proofs
+        # Fail-closed lifecycle gate for the shared repair-claims registry
+        # (#178). It stays red while released Kani cannot model the default
+        # `HashSet` entropy path; that blocker is never reported as success.
+        run: make kani-repair-claims
 
   verus-proofs:
     name: Verus Proofs

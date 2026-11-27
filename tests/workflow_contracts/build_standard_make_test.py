@@ -52,6 +52,7 @@ TARGETS = (
     "test-workspace",
     "test-github-tool",
     "test-libsql-transport",
+    "test-repair-claims",
     "test-cargo",
     "test-matrix",
     "test-matrix-cargo",
@@ -65,12 +66,13 @@ MINIMUM_INVOCATIONS = {
     "build": 1,
     "typecheck": 4,
     "lint-clippy": 4,
-    "lint-whitaker": 2,
+    "lint-whitaker": 3,
     "lint-libsql-transport": 1,
     "test-workspace": 2,
     "test-github-tool": 1,
     "test-libsql-transport": 4,
-    "test-cargo": 3,
+    "test-repair-claims": 1,
+    "test-cargo": 4,
     "test-matrix": 5,
     "test-matrix-cargo": 5,
     "install": 1,
@@ -167,13 +169,13 @@ def test_release_routes_were_seen_and_assign_rustflags(
 def test_whitaker_has_a_literal_boundary(
     emitted: dict[str, tuple[list[str], list[Invocation]]],
 ) -> None:
-    """Both Whitaker commands assign exactly `-D warnings`.
+    """Every Whitaker command assigns exactly `-D warnings`.
 
     The literal displaces the configuration's rustflags tables, and nothing
     else in the configuration reaches Whitaker's installer-managed toolchain.
     """
     whitaker = [i for i in emitted["lint-whitaker"][1] if i.tool == "whitaker"]
-    assert len(whitaker) == 2, f"expected both Whitaker invocations, got: {whitaker}"
+    assert len(whitaker) == 3, f"expected all Whitaker invocations, got: {whitaker}"
     flags = {invocation.assignments.get("RUSTFLAGS") for invocation in whitaker}
     assert flags == {"-D warnings"}, f"unexpected Whitaker RUSTFLAGS: {flags}"
 

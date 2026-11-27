@@ -87,18 +87,22 @@ KANI_CACHE_DIR ?= $(CURDIR)/.cache/kani/downloads
 # of silently expanding to an empty version for every target.
 KANI_INSTALLATION ?=
 KANI_PROOF_DIR ?= $(CURDIR)/tests/verification/kani-smoke
+# The repair-claims package compiles the production registry source (#178).
+REPAIR_CLAIMS_PROOF_DIR ?= $(CURDIR)/tests/verification/repair-claims
 VERUS_VERSION_FILE ?= tools/verus/VERSION
 VERUS_CHECKSUM_FILE ?= tools/verus/SHA256SUMS
 VERUS_PROOF_FILE ?= verus/tooling_smoke/main.rs
 VERUS_FLAGS ?=
 Z3_INSTALL_DIR ?= $(CURDIR)/.cache/z3/4.16.0
 export PROVER_TOOLS KANI_VERSION_FILE KANI_HOME KANI_BIN_DIR KANI_CACHE_DIR KANI_INSTALLATION KANI_PROOF_DIR
+export REPAIR_CLAIMS_PROOF_DIR
 export VERUS_VERSION_FILE VERUS_CHECKSUM_FILE VERUS_PROOF_FILE VERUS_FLAGS Z3_INSTALL_DIR
 
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 LIBSQL_TRANSPORT_TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 KANI_SMOKE_MANIFEST := tests/verification/kani-smoke/Cargo.toml
+REPAIR_CLAIMS_MANIFEST := tests/verification/repair-claims/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralized and remove each one as soon as the triggering
 # transitive dependency is upgraded.
@@ -144,7 +148,7 @@ LIBSQL_AUDIT_FLAGS := \
 PDF_EXTRACT_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0192
 
-.PHONY: all build install-build-tools check-build-tools install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-full frontend-stub
+.PHONY: all build install-build-tools check-build-tools install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-repair-claims test-workflow-contracts clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-full frontend-stub
 
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
@@ -158,7 +162,7 @@ MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 
 all: check-fmt lint test spelling
 
-.PHONY: install-kani kani-check kani kani-full install-verus install-z3 verus formal-pr
+.PHONY: install-kani kani-check kani kani-full kani-repair-claims install-verus install-z3 verus formal-pr
 
 install-kani kani-check install-verus install-z3 verus:
 	@python3 scripts/prover_cli.py $@
@@ -166,9 +170,16 @@ install-kani kani-check install-verus install-z3 verus:
 kani kani-full: kani-check
 	@python3 scripts/prover_cli.py $@
 
+# Fail-closed repair-claims lifecycle gate (#178). Released Kani 0.67.0 cannot
+# yet model the default `HashSet` entropy path, so this target deliberately
+# fails at its compatibility probe until that blocker is resolved.
+kani-repair-claims: kani-check
+	@python3 scripts/repair_claims_kani.py
+
 formal-pr:
 	@$(MAKE) kani
 	@$(MAKE) verus
+	@$(MAKE) kani-repair-claims
 
 # Build the workspace as the standard development build: every target, with the
 # test features, so a build that passes here is one `make test` can start from.
@@ -240,6 +251,7 @@ fmt:
 	$(CARGO_COMMAND) fmt --all
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
 	$(CARGO_COMMAND) fmt --manifest-path $(KANI_SMOKE_MANIFEST) --all
+	$(CARGO_COMMAND) fmt --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 	$(MDLINT) --fix "**/*.md"
 
@@ -247,6 +259,7 @@ check-fmt:
 	$(CARGO_COMMAND) fmt --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(KANI_SMOKE_MANIFEST) --all -- --check
+	$(CARGO_COMMAND) fmt --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all -- --check
 	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 typecheck: check-build-tools
@@ -254,6 +267,7 @@ typecheck: check-build-tools
 	$(CARGO_COMMAND) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
 	$(CARGO_COMMAND) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
 	$(CARGO_COMMAND) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
+	$(CARGO_COMMAND) check --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all-targets --locked
 
 lint: lint-clippy lint-whitaker
 
@@ -310,6 +324,7 @@ lint-clippy: check-build-tools
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+	$(CARGO_COMMAND) clippy --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all-targets --locked -- -D warnings
 
 # Cover the TLS member's additional feature configuration with strict lints.
 lint-libsql-transport: check-build-tools
@@ -324,6 +339,7 @@ lint-libsql-transport: check-build-tools
 lint-whitaker: check-build-tools
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --workspace --all-targets --all-features
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
+	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(REPAIR_CLAIMS_MANIFEST) -- --tests
 
 markdownlint: spelling
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
@@ -353,7 +369,7 @@ rust-audit:
 
 # The whole suite, for a developer. CI runs the workspace, GitHub tool, and
 # libSQL TLS suites on separate lanes.
-test: test-workspace test-github-tool test-libsql-transport
+test: test-workspace test-github-tool test-libsql-transport test-repair-claims
 
 # The workspace suite alone. `tools-src/github` is excluded from the workspace,
 # so `--workspace` does not reach it; the WASM build is needed by schema tests.
@@ -366,10 +382,16 @@ test-workspace: check-build-tools
 test-github-tool: check-build-tools
 	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
+# The shared repair-claims registry source, compiled without Kani by its
+# dependency-free standalone package.
+test-repair-claims: check-build-tools
+	$(CARGO_COMMAND) test --manifest-path $(REPAIR_CLAIMS_MANIFEST) --locked
+
 test-cargo: check-build-tools
 	$(MAKE) build-github-tool-wasm
 	$(CARGO_COMMAND) test $(TEST_FEATURES)
 	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO_COMMAND) test --manifest-path $(REPAIR_CLAIMS_MANIFEST) --locked
 
 test-matrix: check-build-tools
 	$(MAKE) build-github-tool-wasm
@@ -450,6 +472,7 @@ miri: check-build-tools
 clean:
 	$(CARGO_COMMAND) clean
 	$(CARGO_COMMAND) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO_COMMAND) clean --manifest-path $(REPAIR_CLAIMS_MANIFEST)
 	rm -rf $(WASM_SHARED_TARGET_DIR)
 
 # Exercise the TLS member with HTTP/2 enabled as well as the SDK default HTTP/1 path.

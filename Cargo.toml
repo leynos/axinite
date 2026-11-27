@@ -1,6 +1,7 @@
 [workspace]
 members = [".", "crates/ambient-fs", "crates/hyper-rustls"]
 exclude = [
+    "tests/verification/repair-claims",
     "channels-src/discord",
     "channels-src/telegram",
     "channels-src/slack",
@@ -277,6 +278,8 @@ docker = ["dep:bollard"]
 [lints.rust]
 missing_docs = "deny"
 unsafe_code = "forbid"
+# The shared repair-claims registry carries Kani-only harness modules (#178).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 
 [[test]]
 name = "channels"

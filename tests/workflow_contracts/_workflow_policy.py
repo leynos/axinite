@@ -67,7 +67,8 @@ BUILD_OR_TEST_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"(?:build|check|clippy|fmt|test|nextest|llvm-cov|component|run)\b",
         r"\bdocker\s+build\b",
         r"\bpytest\b",
-        r"\bmake\s+(?:all|test|test-workspace|test-github-tool|test-matrix"
+        r"\bmake\s+(?:all|test|test-workspace|test-github-tool|test-repair-claims"
+        r"|test-matrix"
         r"|lint|typecheck|check-fmt|build-github-tool-wasm)\b",
         r"\./scripts/build-wasm-extensions\.sh",
     )

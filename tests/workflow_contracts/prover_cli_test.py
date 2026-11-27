@@ -296,6 +296,33 @@ def test_argument_queries_resolve_only_the_dependencies_they_need() -> None:
     assert recorder.names == ["proof_arguments"]
 
 
+@pytest.mark.parametrize(
+    ("action", "harness_filter"),
+    [
+        ("kani-repair-claims-compatibility", "compatibility::"),
+        ("kani-repair-claims-lifecycle", "claim_registry::verification::"),
+    ],
+)
+def test_repair_claims_actions_select_their_own_package_and_harnesses(
+    action: str, harness_filter: str
+) -> None:
+    """Route each repair-claims action to its package and harness filter."""
+    cli = _load_cli()
+    recorder = _DependencyRecorder()
+
+    assert cli._arguments(action, _sources(cli, recorder)) == [
+        "kani",
+        "exec",
+        "--installation",
+        "/resolved/kani release",
+        "--cwd",
+        "/resolved/repair_claims_proof_dir",
+        f"--extra-arg=--harness={harness_filter}",
+        "--extra-arg=--output-format=terse",
+    ]
+    assert recorder.names == ["kani_installation", "REPAIR_CLAIMS_PROOF_DIR"]
+
+
 def test_verus_proof_query_inserts_the_default_proof_file() -> None:
     """Prepend the configured proof file when the flags select none."""
     cli = _load_cli()
@@ -388,9 +415,10 @@ def test_verus_proof_query_keeps_an_explicit_proof_selection() -> None:
     assert cli._proof_arguments(
         {"VERUS_FLAGS": "--proof-file=/proofs/other.rs", "VERUS_PROOF_FILE": "/unused"}
     ) == ["--proof-file=/proofs/other.rs"]
-    assert cli._proof_arguments(
-        {"VERUS_FLAGS": "--proof-file /proofs/other.rs"}
-    ) == ["--proof-file", "/proofs/other.rs"]
+    assert cli._proof_arguments({"VERUS_FLAGS": "--proof-file /proofs/other.rs"}) == [
+        "--proof-file",
+        "/proofs/other.rs",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -438,9 +466,7 @@ def test_argument_queries_propagate_malformed_verus_flags() -> None:
 
     sources = cli._ArgumentSources(
         setting=lambda name: f"/resolved/{name.lower()}",
-        proof_arguments=lambda: cli._proof_arguments(
-            {"VERUS_FLAGS": "'unterminated"}
-        ),
+        proof_arguments=lambda: cli._proof_arguments({"VERUS_FLAGS": "'unterminated"}),
         kani_installation=lambda: "/resolved/kani release",
         version_file="/pin",
     )

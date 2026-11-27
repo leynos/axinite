@@ -121,6 +121,7 @@ def test_make_reachability_was_derived_not_assumed(compiling_targets: set[str]) 
         "test-workspace",
         "test-github-tool",
         "test-libsql-transport",
+        "test-repair-claims",
         "lint-libsql-transport",
         "build-github-tool-wasm",
     }

@@ -94,7 +94,8 @@ INVENTORY: tuple[Crate, ...] = (
     Crate("crates/ambient-fs", Role.SAFE),
     Crate("crates/hyper-rustls", Role.SAFE, vendored=True),
     Crate("fuzz", Role.SAFE, standalone=True),
-Crate("tests/verification/kani-smoke", Role.SAFE, standalone=True),
+    Crate("tests/verification/kani-smoke", Role.SAFE, standalone=True),
+    Crate("tests/verification/repair-claims", Role.SAFE, standalone=True),
     *(Crate(path, Role.BOUNDARY, standalone=True) for path in WASM_BOUNDARIES),
 )
 

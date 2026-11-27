@@ -1802,6 +1802,16 @@ transport, and standalone Cranelift probe suites. `make lint` covers the
 workspace, GitHub tool, and probe; the TLS transport has a separate strict lint
 target, `make lint-libsql-transport`, which also runs in its CI lane.
 
+`make test` also runs `make test-repair-claims`, the ordinary suite of the
+standalone `tests/verification/repair-claims` package that compiles the shared
+repair-claims registry source. Its Kani gate, `make kani-repair-claims`, needs
+the binary-only `make install-kani` first and is not part of `make all`. The
+released verifier currently rejects the registry's default `HashSet` entropy
+path, so that gate fails explicitly. See
+[formal verification methods](formal-verification-methods-in-axinite.md#repair-claims-shared-source-experiment-178)
+for the proof scope. Do not install tools from source to work around the
+blocker.
+
 The current `Makefile` also includes:
 
 - `make build-github-tool-wasm` to build the GitHub WASM tool used by

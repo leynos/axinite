@@ -202,27 +202,28 @@ lint. Therefore:
 
 ### The allow-list
 
-| Crate path                      | Workspace  | Role     | Unsafe permitted in     |
-| ------------------------------- | ---------- | -------- | ----------------------- |
-| `.` (`axinite`)                 | root       | safe     | nowhere                 |
-| `crates/ambient-fs`             | root       | safe     | nowhere                 |
-| `crates/hyper-rustls`           | root       | safe     | nowhere (vendored fork) |
-| `fuzz`                          | standalone | safe     | nowhere                 |
-| `tests/verification/kani-smoke` | standalone | safe     | nowhere                 |
-| `channels-src/discord`          | standalone | boundary | `src/bindings.rs`       |
-| `channels-src/slack`            | standalone | boundary | `src/bindings.rs`       |
-| `channels-src/telegram`         | standalone | boundary | `src/bindings.rs`       |
-| `channels-src/whatsapp`         | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/github`              | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/gmail`               | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-calendar`     | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-docs`         | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-drive`        | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-sheets`       | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/google-slides`       | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/slack`               | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/telegram`            | standalone | boundary | `src/bindings.rs`       |
-| `tools-src/web-search`          | standalone | boundary | `src/bindings.rs`       |
+| Crate path                         | Workspace  | Role     | Unsafe permitted in     |
+| ---------------------------------- | ---------- | -------- | ----------------------- |
+| `.` (`axinite`)                    | root       | safe     | nowhere                 |
+| `crates/ambient-fs`                | root       | safe     | nowhere                 |
+| `crates/hyper-rustls`              | root       | safe     | nowhere (vendored fork) |
+| `fuzz`                             | standalone | safe     | nowhere                 |
+| `tests/verification/kani-smoke`    | standalone | safe     | nowhere                 |
+| `tests/verification/repair-claims` | standalone | safe     | nowhere                 |
+| `channels-src/discord`             | standalone | boundary | `src/bindings.rs`       |
+| `channels-src/slack`               | standalone | boundary | `src/bindings.rs`       |
+| `channels-src/telegram`            | standalone | boundary | `src/bindings.rs`       |
+| `channels-src/whatsapp`            | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/github`                 | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/gmail`                  | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-calendar`        | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-docs`            | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-drive`           | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-sheets`          | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/google-slides`          | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/slack`                  | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/telegram`               | standalone | boundary | `src/bindings.rs`       |
+| `tools-src/web-search`             | standalone | boundary | `src/bindings.rs`       |
 
 _Table 3: The unsafe boundary allow-list, enforced by
 `scripts/check_unsafe_boundaries.py`._
