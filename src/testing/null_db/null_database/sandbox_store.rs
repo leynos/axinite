@@ -13,6 +13,14 @@ impl crate::db::NativeSandboxStore for NullDatabase {
         Ok(())
     }
 
+    async fn save_sandbox_job_with_mode(
+        &self,
+        _job: &SandboxJobRecord,
+        _mode: Option<SandboxMode>,
+    ) -> Result<(), DatabaseError> {
+        Ok(())
+    }
+
     async fn get_sandbox_job(&self, _id: Uuid) -> Result<Option<SandboxJobRecord>, DatabaseError> {
         Ok(None)
     }

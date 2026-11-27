@@ -119,28 +119,34 @@ fn test_sandbox_schema_includes_credentials() {
 }
 
 #[tokio::test]
-async fn test_parse_credentials_empty() {
+async fn test_parse_credential_grants_empty() {
     let manager = Arc::new(ContextManager::new(5));
     let tool = CreateJobTool::new(manager);
 
     // No credentials parameter
     let params = serde_json::json!({"title": "t", "description": "d"});
-    let grants = tool.parse_credentials(&params, "user1").await.unwrap();
+    let grants = tool
+        .parse_credential_grants(&params, "user1")
+        .await
+        .unwrap();
     assert!(grants.is_empty());
 
     // Empty credentials object
     let params = serde_json::json!({"credentials": {}});
-    let grants = tool.parse_credentials(&params, "user1").await.unwrap();
+    let grants = tool
+        .parse_credential_grants(&params, "user1")
+        .await
+        .unwrap();
     assert!(grants.is_empty());
 }
 
 #[tokio::test]
-async fn test_parse_credentials_no_secrets_store() {
+async fn test_parse_credential_grants_no_secrets_store() {
     let manager = Arc::new(ContextManager::new(5));
     let tool = CreateJobTool::new(manager);
 
     let params = serde_json::json!({"credentials": {"my_secret": "MY_SECRET"}});
-    let result = tool.parse_credentials(&params, "user1").await;
+    let result = tool.parse_credential_grants(&params, "user1").await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -151,7 +157,7 @@ async fn test_parse_credentials_no_secrets_store() {
 }
 
 #[tokio::test]
-async fn test_parse_credentials_missing_secret() {
+async fn test_parse_credential_grants_missing_secret() {
     use crate::testing::credentials::test_secrets_store;
 
     let manager = Arc::new(ContextManager::new(5));
@@ -160,7 +166,7 @@ async fn test_parse_credentials_missing_secret() {
     let tool = CreateJobTool::new(manager).with_secrets(Arc::clone(&secrets));
 
     let params = serde_json::json!({"credentials": {"nonexistent_secret": "SOME_VAR"}});
-    let result = tool.parse_credentials(&params, "user1").await;
+    let result = tool.parse_credential_grants(&params, "user1").await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -171,7 +177,7 @@ async fn test_parse_credentials_missing_secret() {
 }
 
 #[tokio::test]
-async fn test_parse_credentials_valid() {
+async fn test_parse_credential_grants_valid() {
     use crate::secrets::CreateSecretParams;
     use crate::testing::credentials::{TEST_GITHUB_TOKEN, test_secrets_store};
 
@@ -192,7 +198,10 @@ async fn test_parse_credentials_valid() {
     let params = serde_json::json!({
         "credentials": {"github_token": "GITHUB_TOKEN"}
     });
-    let grants = tool.parse_credentials(&params, "user1").await.unwrap();
+    let grants = tool
+        .parse_credential_grants(&params, "user1")
+        .await
+        .unwrap();
     assert_eq!(grants.len(), 1);
     assert_eq!(grants[0].secret_name, "github_token");
     assert_eq!(grants[0].env_var, "GITHUB_TOKEN");

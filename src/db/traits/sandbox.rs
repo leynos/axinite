@@ -142,6 +142,17 @@ pub trait SandboxStore: Send + Sync {
         &'a self,
         job: &'a SandboxJobRecord,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
+    /// Persist a sandbox job snapshot and its execution mode atomically.
+    ///
+    /// Passing `None` inserts the default [`SandboxMode::Worker`] and leaves
+    /// an existing row's stored mode unchanged. Implementations must write the
+    /// record and the mode in one statement or transaction, so a failure
+    /// cannot leave a partially created job.
+    fn save_sandbox_job_with_mode<'a>(
+        &'a self,
+        job: &'a SandboxJobRecord,
+        mode: Option<SandboxMode>,
+    ) -> DbFuture<'a, Result<(), DatabaseError>>;
     /// Load a sandbox job by UUID.
     fn get_sandbox_job<'a>(
         &'a self,
@@ -215,6 +226,12 @@ pub trait NativeSandboxStore: Send + Sync {
     fn save_sandbox_job<'a>(
         &'a self,
         job: &'a SandboxJobRecord,
+    ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+    /// Native async form of [`SandboxStore::save_sandbox_job_with_mode`].
+    fn save_sandbox_job_with_mode<'a>(
+        &'a self,
+        job: &'a SandboxJobRecord,
+        mode: Option<SandboxMode>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     /// Native async form of [`SandboxStore::get_sandbox_job`].
     fn get_sandbox_job<'a>(

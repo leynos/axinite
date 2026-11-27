@@ -8,6 +8,10 @@ use uuid::Uuid;
 mod events;
 
 #[cfg(feature = "postgres")]
+#[path = "sandbox/persist.rs"]
+mod persist;
+
+#[cfg(feature = "postgres")]
 use super::Store;
 use crate::db::{SandboxEventType, UserId};
 #[cfg(feature = "postgres")]
@@ -126,52 +130,6 @@ fn row_to_sandbox_job(r: &tokio_postgres::Row) -> SandboxJobRecord {
 
 #[cfg(feature = "postgres")]
 impl Store {
-    /// Insert or update a sandbox job in `agent_jobs`.
-    pub async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError> {
-        let conn = self.conn().await?;
-        let rows_affected = conn
-            .execute(
-                r#"
-            INSERT INTO agent_jobs (
-                id, title, description, status, source, user_id, project_dir,
-                success, failure_reason, created_at, started_at, completed_at
-            ) VALUES ($1, $2, $3, $4, 'sandbox', $5, $6, $7, $8, $9, $10, $11)
-            ON CONFLICT (id) DO UPDATE SET
-                title = EXCLUDED.title,
-                description = EXCLUDED.description,
-                user_id = EXCLUDED.user_id,
-                project_dir = EXCLUDED.project_dir,
-                status = EXCLUDED.status,
-                success = EXCLUDED.success,
-                failure_reason = EXCLUDED.failure_reason,
-                started_at = EXCLUDED.started_at,
-                completed_at = EXCLUDED.completed_at
-            WHERE agent_jobs.source = 'sandbox'
-            "#,
-                &[
-                    &job.id,
-                    &job.task,
-                    &job.credential_grants_json,
-                    &job.status,
-                    &job.user_id.as_str(),
-                    &job.project_dir,
-                    &job.success,
-                    &job.failure_reason,
-                    &job.created_at,
-                    &job.started_at,
-                    &job.completed_at,
-                ],
-            )
-            .await?;
-        if rows_affected == 0 {
-            return Err(DatabaseError::Query(format!(
-                "sandbox job {} conflicts with a non-sandbox agent_jobs row",
-                job.id
-            )));
-        }
-        Ok(())
-    }
-
     /// Get a sandbox job by ID.
     pub async fn get_sandbox_job(
         &self,
