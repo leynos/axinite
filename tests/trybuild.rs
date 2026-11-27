@@ -9,6 +9,26 @@
 //! applies instead of nextest's per-test allowance. See `.config/nextest.toml`
 //! for the shared lock and Linux nextest timeout policy.
 
+/// Pays for trybuild's generated project once, before the contract sessions.
+///
+/// The first session in a fresh target directory compiles the whole dependency
+/// tree of the generated project, which is the cold cost that the contract
+/// sessions' allowances were sized around. This test builds one small fixture
+/// so that cost lands here, and the sessions below start from a built tree. It
+/// runs under the same features as they do, because trybuild reads them from
+/// the build that produced this binary. Under nextest the leading `a_` makes
+/// it sort, and so run, first: nextest lists tests alphabetically and the
+/// `compile-contracts` group in `.config/nextest.toml` runs them one at a time,
+/// with this test given the same allowance as the database-surface session.
+/// Plain `cargo test` runs the tests in parallel and gives no ordering
+/// guarantee, so on that lane whichever session takes trybuild's lock first
+/// pays the cold build.
+#[test]
+fn a_nested_fixture_preparation() {
+    let cases = trybuild::TestCases::new();
+    cases.pass("tests/trybuild/sandbox_mode_from_str.rs");
+}
+
 #[test]
 fn db_surface_compile_contracts() {
     let cases = trybuild::TestCases::new();
