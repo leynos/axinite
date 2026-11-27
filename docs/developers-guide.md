@@ -4385,6 +4385,16 @@ includes each accepted public call-site fixture as a module and calls both
 fixture entry points from its `ui` test; Cargo compiles those bodies with the
 integration target before nextest starts the test process.
 
+`tests/trybuild.rs` also holds `a_nested_fixture_preparation`, the preparation
+test the concordat NC-010 rule looks for (the name ends in
+`nested_fixture_preparation`). It runs one small fixture so that trybuild's
+cold dependency build lands in a test of its own, and the contract sessions
+start from a built tree. The leading `a_` makes it sort first, and the serial
+group runs the tests one at a time. A cold run measured 527 s for it and about
+36 s for each contract session; a warm run measured 11 s for it. It runs under
+the same features as the sessions because trybuild reads the features from the
+build that produced the test binary.
+
 The `compile-contracts` test group sets `max-threads = 1`. The `default` and
 `ci` overrides assign both required binaries to this group, and `coverage`
 inherits the `ci` override. The serial group keeps contract processes from
